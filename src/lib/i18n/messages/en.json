@@ -1,0 +1,155 @@
+{
+  "nav": {
+    "home": "Home",
+    "cruises": "Our Cruises",
+    "merch": "Merch",
+    "crew": "The Cozy Crew",
+    "bookNow": "Book Now",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu",
+    "selectLanguage": "Select language"
+  },
+  "footer": {
+    "tagline": "we're down to water",
+    "links": {
+      "cruises": "Cruises",
+      "merch": "Merch",
+      "crew": "The Cozy Crew",
+      "privacy": "Privacy Policy",
+      "terms": "Terms of Service"
+    },
+    "social": {
+      "instagram": "Instagram",
+      "whatsapp": "WhatsApp"
+    },
+    "copyright": "© {year} Off Course Amsterdam. All rights reserved.",
+    "departure": "Keizersgracht 62, Amsterdam"
+  },
+  "common": {
+    "bookNow": "Book Now",
+    "learnMore": "Learn more",
+    "from": "From",
+    "perPerson": "per person",
+    "guests": "{count, plural, one {# guest} other {# guests}}",
+    "loading": "Loading...",
+    "error": "Something went wrong",
+    "backToHome": "Back to home"
+  },
+  "home": {
+    "hero": {
+      "tagline": "we're down to water",
+      "title": "Your friend with a boat.",
+      "subtitle": "Private and shared canal cruises through the real Amsterdam. No Heineken hats. No loudspeakers. Just good vibes and hidden gems."
+    },
+    "featured": {
+      "title": "Our cruises",
+      "subtitle": "pick your vibe"
+    },
+    "reviews": {
+      "title": "What people say"
+    },
+    "about": {
+      "label": "who we are",
+      "title": "Started with one boat and a dream.",
+      "body": "Off Course was born from one feeling: being on the water feels like home. We're Jannah & Beer, and we wanted to share the real Amsterdam — not the tourist version. Now we take people to the spots only locals know, on electric boats that are basically floating living rooms.",
+      "body2": "No tour guide vibes. No dress code. No nonsense. We'll handle the rest.",
+      "cta": "Meet the crew"
+    }
+  },
+  "search": {
+    "title": "Find your perfect cruise",
+    "date": "Pick a date",
+    "guests": "Guests",
+    "guestsPlaceholder": "How many?",
+    "search": "Search",
+    "noResults": "No cruises available for this date. Try another day?",
+    "resultsTitle": "Available cruises on {date}",
+    "resultsSubtitle": "{count, plural, one {# cruise available} other {# cruises available}}"
+  },
+  "cruises": {
+    "pageTitle": "Our cruises",
+    "pageSubtitle": "Private and shared boat trips through Amsterdam's hidden canals.",
+    "includes": "What's included",
+    "benefits": "Why you'll love it",
+    "faq": "Questions",
+    "cancellation": "Cancellation policy",
+    "departure": "Departure",
+    "duration": "Duration",
+    "guests": "Guests",
+    "bookThisCruise": "Book this cruise",
+    "startingFrom": "Starting from",
+    "perHour": "per hour",
+    "perPerson": "per person",
+    "private": "Private",
+    "shared": "Shared",
+    "maxGuests": "Max {count} guests"
+  },
+  "booking": {
+    "selectDate": "Select a date",
+    "selectGuests": "Number of guests",
+    "selectTime": "Choose a time",
+    "selectDuration": "Choose your duration",
+    "selectBoat": "Choose your boat",
+    "pricePerHour": "per hour",
+    "pricePerPerson": "per person",
+    "totalPrice": "Total",
+    "proceedToCheckout": "Proceed to checkout",
+    "availableSlots": "Available times",
+    "noSlotsAvailable": "No slots available for this date",
+    "private": "Private",
+    "shared": "Shared"
+  },
+  "checkout": {
+    "title": "Complete your booking",
+    "contactDetails": "Contact details",
+    "name": "Full name",
+    "email": "Email address",
+    "phone": "Phone number (optional)",
+    "specialRequests": "Special requests (optional)",
+    "summary": "Booking summary",
+    "pay": "Pay {amount}",
+    "securePayment": "Secure payment via Stripe",
+    "terms": "By booking you agree to our {terms}."
+  },
+  "confirmation": {
+    "title": "You're on the water!",
+    "subtitle": "Booking confirmed. See you on the canal.",
+    "emailSent": "Confirmation sent to {email}",
+    "whatNext": "What to expect",
+    "directions": "Getting there",
+    "addToCalendar": "Add to calendar"
+  },
+  "merch": {
+    "pageTitle": "Merch",
+    "pageSubtitle": "Wear the vibe. Off Course classics made for the water and the streets.",
+    "addToCart": "Add to cart",
+    "soldOut": "Sold out",
+    "sizes": "Sizes",
+    "selectSize": "Select size",
+    "viewDetails": "View details",
+    "inStock": "In stock",
+    "lowStock": "Almost gone",
+    "comingSoon": "Coming soon"
+  },
+  "crew": {
+    "pageTitle": "The Cozy Crew",
+    "pageSubtitle": "The people behind the boats. We're a small team of Amsterdam locals who love the water.",
+    "floatFam": {
+      "title": "Float Fam",
+      "subtitle": "Our community of regulars, friends, and water lovers who keep coming back."
+    }
+  },
+  "privacy": {
+    "pageTitle": "Privacy Policy",
+    "lastUpdated": "Last updated: {date}"
+  },
+  "terms": {
+    "pageTitle": "Terms of Service",
+    "lastUpdated": "Last updated: {date}"
+  },
+  "404": {
+    "title": "Looks like you went off course.",
+    "subtitle": "This page doesn't exist — but the canals do.",
+    "cta": "Back to homepage"
+  }
+}
