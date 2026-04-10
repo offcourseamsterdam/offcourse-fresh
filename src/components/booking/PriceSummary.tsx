@@ -3,13 +3,13 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
 
-const CITY_TAX_PER_PERSON_CENTS = 260
-
 interface PriceSummaryProps {
   basePriceCents: number
   guestCount: number
   extrasCalculation: ExtrasCalculation | null
   mode: 'private' | 'shared'
+  /** For private: e.g. "Curaçao · 2h" */
+  cruiseLabel?: string
   /** For shared: per-ticket breakdown */
   ticketBreakdown?: { label: string; count: number; priceCents: number }[]
 }
@@ -40,16 +40,15 @@ export function PriceSummary({
   guestCount,
   extrasCalculation,
   mode,
+  cruiseLabel,
   ticketBreakdown,
 }: PriceSummaryProps) {
-  const cityTaxCents = guestCount * CITY_TAX_PER_PERSON_CENTS
-
-  // Calculate extras total from the calculation object
+  // Extras total comes from the calculation (includes City Tax as a line item)
   const extrasTotalCents = extrasCalculation
     ? extrasCalculation.line_items.reduce((sum, li) => sum + li.amount_cents, 0)
     : 0
 
-  const grandTotalCents = basePriceCents + extrasTotalCents + cityTaxCents
+  const grandTotalCents = basePriceCents + extrasTotalCents
 
   // VAT is included in the total (9% for cruises)
   const vatCents = Math.round(grandTotalCents - grandTotalCents / 1.09)
@@ -62,26 +61,19 @@ export function PriceSummary({
       animate={{ opacity: 1, y: 0 }}
       className="border-t border-zinc-100 pt-4 mt-4 space-y-2"
     >
-      {/* Base price */}
+      {/* Base price — show boat + duration for private, ticket breakdown for shared */}
       {mode === 'private' ? (
-        <Row label="Cruise" value={basePriceCents} />
+        <Row label={cruiseLabel || 'Cruise'} value={basePriceCents} />
       ) : (
         ticketBreakdown?.map(t => (
           <Row key={t.label} label={`${t.label} × ${t.count}`} value={t.count * t.priceCents} />
         ))
       )}
 
-      {/* Extras line items */}
+      {/* Extras line items (includes City Tax from the extras calculation) */}
       {extrasCalculation?.line_items.map(li => (
         <Row key={li.extra_id} label={li.name} value={li.amount_cents} />
       ))}
-
-      {/* City tax */}
-      <Row
-        label={`City tax · ${guestCount} × €2.60`}
-        value={cityTaxCents}
-        muted
-      />
 
       {/* Divider + total */}
       <div className="border-t border-zinc-200 pt-2 mt-2">

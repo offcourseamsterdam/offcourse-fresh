@@ -411,6 +411,7 @@ export function BookingPanel({
           guestCount={guestCount}
           extrasCalculation={state.extrasCalculation}
           mode={mode}
+          cruiseLabel={boatSummary}
           ticketBreakdown={ticketBreakdown}
         />
       )}
