@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import createMiddleware from 'next-intl/middleware'
 import { routing } from '@/i18n/routing'
-import { createMiddlewareClient } from '@/lib/auth/middleware'
 
 const intlMiddleware = createMiddleware(routing)
 
@@ -41,6 +40,7 @@ export async function proxy(request: NextRequest) {
 
   // Skip auth in development — remove before going to production
   if (isProtected && process.env.NODE_ENV !== 'development') {
+    const { createMiddlewareClient } = await import('@/lib/auth/middleware')
     const supabase = createMiddlewareClient(request, response)
     const { data: { user } } = await supabase.auth.getUser()
 
