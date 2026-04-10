@@ -141,8 +141,6 @@ export function BoatDurationStep({
                   )}
                 </div>
 
-                <p className="text-xs text-zinc-500 mb-3">{boat.tagline}</p>
-
                 {/* Duration pills */}
                 {!isSoldOut && (
                   <div className="flex flex-wrap gap-2">

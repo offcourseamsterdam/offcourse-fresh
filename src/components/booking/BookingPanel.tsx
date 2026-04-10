@@ -338,7 +338,6 @@ export function BookingPanel({
           slots={state.slots}
           loading={state.loadingSlots}
           mode={mode}
-          guests={state.guests}
           selectedSlotPk={state.selectedSlot?.pk ?? null}
           onSelect={(slot) => dispatch({ type: 'SELECT_SLOT', slot })}
         />
