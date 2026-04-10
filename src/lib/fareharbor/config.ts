@@ -12,11 +12,12 @@ export interface BoatConfig {
   id: 'diana' | 'curacao'
   name: string
   maxGuests: number
+  imageUrl: string
 }
 
 export const BOATS: BoatConfig[] = [
-  { id: 'diana', name: 'Diana', maxGuests: 8 },
-  { id: 'curacao', name: 'Curaçao', maxGuests: 12 },
+  { id: 'diana', name: 'Diana', maxGuests: 8, imageUrl: '/images/boats/diana.webp' },
+  { id: 'curacao', name: 'Curaçao', maxGuests: 12, imageUrl: '/images/boats/curacao.webp' },
 ]
 
 // ── Helpers for parsing customer type names ────────────────────────────────

@@ -1,8 +1,9 @@
 'use client'
 
 import { useMemo } from 'react'
+import Image from 'next/image'
 import { motion } from 'framer-motion'
-import { Ship, Users } from 'lucide-react'
+import { Users } from 'lucide-react'
 import type { AvailabilityCustomerType } from '@/types'
 import { BOATS } from '@/lib/fareharbor/config'
 
@@ -18,6 +19,7 @@ interface BoatOption {
   name: string
   maxGuests: number
   tagline: string
+  imageUrl: string
   durations: AvailabilityCustomerType[]
   status: 'available' | 'sold_out' | 'too_many_guests'
 }
@@ -72,6 +74,7 @@ export function BoatDurationStep({
           name: boat.name,
           maxGuests: boat.maxGuests,
           tagline: BOAT_TAGLINES[boat.id] || '',
+          imageUrl: boat.imageUrl,
           durations: durations.filter(d => d.totalCapacity >= 1),
           status,
         }
@@ -110,48 +113,60 @@ export function BoatDurationStep({
                   : 'border-zinc-200 hover:border-zinc-300'
             }`}
           >
-            {/* Boat header */}
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Ship className="w-4 h-4 text-[var(--color-primary)]" />
-                <span className="font-semibold text-sm text-zinc-800">{boat.name}</span>
+            <div className="flex gap-4">
+              {/* Boat photo */}
+              <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-lg overflow-hidden flex-shrink-0">
+                <Image
+                  src={boat.imageUrl}
+                  alt={boat.name}
+                  fill
+                  className={`object-cover ${isSoldOut ? 'grayscale' : ''}`}
+                  sizes="(max-width: 640px) 96px, 112px"
+                />
               </div>
-              {isSoldOut ? (
-                <span className="text-xs font-medium text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-full">
-                  Sold out
-                </span>
-              ) : (
-                <div className="flex items-center gap-1 text-xs text-zinc-500">
-                  <Users className="w-3 h-3" />
-                  <span>Max {boat.maxGuests}</span>
+
+              {/* Boat info + duration pills */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-sm text-zinc-800">{boat.name}</span>
+                  {isSoldOut ? (
+                    <span className="text-xs font-medium text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-full">
+                      Sold out
+                    </span>
+                  ) : (
+                    <div className="flex items-center gap-1 text-xs text-zinc-500">
+                      <Users className="w-3 h-3" />
+                      <span>Max {boat.maxGuests}</span>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
 
-            <p className="text-xs text-zinc-500 mb-3">{boat.tagline}</p>
+                <p className="text-xs text-zinc-500 mb-3">{boat.tagline}</p>
 
-            {/* Duration pills */}
-            {!isSoldOut && (
-              <div className="flex flex-wrap gap-2">
-                {boat.durations.map(ct => {
-                  const isActive = selectedCustomerTypePk === ct.pk
-                  return (
-                    <button
-                      key={ct.pk}
-                      type="button"
-                      onClick={() => onSelect(ct, boat.id)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 ${
-                        isActive
-                          ? 'bg-[var(--color-primary)] text-white shadow-sm'
-                          : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
-                      }`}
-                    >
-                      {fmtDuration(ct.durationMinutes)} · {fmtPrice(ct.priceCents)}
-                    </button>
-                  )
-                })}
+                {/* Duration pills */}
+                {!isSoldOut && (
+                  <div className="flex flex-wrap gap-2">
+                    {boat.durations.map(ct => {
+                      const isActive = selectedCustomerTypePk === ct.pk
+                      return (
+                        <button
+                          key={ct.pk}
+                          type="button"
+                          onClick={() => onSelect(ct, boat.id)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 ${
+                            isActive
+                              ? 'bg-[var(--color-primary)] text-white shadow-sm'
+                              : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+                          }`}
+                        >
+                          {fmtDuration(ct.durationMinutes)} · {fmtPrice(ct.priceCents)}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </motion.div>
         )
       })}
