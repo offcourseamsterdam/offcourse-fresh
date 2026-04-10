@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type Step = 'date' | 'guests' | 'time' | 'boat' | 'tickets' | 'extras' | 'ready'
+type Step = 'date' | 'guests' | 'time' | 'boat' | 'tickets' | 'extras'
 
 interface BookingPanelState {
   step: Step
@@ -44,7 +44,7 @@ type Action =
   | { type: 'SELECT_BOAT_DURATION'; customerType: AvailabilityCustomerType; boatId: string }
   | { type: 'UPDATE_TICKET_COUNT'; customerTypePk: number; count: number }
   | { type: 'CONFIRM_TICKETS' }
-  | { type: 'SET_EXTRAS'; selectedExtraIds: string[]; calculation: ExtrasCalculation }
+  | { type: 'UPDATE_EXTRAS'; selectedExtraIds: string[]; calculation: ExtrasCalculation }
   | { type: 'REOPEN_STEP'; step: Step }
 
 function reducer(state: BookingPanelState, action: Action): BookingPanelState {
@@ -106,12 +106,11 @@ function reducer(state: BookingPanelState, action: Action): BookingPanelState {
     }
     case 'CONFIRM_TICKETS':
       return { ...state, step: 'extras' }
-    case 'SET_EXTRAS':
+    case 'UPDATE_EXTRAS':
       return {
         ...state,
         selectedExtraIds: action.selectedExtraIds,
         extrasCalculation: action.calculation,
-        step: 'ready',
       }
     case 'REOPEN_STEP':
       return { ...state, step: action.step }
@@ -194,10 +193,15 @@ export function BookingPanel({
     }
   }, [state.date, fetchSlots])
 
+  // Extras selection changed — update price summary in real time
+  const handleExtrasChange = useCallback((ids: string[], calc: ExtrasCalculation) => {
+    dispatch({ type: 'UPDATE_EXTRAS', selectedExtraIds: ids, calculation: calc })
+  }, [])
+
   // Helpers for step ordering
   const steps: Step[] = mode === 'private'
-    ? ['date', 'guests', 'time', 'boat', 'extras', 'ready']
-    : ['date', 'time', 'tickets', 'extras', 'ready']
+    ? ['date', 'guests', 'time', 'boat', 'extras']
+    : ['date', 'time', 'tickets', 'extras']
 
   const currentStepIndex = steps.indexOf(state.step)
   const isStepCompleted = (step: Step) => steps.indexOf(step) < currentStepIndex
@@ -394,11 +398,9 @@ export function BookingPanel({
       >
         <ExtrasStep
           listingId={listingId}
-          listingTitle={listingTitle}
-          listingHeroImageUrl={listingHeroImageUrl}
           guestCount={guestCount}
           baseAmountCents={basePriceCents}
-          onContinue={(ids, calc) => dispatch({ type: 'SET_EXTRAS', selectedExtraIds: ids, calculation: calc })}
+          onExtrasChange={handleExtrasChange}
         />
       </StepAccordion>
 
@@ -413,8 +415,8 @@ export function BookingPanel({
         />
       )}
 
-      {/* Proceed to booking CTA */}
-      {state.step === 'ready' && (
+      {/* Proceed to booking CTA — visible once extras step is reached */}
+      {state.step === 'extras' && (
         <div className="mt-5">
           <Button
             variant="primary"
