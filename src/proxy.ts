@@ -1,8 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import createMiddleware from 'next-intl/middleware'
-import { routing } from '@/i18n/routing'
-
-const intlMiddleware = createMiddleware(routing)
 
 // Locales supported (must match i18n config)
 const LOCALES = ['en', 'nl', 'de', 'fr', 'es', 'pt', 'zh']
@@ -10,6 +6,20 @@ const LOCALE_REGEX = new RegExp(`^/(${LOCALES.join('|')})(/|$)`)
 
 // Route prefixes (after stripping locale) that require authentication
 const PROTECTED_PREFIXES = ['/admin', '/captain', '/support', '/partner', '/account']
+
+// Lazy-initialized on first request, cached for all subsequent ones.
+// This avoids top-level imports of next-intl/middleware (86 dev JS files)
+// and @supabase/ssr (124 JS files) which cause Turbopack to hang at startup.
+let _intlMiddleware: ((req: NextRequest) => NextResponse) | null = null
+
+async function getIntlMiddleware() {
+  if (!_intlMiddleware) {
+    const createMiddleware = (await import('next-intl/middleware')).default
+    const { routing } = await import('@/i18n/routing')
+    _intlMiddleware = createMiddleware(routing)
+  }
+  return _intlMiddleware
+}
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -20,6 +30,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // Run next-intl middleware for locale detection/rewriting
+  const intlMiddleware = await getIntlMiddleware()
   const intlResponse = intlMiddleware(request)
 
   const response = intlResponse instanceof NextResponse
