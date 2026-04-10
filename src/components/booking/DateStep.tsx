@@ -49,16 +49,6 @@ export function DateStep({ mode, initialDate = '', initialGuests = 2, onConfirm 
 
   function handlePickDate(d: string) {
     setDate(d)
-    // For private tours, confirm immediately (no guest count needed)
-    if (mode === 'private') {
-      onConfirm(d, guests)
-    }
-  }
-
-  function handleConfirmShared() {
-    if (date) {
-      onConfirm(date, guests)
-    }
   }
 
   return (
@@ -76,7 +66,18 @@ export function DateStep({ mode, initialDate = '', initialGuests = 2, onConfirm 
         today={today}
       />
 
-      {/* Guest counter — shared tours only */}
+      {/* Private: just confirm the date, guest count comes in the next step */}
+      {mode === 'private' && date && (
+        <button
+          type="button"
+          onClick={() => onConfirm(date, guests)}
+          className="w-full py-2.5 rounded-xl bg-[var(--color-primary)] text-white text-sm font-semibold hover:bg-[var(--color-primary-dark)] transition-colors"
+        >
+          Next
+        </button>
+      )}
+
+      {/* Shared: date + guest counter + confirm */}
       {mode === 'shared' && (
         <div className="space-y-3">
           <div className="flex items-center justify-between bg-zinc-50 rounded-xl px-4 py-3">
@@ -108,7 +109,7 @@ export function DateStep({ mode, initialDate = '', initialGuests = 2, onConfirm 
           {date && (
             <button
               type="button"
-              onClick={handleConfirmShared}
+              onClick={() => onConfirm(date, guests)}
               className="w-full py-2.5 rounded-xl bg-[var(--color-primary)] text-white text-sm font-semibold hover:bg-[var(--color-primary-dark)] transition-colors"
             >
               Check availability

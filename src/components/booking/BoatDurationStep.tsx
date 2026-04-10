@@ -44,19 +44,14 @@ export function BoatDurationStep({
   selectedCustomerTypePk,
   onSelect,
 }: BoatDurationStepProps) {
-  // Group customer types by boat
-  // We use the maximumParty to infer boat: ≤8 = Diana, >8 = Curaçao
-  // This works with the current config; when CUSTOMER_TYPES PKs are filled in config.ts,
-  // we can use proper mapping instead
+  // Group customer types by boat (using boatId from FareHarbor name parsing)
   const boats = useMemo<BoatOption[]>(() => {
     const boatMap = new Map<string, AvailabilityCustomerType[]>()
 
     for (const ct of customerTypes) {
-      // Infer boat from max party size
-      const boatId = ct.maximumParty <= 8 ? 'diana' : 'curacao'
-      const existing = boatMap.get(boatId) || []
+      const existing = boatMap.get(ct.boatId) || []
       existing.push(ct)
-      boatMap.set(boatId, existing)
+      boatMap.set(ct.boatId, existing)
     }
 
     return BOATS

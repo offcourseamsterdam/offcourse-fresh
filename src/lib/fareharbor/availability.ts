@@ -138,7 +138,7 @@ export async function applyListingFilters(
   return { slots, reasonCode: null }
 }
 
-function transformToSlot(
+export function transformToSlot(
   availability: FHMinimalAvailability,
   typeMap: Map<number, CustomerTypeConfig>
 ): AvailabilitySlot {
@@ -151,6 +151,7 @@ function transformToSlot(
         pk: rate.pk,
         totalCapacity: rate.capacity,
         customerTypePk: rate.customer_type.pk,
+        boatId: config?.boat ?? 'curacao',
         minimumParty: rate.minimum_party_size ?? 1,
         maximumParty: rate.maximum_party_size ?? (config?.maxGuests ?? 12),
         priceCents: rate.customer_prototype?.total ?? 0,
@@ -165,6 +166,8 @@ function transformToSlot(
     endAt: availability.end_at,
     headline: availability.headline ?? startTime,
     customerTypes,
-    capacity: Math.min(...availability.customer_type_rates.map(r => r.capacity ?? 0)),
+    capacity: availability.customer_type_rates.length > 0
+      ? Math.max(...availability.customer_type_rates.map(r => r.capacity ?? 0))
+      : 0,
   }
 }

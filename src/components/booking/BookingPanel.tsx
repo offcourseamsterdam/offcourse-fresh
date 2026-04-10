@@ -5,6 +5,7 @@ import type { AvailabilitySlot, AvailabilityCustomerType } from '@/types'
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
 import { StepAccordion } from './StepAccordion'
 import { DateStep } from './DateStep'
+import { GuestStep } from './GuestStep'
 import { TimeSlotStep } from './TimeSlotStep'
 import { BoatDurationStep } from './BoatDurationStep'
 import { TicketStep } from './TicketStep'
@@ -14,7 +15,7 @@ import { Button } from '@/components/ui/button'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type Step = 'date' | 'time' | 'boat' | 'tickets' | 'extras' | 'ready'
+type Step = 'date' | 'guests' | 'time' | 'boat' | 'tickets' | 'extras' | 'ready'
 
 interface BookingPanelState {
   step: Step
@@ -35,7 +36,8 @@ interface BookingPanelState {
 }
 
 type Action =
-  | { type: 'SET_DATE'; date: string; guests: number }
+  | { type: 'SET_DATE'; date: string; guests: number; category: 'private' | 'shared' }
+  | { type: 'CONFIRM_GUESTS'; guests: number }
   | { type: 'SLOTS_LOADING' }
   | { type: 'SLOTS_LOADED'; slots: AvailabilitySlot[] }
   | { type: 'SELECT_SLOT'; slot: AvailabilitySlot }
@@ -52,9 +54,10 @@ function reducer(state: BookingPanelState, action: Action): BookingPanelState {
         ...state,
         date: action.date,
         guests: action.guests,
-        step: 'time',
+        // Private: go to guests step. Shared: go straight to time (slots fetched externally).
+        step: action.category === 'private' ? 'guests' : 'time',
+        loadingSlots: action.category === 'shared',
         slots: [],
-        loadingSlots: true,
         selectedSlot: null,
         selectedBoat: null,
         selectedCustomerType: null,
@@ -62,6 +65,17 @@ function reducer(state: BookingPanelState, action: Action): BookingPanelState {
         totalTickets: 0,
         selectedExtraIds: [],
         extrasCalculation: null,
+      }
+    case 'CONFIRM_GUESTS':
+      return {
+        ...state,
+        guests: action.guests,
+        step: 'time',
+        loadingSlots: true,
+        slots: [],
+        selectedSlot: null,
+        selectedBoat: null,
+        selectedCustomerType: null,
       }
     case 'SLOTS_LOADING':
       return { ...state, loadingSlots: true }
@@ -152,9 +166,8 @@ export function BookingPanel({
 
   const mode = category
 
-  // Fetch slots when date is confirmed
-  const handleDateConfirm = useCallback(async (date: string, guests: number) => {
-    dispatch({ type: 'SET_DATE', date, guests })
+  // Fetch slots for a given date + guest count
+  const fetchSlots = useCallback(async (date: string, guests: number) => {
     try {
       const params = new URLSearchParams({ date, guests: String(guests), slug: listingSlug })
       const res = await fetch(`/api/search/slots?${params}`)
@@ -165,20 +178,43 @@ export function BookingPanel({
     }
   }, [listingSlug])
 
+  // Date confirmed — for shared, also fetch slots immediately
+  const handleDateConfirm = useCallback(async (date: string, guests: number) => {
+    dispatch({ type: 'SET_DATE', date, guests, category: mode })
+    if (mode === 'shared') {
+      await fetchSlots(date, guests)
+    }
+  }, [mode, fetchSlots])
+
+  // Guests confirmed (private only) — now fetch slots
+  const handleGuestsConfirm = useCallback(async (guests: number) => {
+    dispatch({ type: 'CONFIRM_GUESTS', guests })
+    if (state.date) {
+      await fetchSlots(state.date, guests)
+    }
+  }, [state.date, fetchSlots])
+
   // Helpers for step ordering
   const steps: Step[] = mode === 'private'
-    ? ['date', 'time', 'boat', 'extras', 'ready']
+    ? ['date', 'guests', 'time', 'boat', 'extras', 'ready']
     : ['date', 'time', 'tickets', 'extras', 'ready']
 
   const currentStepIndex = steps.indexOf(state.step)
   const isStepCompleted = (step: Step) => steps.indexOf(step) < currentStepIndex
   const isStepActive = (step: Step) => state.step === step
 
+  // Dynamic step numbering (accounts for guests step in private mode)
+  const stepNumber = (step: Step) => steps.indexOf(step) + 1
+
   // Format date for summary
   const dateSummary = state.date
     ? new Date(state.date + 'T12:00:00').toLocaleDateString('en-US', {
         weekday: 'short', month: 'short', day: 'numeric'
       })
+    : undefined
+
+  const guestsSummary = state.guests > 0 && isStepCompleted('guests')
+    ? `${state.guests} ${state.guests === 1 ? 'guest' : 'guests'}`
     : undefined
 
   const timeSummary = state.selectedSlot?.startTime
@@ -254,7 +290,7 @@ export function BookingPanel({
       <StepAccordion
         title="Pick a date"
         summary={dateSummary}
-        stepNumber={1}
+        stepNumber={stepNumber('date')}
         isActive={isStepActive('date')}
         isCompleted={isStepCompleted('date')}
         onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'date' })}
@@ -267,11 +303,29 @@ export function BookingPanel({
         />
       </StepAccordion>
 
-      {/* Step 2: Time */}
+      {/* Step 2: Guests (Private only) */}
+      {mode === 'private' && (
+        <StepAccordion
+          title="How many guests?"
+          summary={guestsSummary}
+          stepNumber={stepNumber('guests')}
+          isActive={isStepActive('guests')}
+          isCompleted={isStepCompleted('guests')}
+          onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'guests' })}
+        >
+          <GuestStep
+            initialGuests={state.guests}
+            maxGuests={12}
+            onConfirm={handleGuestsConfirm}
+          />
+        </StepAccordion>
+      )}
+
+      {/* Pick a time */}
       <StepAccordion
         title="Pick a time"
         summary={timeSummary}
-        stepNumber={2}
+        stepNumber={stepNumber('time')}
         isActive={isStepActive('time')}
         isCompleted={isStepCompleted('time')}
         onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'time' })}
@@ -280,17 +334,18 @@ export function BookingPanel({
           slots={state.slots}
           loading={state.loadingSlots}
           mode={mode}
+          guests={state.guests}
           selectedSlotPk={state.selectedSlot?.pk ?? null}
           onSelect={(slot) => dispatch({ type: 'SELECT_SLOT', slot })}
         />
       </StepAccordion>
 
-      {/* Step 3A: Boat + Duration (Private) */}
+      {/* Boat + Duration (Private) */}
       {mode === 'private' && (
         <StepAccordion
           title="Choose your boat"
           summary={boatSummary}
-          stepNumber={3}
+          stepNumber={stepNumber('boat')}
           isActive={isStepActive('boat')}
           isCompleted={isStepCompleted('boat')}
           onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'boat' })}
@@ -306,12 +361,12 @@ export function BookingPanel({
         </StepAccordion>
       )}
 
-      {/* Step 3B: Tickets (Shared) */}
+      {/* Tickets (Shared) */}
       {mode === 'shared' && (
         <StepAccordion
           title="Select tickets"
           summary={ticketSummary}
-          stepNumber={3}
+          stepNumber={stepNumber('tickets')}
           isActive={isStepActive('tickets')}
           isCompleted={isStepCompleted('tickets')}
           onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'tickets' })}
@@ -328,11 +383,11 @@ export function BookingPanel({
         </StepAccordion>
       )}
 
-      {/* Step 4: Extras */}
+      {/* Extras */}
       <StepAccordion
         title="Add extras"
         summary={state.selectedExtraIds.length > 0 ? `${state.selectedExtraIds.length} extras selected` : undefined}
-        stepNumber={4}
+        stepNumber={stepNumber('extras')}
         isActive={isStepActive('extras')}
         isCompleted={isStepCompleted('extras')}
         onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'extras' })}

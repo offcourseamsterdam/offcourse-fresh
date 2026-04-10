@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation'
 import Image from 'next/image'
 import { getTranslations } from 'next-intl/server'
 import { createClient } from '@/lib/supabase/server'
-import { BookingWidget } from '@/components/booking/BookingWidget'
+import { BookingPanel } from '@/components/booking/BookingPanel'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import type { Locale } from '@/lib/i18n/config'
 import type { Database } from '@/lib/supabase/types'
@@ -321,8 +321,12 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                     )}
                   </div>
                 )}
-                <BookingWidget
+                <BookingPanel
+                  listingId={listing.id}
                   listingSlug={listing.slug}
+                  listingTitle={title}
+                  listingHeroImageUrl={heroUrl}
+                  category={listing.category as 'private' | 'shared'}
                   initialDate={date}
                   initialGuests={guests ? Number(guests) : undefined}
                 />

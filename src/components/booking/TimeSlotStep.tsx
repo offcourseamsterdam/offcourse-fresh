@@ -1,13 +1,16 @@
 'use client'
 
+import { useMemo } from 'react'
 import { motion } from 'framer-motion'
 import type { AvailabilitySlot } from '@/types'
 import { Loader2 } from 'lucide-react'
+import { BOATS } from '@/lib/fareharbor/config'
 
 interface TimeSlotStepProps {
   slots: AvailabilitySlot[]
   loading: boolean
   mode: 'private' | 'shared'
+  guests: number
   selectedSlotPk: number | null
   onSelect: (slot: AvailabilitySlot) => void
 }
@@ -23,7 +26,30 @@ function getCapacityLabel(capacity: number): string | null {
   return null
 }
 
-export function TimeSlotStep({ slots, loading, mode, selectedSlotPk, onSelect }: TimeSlotStepProps) {
+const BOAT_NAMES: Record<string, string> = {
+  diana: 'Diana',
+  curacao: 'Curaçao',
+}
+
+/** For a slot, determine which boats have at least one available duration that fits the group */
+function getBoatAvailability(slot: AvailabilitySlot, guests: number): { boatId: string; available: boolean }[] {
+  const boats = new Map<string, boolean>()
+  for (const ct of slot.customerTypes) {
+    // Skip boats that can't fit this group
+    const boatConfig = BOATS.find(b => b.id === ct.boatId)
+    if (boatConfig && guests > boatConfig.maxGuests) continue
+
+    const current = boats.get(ct.boatId) ?? false
+    if (ct.totalCapacity >= 1) boats.set(ct.boatId, true)
+    else if (!current) boats.set(ct.boatId, false)
+  }
+  // Sort: diana first, then curacao
+  return Array.from(boats.entries())
+    .sort(([a], [b]) => (a === 'diana' ? -1 : b === 'diana' ? 1 : 0))
+    .map(([boatId, available]) => ({ boatId, available }))
+}
+
+export function TimeSlotStep({ slots, loading, mode, guests, selectedSlotPk, onSelect }: TimeSlotStepProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -55,6 +81,7 @@ export function TimeSlotStep({ slots, loading, mode, selectedSlotPk, onSelect }:
           const isSoldOut = slot.capacity < 1
           const capacityRatio = slot.capacity / maxCapacity
           const urgencyLabel = mode === 'shared' ? getCapacityLabel(slot.capacity) : null
+          const boatStatus = mode === 'private' ? getBoatAvailability(slot, guests) : null
 
           return (
             <motion.button
@@ -74,6 +101,24 @@ export function TimeSlotStep({ slots, loading, mode, selectedSlotPk, onSelect }:
               }`}
             >
               {slot.startTime}
+
+              {/* Boat availability tags — private tours only */}
+              {boatStatus && !isSoldOut && !isSelected && (
+                <div className="flex items-center justify-center gap-1 mt-1">
+                  {boatStatus.map(({ boatId, available }) => (
+                    <span
+                      key={boatId}
+                      className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${
+                        available
+                          ? 'bg-emerald-50 text-emerald-600'
+                          : 'bg-zinc-100 text-zinc-400 line-through'
+                      }`}
+                    >
+                      {BOAT_NAMES[boatId] ?? boatId}
+                    </span>
+                  ))}
+                </div>
+              )}
 
               {/* Capacity bar — shared tours only */}
               {mode === 'shared' && !isSoldOut && !isSelected && (
