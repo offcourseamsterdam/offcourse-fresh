@@ -4,7 +4,11 @@ import Stripe from 'stripe'
 import { createServiceClient } from '@/lib/supabase/server'
 import { calculateExtras } from '@/lib/extras/calculate'
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+// Lazy-initialize to avoid build-time failures when STRIPE_SECRET_KEY is not set
+function getStripe() {
+  if (!process.env.STRIPE_SECRET_KEY) throw new Error('STRIPE_SECRET_KEY is not configured')
+  return new Stripe(process.env.STRIPE_SECRET_KEY)
+}
 
 /**
  * POST /api/admin/booking-flow/create-intent
@@ -61,7 +65,7 @@ export async function POST(request: NextRequest) {
       .map(li => `${li.name} (€${(li.amount_cents / 100).toFixed(2)})`)
       .join(', ')
 
-    const paymentIntent = await stripe.paymentIntents.create({
+    const paymentIntent = await getStripe().paymentIntents.create({
       amount: calc.grand_total_cents,
       currency: 'eur',
       payment_method_types: ['card', 'ideal', 'link'],

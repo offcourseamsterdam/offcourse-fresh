@@ -4,17 +4,18 @@ import Stripe from 'stripe'
 import { createServiceClient } from '@/lib/supabase/server'
 import { calculateExtras } from '@/lib/extras/calculate'
 
-const CITY_TAX_PER_PERSON_CENTS = 260
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+// Lazy-initialize to avoid build-time failures when STRIPE_SECRET_KEY is not set
+function getStripe() {
+  if (!process.env.STRIPE_SECRET_KEY) throw new Error('STRIPE_SECRET_KEY is not configured')
+  return new Stripe(process.env.STRIPE_SECRET_KEY)
+}
 
 /**
  * POST /api/booking-flow/create-intent
  *
  * Public endpoint for creating a Stripe PaymentIntent.
  * Total is calculated server-side — client amounts are never trusted.
- *
- * Includes city tax (€2.60/person) in the total.
+ * City tax is already included as a required extra in the extras calculation.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -42,11 +43,8 @@ export async function POST(request: NextRequest) {
 
     const calc = calculateExtras(Number(baseAmountCents), Number(guestCount), (extras ?? []) as any)
 
-    // Add city tax to the grand total
-    const cityTaxCents = Number(guestCount) * CITY_TAX_PER_PERSON_CENTS
-    const totalWithCityTax = calc.grand_total_cents + cityTaxCents
-
-    if (totalWithCityTax < 50) {
+    // City tax is already included as a required extra in calc.grand_total_cents
+    if (calc.grand_total_cents < 50) {
       return apiError('Amount must be at least €0.50', 400)
     }
 
@@ -54,8 +52,8 @@ export async function POST(request: NextRequest) {
       .map(li => `${li.name} (€${(li.amount_cents / 100).toFixed(2)})`)
       .join(', ')
 
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: totalWithCityTax,
+    const paymentIntent = await getStripe().paymentIntents.create({
+      amount: calc.grand_total_cents,
       currency: 'eur',
       payment_method_types: ['card', 'ideal', 'link'],
       metadata: {
@@ -70,16 +68,10 @@ export async function POST(request: NextRequest) {
         guest_email: String(contact?.email ?? ''),
         guest_phone: String(contact?.phone ?? ''),
         extras_summary: extrasSummary,
-        city_tax_cents: String(cityTaxCents),
       },
     })
 
-    return apiOk({
-      clientSecret: paymentIntent.client_secret,
-      calculation: calc,
-      cityTaxCents,
-      totalWithCityTax,
-    })
+    return apiOk({ clientSecret: paymentIntent.client_secret, calculation: calc })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return apiError(message)
