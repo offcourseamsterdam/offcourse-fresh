@@ -18,7 +18,7 @@ export function SearchResultCard({ result, locale, date, guests }: SearchResultC
 
   return (
     <Link href={href} className="group block">
-      <article className="bg-white shadow-2xl overflow-hidden h-full flex flex-col hover:shadow-xl transition-shadow duration-200">
+      <article className="bg-white/90 backdrop-blur-sm shadow-2xl overflow-hidden h-full flex flex-col hover:shadow-xl transition-shadow duration-200">
 
         {/* Photo */}
         <div className="relative aspect-[4/3] overflow-hidden bg-[#e5e7eb]">

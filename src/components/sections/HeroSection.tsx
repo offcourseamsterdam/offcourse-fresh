@@ -4,8 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
 import { SearchBar } from '@/components/search/SearchBar'
-import { SearchResults } from '@/components/search/SearchResults'
-import type { SearchResult } from '@/types'
+import { useRouter } from '@/i18n/navigation'
 import { hideOnError } from '@/lib/utils/image'
 import { useSearch } from '@/lib/search/SearchContext'
 
@@ -40,23 +39,10 @@ const DEFAULT_SLIDES: HeroSlide[] = [
 
 export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] }) {
   const t = useTranslations('home.hero')
+  const router = useRouter()
   const N = slides.length
   const [active, setActive] = useState(0)
-  const [searchState, setSearchState] = useState<{
-    date: string
-    guests: number
-    results: SearchResult[]
-    loading: boolean
-    searched: boolean
-  }>({
-    date: '',
-    guests: 2,
-    results: [],
-    loading: false,
-    searched: false,
-  })
 
-  const resultsRef = useRef<HTMLDivElement>(null)
   const heroSearchRef = useRef<HTMLDivElement>(null)
   const { setHeroSearchVisible, registerSearchHandler } = useSearch()
 
@@ -79,33 +65,17 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
     return () => clearInterval(timer)
   }, [])
 
+  // Search handler: redirect to /search page
+  const handleSearch = useCallback((date: string, guests: number) => {
+    router.push(`/search?date=${date}&guests=${guests}`)
+  }, [router])
+
   // Register search handler so navbar can trigger searches via context
-  const handleSearchStable = useCallback((date: string, guests: number) => {
-    handleSearch(date, guests)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   useEffect(() => {
-    return registerSearchHandler(handleSearchStable)
-  }, [registerSearchHandler, handleSearchStable])
-
-  async function handleSearch(date: string, guests: number) {
-    setSearchState(s => ({ ...s, loading: true, searched: true, date, guests }))
-    try {
-      const params = new URLSearchParams({ date, guests: String(guests) })
-      const res = await fetch(`/api/search?${params}`)
-      const json = await res.json()
-      setSearchState(s => ({ ...s, loading: false, results: json.data?.results ?? [] }))
-    } catch {
-      setSearchState(s => ({ ...s, loading: false, results: [] }))
-    }
-    setTimeout(() => {
-      resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 100)
-  }
+    return registerSearchHandler(handleSearch)
+  }, [registerSearchHandler, handleSearch])
 
   return (
-    <>
       <section className="bg-texture-sand min-h-screen flex flex-col relative z-10" style={{ marginBottom: '-140px' }}>
 
         {/* ── Top: logo + headline + search ────────────── */}
@@ -137,12 +107,7 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
 
           {/* Search bar — hero instance */}
           <div ref={heroSearchRef} className="w-full max-w-2xl">
-            <SearchBar
-              onSearch={handleSearch}
-              loading={searchState.loading}
-              initialDate={searchState.date}
-              initialGuests={searchState.guests}
-            />
+            <SearchBar onSearch={handleSearch} />
           </div>
         </div>
 
@@ -196,18 +161,5 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
           })}
         </div>
       </section>
-
-      {/* Search results below hero */}
-      {searchState.searched && (
-        <div ref={resultsRef} className="relative z-0">
-          <SearchResults
-            results={searchState.results}
-            date={searchState.date}
-            guests={searchState.guests}
-            loading={searchState.loading}
-          />
-        </div>
-      )}
-    </>
   )
 }
