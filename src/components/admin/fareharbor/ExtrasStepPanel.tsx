@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { Loader2, ArrowLeft } from 'lucide-react'
 import { ExtrasStep } from '@/components/booking/ExtrasStep'
 import { ratePrice } from './helpers'
@@ -25,6 +26,11 @@ export function ExtrasStepPanel({
   onContinue,
   onBack,
 }: ExtrasStepPanelProps) {
+  const [pendingExtras, setPendingExtras] = useState<{
+    ids: string[]
+    calc: ExtrasCalculation
+  } | null>(null)
+
   return (
     <div className="space-y-4">
       <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-700 transition-colors">
@@ -45,15 +51,22 @@ export function ExtrasStepPanel({
       )}
 
       {!creatingIntent && (
-        <ExtrasStep
-          listingId={listing.id}
-          listingTitle={listing.title}
-          listingHeroImageUrl={listing.hero_image_url}
-          guestCount={guestCount}
-          baseAmountCents={ratePrice(rate) ?? 0}
-          onContinue={onContinue}
-          onBack={onBack}
-        />
+        <>
+          <ExtrasStep
+            listingId={listing.id}
+            guestCount={guestCount}
+            baseAmountCents={ratePrice(rate) ?? 0}
+            onExtrasChange={(ids, calc) => setPendingExtras({ ids, calc })}
+          />
+          <button
+            type="button"
+            onClick={() => pendingExtras && onContinue(pendingExtras.ids, pendingExtras.calc)}
+            disabled={!pendingExtras}
+            className="w-full py-3 rounded-xl bg-[var(--color-primary)] text-white text-sm font-semibold hover:bg-[var(--color-primary-dark)] transition-colors disabled:opacity-40"
+          >
+            Continue to payment
+          </button>
+        </>
       )}
     </div>
   )
