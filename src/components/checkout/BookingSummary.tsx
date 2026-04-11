@@ -3,11 +3,9 @@
 import Image from 'next/image'
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
 
-const CITY_TAX_PER_PERSON_CENTS = 260
-
 interface BookingSummaryProps {
   listingTitle: string
-  listingHeroImageUrl: string | null
+  imageUrl: string | null
   category: 'private' | 'shared'
   date: string
   time: string
@@ -17,6 +15,7 @@ interface BookingSummaryProps {
   basePriceCents: number
   extrasCalculation: ExtrasCalculation | null
   cancellationPolicy?: string | null
+  cruiseLabel?: string
 }
 
 function fmtEuros(cents: number): string {
@@ -35,9 +34,24 @@ function fmtDuration(minutes: number): string {
   return `${h}h ${m}min`
 }
 
+function vatSummaryText(basePriceCents: number, extrasCalculation: ExtrasCalculation | null): string {
+  const groups = new Map<number, number>()
+  const baseVat = extrasCalculation?.base_vat_amount_cents ?? Math.round(basePriceCents * 9 / 109)
+  if (baseVat > 0) groups.set(9, baseVat)
+  for (const li of extrasCalculation?.line_items ?? []) {
+    if (li.vat_rate > 0 && li.vat_amount_cents > 0) {
+      groups.set(li.vat_rate, (groups.get(li.vat_rate) ?? 0) + li.vat_amount_cents)
+    }
+  }
+  return Array.from(groups.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([rate, amount]) => `${fmtEuros(amount)} VAT (${rate}%)`)
+    .join(' + ')
+}
+
 export function BookingSummary({
   listingTitle,
-  listingHeroImageUrl,
+  imageUrl,
   category,
   date,
   time,
@@ -47,22 +61,21 @@ export function BookingSummary({
   basePriceCents,
   extrasCalculation,
   cancellationPolicy,
+  cruiseLabel,
 }: BookingSummaryProps) {
-  const cityTaxCents = guestCount * CITY_TAX_PER_PERSON_CENTS
   const extrasTotalCents = extrasCalculation
     ? extrasCalculation.line_items.reduce((sum, li) => sum + li.amount_cents, 0)
     : 0
-  const grandTotalCents = basePriceCents + extrasTotalCents + cityTaxCents
-  const vatCents = Math.round(grandTotalCents - grandTotalCents / 1.09)
+  const grandTotalCents = basePriceCents + extrasTotalCents
 
   return (
     <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
-      {/* Hero image */}
-      {listingHeroImageUrl && (
+      {/* Boat / hero image */}
+      {imageUrl && (
         <div className="relative h-36 w-full">
           <Image
-            src={listingHeroImageUrl}
-            alt={listingTitle}
+            src={imageUrl}
+            alt={boatName ?? listingTitle}
             fill
             className="object-cover"
             sizes="400px"
@@ -108,7 +121,7 @@ export function BookingSummary({
         {/* Price breakdown */}
         <div className="border-t border-zinc-100 pt-3 space-y-1.5 text-sm">
           <div className="flex justify-between text-zinc-600">
-            <span>Cruise</span>
+            <span>{cruiseLabel || 'Cruise'}</span>
             <span>{fmtEuros(basePriceCents)}</span>
           </div>
 
@@ -119,18 +132,13 @@ export function BookingSummary({
             </div>
           ))}
 
-          <div className="flex justify-between text-zinc-400 text-xs">
-            <span>City tax ({guestCount} × €2.60)</span>
-            <span>{fmtEuros(cityTaxCents)}</span>
-          </div>
-
           <div className="border-t border-zinc-200 pt-2 mt-2">
             <div className="flex justify-between font-bold text-zinc-900">
               <span>Total</span>
               <span>{fmtEuros(grandTotalCents)}</span>
             </div>
             <div className="text-right text-[10px] text-zinc-400 mt-0.5">
-              incl. {fmtEuros(vatCents)} VAT (9%)
+              incl. {vatSummaryText(basePriceCents, extrasCalculation)}
             </div>
           </div>
         </div>

@@ -35,6 +35,22 @@ function AnimatedPrice({ value }: { value: number }) {
   )
 }
 
+function vatSummaryText(basePriceCents: number, extrasCalculation: ExtrasCalculation | null): string {
+  // Build per-rate VAT groups
+  const groups = new Map<number, number>()
+  const baseVat = extrasCalculation?.base_vat_amount_cents ?? Math.round(basePriceCents * 9 / 109)
+  if (baseVat > 0) groups.set(9, baseVat)
+  for (const li of extrasCalculation?.line_items ?? []) {
+    if (li.vat_rate > 0 && li.vat_amount_cents > 0) {
+      groups.set(li.vat_rate, (groups.get(li.vat_rate) ?? 0) + li.vat_amount_cents)
+    }
+  }
+  return Array.from(groups.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([rate, amount]) => `${fmtEuros(amount)} VAT (${rate}%)`)
+    .join(' + ')
+}
+
 export function PriceSummary({
   basePriceCents,
   guestCount,
@@ -49,9 +65,6 @@ export function PriceSummary({
     : 0
 
   const grandTotalCents = basePriceCents + extrasTotalCents
-
-  // VAT is included in the total (9% for cruises)
-  const vatCents = Math.round(grandTotalCents - grandTotalCents / 1.09)
 
   if (basePriceCents === 0) return null
 
@@ -84,7 +97,7 @@ export function PriceSummary({
           </span>
         </div>
         <div className="text-[10px] text-zinc-400 text-right mt-0.5">
-          incl. {fmtEuros(vatCents)} VAT (9%)
+          incl. {vatSummaryText(basePriceCents, extrasCalculation)}
         </div>
       </div>
     </motion.div>

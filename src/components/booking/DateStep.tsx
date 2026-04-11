@@ -49,10 +49,40 @@ export function DateStep({ mode, initialDate = '', initialGuests = 2, onConfirm 
 
   function handlePickDate(d: string) {
     setDate(d)
+    onConfirm(d, guests)
   }
 
   return (
     <div className="space-y-4">
+      {/* Shared: guest counter above calendar */}
+      {mode === 'shared' && (
+        <div className="flex items-center justify-between bg-zinc-50 rounded-xl px-4 py-3">
+          <div>
+            <div className="text-sm font-semibold text-zinc-800">Guests</div>
+            <div className="text-xs text-zinc-500">How many tickets?</div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setGuests(g => Math.max(1, g - 1))}
+              disabled={guests <= 1}
+              className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center text-zinc-600 hover:border-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              <Minus className="w-3.5 h-3.5" />
+            </button>
+            <span className="w-6 text-center font-semibold text-zinc-800 tabular-nums">{guests}</span>
+            <button
+              type="button"
+              onClick={() => setGuests(g => Math.min(12, g + 1))}
+              disabled={guests >= 12}
+              className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center text-zinc-600 hover:border-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       <DatePickerPanel
         todayStr={todayStr}
         tomorrowStr={tomorrowStr}
@@ -64,59 +94,8 @@ export function DateStep({ mode, initialDate = '', initialGuests = 2, onConfirm 
         onPrevMonth={prevMonth}
         onNextMonth={nextMonth}
         today={today}
+        variant="inline"
       />
-
-      {/* Private: just confirm the date, guest count comes in the next step */}
-      {mode === 'private' && date && (
-        <button
-          type="button"
-          onClick={() => onConfirm(date, guests)}
-          className="w-full py-2.5 rounded-xl bg-[var(--color-primary)] text-white text-sm font-semibold hover:bg-[var(--color-primary-dark)] transition-colors"
-        >
-          Next
-        </button>
-      )}
-
-      {/* Shared: date + guest counter + confirm */}
-      {mode === 'shared' && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between bg-zinc-50 rounded-xl px-4 py-3">
-            <div>
-              <div className="text-sm font-semibold text-zinc-800">Guests</div>
-              <div className="text-xs text-zinc-500">How many tickets?</div>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setGuests(g => Math.max(1, g - 1))}
-                disabled={guests <= 1}
-                className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center text-zinc-600 hover:border-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                <Minus className="w-3.5 h-3.5" />
-              </button>
-              <span className="w-6 text-center font-semibold text-zinc-800 tabular-nums">{guests}</span>
-              <button
-                type="button"
-                onClick={() => setGuests(g => Math.min(12, g + 1))}
-                disabled={guests >= 12}
-                className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center text-zinc-600 hover:border-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-
-          {date && (
-            <button
-              type="button"
-              onClick={() => onConfirm(date, guests)}
-              className="w-full py-2.5 rounded-xl bg-[var(--color-primary)] text-white text-sm font-semibold hover:bg-[var(--color-primary-dark)] transition-colors"
-            >
-              Check availability
-            </button>
-          )}
-        </div>
-      )}
     </div>
   )
 }

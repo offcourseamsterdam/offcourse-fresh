@@ -4,14 +4,13 @@ import { useState, useEffect } from 'react'
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { Loader2 } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { GuestInfoForm } from './GuestInfoForm'
 import { BookingSummary } from './BookingSummary'
 import type { CustomerDetails, AvailabilitySlot, AvailabilityCustomerType } from '@/types'
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
-
-const CITY_TAX_PER_PERSON_CENTS = 260
 
 // ── Booking data shape (from sessionStorage) ────────────────────────────────
 
@@ -38,6 +37,49 @@ interface BookingData {
 interface CheckoutFlowProps {
   listingSlug: string
   cancellationPolicy?: string | null
+}
+
+// ── Progress indicator ───────────────────────────────────────────────────────
+
+function CheckoutProgress({ step }: { step: 'details' | 'payment' }) {
+  const steps = [
+    { key: 'cruise', label: 'Cruise' },
+    { key: 'details', label: 'Details' },
+    { key: 'payment', label: 'Payment' },
+  ] as const
+
+  const activeIndex = step === 'details' ? 1 : 2
+
+  return (
+    <div className="flex items-center gap-0 mb-8">
+      {steps.map((s, i) => {
+        const isDone = i < activeIndex
+        const isActive = i === activeIndex
+        return (
+          <div key={s.key} className="flex items-center gap-0 flex-1 last:flex-none">
+            <div className="flex flex-col items-center gap-1">
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors
+                ${isDone ? 'bg-[var(--color-primary)] text-white' : isActive ? 'bg-[var(--color-primary)] text-white ring-4 ring-[var(--color-primary)]/20' : 'bg-zinc-100 text-zinc-400'}`}>
+                {isDone ? (
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path d="M5 13l4 4L19 7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                ) : (
+                  i + 1
+                )}
+              </div>
+              <span className={`text-[10px] font-medium whitespace-nowrap ${isActive ? 'text-zinc-900' : isDone ? 'text-[var(--color-primary)]' : 'text-zinc-400'}`}>
+                {s.label}
+              </span>
+            </div>
+            {i < steps.length - 1 && (
+              <div className={`h-px flex-1 mx-2 mb-4 transition-colors ${isDone ? 'bg-[var(--color-primary)]' : 'bg-zinc-200'}`} />
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 // ── Payment inner form (needs to be inside <Elements>) ──────────────────────
@@ -122,7 +164,6 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
   const [clientSecret, setClientSecret] = useState<string | null>(null)
   const [creatingIntent, setCreatingIntent] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [bookingComplete, setBookingComplete] = useState(false)
 
   // Load booking data from sessionStorage
   useEffect(() => {
@@ -197,11 +238,10 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
         ? data.selectedCustomerType?.pk
         : data.selectedSlot.customerTypes[0]?.pk
 
-      const cityTaxCents = data.guests * CITY_TAX_PER_PERSON_CENTS
       const extrasTotalCents = data.extrasCalculation
         ? data.extrasCalculation.line_items.reduce((s, li) => s + li.amount_cents, 0)
         : 0
-      const totalAmount = data.basePriceCents + extrasTotalCents + cityTaxCents
+      const totalAmount = data.basePriceCents + extrasTotalCents
 
       await fetch('/api/booking-flow/book', {
         method: 'POST',
@@ -228,11 +268,8 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
       })
 
       sessionStorage.removeItem('offcourse_booking')
-      // Redirect to confirmation page
       window.location.href = `/book/${data.listingSlug}/confirmation?payment_intent=${paymentIntentId}`
     } catch {
-      // Even if the booking API fails, payment went through.
-      // Redirect to confirmation — the booking will be retried via webhook.
       window.location.href = `/book/${data.listingSlug}/confirmation?payment_intent=${paymentIntentId}`
     }
   }
@@ -261,6 +298,23 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
     : bookingData.selectedBoat === 'curacao' ? 'Curaçao'
     : null
 
+  const boatImageUrl = bookingData.selectedBoat === 'diana'
+    ? '/images/boats/diana.webp'
+    : bookingData.selectedBoat === 'curacao'
+    ? '/images/boats/curacao.webp'
+    : bookingData.listingHeroImageUrl
+
+  const cruiseLabel = boatName && bookingData.selectedCustomerType
+    ? `${boatName} · ${Math.floor(bookingData.selectedCustomerType.durationMinutes / 60)}h`
+    : 'Cruise'
+
+  const extrasTotalCents = bookingData.extrasCalculation
+    ? bookingData.extrasCalculation.line_items.reduce((s, li) => s + li.amount_cents, 0)
+    : 0
+  const totalAmountCents = bookingData.basePriceCents + extrasTotalCents
+
+  const currentStep = clientSecret ? 'payment' : 'details'
+
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
       {/* Back link */}
@@ -274,23 +328,42 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
         Back to cruise
       </a>
 
+      {/* Progress indicator */}
+      <CheckoutProgress step={currentStep} />
+
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 lg:gap-12">
         {/* Left column: form + payment */}
-        <div className="lg:col-span-3 space-y-8">
-          {!clientSecret ? (
-            <GuestInfoForm onSubmit={handleGuestInfoSubmit} loading={creatingIntent} />
-          ) : (
-            <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'stripe' } }}>
-              <PaymentForm
-                amountCents={bookingData.basePriceCents + (bookingData.extrasCalculation?.line_items.reduce((s, li) => s + li.amount_cents, 0) ?? 0) + bookingData.guests * CITY_TAX_PER_PERSON_CENTS}
-                onSuccess={handlePaymentSuccess}
-                bookingData={bookingData}
-              />
-            </Elements>
-          )}
+        <div className="lg:col-span-3 overflow-hidden">
+          <AnimatePresence mode="popLayout" initial={false}>
+            {!clientSecret ? (
+              <motion.div
+                key="details"
+                initial={{ x: 0, opacity: 1 }}
+                exit={{ x: '-100%', opacity: 0 }}
+                transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
+              >
+                <GuestInfoForm onSubmit={handleGuestInfoSubmit} loading={creatingIntent} />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="payment"
+                initial={{ x: '100%', opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
+              >
+                <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'stripe' } }}>
+                  <PaymentForm
+                    amountCents={totalAmountCents}
+                    onSuccess={handlePaymentSuccess}
+                    bookingData={bookingData}
+                  />
+                </Elements>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {error && clientSecret && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 mt-4">
               {error}
             </div>
           )}
@@ -301,7 +374,7 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
           <div className="sticky top-24">
             <BookingSummary
               listingTitle={bookingData.listingTitle}
-              listingHeroImageUrl={bookingData.listingHeroImageUrl}
+              imageUrl={boatImageUrl}
               category={bookingData.category}
               date={bookingData.date}
               time={bookingData.selectedSlot.startTime}
@@ -311,6 +384,7 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
               basePriceCents={bookingData.basePriceCents}
               extrasCalculation={bookingData.extrasCalculation}
               cancellationPolicy={cancellationPolicy}
+              cruiseLabel={cruiseLabel}
             />
           </div>
         </div>
