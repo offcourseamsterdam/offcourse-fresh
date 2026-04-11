@@ -69,24 +69,17 @@ export function SearchResultsPage({ results, date, guests, locale }: SearchResul
   return (
     <div className={`relative min-h-screen bg-gradient-to-b ${style.gradient} transition-all duration-300`}>
 
-      {/* Photo overlay — crossfade when a dagdeel with a photo is active */}
-      {Object.entries(DAGDEEL_STYLES).map(([key, s]) =>
-        s.photo ? (
-          <div
-            key={key}
-            className={`absolute inset-0 transition-opacity duration-500 ${
-              activeDagdeel === key ? 'opacity-20' : 'opacity-0'
-            }`}
-          >
-            <Image
-              src={s.photo}
-              alt=""
-              fill
-              className="object-cover"
-              priority={key === 'morning'}
-            />
-          </div>
-        ) : null
+      {/* Photo overlay — only mount the active dagdeel's image */}
+      {style.photo && (
+        <div className="absolute inset-0 opacity-20 transition-opacity duration-500">
+          <Image
+            src={style.photo}
+            alt=""
+            fill
+            className="object-cover"
+            loading="lazy"
+          />
+        </div>
       )}
 
       {/* Content — sits above the photo overlay */}

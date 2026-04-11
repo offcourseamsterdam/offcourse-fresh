@@ -1,4 +1,6 @@
 import Image from 'next/image'
+import { fmtEuros } from '@/lib/utils'
+import { DEFAULT_DURATION_MINUTES } from '@/lib/constants'
 import type { Extra } from '@/lib/extras/calculate'
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -22,15 +24,11 @@ export interface ExtraCardProps {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function fmtEuros(cents: number): string {
-  return `€${(cents / 100).toFixed(2)}`
-}
-
 export function formatPriceLabel(
   extra: ApiExtra,
   guestCount: number,
   baseAmountCents: number,
-  durationMinutes: number = 90,
+  durationMinutes: number = DEFAULT_DURATION_MINUTES,
 ): string {
   if (extra.price_type === 'fixed_cents') {
     return fmtEuros(extra.price_value)
@@ -57,7 +55,7 @@ export function ExtraCard({
   onToggle,
   guestCount,
   baseAmountCents,
-  durationMinutes = 90,
+  durationMinutes = DEFAULT_DURATION_MINUTES,
 }: ExtraCardProps) {
   return (
     <button

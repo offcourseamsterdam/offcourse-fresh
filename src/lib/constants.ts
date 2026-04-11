@@ -1,3 +1,7 @@
+// ── Defaults ────────────────────────────────────────────────────────────────
+
+export const DEFAULT_DURATION_MINUTES = 90
+
 // ── Extras categories ────────────────────────────────────────────────────────
 
 export const CATEGORY_EMOJI: Record<string, string> = {

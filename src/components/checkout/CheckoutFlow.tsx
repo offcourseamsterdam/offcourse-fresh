@@ -7,6 +7,7 @@ import { Loader2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { GuestInfoForm } from './GuestInfoForm'
 import { BookingSummary } from './BookingSummary'
+import { BOATS } from '@/lib/fareharbor/config'
 import type { CustomerDetails, AvailabilitySlot, AvailabilityCustomerType } from '@/types'
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
 
@@ -295,22 +296,16 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
     )
   }
 
-  const boatName = bookingData.selectedBoat === 'diana' ? 'Diana'
-    : bookingData.selectedBoat === 'curacao' ? 'Curaçao'
-    : null
-
-  const boatImageUrl = bookingData.selectedBoat === 'diana'
-    ? '/images/boats/diana.webp'
-    : bookingData.selectedBoat === 'curacao'
-    ? '/images/boats/curacao.webp'
-    : bookingData.listingHeroImageUrl
+  const boat = BOATS.find(b => b.id === bookingData.selectedBoat)
+  const boatName = boat?.name ?? null
+  const boatImageUrl = boat?.imageUrl ?? bookingData.listingHeroImageUrl
 
   const cruiseLabel = boatName && bookingData.selectedCustomerType
     ? `${boatName} · ${Math.floor(bookingData.selectedCustomerType.durationMinutes / 60)}h`
     : 'Cruise'
 
   const extrasTotalCents = bookingData.extrasCalculation
-    ? bookingData.extrasCalculation.line_items.reduce((s, li) => s + li.amount_cents, 0)
+    ? bookingData.extrasCalculation.extras_amount_cents
     : 0
   const totalAmountCents = bookingData.basePriceCents + extrasTotalCents
 

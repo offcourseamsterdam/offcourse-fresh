@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { Loader2 } from 'lucide-react'
 import { calculateExtras, type ExtrasCalculation } from '@/lib/extras/calculate'
-import { CATEGORY_EMOJI } from '@/lib/constants'
+import { DEFAULT_DURATION_MINUTES } from '@/lib/constants'
 import { ExtraCategoryGroup } from './ExtraCategoryGroup'
 import { type ApiExtra } from './ExtraCard'
 
@@ -30,14 +30,13 @@ export function ExtrasStep({
   listingId,
   guestCount,
   baseAmountCents,
-  durationMinutes = 90,
+  durationMinutes = DEFAULT_DURATION_MINUTES,
   onExtrasChange,
 }: ExtrasStepProps) {
   const [extras, setExtras] = useState<ApiExtra[]>([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const hasNotifiedRef = useRef(false)
 
   // ── Fetch extras on mount ────────────────────────────────────────────────
 
@@ -80,14 +79,8 @@ export function ExtrasStep({
       e.is_required || (e.price_type !== 'informational' && selectedIds.has(e.id))
     )
     const calc = calculateExtras(baseAmountCents, guestCount, allSelected, durationMinutes)
-
-    const selectedExtraIds = extras
-      .filter(e => e.is_required || (e.price_type !== 'informational' && selectedIds.has(e.id)))
-      .map(e => e.id)
-
-    onExtrasChange(selectedExtraIds, calc)
-    hasNotifiedRef.current = true
-  }, [selectedIds, extras, baseAmountCents, guestCount, onExtrasChange])
+    onExtrasChange(allSelected.map(e => e.id), calc)
+  }, [selectedIds, extras, baseAmountCents, guestCount, durationMinutes, onExtrasChange])
 
   // ── Derived sets ─────────────────────────────────────────────────────────
 

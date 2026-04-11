@@ -10,6 +10,11 @@ export function cn(...inputs: ClassValue[]) {
 
 // ── Price formatting ─────────────────────────────────────────────────────────
 
+/** Format cents as €X.XX (e.g. 1650 → "€16.50") */
+export function fmtEuros(cents: number): string {
+  return `€${(cents / 100).toFixed(2)}`
+}
+
 export function formatPrice(
   cents: number,
   locale: Locale = 'en',

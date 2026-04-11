@@ -18,7 +18,8 @@ export interface Extra {
   created_at: string
 }
 
-export type PriceType = 'fixed_cents' | 'percentage' | 'per_person_cents' | 'per_person_per_hour_cents' | 'informational'
+import type { PriceType } from '@/lib/extras/calculate'
+export type { PriceType }
 export type Scope = 'global' | 'per_listing'
 export type Category = 'food' | 'drinks' | 'protection' | 'experience' | 'tax' | 'info'
 export type ListingCategory = 'private' | 'shared' | 'standard' | 'special' | 'seasonal' | 'event'

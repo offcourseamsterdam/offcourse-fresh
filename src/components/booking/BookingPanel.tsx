@@ -169,15 +169,18 @@ export function BookingPanel({
   const mode = category
   const hasAutoAdvanced = useRef(false)
 
-  // Fetch slots for a given date + guest count
-  const fetchSlots = useCallback(async (date: string, guests: number) => {
+  // Fetch slots for a given date + guest count. Returns the slots array.
+  const fetchSlots = useCallback(async (date: string, guests: number): Promise<AvailabilitySlot[]> => {
     try {
       const params = new URLSearchParams({ date, guests: String(guests), slug: listingSlug })
       const res = await fetch(`/api/search/slots?${params}`)
       const json = await res.json()
-      dispatch({ type: 'SLOTS_LOADED', slots: json.data?.slots ?? [] })
+      const slots = json.data?.slots ?? []
+      dispatch({ type: 'SLOTS_LOADED', slots })
+      return slots
     } catch {
       dispatch({ type: 'SLOTS_LOADED', slots: [] })
+      return []
     }
   }, [listingSlug])
 
@@ -188,29 +191,14 @@ export function BookingPanel({
     hasAutoAdvanced.current = true
 
     async function autoAdvance() {
-      // Confirm date
       dispatch({ type: 'SET_DATE', date: initialDate, guests: initialGuests, category: mode })
-
-      // Fetch slots
-      try {
-        const params = new URLSearchParams({ date: initialDate, guests: String(initialGuests), slug: listingSlug })
-        const res = await fetch(`/api/search/slots?${params}`)
-        const json = await res.json()
-        const slots = json.data?.slots ?? []
-        dispatch({ type: 'SLOTS_LOADED', slots })
-
-        // Find and auto-select the matching slot
-        const match = slots.find((s: { startTime: string }) => s.startTime === initialTime)
-        if (match) {
-          dispatch({ type: 'SELECT_SLOT', slot: match })
-        }
-      } catch {
-        dispatch({ type: 'SLOTS_LOADED', slots: [] })
-      }
+      const slots = await fetchSlots(initialDate, initialGuests)
+      const match = slots.find(s => s.startTime === initialTime)
+      if (match) dispatch({ type: 'SELECT_SLOT', slot: match })
     }
 
     autoAdvance()
-  }, [initialDate, initialTime, initialGuests, mode, listingSlug])
+  }, [initialDate, initialTime, initialGuests, mode, fetchSlots])
 
   // Date confirmed — for shared, also fetch slots immediately
   const handleDateConfirm = useCallback(async (date: string, guests: number) => {

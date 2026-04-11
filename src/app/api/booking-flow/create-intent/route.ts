@@ -1,14 +1,9 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
-import Stripe from 'stripe'
+import { getStripe } from '@/lib/stripe/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { calculateExtras } from '@/lib/extras/calculate'
-
-// Lazy-initialize to avoid build-time failures when STRIPE_SECRET_KEY is not set
-function getStripe() {
-  if (!process.env.STRIPE_SECRET_KEY) throw new Error('STRIPE_SECRET_KEY is not configured')
-  return new Stripe(process.env.STRIPE_SECRET_KEY)
-}
+import { DEFAULT_DURATION_MINUTES } from '@/lib/constants'
 
 /**
  * POST /api/booking-flow/create-intent
@@ -25,7 +20,7 @@ export async function POST(request: NextRequest) {
       availPk, customerTypeRatePk, guestCount,
       category, date, contact,
       selectedExtraIds = [],
-      durationMinutes = 90,
+      durationMinutes = DEFAULT_DURATION_MINUTES,
     } = body
 
     if (baseAmountCents == null || !availPk || !customerTypeRatePk || !contact?.name || !contact?.email) {

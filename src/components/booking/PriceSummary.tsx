@@ -1,21 +1,18 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
+import { fmtEuros } from '@/lib/utils'
+import { vatSummaryText } from '@/lib/extras/format'
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
 
 interface PriceSummaryProps {
   basePriceCents: number
-  guestCount: number
   extrasCalculation: ExtrasCalculation | null
   mode: 'private' | 'shared'
   /** For private: e.g. "Curaçao · 2h" */
   cruiseLabel?: string
   /** For shared: per-ticket breakdown */
   ticketBreakdown?: { label: string; count: number; priceCents: number }[]
-}
-
-function fmtEuros(cents: number): string {
-  return `€${(cents / 100).toFixed(2)}`
 }
 
 function AnimatedPrice({ value }: { value: number }) {
@@ -35,22 +32,6 @@ function AnimatedPrice({ value }: { value: number }) {
   )
 }
 
-function vatSummaryText(basePriceCents: number, extrasCalculation: ExtrasCalculation | null): string {
-  // Build per-rate VAT groups
-  const groups = new Map<number, number>()
-  const baseVat = extrasCalculation?.base_vat_amount_cents ?? Math.round(basePriceCents * 9 / 109)
-  if (baseVat > 0) groups.set(9, baseVat)
-  for (const li of extrasCalculation?.line_items ?? []) {
-    if (li.vat_rate > 0 && li.vat_amount_cents > 0) {
-      groups.set(li.vat_rate, (groups.get(li.vat_rate) ?? 0) + li.vat_amount_cents)
-    }
-  }
-  return Array.from(groups.entries())
-    .sort(([a], [b]) => a - b)
-    .map(([rate, amount]) => `${fmtEuros(amount)} VAT (${rate}%)`)
-    .join(' + ')
-}
-
 export function PriceSummary({
   basePriceCents,
   guestCount,
@@ -60,9 +41,7 @@ export function PriceSummary({
   ticketBreakdown,
 }: PriceSummaryProps) {
   // Extras total comes from the calculation (includes City Tax as a line item)
-  const extrasTotalCents = extrasCalculation
-    ? extrasCalculation.line_items.reduce((sum, li) => sum + li.amount_cents, 0)
-    : 0
+  const extrasTotalCents = extrasCalculation?.extras_amount_cents ?? 0
 
   const grandTotalCents = basePriceCents + extrasTotalCents
 

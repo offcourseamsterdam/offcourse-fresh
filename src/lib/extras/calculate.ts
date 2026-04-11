@@ -58,7 +58,7 @@ export function calculateExtras(
   baseAmountCents: number,
   guestCount: number,
   selectedExtras: Extra[],
-  durationMinutes: number = 90,
+  durationMinutes = 90,
 ): ExtrasCalculation {
   const BASE_VAT_RATE = 9
   const baseVat = extractVat(baseAmountCents, BASE_VAT_RATE)
