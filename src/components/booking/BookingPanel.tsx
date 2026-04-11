@@ -431,7 +431,6 @@ export function BookingPanel({
       {basePriceCents > 0 && (
         <PriceSummary
           basePriceCents={basePriceCents}
-          guestCount={guestCount}
           extrasCalculation={state.extrasCalculation}
           mode={mode}
           cruiseLabel={boatSummary}
