@@ -18,7 +18,7 @@ export const revalidate = 60
 
 interface Props {
   params: Promise<{ locale: string; slug: string }>
-  searchParams: Promise<{ date?: string; guests?: string }>
+  searchParams: Promise<{ date?: string; guests?: string; time?: string }>
 }
 
 export async function generateMetadata({ params }: Props) {
@@ -51,7 +51,7 @@ export async function generateMetadata({ params }: Props) {
 
 export default async function CruiseListingPage({ params, searchParams }: Props) {
   const { locale, slug } = await params
-  const { date, guests } = await searchParams
+  const { date, guests, time } = await searchParams
   const t = await getTranslations('cruises')
   const supabase = await createClient()
 
@@ -329,6 +329,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                   category={listing.category as 'private' | 'shared'}
                   initialDate={date}
                   initialGuests={guests ? Number(guests) : undefined}
+                  initialTime={time}
                 />
               </div>
             </div>

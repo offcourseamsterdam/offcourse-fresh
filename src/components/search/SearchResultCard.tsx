@@ -56,17 +56,19 @@ export function SearchResultCard({ result, locale, date, guests }: SearchResultC
                   Departure times
                 </p>
                 <div className="flex flex-wrap gap-1.5 items-center">
-                  {result.availableSlots.slice(0, 3).map(slot => (
-                    <span
+                  {result.availableSlots.slice(0, 5).map(slot => (
+                    <Link
                       key={slot.startTime}
-                      className="font-avenir text-xs bg-sand text-primary font-medium px-2.5 py-1 rounded-full"
+                      href={`/cruises/${result.listing.slug}?date=${date}&guests=${guests}&time=${slot.startTime}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="font-avenir text-xs bg-sand text-primary font-medium px-2.5 py-1 rounded-full hover:bg-primary hover:text-white transition-colors duration-150"
                     >
                       {slot.startTime}
-                    </span>
+                    </Link>
                   ))}
-                  {result.availableSlots.length > 3 && (
+                  {result.availableSlots.length > 5 && (
                     <span className="font-avenir text-xs text-muted font-medium">
-                      +{result.availableSlots.length - 3} more
+                      +{result.availableSlots.length - 5} more
                     </span>
                   )}
                 </div>

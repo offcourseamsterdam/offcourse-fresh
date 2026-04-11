@@ -1,6 +1,6 @@
 'use client'
 
-import { useReducer, useCallback } from 'react'
+import { useReducer, useCallback, useEffect, useRef } from 'react'
 import type { AvailabilitySlot, AvailabilityCustomerType } from '@/types'
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
 import { StepAccordion } from './StepAccordion'
@@ -144,6 +144,8 @@ interface BookingPanelProps {
   category: 'private' | 'shared'
   initialDate?: string
   initialGuests?: number
+  /** Pre-selected time from search results (e.g. "10:00") — auto-advances past date/time steps */
+  initialTime?: string
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -156,6 +158,7 @@ export function BookingPanel({
   category,
   initialDate = '',
   initialGuests = 2,
+  initialTime,
 }: BookingPanelProps) {
   const [state, dispatch] = useReducer(reducer, {
     ...initialState,
@@ -164,6 +167,7 @@ export function BookingPanel({
   })
 
   const mode = category
+  const hasAutoAdvanced = useRef(false)
 
   // Fetch slots for a given date + guest count
   const fetchSlots = useCallback(async (date: string, guests: number) => {
@@ -176,6 +180,37 @@ export function BookingPanel({
       dispatch({ type: 'SLOTS_LOADED', slots: [] })
     }
   }, [listingSlug])
+
+  // Auto-advance: when arriving from a search result with a pre-selected time,
+  // skip the date step, fetch slots, and auto-select the matching timeslot
+  useEffect(() => {
+    if (hasAutoAdvanced.current || !initialDate || !initialTime) return
+    hasAutoAdvanced.current = true
+
+    async function autoAdvance() {
+      // Confirm date
+      dispatch({ type: 'SET_DATE', date: initialDate, guests: initialGuests, category: mode })
+
+      // Fetch slots
+      try {
+        const params = new URLSearchParams({ date: initialDate, guests: String(initialGuests), slug: listingSlug })
+        const res = await fetch(`/api/search/slots?${params}`)
+        const json = await res.json()
+        const slots = json.data?.slots ?? []
+        dispatch({ type: 'SLOTS_LOADED', slots })
+
+        // Find and auto-select the matching slot
+        const match = slots.find((s: { startTime: string }) => s.startTime === initialTime)
+        if (match) {
+          dispatch({ type: 'SELECT_SLOT', slot: match })
+        }
+      } catch {
+        dispatch({ type: 'SLOTS_LOADED', slots: [] })
+      }
+    }
+
+    autoAdvance()
+  }, [initialDate, initialTime, initialGuests, mode, listingSlug])
 
   // Date confirmed — for shared, also fetch slots immediately
   const handleDateConfirm = useCallback(async (date: string, guests: number) => {
