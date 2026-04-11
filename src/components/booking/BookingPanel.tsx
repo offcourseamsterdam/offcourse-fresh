@@ -434,6 +434,7 @@ export function BookingPanel({
           listingId={listingId}
           guestCount={guestCount}
           baseAmountCents={basePriceCents}
+          durationMinutes={state.selectedCustomerType?.durationMinutes ?? state.selectedSlot?.customerTypes[0]?.durationMinutes}
           onExtrasChange={handleExtrasChange}
         />
       </StepAccordion>

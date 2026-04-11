@@ -214,6 +214,7 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
           date: bookingData.date,
           contact: { name: details.name, email: details.email, phone: details.phone },
           selectedExtraIds: bookingData.selectedExtraIds,
+          durationMinutes: bookingData.selectedCustomerType?.durationMinutes ?? 90,
         }),
       })
 

@@ -16,6 +16,8 @@ interface ExtrasStepProps {
   listingId: string
   guestCount: number
   baseAmountCents: number
+  /** Duration in minutes — used for per-person-per-hour pricing (e.g. unlimited drinks) */
+  durationMinutes?: number
   onExtrasChange: (
     selectedExtraIds: string[],
     calculation: ExtrasCalculation
@@ -28,6 +30,7 @@ export function ExtrasStep({
   listingId,
   guestCount,
   baseAmountCents,
+  durationMinutes = 90,
   onExtrasChange,
 }: ExtrasStepProps) {
   const [extras, setExtras] = useState<ApiExtra[]>([])
@@ -76,7 +79,7 @@ export function ExtrasStep({
     const allSelected = extras.filter(e =>
       e.is_required || (e.price_type !== 'informational' && selectedIds.has(e.id))
     )
-    const calc = calculateExtras(baseAmountCents, guestCount, allSelected)
+    const calc = calculateExtras(baseAmountCents, guestCount, allSelected, durationMinutes)
 
     const selectedExtraIds = extras
       .filter(e => e.is_required || (e.price_type !== 'informational' && selectedIds.has(e.id)))
@@ -154,6 +157,7 @@ export function ExtrasStep({
           onToggle={toggleExtra}
           guestCount={guestCount}
           baseAmountCents={baseAmountCents}
+          durationMinutes={durationMinutes}
         />
       ))}
     </div>

@@ -18,6 +18,7 @@ export const PRICE_TYPES = [
   { value: 'fixed_cents', label: 'Fixed price' },
   { value: 'percentage', label: 'Percentage (%)' },
   { value: 'per_person_cents', label: 'Per person' },
+  { value: 'per_person_per_hour_cents', label: 'Per person per hour' },
   { value: 'informational', label: 'Info only (no charge)' },
 ] as const
 
@@ -28,6 +29,7 @@ export function formatExtraPrice(extra: { price_type: string; price_value: numbe
   if (extra.price_type === 'informational') return 'Info only'
   if (extra.price_type === 'percentage') return `${extra.price_value}%`
   if (extra.price_type === 'per_person_cents') return `€${(extra.price_value / 100).toFixed(2)}/person`
+  if (extra.price_type === 'per_person_per_hour_cents') return `€${(extra.price_value / 100).toFixed(2)}/person/hour`
   return `€${(extra.price_value / 100).toFixed(2)}`
 }
 

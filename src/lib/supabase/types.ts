@@ -953,6 +953,7 @@ export type Database = {
           description_zh: string | null
           id: string
           image_url: string | null
+          ingredients: string[] | null
           is_active: boolean
           is_required: boolean
           name: string
@@ -982,6 +983,7 @@ export type Database = {
           description_zh?: string | null
           id?: string
           image_url?: string | null
+          ingredients?: string[] | null
           is_active?: boolean
           is_required?: boolean
           name: string
@@ -1011,6 +1013,7 @@ export type Database = {
           description_zh?: string | null
           id?: string
           image_url?: string | null
+          ingredients?: string[] | null
           is_active?: boolean
           is_required?: boolean
           name?: string

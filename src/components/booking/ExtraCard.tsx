@@ -3,10 +3,11 @@ import type { Extra } from '@/lib/extras/calculate'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-/** Extends the base Extra with optional image_url / description from the API */
+/** Extends the base Extra with optional image_url / description / ingredients from the API */
 export interface ApiExtra extends Extra {
   image_url?: string | null
   description?: string | null
+  ingredients?: string[] | null
   name: string
 }
 
@@ -16,6 +17,7 @@ export interface ExtraCardProps {
   onToggle: (id: string) => void
   guestCount: number
   baseAmountCents: number
+  durationMinutes?: number
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -28,12 +30,17 @@ export function formatPriceLabel(
   extra: ApiExtra,
   guestCount: number,
   baseAmountCents: number,
+  durationMinutes: number = 90,
 ): string {
   if (extra.price_type === 'fixed_cents') {
     return fmtEuros(extra.price_value)
   }
   if (extra.price_type === 'per_person_cents') {
     return fmtEuros(extra.price_value * guestCount)
+  }
+  if (extra.price_type === 'per_person_per_hour_cents') {
+    const hours = durationMinutes / 60
+    return fmtEuros(Math.round(extra.price_value * guestCount * hours))
   }
   if (extra.price_type === 'percentage') {
     const approxCents = Math.round(baseAmountCents * extra.price_value / 100)
@@ -50,6 +57,7 @@ export function ExtraCard({
   onToggle,
   guestCount,
   baseAmountCents,
+  durationMinutes = 90,
 }: ExtraCardProps) {
   return (
     <button
@@ -94,12 +102,17 @@ export function ExtraCard({
             {extra.description}
           </p>
         )}
+        {extra.ingredients && extra.ingredients.length > 0 && (
+          <p className={`text-xs mt-0.5 line-clamp-2 ${selected ? 'text-zinc-300' : 'text-zinc-400'}`}>
+            {extra.ingredients.join(' · ')}
+          </p>
+        )}
       </div>
 
       {/* Price + VAT */}
       <div className="flex-shrink-0 text-right">
         <p className={`text-sm font-semibold ${selected ? 'text-white' : 'text-zinc-900'}`}>
-          {formatPriceLabel(extra, guestCount, baseAmountCents)}
+          {formatPriceLabel(extra, guestCount, baseAmountCents, durationMinutes)}
         </p>
         {extra.vat_rate > 0 && (
           <p className={`text-xs ${selected ? 'text-zinc-300' : 'text-zinc-400'}`}>

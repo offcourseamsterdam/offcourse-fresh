@@ -56,6 +56,7 @@ export function ExtrasStepPanel({
             listingId={listing.id}
             guestCount={guestCount}
             baseAmountCents={ratePrice(rate) ?? 0}
+            durationMinutes={rate.durationMinutes ?? 90}
             onExtrasChange={(ids, calc) => setPendingExtras({ ids, calc })}
           />
           <button

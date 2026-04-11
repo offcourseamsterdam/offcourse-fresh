@@ -25,6 +25,7 @@ export async function POST(request: NextRequest) {
       availPk, customerTypeRatePk, guestCount,
       category, date, contact,
       selectedExtraIds = [],
+      durationMinutes = 90,
     } = body
 
     if (baseAmountCents == null || !availPk || !customerTypeRatePk || !contact?.name || !contact?.email) {
@@ -41,7 +42,7 @@ export async function POST(request: NextRequest) {
       ? await supabase.from('extras').select('*').in('id', selectedExtraIds).eq('is_active', true)
       : { data: [] }
 
-    const calc = calculateExtras(Number(baseAmountCents), Number(guestCount), (extras ?? []) as any)
+    const calc = calculateExtras(Number(baseAmountCents), Number(guestCount), (extras ?? []) as any, Number(durationMinutes))
 
     // City tax is already included as a required extra in calc.grand_total_cents
     if (calc.grand_total_cents < 50) {
