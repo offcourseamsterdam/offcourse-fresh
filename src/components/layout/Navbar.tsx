@@ -157,8 +157,40 @@ export function Navbar({ navListings = [] }: NavbarProps) {
 
         </div> {/* end centre flex-1 */}
 
-        {/* Right side: language + hamburger */}
+        {/* Right side: auth + language + hamburger */}
         <div className="flex items-center gap-2">
+          {/* Auth indicator — desktop only */}
+          {!isLoading && (
+            <div className="hidden sm:flex items-center gap-1.5">
+              {profile ? (
+                <>
+                  {profile.role === 'admin' && (
+                    <Link
+                      href={getDashboardPath('admin', locale) as string}
+                      className="font-avenir text-xs font-bold uppercase tracking-wider text-accent hover:text-primary transition-colors px-2 py-1"
+                    >
+                      Admin
+                    </Link>
+                  )}
+                  <Link
+                    href={getDashboardPath(profile.role, locale) as string}
+                    className="w-7 h-7 rounded-full bg-primary text-white flex items-center justify-center font-avenir text-xs font-bold"
+                    title={profile.display_name || profile.email}
+                  >
+                    {(profile.display_name || profile.email).charAt(0).toUpperCase()}
+                  </Link>
+                </>
+              ) : (
+                <Link
+                  href={`/${locale}/login`}
+                  className="font-avenir text-xs text-muted hover:text-primary transition-colors px-2 py-1"
+                >
+                  Log in
+                </Link>
+              )}
+            </div>
+          )}
+
           {/* Language switcher */}
           <div className="relative">
             <button
