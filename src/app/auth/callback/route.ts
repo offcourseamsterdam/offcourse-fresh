@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { resolveProfile } from '@/lib/auth/resolve-profile'
 import { getDashboardPath } from '@/lib/auth/types'
-import type { UserProfile } from '@/lib/auth/types'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
@@ -28,45 +28,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/${locale}/login?error=no_user`)
   }
 
-  // Use admin client (standard createClient, NOT SSR wrapper) so the
-  // service role key genuinely bypasses RLS. The SSR createServerClient
-  // was still subject to RLS even with the service key.
+  // Look up or auto-create profile using admin client (bypasses RLS)
   const admin = createAdminClient()
+  const { profile, error: profileError } = await resolveProfile(admin, user)
 
-  let { data: profile } = await admin
-    .from('user_profiles')
-    .select('*')
-    .eq('id', user.id)
-    .single()
-
-  // Auto-create profile for new users (e.g. first-time OTP sign-in)
-  if (!profile) {
-    const { data: newProfile, error: insertError } = await admin
-      .from('user_profiles')
-      .insert({
-        id: user.id,
-        email: user.email ?? '',
-        role: 'guest',
-        is_active: true,
-      })
-      .select('*')
-      .single()
-
-    if (insertError) {
-      console.error('[auth/callback] Failed to create profile:', insertError.message)
-      return NextResponse.redirect(`${origin}/${locale}/login?error=no_profile`)
-    }
-
-    profile = newProfile
-  }
-
-  const typedProfile = profile as UserProfile
-
-  if (!typedProfile.is_active) {
-    return NextResponse.redirect(`${origin}/${locale}/login?error=deactivated`)
+  if (profileError) {
+    return NextResponse.redirect(`${origin}/${locale}/login?error=${profileError}`)
   }
 
   // Redirect to the intended page or the role-appropriate dashboard
-  const redirectTo = next || getDashboardPath(typedProfile.role, locale)
+  const redirectTo = next || getDashboardPath(profile!.role, locale)
   return NextResponse.redirect(`${origin}${redirectTo}`)
 }
