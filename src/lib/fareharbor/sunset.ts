@@ -90,6 +90,7 @@ export async function getSunsetTime(date: Date): Promise<string | null> {
 
   // 3. Cache in Supabase
   try {
+    // TODO: create sunset_times table migration
     await (supabase.from('sunset_times' as any) as any).upsert(
       {
         date: dateStr,
@@ -149,6 +150,7 @@ export async function preSeedSunsetTimes(daysAhead: number = 90): Promise<number
     if (!result) continue
 
     try {
+      // TODO: create sunset_times table migration
       await (supabase.from('sunset_times' as any) as any).upsert(
         {
           date: dateStr,
