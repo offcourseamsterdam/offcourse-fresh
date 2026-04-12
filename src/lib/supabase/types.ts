@@ -1457,10 +1457,13 @@ export type Database = {
           is_active: boolean
           language: string | null
           original_text: string | null
+          owner_reply_text: string | null
+          owner_reply_time: string | null
           publish_time: string | null
           rating: number
           reply_posted_at: string | null
           reply_posted_by: string | null
+          reply_synced_at: string | null
           review_text: string
           review_text_de: string | null
           review_text_es: string | null
@@ -1484,10 +1487,13 @@ export type Database = {
           is_active?: boolean
           language?: string | null
           original_text?: string | null
+          owner_reply_text?: string | null
+          owner_reply_time?: string | null
           publish_time?: string | null
           rating?: number
           reply_posted_at?: string | null
           reply_posted_by?: string | null
+          reply_synced_at?: string | null
           review_text: string
           review_text_de?: string | null
           review_text_es?: string | null
@@ -1511,10 +1517,13 @@ export type Database = {
           is_active?: boolean
           language?: string | null
           original_text?: string | null
+          owner_reply_text?: string | null
+          owner_reply_time?: string | null
           publish_time?: string | null
           rating?: number
           reply_posted_at?: string | null
           reply_posted_by?: string | null
+          reply_synced_at?: string | null
           review_text?: string
           review_text_de?: string | null
           review_text_es?: string | null
