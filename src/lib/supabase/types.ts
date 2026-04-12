@@ -1073,53 +1073,47 @@ export type Database = {
       }
       google_reviews_config: {
         Row: {
+          access_token: string | null
           created_at: string
-          gbp_account_id: string | null
-          gbp_location_id: string | null
+          google_account_id: string | null
+          google_location_id: string | null
           id: string
           last_synced_at: string | null
-          oauth_access_token: string | null
-          oauth_connected_at: string | null
-          oauth_email: string | null
-          oauth_refresh_token: string | null
-          oauth_token_expires_at: string | null
           overall_rating: number | null
           place_id: string
           place_name: string | null
+          refresh_token: string | null
+          token_expires_at: string | null
           total_reviews: number | null
           updated_at: string
         }
         Insert: {
+          access_token?: string | null
           created_at?: string
-          gbp_account_id?: string | null
-          gbp_location_id?: string | null
+          google_account_id?: string | null
+          google_location_id?: string | null
           id?: string
           last_synced_at?: string | null
-          oauth_access_token?: string | null
-          oauth_connected_at?: string | null
-          oauth_email?: string | null
-          oauth_refresh_token?: string | null
-          oauth_token_expires_at?: string | null
           overall_rating?: number | null
           place_id: string
           place_name?: string | null
+          refresh_token?: string | null
+          token_expires_at?: string | null
           total_reviews?: number | null
           updated_at?: string
         }
         Update: {
+          access_token?: string | null
           created_at?: string
-          gbp_account_id?: string | null
-          gbp_location_id?: string | null
+          google_account_id?: string | null
+          google_location_id?: string | null
           id?: string
           last_synced_at?: string | null
-          oauth_access_token?: string | null
-          oauth_connected_at?: string | null
-          oauth_email?: string | null
-          oauth_refresh_token?: string | null
-          oauth_token_expires_at?: string | null
           overall_rating?: number | null
           place_id?: string
           place_name?: string | null
+          refresh_token?: string | null
+          token_expires_at?: string | null
           total_reviews?: number | null
           updated_at?: string
         }
@@ -1453,7 +1447,9 @@ export type Database = {
       }
       social_proof_reviews: {
         Row: {
+          ai_draft_reply: string | null
           author_photo_url: string | null
+          confirmed_reply: string | null
           created_at: string
           google_profile_url: string | null
           google_review_id: string | null
@@ -1461,11 +1457,10 @@ export type Database = {
           is_active: boolean
           language: string | null
           original_text: string | null
-          owner_reply_text: string | null
-          owner_reply_time: string | null
           publish_time: string | null
           rating: number
-          reply_synced_at: string | null
+          reply_posted_at: string | null
+          reply_posted_by: string | null
           review_text: string
           review_text_de: string | null
           review_text_es: string | null
@@ -1479,7 +1474,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          ai_draft_reply?: string | null
           author_photo_url?: string | null
+          confirmed_reply?: string | null
           created_at?: string
           google_profile_url?: string | null
           google_review_id?: string | null
@@ -1487,11 +1484,10 @@ export type Database = {
           is_active?: boolean
           language?: string | null
           original_text?: string | null
-          owner_reply_text?: string | null
-          owner_reply_time?: string | null
           publish_time?: string | null
           rating?: number
-          reply_synced_at?: string | null
+          reply_posted_at?: string | null
+          reply_posted_by?: string | null
           review_text: string
           review_text_de?: string | null
           review_text_es?: string | null
@@ -1505,7 +1501,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          ai_draft_reply?: string | null
           author_photo_url?: string | null
+          confirmed_reply?: string | null
           created_at?: string
           google_profile_url?: string | null
           google_review_id?: string | null
@@ -1513,11 +1511,10 @@ export type Database = {
           is_active?: boolean
           language?: string | null
           original_text?: string | null
-          owner_reply_text?: string | null
-          owner_reply_time?: string | null
           publish_time?: string | null
           rating?: number
-          reply_synced_at?: string | null
+          reply_posted_at?: string | null
+          reply_posted_by?: string | null
           review_text?: string
           review_text_de?: string | null
           review_text_es?: string | null
