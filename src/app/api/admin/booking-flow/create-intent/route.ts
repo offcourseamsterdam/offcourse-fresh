@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { getStripe } from '@/lib/stripe/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { calculateExtras } from '@/lib/extras/calculate'
 import { DEFAULT_DURATION_MINUTES } from '@/lib/constants'
 
@@ -45,13 +46,23 @@ export async function POST(request: NextRequest) {
       return apiError('guestCount must be a positive integer', 400)
     }
 
-    // Fetch selected extras from DB — never trust client-provided amounts
+    // Verify base price server-side from FareHarbor — never trust client-provided amounts
+    const fh = getFareHarborClient()
+    const availDetail = await fh.getAvailabilityDetail(Number(availPk))
+    const matchingRate = availDetail.customer_type_rates?.find(
+      (r: { pk: number }) => r.pk === Number(customerTypeRatePk)
+    )
+    const verifiedBaseCents = matchingRate?.customer_prototype?.total ?? Number(baseAmountCents)
+    const isPrivate = category === 'private'
+    const serverBaseAmount = isPrivate ? verifiedBaseCents : verifiedBaseCents * Number(guestCount)
+
+    // Fetch selected extras from DB
     const supabase = await createServiceClient()
     const { data: extras } = selectedExtraIds.length > 0
       ? await supabase.from('extras').select('*').in('id', selectedExtraIds).eq('is_active', true)
       : { data: [] }
 
-    const calc = calculateExtras(Number(baseAmountCents), Number(guestCount), (extras ?? []) as any, Number(durationMinutes))
+    const calc = calculateExtras(serverBaseAmount, Number(guestCount), (extras ?? []) as any, Number(durationMinutes))
 
     if (calc.grand_total_cents < 50) {
       return apiError('Amount must be at least €0.50', 400)

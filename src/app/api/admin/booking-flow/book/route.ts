@@ -44,6 +44,19 @@ export async function POST(request: NextRequest) {
       return apiError('Missing required fields: availPk, customerTypeRatePk, guestCount, contact.name, contact.email, contact.phone', 400)
     }
 
+    // Idempotency: if a booking already exists for this payment intent, return it
+    if (stripePaymentIntentId) {
+      const supabase = await createServiceClient()
+      const { data: existing } = await supabase
+        .from('bookings')
+        .select('id, fareharbor_booking_uuid')
+        .eq('stripe_payment_intent_id', stripePaymentIntentId)
+        .maybeSingle()
+      if (existing) {
+        return apiOk({ booking: existing, deduplicated: true })
+      }
+    }
+
     const fh = getFareHarborClient()
 
     // Private boats: book the boat once (quantity=1) — the customer type rate IS the duration.

@@ -179,6 +179,12 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
       setError('No booking data found. Please start your booking from the cruise page.')
     }
 
+    // Restore contact from sessionStorage (survives iDEAL redirect)
+    const storedContact = sessionStorage.getItem('offcourse_contact')
+    if (storedContact) {
+      try { setContact(JSON.parse(storedContact)) } catch { /* ignore */ }
+    }
+
     // Handle iDEAL redirect return
     const params = new URLSearchParams(window.location.search)
     const paymentIntent = params.get('payment_intent')
@@ -193,6 +199,8 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
   async function handleGuestInfoSubmit(details: CustomerDetails) {
     if (!bookingData) return
     setContact(details)
+    // Persist contact for iDEAL redirect recovery (component re-mounts after bank redirect)
+    sessionStorage.setItem('offcourse_contact', JSON.stringify(details))
     setCreatingIntent(true)
     setError(null)
 
@@ -235,6 +243,20 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
     const stored = sessionStorage.getItem('offcourse_booking')
     const data: BookingData = stored ? JSON.parse(stored) : bookingData
 
+    // Recover contact from sessionStorage (survives iDEAL redirect where React state is lost)
+    let contactData = contact
+    if (!contactData) {
+      const storedContact = sessionStorage.getItem('offcourse_contact')
+      if (storedContact) {
+        try { contactData = JSON.parse(storedContact) } catch { /* ignore */ }
+      }
+    }
+
+    if (!contactData?.name || !contactData?.email) {
+      setError('Contact information was lost. Please go back and try again.')
+      return
+    }
+
     try {
       const customerTypeRatePk = data.category === 'private'
         ? data.selectedCustomerType?.pk
@@ -245,7 +267,7 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
         : 0
       const totalAmount = data.basePriceCents + extrasTotalCents
 
-      await fetch('/api/booking-flow/book', {
+      const res = await fetch('/api/booking-flow/book', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -253,8 +275,8 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
           customerTypeRatePk,
           guestCount: data.guests,
           category: data.category,
-          contact: contact ?? { name: '', email: '', phone: '' },
-          note: contact?.specialRequests || undefined,
+          contact: contactData,
+          note: contactData.specialRequests || undefined,
           listingId: data.listingId,
           listingTitle: data.listingTitle,
           date: data.date,
@@ -269,10 +291,17 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
         }),
       })
 
+      const bookingResult = await res.json()
+      if (!bookingResult.ok) {
+        setError('Booking could not be completed. Your payment was received — please contact us at info@offcourseamsterdam.com')
+        return
+      }
+
       sessionStorage.removeItem('offcourse_booking')
+      sessionStorage.removeItem('offcourse_contact')
       window.location.href = `/book/${data.listingSlug}/confirmation?payment_intent=${paymentIntentId}`
     } catch {
-      window.location.href = `/book/${data.listingSlug}/confirmation?payment_intent=${paymentIntentId}`
+      setError('Something went wrong creating your booking. Your payment was received — please contact us at info@offcourseamsterdam.com')
     }
   }
 
