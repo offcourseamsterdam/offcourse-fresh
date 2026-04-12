@@ -88,7 +88,7 @@ export async function PUT(request: NextRequest, ctx: Ctx) {
 
   // Save the reply locally
   const now = new Date().toISOString()
-  await supabase
+  const { error: updateError } = await supabase
     .from('social_proof_reviews')
     .update({
       owner_reply_text: replyText,
@@ -96,6 +96,10 @@ export async function PUT(request: NextRequest, ctx: Ctx) {
       reply_synced_at: now,
     })
     .eq('id', id)
+
+  if (updateError) {
+    return apiError(`Reply posted to Google but failed to save locally: ${updateError.message}`, 500)
+  }
 
   return apiOk({ reply_text: replyText, reply_time: now })
 }
@@ -163,7 +167,7 @@ export async function DELETE(_request: NextRequest, ctx: Ctx) {
   }
 
   // Clear the reply locally
-  await supabase
+  const { error: updateError } = await supabase
     .from('social_proof_reviews')
     .update({
       owner_reply_text: null,
@@ -171,6 +175,10 @@ export async function DELETE(_request: NextRequest, ctx: Ctx) {
       reply_synced_at: null,
     })
     .eq('id', id)
+
+  if (updateError) {
+    return apiError(`Reply deleted from Google but failed to clear locally: ${updateError.message}`, 500)
+  }
 
   return apiOk({ deleted: true })
 }

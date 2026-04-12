@@ -172,6 +172,7 @@ export async function getReview(
  * Returns null if the format is unexpected.
  */
 export function extractReviewId(googleReviewId: string): string | null {
-  const match = googleReviewId.match(/\/reviews\/(.+)$/)
+  if (!googleReviewId) return null
+  const match = googleReviewId.match(/^places\/[^/]+\/reviews\/(.+)$/)
   return match ? match[1] : null
 }

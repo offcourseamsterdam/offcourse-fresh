@@ -142,14 +142,16 @@ export async function POST(request: Request) {
     .single()
 
   if (existingConfig) {
-    await supabase
+    const { error: configError } = await supabase
       .from('google_reviews_config')
       .update(configRow)
       .eq('id', existingConfig.id)
+    if (configError) errors.push(`Config update: ${configError.message}`)
   } else {
-    await supabase
+    const { error: configError } = await supabase
       .from('google_reviews_config')
       .insert(configRow)
+    if (configError) errors.push(`Config insert: ${configError.message}`)
   }
 
   return apiOk({

@@ -20,46 +20,44 @@ export async function GET(request: Request) {
   const state = url.searchParams.get('state')
   const error = url.searchParams.get('error')
 
-  // Determine where to redirect back to (use referer locale or default to /en)
-  const adminReviewsUrl = (locale: string) =>
-    `${process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'}/${locale}/admin/reviews`
+  // Read cookies once — locale (for redirect) and state (for CSRF)
+  const cookieStore = await cookies()
+  const locale = cookieStore.get('google_oauth_locale')?.value ?? 'en'
+  const storedState = cookieStore.get('google_oauth_state')?.value
 
-  const locale = 'en' // Default locale for redirect
+  // Clean up cookies
+  cookieStore.delete('google_oauth_locale')
+  cookieStore.delete('google_oauth_state')
 
-  // User denied consent
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
+  const adminReviewsUrl = `${baseUrl}/${locale}/admin/reviews`
+
+  // User denied consent or Google returned an error
   if (error) {
-    return NextResponse.redirect(`${adminReviewsUrl(locale)}?gbp_error=consent_denied`)
+    return NextResponse.redirect(`${adminReviewsUrl}?gbp_error=${encodeURIComponent(error)}`)
   }
 
   if (!code || !state) {
-    return NextResponse.redirect(`${adminReviewsUrl(locale)}?gbp_error=missing_params`)
+    return NextResponse.redirect(`${adminReviewsUrl}?gbp_error=missing_params`)
   }
 
-  // Validate state against cookie
-  const cookieStore = await cookies()
-  const storedState = cookieStore.get('google_oauth_state')?.value
-
+  // Validate state (CSRF protection)
   if (!storedState || storedState !== state) {
-    return NextResponse.redirect(`${adminReviewsUrl(locale)}?gbp_error=state_mismatch`)
+    return NextResponse.redirect(`${adminReviewsUrl}?gbp_error=state_mismatch`)
   }
-
-  // Clear the state cookie
-  cookieStore.delete('google_oauth_state')
 
   try {
     // Exchange code for tokens
     const tokens = await exchangeCodeForTokens(code)
 
     if (!tokens.refresh_token) {
-      return NextResponse.redirect(`${adminReviewsUrl(locale)}?gbp_error=no_refresh_token`)
+      return NextResponse.redirect(`${adminReviewsUrl}?gbp_error=no_refresh_token`)
     }
 
     // Discover Business Profile account and location
     const accounts = await listAccounts(tokens.access_token)
     if (accounts.length === 0) {
-      return NextResponse.redirect(
-        `${adminReviewsUrl(locale)}?gbp_error=no_business_account`
-      )
+      return NextResponse.redirect(`${adminReviewsUrl}?gbp_error=no_business_account`)
     }
 
     // Use the first account (small business typically has one)
@@ -67,9 +65,7 @@ export async function GET(request: Request) {
 
     const locations = await listLocations(tokens.access_token, account.name)
     if (locations.length === 0) {
-      return NextResponse.redirect(
-        `${adminReviewsUrl(locale)}?gbp_error=no_locations`
-      )
+      return NextResponse.redirect(`${adminReviewsUrl}?gbp_error=no_locations`)
     }
 
     // Use the first location (Off Course Amsterdam has one location)
@@ -116,7 +112,6 @@ export async function GET(request: Request) {
         .update(oauthData)
         .eq('id', existing.id)
     } else {
-      // Need a place_id to insert — use env var or empty string
       await supabase
         .from('google_reviews_config')
         .insert({
@@ -125,12 +120,12 @@ export async function GET(request: Request) {
         })
     }
 
-    return NextResponse.redirect(`${adminReviewsUrl(locale)}?google_connected=true`)
+    return NextResponse.redirect(`${adminReviewsUrl}?google_connected=true`)
   } catch (err) {
     console.error('OAuth callback error:', err)
     const message = err instanceof Error ? err.message : 'unknown_error'
     return NextResponse.redirect(
-      `${adminReviewsUrl(locale)}?gbp_error=${encodeURIComponent(message)}`
+      `${adminReviewsUrl}?gbp_error=${encodeURIComponent(message)}`
     )
   }
 }

@@ -379,17 +379,16 @@ export default function AdminReviewsPage() {
               <Button
                 size="sm"
                 onClick={() => {
-                  setConfig(prev => ({
-                    ...prev,
+                  setConfig({
                     place_id: searchResult.placeId,
                     place_name: searchResult.name,
-                    overall_rating: prev?.overall_rating ?? null,
-                    total_reviews: prev?.total_reviews ?? null,
-                    last_synced_at: prev?.last_synced_at ?? null,
-                    is_gbp_connected: prev?.is_gbp_connected ?? false,
-                    oauth_email: prev?.oauth_email ?? null,
-                    oauth_connected_at: prev?.oauth_connected_at ?? null,
-                  }))
+                    overall_rating: null,
+                    total_reviews: null,
+                    last_synced_at: null,
+                    is_gbp_connected: false,
+                    oauth_email: null,
+                    oauth_connected_at: null,
+                  })
                   handleSync()
                 }}
               >
