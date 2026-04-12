@@ -2,7 +2,6 @@ import { NextIntlClientProvider } from 'next-intl'
 import { getMessages } from 'next-intl/server'
 import { notFound } from 'next/navigation'
 import { headers } from 'next/headers'
-import { unstable_cache } from 'next/cache'
 import { routing } from '@/i18n/routing'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
@@ -14,19 +13,15 @@ import type { Locale } from '@/lib/i18n/config'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://offcourseamsterdam.com'
 
-const getNavListings = unstable_cache(
-  async () => {
-    const supabase = await createClient()
-    const { data } = await supabase
-      .from('cruise_listings')
-      .select('id, title, slug, category')
-      .eq('is_published', true)
-      .order('display_order', { ascending: true })
-    return (data ?? []) as { id: string; title: string; slug: string; category: string }[]
-  },
-  ['nav-listings'],
-  { revalidate: 300 } // 5 minutes
-)
+async function getNavListings() {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('cruise_listings')
+    .select('id, title, slug, category')
+    .eq('is_published', true)
+    .order('display_order', { ascending: true })
+  return (data ?? []) as { id: string; title: string; slug: string; category: string }[]
+}
 
 interface Props {
   children: React.ReactNode
