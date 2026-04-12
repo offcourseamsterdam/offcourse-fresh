@@ -185,7 +185,7 @@ export function Navbar({ navListings = [] }: NavbarProps) {
                 <>
                   {profile.role === 'admin' && (
                     <Link
-                      href={getDashboardPath('admin', locale) as string}
+                      href="/admin"
                       className="font-avenir text-xs font-bold uppercase tracking-wider text-accent hover:text-primary transition-colors px-2 py-1"
                     >
                       Admin
