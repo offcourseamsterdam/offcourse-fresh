@@ -34,7 +34,6 @@ function AnimatedPrice({ value }: { value: number }) {
 
 export function PriceSummary({
   basePriceCents,
-  guestCount,
   extrasCalculation,
   mode,
   cruiseLabel,
