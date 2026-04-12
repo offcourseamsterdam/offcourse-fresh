@@ -24,8 +24,8 @@ function getClientSecret(): string {
   return secret
 }
 
-function getRedirectUri(): string {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
+export function getRedirectUri(origin?: string): string {
+  const siteUrl = origin ?? process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
   return `${siteUrl}/api/admin/reviews/google-auth/callback`
 }
 
@@ -33,10 +33,10 @@ function getRedirectUri(): string {
  * Build the Google OAuth consent URL. The admin clicks this link to authorize.
  * @param state — random string for CSRF protection (store in a cookie)
  */
-export function getGoogleAuthUrl(state: string): string {
+export function getGoogleAuthUrl(state: string, origin?: string): string {
   const params = new URLSearchParams({
     client_id: getClientId(),
-    redirect_uri: getRedirectUri(),
+    redirect_uri: getRedirectUri(origin),
     response_type: 'code',
     scope: SCOPE,
     access_type: 'offline',   // gives us a refresh token
@@ -58,7 +58,7 @@ export interface TokenResponse {
  * Exchange an authorization code for access + refresh tokens.
  * Called once after the OAuth callback.
  */
-export async function exchangeCodeForTokens(code: string): Promise<TokenResponse> {
+export async function exchangeCodeForTokens(code: string, origin?: string): Promise<TokenResponse> {
   const res = await fetch(GOOGLE_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -66,7 +66,7 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenResponse
       code,
       client_id: getClientId(),
       client_secret: getClientSecret(),
-      redirect_uri: getRedirectUri(),
+      redirect_uri: getRedirectUri(origin),
       grant_type: 'authorization_code',
     }),
   })

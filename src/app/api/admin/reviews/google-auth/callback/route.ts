@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { exchangeCodeForTokens } from '@/lib/google-reviews/oauth'
 import { listAccounts, listLocations } from '@/lib/google-reviews/business-profile'
 
@@ -20,16 +20,19 @@ export async function GET(request: Request) {
   const state = url.searchParams.get('state')
   const error = url.searchParams.get('error')
 
-  // Read cookies once — locale (for redirect) and state (for CSRF)
+  // Read cookies — locale, state (CSRF), and origin (for redirect_uri matching)
   const cookieStore = await cookies()
   const locale = cookieStore.get('google_oauth_locale')?.value ?? 'en'
   const storedState = cookieStore.get('google_oauth_state')?.value
+  const storedOrigin = cookieStore.get('google_oauth_origin')?.value
 
   // Clean up cookies
   cookieStore.delete('google_oauth_locale')
   cookieStore.delete('google_oauth_state')
+  cookieStore.delete('google_oauth_origin')
 
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
+  // Use stored origin (from the auth start) or fall back to request origin
+  const baseUrl = storedOrigin ?? url.origin
   const adminReviewsUrl = `${baseUrl}/${locale}/admin/reviews`
 
   // User denied consent or Google returned an error
@@ -47,8 +50,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Exchange code for tokens
-    const tokens = await exchangeCodeForTokens(code)
+    // Exchange code for tokens — must use same origin as the auth start
+    const tokens = await exchangeCodeForTokens(code, baseUrl)
 
     if (!tokens.refresh_token) {
       return NextResponse.redirect(`${adminReviewsUrl}?gbp_error=no_refresh_token`)
@@ -85,8 +88,8 @@ export async function GET(request: Request) {
       // Not critical — email is just for display
     }
 
-    // Store tokens and account info in the config table
-    const supabase = await createServiceClient()
+    // Store tokens and account info using admin client (bypasses RLS)
+    const supabase = createAdminClient()
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString()
 
     const oauthData = {

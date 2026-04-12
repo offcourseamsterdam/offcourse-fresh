@@ -10,6 +10,9 @@ import { getGoogleAuthUrl } from '@/lib/google-reviews/oauth'
  * Starts the OAuth 2.0 flow by redirecting to Google's consent screen.
  * The admin clicks "Connect Google Business" in the UI → this route
  * generates a state nonce (CSRF protection) and redirects to Google.
+ *
+ * The request's actual origin is stored in a cookie so the callback
+ * uses the same redirect_uri (required by Google OAuth).
  */
 export async function GET(request: Request) {
   try {
@@ -17,6 +20,11 @@ export async function GET(request: Request) {
   } catch {
     return apiError('Unauthorized', 403)
   }
+
+  // Use the actual request origin so the redirect_uri matches
+  // whether we're on offcourse-fresh.vercel.app or offcourseamsterdam.com
+  const requestUrl = new URL(request.url)
+  const origin = requestUrl.origin
 
   // Extract locale from referer so we can redirect back to the right locale after OAuth
   const referer = request.headers.get('referer') ?? ''
@@ -26,28 +34,23 @@ export async function GET(request: Request) {
   // Generate random state for CSRF protection
   const state = crypto.randomUUID()
 
-  // Store state + locale in short-lived cookies for the callback
+  // Store state + locale + origin in short-lived cookies for the callback
   const cookieStore = await cookies()
-  cookieStore.set('google_oauth_state', state, {
+  const cookieOpts = {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: 'lax' as const,
     maxAge: 600,
     path: '/',
-  })
-  cookieStore.set('google_oauth_locale', locale, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 600,
-    path: '/',
-  })
+  }
+  cookieStore.set('google_oauth_state', state, cookieOpts)
+  cookieStore.set('google_oauth_locale', locale, cookieOpts)
+  cookieStore.set('google_oauth_origin', origin, cookieOpts)
 
   try {
-    const authUrl = getGoogleAuthUrl(state)
+    const authUrl = getGoogleAuthUrl(state, origin)
     return NextResponse.redirect(authUrl)
   } catch (err) {
-    // Most likely: GOOGLE_OAUTH_CLIENT_ID or GOOGLE_OAUTH_CLIENT_SECRET not set
     console.error('[google-auth] Failed to build auth URL:', err)
     return apiError(
       'Google OAuth not configured. Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in environment variables.',
