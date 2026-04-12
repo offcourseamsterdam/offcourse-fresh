@@ -1,17 +1,13 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
-import { getStripe } from '@/lib/stripe/server'
-import { createServiceClient } from '@/lib/supabase/server'
-import { getFareHarborClient } from '@/lib/fareharbor/client'
-import { calculateExtras } from '@/lib/extras/calculate'
+import { createPaymentIntent } from '@/lib/booking/create-intent'
 import { DEFAULT_DURATION_MINUTES } from '@/lib/constants'
 
 /**
  * POST /api/booking-flow/create-intent
  *
  * Public endpoint for creating a Stripe PaymentIntent.
- * Total is calculated server-side — client amounts are never trusted.
- * City tax is already included as a required extra in the extras calculation.
+ * Delegates to shared createPaymentIntent() which verifies price server-side.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -32,53 +28,18 @@ export async function POST(request: NextRequest) {
       return apiError('guestCount must be a positive integer', 400)
     }
 
-    // Verify base price server-side from FareHarbor — never trust client-provided amounts
-    const fh = getFareHarborClient()
-    const availDetail = await fh.getAvailabilityDetail(Number(availPk))
-    const matchingRate = availDetail.customer_type_rates?.find(
-      (r: { pk: number }) => r.pk === Number(customerTypeRatePk)
-    )
-    const verifiedBaseCents = matchingRate?.customer_prototype?.total ?? Number(baseAmountCents)
-    const isPrivate = category === 'private'
-    const serverBaseAmount = isPrivate ? verifiedBaseCents : verifiedBaseCents * Number(guestCount)
-
-    // Fetch selected extras from DB — never trust client-provided amounts
-    const supabase = await createServiceClient()
-    const { data: extras } = selectedExtraIds.length > 0
-      ? await supabase.from('extras').select('*').in('id', selectedExtraIds).eq('is_active', true)
-      : { data: [] }
-
-    const calc = calculateExtras(serverBaseAmount, Number(guestCount), (extras ?? []) as any, Number(durationMinutes))
-
-    // City tax is already included as a required extra in calc.grand_total_cents
-    if (calc.grand_total_cents < 50) {
-      return apiError('Amount must be at least €0.50', 400)
-    }
-
-    const extrasSummary = calc.line_items
-      .map(li => `${li.name} (€${(li.amount_cents / 100).toFixed(2)})`)
-      .join(', ')
-
-    const paymentIntent = await getStripe().paymentIntents.create({
-      amount: calc.grand_total_cents,
-      currency: 'eur',
-      payment_method_types: ['card', 'ideal', 'link'],
-      metadata: {
-        listing_title: String(listingTitle ?? ''),
-        listing_id: String(listingId ?? ''),
-        avail_pk: String(availPk),
-        customer_type_rate_pk: String(customerTypeRatePk),
-        guest_count: String(guestCount),
-        category: String(category ?? ''),
-        date: String(date ?? ''),
-        guest_name: String(contact?.name ?? ''),
-        guest_email: String(contact?.email ?? ''),
-        guest_phone: String(contact?.phone ?? ''),
-        extras_summary: extrasSummary,
-      },
+    const result = await createPaymentIntent({
+      baseAmountCents: Number(baseAmountCents),
+      listingId, listingTitle,
+      availPk: Number(availPk),
+      customerTypeRatePk: Number(customerTypeRatePk),
+      guestCount: Number(guestCount),
+      category, date, contact,
+      selectedExtraIds,
+      durationMinutes: Number(durationMinutes),
     })
 
-    return apiOk({ clientSecret: paymentIntent.client_secret, calculation: calc })
+    return apiOk(result)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return apiError(message)
