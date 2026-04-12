@@ -1,13 +1,27 @@
+import { cache } from 'react'
 import { notFound } from 'next/navigation'
 import Image from 'next/image'
+import { Check } from 'lucide-react'
 import { getTranslations } from 'next-intl/server'
 import { createClient } from '@/lib/supabase/server'
-import { BookingWidget } from '@/components/booking/BookingWidget'
+import { BookingPanel } from '@/components/booking/BookingPanel'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import type { Locale } from '@/lib/i18n/config'
 import type { Database } from '@/lib/supabase/types'
 
 type CruiseListing = Database['public']['Tables']['cruise_listings']['Row']
+
+// Deduplicate the listing fetch between generateMetadata and the page component
+const getListingBySlug = cache(async (slug: string) => {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('cruise_listings')
+    .select('*')
+    .eq('slug', slug)
+    .eq('is_published', true)
+    .single()
+  return data as CruiseListing | null
+})
 
 // JSONB field shapes (as stored by the edit page)
 type CruiseImage = { url: string; alt_text?: string | null }
@@ -18,25 +32,14 @@ export const revalidate = 60
 
 interface Props {
   params: Promise<{ locale: string; slug: string }>
-  searchParams: Promise<{ date?: string; guests?: string }>
+  searchParams: Promise<{ date?: string; guests?: string; time?: string }>
 }
 
 export async function generateMetadata({ params }: Props) {
   const { locale, slug } = await params
-  const supabase = await createClient()
 
-  const { data: listingData } = await supabase
-    .from('cruise_listings')
-    .select(
-      'title, tagline, seo_title, seo_meta_description, seo_title_nl, seo_title_de, seo_title_fr, seo_title_es, seo_title_pt, seo_title_zh, seo_meta_description_nl, seo_meta_description_de, seo_meta_description_fr, seo_meta_description_es, seo_meta_description_pt, seo_meta_description_zh'
-    )
-    .eq('slug', slug)
-    .eq('is_published', true)
-    .single()
-
-  if (!listingData) return {}
-
-  const meta = listingData as CruiseListing
+  const meta = await getListingBySlug(slug)
+  if (!meta) return {}
   const loc = locale as Locale
   const title = getLocalizedField(meta, 'seo_title', loc) ?? meta.title
   const description =
@@ -51,18 +54,10 @@ export async function generateMetadata({ params }: Props) {
 
 export default async function CruiseListingPage({ params, searchParams }: Props) {
   const { locale, slug } = await params
-  const { date, guests } = await searchParams
+  const { date, guests, time } = await searchParams
   const t = await getTranslations('cruises')
-  const supabase = await createClient()
 
-  const { data: listingData } = await supabase
-    .from('cruise_listings')
-    .select('*')
-    .eq('slug', slug)
-    .eq('is_published', true)
-    .single()
-
-  const listing = listingData as CruiseListing | null
+  const listing = await getListingBySlug(slug)
   if (!listing) notFound()
 
   // All content lives in JSONB columns on the listing row (no separate tables)
@@ -212,9 +207,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                     {highlights.map((h, i) => (
                       <li key={i} className="flex items-start gap-2.5">
                         <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] flex items-center justify-center">
-                          <svg viewBox="0 0 24 24" className="w-3 h-3" fill="currentColor">
-                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-                          </svg>
+                          <Check className="w-3 h-3" />
                         </span>
                         <span className="text-sm text-[var(--color-foreground)]">{h.text}</span>
                       </li>
@@ -233,9 +226,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                     {inclusions.map((inc, i) => (
                       <li key={i} className="flex items-start gap-2.5">
                         <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-[var(--color-accent)] text-white flex items-center justify-center">
-                          <svg viewBox="0 0 24 24" className="w-3 h-3" fill="currentColor">
-                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-                          </svg>
+                          <Check className="w-3 h-3" />
                         </span>
                         <span className="text-sm text-[var(--color-foreground)]">{inc.text}</span>
                       </li>
@@ -254,9 +245,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                     {benefits.map((b, i) => (
                       <li key={i} className="flex items-start gap-3">
                         <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-[var(--color-accent)] text-white flex items-center justify-center">
-                          <svg viewBox="0 0 24 24" className="w-3 h-3" fill="currentColor">
-                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-                          </svg>
+                          <Check className="w-3 h-3" />
                         </span>
                         <span className="text-[var(--color-foreground)]">{b.text}</span>
                       </li>
@@ -321,10 +310,15 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                     )}
                   </div>
                 )}
-                <BookingWidget
+                <BookingPanel
+                  listingId={listing.id}
                   listingSlug={listing.slug}
+                  listingTitle={title}
+                  listingHeroImageUrl={heroUrl}
+                  category={listing.category as 'private' | 'shared'}
                   initialDate={date}
                   initialGuests={guests ? Number(guests) : undefined}
+                  initialTime={time}
                 />
               </div>
             </div>

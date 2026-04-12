@@ -10,6 +10,7 @@ import {
   applyAllFilters,
   AvailabilityFiltersSchema,
 } from './filters'
+import { transformToSlot } from './availability'
 
 // ── Mock sunset module to avoid real API calls ──────────────────────────────
 
@@ -364,5 +365,39 @@ describe('applyAllFilters', () => {
     // Slot 3 (18:00) has Diana 90min → passes
     expect(result).toHaveLength(1)
     expect(result[0].pk).toBe(3)
+  })
+})
+
+// ── transformToSlot capacity ───────────────────────────────────────────────
+
+describe('transformToSlot — capacity calculation', () => {
+  it('slot with mixed capacity rates uses max (not min)', () => {
+    // Simulates 12:00 slot: 1.5h available (cap=1), 3h sold out (cap=0)
+    const avail = makeAvailability(10, '2026-07-15T12:00:00+02:00', [
+      makeRate(901, 100, 1), // Diana 90min — available
+      makeRate(902, 101, 0), // Diana 120min — sold out
+      makeRate(903, 200, 1), // Curaçao 90min — available
+      makeRate(904, 201, 0), // Curaçao 120min — sold out
+    ])
+    const slot = transformToSlot(avail, typeMap)
+    // Should be available (cap >= 1) because some durations are bookable
+    expect(slot.capacity).toBeGreaterThanOrEqual(1)
+  })
+
+  it('slot with all rates at capacity 0 shows as sold out', () => {
+    const avail = makeAvailability(11, '2026-07-15T15:00:00+02:00', [
+      makeRate(911, 100, 0),
+      makeRate(912, 101, 0),
+      makeRate(913, 200, 0),
+      makeRate(914, 201, 0),
+    ])
+    const slot = transformToSlot(avail, typeMap)
+    expect(slot.capacity).toBe(0)
+  })
+
+  it('slot with no rates shows capacity 0', () => {
+    const avail = makeAvailability(12, '2026-07-15T16:00:00+02:00', [])
+    const slot = transformToSlot(avail, typeMap)
+    expect(slot.capacity).toBe(0)
   })
 })

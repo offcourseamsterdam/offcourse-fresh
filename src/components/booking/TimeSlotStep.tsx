@@ -55,7 +55,6 @@ export function TimeSlotStep({ slots, loading, mode, selectedSlotPk, onSelect }:
           const isSoldOut = slot.capacity < 1
           const capacityRatio = slot.capacity / maxCapacity
           const urgencyLabel = mode === 'shared' ? getCapacityLabel(slot.capacity) : null
-
           return (
             <motion.button
               key={slot.pk}

@@ -1,20 +1,13 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
-import Stripe from 'stripe'
-import { createServiceClient } from '@/lib/supabase/server'
-import { calculateExtras } from '@/lib/extras/calculate'
-
-const CITY_TAX_PER_PERSON_CENTS = 260
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+import { createPaymentIntent } from '@/lib/booking/create-intent'
+import { DEFAULT_DURATION_MINUTES } from '@/lib/constants'
 
 /**
  * POST /api/booking-flow/create-intent
  *
  * Public endpoint for creating a Stripe PaymentIntent.
- * Total is calculated server-side — client amounts are never trusted.
- *
- * Includes city tax (€2.60/person) in the total.
+ * Delegates to shared createPaymentIntent() which verifies price server-side.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -24,6 +17,7 @@ export async function POST(request: NextRequest) {
       availPk, customerTypeRatePk, guestCount,
       category, date, contact,
       selectedExtraIds = [],
+      durationMinutes = DEFAULT_DURATION_MINUTES,
     } = body
 
     if (baseAmountCents == null || !availPk || !customerTypeRatePk || !contact?.name || !contact?.email) {
@@ -34,52 +28,18 @@ export async function POST(request: NextRequest) {
       return apiError('guestCount must be a positive integer', 400)
     }
 
-    // Fetch selected extras from DB — never trust client-provided amounts
-    const supabase = await createServiceClient()
-    const { data: extras } = selectedExtraIds.length > 0
-      ? await supabase.from('extras').select('*').in('id', selectedExtraIds).eq('is_active', true)
-      : { data: [] }
-
-    const calc = calculateExtras(Number(baseAmountCents), Number(guestCount), (extras ?? []) as any)
-
-    // Add city tax to the grand total
-    const cityTaxCents = Number(guestCount) * CITY_TAX_PER_PERSON_CENTS
-    const totalWithCityTax = calc.grand_total_cents + cityTaxCents
-
-    if (totalWithCityTax < 50) {
-      return apiError('Amount must be at least €0.50', 400)
-    }
-
-    const extrasSummary = calc.line_items
-      .map(li => `${li.name} (€${(li.amount_cents / 100).toFixed(2)})`)
-      .join(', ')
-
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: totalWithCityTax,
-      currency: 'eur',
-      payment_method_types: ['card', 'ideal', 'link'],
-      metadata: {
-        listing_title: String(listingTitle ?? ''),
-        listing_id: String(listingId ?? ''),
-        avail_pk: String(availPk),
-        customer_type_rate_pk: String(customerTypeRatePk),
-        guest_count: String(guestCount),
-        category: String(category ?? ''),
-        date: String(date ?? ''),
-        guest_name: String(contact?.name ?? ''),
-        guest_email: String(contact?.email ?? ''),
-        guest_phone: String(contact?.phone ?? ''),
-        extras_summary: extrasSummary,
-        city_tax_cents: String(cityTaxCents),
-      },
+    const result = await createPaymentIntent({
+      baseAmountCents: Number(baseAmountCents),
+      listingId, listingTitle,
+      availPk: Number(availPk),
+      customerTypeRatePk: Number(customerTypeRatePk),
+      guestCount: Number(guestCount),
+      category, date, contact,
+      selectedExtraIds,
+      durationMinutes: Number(durationMinutes),
     })
 
-    return apiOk({
-      clientSecret: paymentIntent.client_secret,
-      calculation: calc,
-      cityTaxCents,
-      totalWithCityTax,
-    })
+    return apiOk(result)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return apiError(message)

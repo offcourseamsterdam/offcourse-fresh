@@ -27,8 +27,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/en/login?error=no_user`)
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: profile } = await (supabase as any)
+  const { data: profile } = await supabase
     .from('user_profiles')
     .select('*')
     .eq('id', user.id)

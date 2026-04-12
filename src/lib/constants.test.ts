@@ -11,8 +11,8 @@ describe('CATEGORY_EMOJI', () => {
 })
 
 describe('PRICE_TYPES', () => {
-  it('has 4 price types', () => {
-    expect(PRICE_TYPES).toHaveLength(4)
+  it('has 5 price types', () => {
+    expect(PRICE_TYPES).toHaveLength(5)
   })
 
   it('includes all expected values', () => {
@@ -20,6 +20,7 @@ describe('PRICE_TYPES', () => {
     expect(values).toContain('fixed_cents')
     expect(values).toContain('percentage')
     expect(values).toContain('per_person_cents')
+    expect(values).toContain('per_person_per_hour_cents')
     expect(values).toContain('informational')
   })
 })

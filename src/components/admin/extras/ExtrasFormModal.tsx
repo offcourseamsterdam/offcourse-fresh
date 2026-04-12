@@ -137,6 +137,21 @@ export function ExtrasFormModal({
           />
         </div>
 
+        {/* Ingredients */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-zinc-600">Ingredients / menu items <span className="text-zinc-400 font-normal">(one per line)</span></label>
+          <textarea
+            className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent resize-none"
+            rows={3}
+            placeholder={"Beer €3,50\nWine €25\nProsecco €27"}
+            value={(form.ingredients ?? []).join('\n')}
+            onChange={e => onFormChange(f => ({
+              ...f,
+              ingredients: e.target.value ? e.target.value.split('\n') : [],
+            }))}
+          />
+        </div>
+
         {/* Category + Scope */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">

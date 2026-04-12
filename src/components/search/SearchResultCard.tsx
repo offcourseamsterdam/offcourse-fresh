@@ -18,7 +18,7 @@ export function SearchResultCard({ result, locale, date, guests }: SearchResultC
 
   return (
     <Link href={href} className="group block">
-      <article className="bg-white shadow-2xl overflow-hidden h-full flex flex-col hover:shadow-xl transition-shadow duration-200">
+      <article className="bg-white/90 backdrop-blur-sm shadow-2xl overflow-hidden h-full flex flex-col hover:shadow-xl transition-shadow duration-200">
 
         {/* Photo */}
         <div className="relative aspect-[4/3] overflow-hidden bg-[#e5e7eb]">
@@ -56,17 +56,19 @@ export function SearchResultCard({ result, locale, date, guests }: SearchResultC
                   Departure times
                 </p>
                 <div className="flex flex-wrap gap-1.5 items-center">
-                  {result.availableSlots.slice(0, 3).map(slot => (
-                    <span
+                  {result.availableSlots.slice(0, 5).map(slot => (
+                    <Link
                       key={slot.startTime}
-                      className="font-avenir text-xs bg-sand text-primary font-medium px-2.5 py-1 rounded-full"
+                      href={`/cruises/${result.listing.slug}?date=${date}&guests=${guests}&time=${slot.startTime}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="font-avenir text-xs bg-sand text-primary font-medium px-2.5 py-1 rounded-full hover:bg-primary hover:text-white transition-colors duration-150"
                     >
                       {slot.startTime}
-                    </span>
+                    </Link>
                   ))}
-                  {result.availableSlots.length > 3 && (
+                  {result.availableSlots.length > 5 && (
                     <span className="font-avenir text-xs text-muted font-medium">
-                      +{result.availableSlots.length - 3} more
+                      +{result.availableSlots.length - 5} more
                     </span>
                   )}
                 </div>

@@ -244,3 +244,73 @@ describe('calculateExtras — VAT aggregation', () => {
     expect(result.line_items[0].vat_amount_cents).toBe(0)
   })
 })
+
+// ── Per-person-per-hour pricing ────────────────────────────────────────────
+
+describe('calculateExtras — per_person_per_hour_cents', () => {
+  it('calculates correctly for 4 guests × 1.5 hours', () => {
+    const unlimited = makeExtra({
+      name: 'Unlimited Bar',
+      price_type: 'per_person_per_hour_cents',
+      price_value: 1000, // €10/person/hour
+      vat_rate: 21,
+    })
+
+    // 1000 × 4 × 1.5 = 6000 cents (€60)
+    const result = calculateExtras(10000, 4, [unlimited], 90)
+    expect(result.line_items).toHaveLength(1)
+    expect(result.line_items[0].amount_cents).toBe(6000)
+    expect(result.grand_total_cents).toBe(16000)
+  })
+
+  it('calculates correctly for 2 guests × 2 hours', () => {
+    const unlimited = makeExtra({
+      name: 'Unlimited Bar',
+      price_type: 'per_person_per_hour_cents',
+      price_value: 1000,
+      vat_rate: 21,
+    })
+
+    // 1000 × 2 × 2 = 4000 cents (€40)
+    const result = calculateExtras(10000, 2, [unlimited], 120)
+    expect(result.line_items[0].amount_cents).toBe(4000)
+    expect(result.grand_total_cents).toBe(14000)
+  })
+
+  it('calculates correctly for 6 guests × 3 hours', () => {
+    const unlimited = makeExtra({
+      name: 'Unlimited Bar',
+      price_type: 'per_person_per_hour_cents',
+      price_value: 1000,
+      vat_rate: 21,
+    })
+
+    // 1000 × 6 × 3 = 18000 cents (€180)
+    const result = calculateExtras(10000, 6, [unlimited], 180)
+    expect(result.line_items[0].amount_cents).toBe(18000)
+  })
+
+  it('uses default 90 minutes when durationMinutes is omitted', () => {
+    const unlimited = makeExtra({
+      price_type: 'per_person_per_hour_cents',
+      price_value: 1000,
+      vat_rate: 21,
+    })
+
+    // 1000 × 2 × 1.5 = 3000
+    const result = calculateExtras(10000, 2, [unlimited])
+    expect(result.line_items[0].amount_cents).toBe(3000)
+  })
+
+  it('includes correct VAT at 21%', () => {
+    const unlimited = makeExtra({
+      price_type: 'per_person_per_hour_cents',
+      price_value: 1000,
+      vat_rate: 21,
+    })
+
+    // 6000 × 21 / 121 = 1041 (rounded)
+    const result = calculateExtras(10000, 4, [unlimited], 90)
+    expect(result.line_items[0].vat_amount_cents).toBe(Math.round(6000 * 21 / 121))
+  })
+})

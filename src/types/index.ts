@@ -10,13 +10,14 @@ export interface AvailabilitySlot {
   endAt: string
   headline: string
   customerTypes: AvailabilityCustomerType[]
-  capacity: number    // min across required resources
+  capacity: number    // max across customer type rates (≥1 = at least one option bookable)
 }
 
 export interface AvailabilityCustomerType {
   pk: number
   totalCapacity: number
   customerTypePk: number
+  boatId: 'diana' | 'curacao'
   minimumParty: number
   maximumParty: number
   priceCents: number

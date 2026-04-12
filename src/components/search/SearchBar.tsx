@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { DatePickerPanel } from './DatePickerPanel'
 import { GuestSelectorPanel } from './GuestSelectorPanel'
+import { toDateStr, getToday } from '@/lib/utils'
 
 interface SearchBarProps {
   onSearch: (date: string, guests: number) => void
@@ -11,18 +12,6 @@ interface SearchBarProps {
   loading?: boolean
 }
 
-function toDateStr(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
-function getToday(): Date {
-  const d = new Date()
-  d.setHours(0, 0, 0, 0)
-  return d
-}
 
 function formatDisplay(dateStr: string): string {
   if (!dateStr) return ''

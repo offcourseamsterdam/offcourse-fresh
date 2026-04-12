@@ -104,6 +104,7 @@ export async function syncFareHarborItems(): Promise<SyncResult> {
           const boat = parseBoatName(name)
           return {
             fareharbor_pk: rate.pk,
+            customer_type_pk: rate.customer_type.pk,
             name,
             boat_name: boat,
             duration_minutes: parseDurationMinutes(name),

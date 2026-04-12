@@ -23,6 +23,8 @@ export interface DatePickerPanelProps {
   onPrevMonth: () => void
   onNextMonth: () => void
   today: Date
+  /** 'default' = floating card with shadow/border (search bar); 'inline' = no decoration (inside accordion) */
+  variant?: 'default' | 'inline'
 }
 
 export function DatePickerPanel({
@@ -36,11 +38,16 @@ export function DatePickerPanel({
   onPrevMonth,
   onNextMonth,
   today,
+  variant = 'default',
 }: DatePickerPanelProps) {
   const cells = buildCalendarCells(calYear, calMonth)
 
+  const wrapperClass = variant === 'inline'
+    ? 'p-1 w-full'
+    : 'bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-gray-100 p-4 sm:p-5 z-50 w-full sm:w-[320px]'
+
   return (
-    <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-gray-100 p-4 sm:p-5 z-50 w-full sm:w-[320px]">
+    <div className={wrapperClass}>
       {/* Today / Tomorrow */}
       <div className="flex gap-2 mb-4 sm:mb-5">
         {[{ label: 'Today', value: todayStr }, { label: 'Tomorrow', value: tomorrowStr }].map(({ label, value }) => (

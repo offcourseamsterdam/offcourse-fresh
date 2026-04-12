@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, type Dispatch, type SetStateAction } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { Link, usePathname, useRouter } from '@/i18n/navigation'
 import { locales, localeNames, localeFlags, type Locale } from '@/lib/i18n/config'
@@ -8,7 +8,6 @@ import { useAuth } from '@/lib/auth/hooks'
 import { getDashboardPath } from '@/lib/auth/types'
 import { Logo } from '@/components/ui/Logo'
 import { SearchBar } from '@/components/search/SearchBar'
-import { categorizeListings } from '@/lib/utils'
 import { useSearch } from '@/lib/search/SearchContext'
 
 interface NavListing {
@@ -18,52 +17,29 @@ interface NavListing {
   category: string
 }
 
-interface NavbarProps {
-  navListings?: NavListing[]
-}
-
-export function Navbar({ navListings = [] }: NavbarProps) {
-  const t = useTranslations('nav')
-  const locale = useLocale()
-  const pathname = usePathname()
-  const router = useRouter()
-  const { profile, isLoading, signOut } = useAuth()
-
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [langOpen, setLangOpen] = useState(false)
-  const [cruisesOpen, setCruisesOpen] = useState(false)
-  const [mobileCruisesOpen, setMobileCruisesOpen] = useState(false)
-  const [scrolled, setScrolled] = useState(false)
-  const cruisesRef = useRef<HTMLDivElement>(null)
-  const { heroSearchVisible, triggerNavbarSearch } = useSearch()
-  const showNavSearch = !heroSearchVisible
-
-  // Hide desktop nav links once user scrolls a little
-  useEffect(() => {
-    function onScroll() { setScrolled(window.scrollY > 80) }
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [])
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (cruisesRef.current && !cruisesRef.current.contains(e.target as Node)) {
-        setCruisesOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-
-  function switchLocale(next: Locale) {
-    router.replace(pathname, { locale: next })
-    setLangOpen(false)
-  }
-
-  const { private: privateListings, shared: sharedListings } = categorizeListings(navListings)
-
-  // All nav links — used in both desktop dropdown and mobile menu
-  const NavLinks = ({ onClose }: { onClose: () => void }) => (
+// Extracted outside Navbar so React doesn't re-mount it on every parent render
+function NavLinks({
+  onClose,
+  mobileCruisesOpen,
+  setMobileCruisesOpen,
+  navListings,
+  profile,
+  isLoading,
+  signOut,
+  locale,
+  t,
+}: {
+  onClose: () => void
+  mobileCruisesOpen: boolean
+  setMobileCruisesOpen: Dispatch<SetStateAction<boolean>>
+  navListings: NavListing[]
+  profile: ReturnType<typeof useAuth>['profile']
+  isLoading: boolean
+  signOut: () => void
+  locale: string
+  t: (key: string) => string
+}) {
+  return (
     <>
       <div>
         <button
@@ -125,6 +101,37 @@ export function Navbar({ navListings = [] }: NavbarProps) {
       )}
     </>
   )
+}
+
+interface NavbarProps {
+  navListings?: NavListing[]
+}
+
+export function Navbar({ navListings = [] }: NavbarProps) {
+  const t = useTranslations('nav')
+  const locale = useLocale()
+  const pathname = usePathname()
+  const router = useRouter()
+  const { profile, isLoading, signOut } = useAuth()
+
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [langOpen, setLangOpen] = useState(false)
+  const [mobileCruisesOpen, setMobileCruisesOpen] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
+  const { heroSearchVisible, triggerNavbarSearch } = useSearch()
+  const showNavSearch = !heroSearchVisible
+
+  // Hide desktop nav links once user scrolls a little
+  useEffect(() => {
+    function onScroll() { setScrolled(window.scrollY > 80) }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  function switchLocale(next: Locale) {
+    router.replace(pathname, { locale: next })
+    setLangOpen(false)
+  }
 
   return (
     <header className="fixed top-0 left-0 right-0 z-[9999] bg-white/95 backdrop-blur-sm transition-all duration-300">
@@ -157,8 +164,40 @@ export function Navbar({ navListings = [] }: NavbarProps) {
 
         </div> {/* end centre flex-1 */}
 
-        {/* Right side: language + hamburger */}
+        {/* Right side: auth + language + hamburger */}
         <div className="flex items-center gap-2">
+          {/* Auth indicator — desktop only */}
+          {!isLoading && (
+            <div className="hidden sm:flex items-center gap-1.5">
+              {profile ? (
+                <>
+                  {profile.role === 'admin' && (
+                    <Link
+                      href={getDashboardPath('admin', locale) as string}
+                      className="font-avenir text-xs font-bold uppercase tracking-wider text-accent hover:text-primary transition-colors px-2 py-1"
+                    >
+                      Admin
+                    </Link>
+                  )}
+                  <Link
+                    href={getDashboardPath(profile.role, locale) as string}
+                    className="w-7 h-7 rounded-full bg-primary text-white flex items-center justify-center font-avenir text-xs font-bold"
+                    title={profile.display_name || profile.email}
+                  >
+                    {(profile.display_name || profile.email).charAt(0).toUpperCase()}
+                  </Link>
+                </>
+              ) : (
+                <Link
+                  href={`/${locale}/login`}
+                  className="font-avenir text-xs text-muted hover:text-primary transition-colors px-2 py-1"
+                >
+                  Log in
+                </Link>
+              )}
+            </div>
+          )}
+
           {/* Language switcher */}
           <div className="relative">
             <button
@@ -208,7 +247,17 @@ export function Navbar({ navListings = [] }: NavbarProps) {
       {menuOpen && (
         <div className="border-t border-[#e5e7eb] bg-white/98 backdrop-blur-sm px-6 pb-5 pt-3 shadow-lg">
           <div className="max-w-sm mx-auto flex flex-col gap-0.5">
-            <NavLinks onClose={() => setMenuOpen(false)} />
+            <NavLinks
+              onClose={() => setMenuOpen(false)}
+              mobileCruisesOpen={mobileCruisesOpen}
+              setMobileCruisesOpen={setMobileCruisesOpen}
+              navListings={navListings}
+              profile={profile}
+              isLoading={isLoading}
+              signOut={signOut}
+              locale={locale}
+              t={t}
+            />
 
             {/* Language switcher in menu */}
             <div className="pt-3 mt-1 border-t border-[#e5e7eb] flex flex-wrap gap-2">

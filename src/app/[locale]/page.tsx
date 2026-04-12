@@ -41,7 +41,7 @@ export default async function HomePage({ params }: Props) {
       .order('created_at', { ascending: false })
       .limit(6),
     supabase
-      .from('hero_slides' as any)
+      .from('hero_carousel_items')
       .select('src, alt, caption')
       .eq('active', true)
       .order('sort_order', { ascending: true }),

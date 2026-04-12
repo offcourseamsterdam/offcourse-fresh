@@ -1,3 +1,7 @@
+// ── Defaults ────────────────────────────────────────────────────────────────
+
+export const DEFAULT_DURATION_MINUTES = 90
+
 // ── Extras categories ────────────────────────────────────────────────────────
 
 export const CATEGORY_EMOJI: Record<string, string> = {
@@ -18,6 +22,7 @@ export const PRICE_TYPES = [
   { value: 'fixed_cents', label: 'Fixed price' },
   { value: 'percentage', label: 'Percentage (%)' },
   { value: 'per_person_cents', label: 'Per person' },
+  { value: 'per_person_per_hour_cents', label: 'Per person per hour' },
   { value: 'informational', label: 'Info only (no charge)' },
 ] as const
 
@@ -28,6 +33,7 @@ export function formatExtraPrice(extra: { price_type: string; price_value: numbe
   if (extra.price_type === 'informational') return 'Info only'
   if (extra.price_type === 'percentage') return `${extra.price_value}%`
   if (extra.price_type === 'per_person_cents') return `€${(extra.price_value / 100).toFixed(2)}/person`
+  if (extra.price_type === 'per_person_per_hour_cents') return `€${(extra.price_value / 100).toFixed(2)}/person/hour`
   return `€${(extra.price_value / 100).toFixed(2)}`
 }
 
@@ -35,3 +41,8 @@ export function formatExtraPrice(extra: { price_type: string; price_value: numbe
 
 export const LISTING_CATEGORIES = ['private', 'shared', 'standard', 'special', 'seasonal', 'event'] as const
 export type ListingCategory = (typeof LISTING_CATEGORIES)[number]
+
+// ── Session storage keys ────────────────────────────────────────────────────
+
+export const SESSION_BOOKING_KEY = 'offcourse_booking'
+export const SESSION_CONTACT_KEY = 'offcourse_contact'

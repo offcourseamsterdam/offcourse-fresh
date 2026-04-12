@@ -4,6 +4,14 @@ import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { createServiceClient } from '@/lib/supabase/server'
 import { Resend } from 'resend'
 
+let _resend: Resend | null = null
+function getResend(): Resend {
+  if (!_resend) {
+    _resend = new Resend(process.env.RESEND_API_KEY ?? '')
+  }
+  return _resend
+}
+
 /**
  * POST /api/admin/booking-flow/book
  *
@@ -42,6 +50,19 @@ export async function POST(request: NextRequest) {
 
     if (!availPk || !customerTypeRatePk || !guestCount || !contact?.name || !contact?.email || !contact?.phone) {
       return apiError('Missing required fields: availPk, customerTypeRatePk, guestCount, contact.name, contact.email, contact.phone', 400)
+    }
+
+    // Idempotency: if a booking already exists for this payment intent, return it
+    if (stripePaymentIntentId) {
+      const supabase = await createServiceClient()
+      const { data: existing } = await supabase
+        .from('bookings')
+        .select('id, fareharbor_booking_uuid')
+        .eq('stripe_payment_intent_id', stripePaymentIntentId)
+        .maybeSingle()
+      if (existing) {
+        return apiOk({ booking: existing, deduplicated: true })
+      }
     }
 
     const fh = getFareHarborClient()
@@ -270,10 +291,9 @@ interface EmailPayload {
 }
 
 async function sendConfirmationEmail(p: EmailPayload) {
-  const apiKey = process.env.RESEND_API_KEY
-  if (!apiKey) return // not configured
+  if (!process.env.RESEND_API_KEY) return // not configured
 
-  const resend = new Resend(apiKey)
+  const resend = getResend()
 
   const startTime = p.startAt ? new Date(p.startAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' }) : ''
   const endTime = p.endAt ? new Date(p.endAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' }) : ''

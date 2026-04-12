@@ -19,6 +19,7 @@ export interface ExtraCategoryGroupProps {
   onToggle: (id: string) => void
   guestCount: number
   baseAmountCents: number
+  durationMinutes?: number
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -30,6 +31,7 @@ export function ExtraCategoryGroup({
   onToggle,
   guestCount,
   baseAmountCents,
+  durationMinutes,
 }: ExtraCategoryGroupProps) {
   return (
     <div className="space-y-2">
@@ -51,6 +53,7 @@ export function ExtraCategoryGroup({
           onToggle={onToggle}
           guestCount={guestCount}
           baseAmountCents={baseAmountCents}
+          durationMinutes={durationMinutes}
         />
       ))}
     </div>

@@ -5,6 +5,7 @@ export interface Extra {
   name: string
   description: string | null
   image_url: string | null
+  ingredients: string[] | null
   category: string
   scope: string
   applicable_categories: string[] | null
@@ -17,7 +18,8 @@ export interface Extra {
   created_at: string
 }
 
-export type PriceType = 'fixed_cents' | 'percentage' | 'per_person_cents' | 'informational'
+import type { PriceType } from '@/lib/extras/calculate'
+export type { PriceType }
 export type Scope = 'global' | 'per_listing'
 export type Category = 'food' | 'drinks' | 'protection' | 'experience' | 'tax' | 'info'
 export type ListingCategory = 'private' | 'shared' | 'standard' | 'special' | 'seasonal' | 'event'
@@ -27,6 +29,7 @@ export type ListingCategory = 'private' | 'shared' | 'standard' | 'special' | 's
 export interface FormState {
   name: string
   description: string
+  ingredients: string[]
   category: Category
   scope: Scope
   applicable_categories: ListingCategory[]
@@ -42,6 +45,7 @@ export function blankForm(): FormState {
   return {
     name: '',
     description: '',
+    ingredients: [],
     category: 'food',
     scope: 'global',
     applicable_categories: [],
@@ -65,6 +69,7 @@ export function extraToForm(extra: Extra): FormState {
   return {
     name: extra.name,
     description: extra.description ?? '',
+    ingredients: extra.ingredients ?? [],
     category: extra.category as Category,
     scope: extra.scope as Scope,
     applicable_categories: (extra.applicable_categories ?? []) as ListingCategory[],
@@ -87,6 +92,7 @@ export function formToPayload(form: FormState) {
   const payload = {
     name: form.name,
     description: form.description || null,
+    ingredients: form.ingredients.length > 0 ? form.ingredients.filter(i => i.trim()) : null,
     category: form.category,
     scope: form.scope,
     applicable_categories: form.scope === 'global' ? form.applicable_categories : null,

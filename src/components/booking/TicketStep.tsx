@@ -3,8 +3,7 @@
 import { motion } from 'framer-motion'
 import { Minus, Plus } from 'lucide-react'
 import type { AvailabilityCustomerType } from '@/types'
-
-const CITY_TAX_PER_PERSON_CENTS = 260 // €2.60
+import { fmtEuros } from '@/lib/utils'
 
 interface TicketStepProps {
   customerTypes: AvailabilityCustomerType[]
@@ -12,10 +11,6 @@ interface TicketStepProps {
   maxCapacity: number
   onUpdateCount: (customerTypePk: number, count: number) => void
   onConfirm: () => void
-}
-
-function fmtPrice(cents: number): string {
-  return `€${(cents / 100).toFixed(2)}`
 }
 
 // Try to derive a human label from customer type data
@@ -35,12 +30,6 @@ export function TicketStep({
   onConfirm,
 }: TicketStepProps) {
   const totalTickets = Object.values(ticketCounts).reduce((sum, c) => sum + c, 0)
-  const subtotalCents = customerTypes.reduce(
-    (sum, ct) => sum + (ticketCounts[ct.customerTypePk] || 0) * ct.priceCents,
-    0
-  )
-  const cityTaxCents = totalTickets * CITY_TAX_PER_PERSON_CENTS
-
   return (
     <div className="space-y-3">
       <p className="text-xs text-zinc-500 mb-1">Select your tickets</p>
@@ -60,7 +49,7 @@ export function TicketStep({
           >
             <div>
               <div className="text-sm font-semibold text-zinc-800">{label}</div>
-              <div className="text-xs text-zinc-500">{fmtPrice(ct.priceCents)} per person</div>
+              <div className="text-xs text-zinc-500">{fmtEuros(ct.priceCents)} per person</div>
             </div>
             <div className="flex items-center gap-3">
               <button
@@ -84,18 +73,6 @@ export function TicketStep({
           </motion.div>
         )
       })}
-
-      {/* City tax line */}
-      {totalTickets > 0 && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="flex items-center justify-between px-4 py-2 text-xs text-zinc-500"
-        >
-          <span>City tax · {totalTickets} × €2.60</span>
-          <span className="font-medium">{fmtPrice(cityTaxCents)}</span>
-        </motion.div>
-      )}
 
       {/* Confirm button */}
       {totalTickets > 0 && (

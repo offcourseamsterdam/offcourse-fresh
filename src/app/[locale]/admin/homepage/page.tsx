@@ -28,7 +28,7 @@ export default function HomepageAdminPage() {
   async function load() {
     setLoading(true)
     const { data } = await supabase
-      .from('hero_slides' as any)
+      .from('hero_carousel_items')
       .select('*')
       .order('sort_order')
     setSlides((data ?? []) as unknown as Slide[])
@@ -38,7 +38,7 @@ export default function HomepageAdminPage() {
   async function addSlide() {
     if (!newSlide.src) return
     setSaving('new')
-    const { error } = await supabase.from('hero_slides' as any).insert({
+    const { error } = await supabase.from('hero_carousel_items').insert({
       src: newSlide.src,
       alt: newSlide.alt,
       caption: newSlide.caption,
@@ -55,14 +55,14 @@ export default function HomepageAdminPage() {
 
   async function updateSlide(id: string, field: string, value: string | boolean) {
     setSaving(id)
-    await supabase.from('hero_slides' as any).update({ [field]: value }).eq('id', id)
+    await supabase.from('hero_carousel_items').update({ [field]: value }).eq('id', id)
     setSlides(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s))
     setSaving(null)
   }
 
   async function deleteSlide(id: string) {
     if (!confirm('Remove this slide?')) return
-    await supabase.from('hero_slides' as any).delete().eq('id', id)
+    await supabase.from('hero_carousel_items').delete().eq('id', id)
     setSlides(prev => prev.filter(s => s.id !== id))
   }
 

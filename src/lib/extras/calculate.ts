@@ -1,6 +1,6 @@
 // src/lib/extras/calculate.ts
 
-export type PriceType = 'fixed_cents' | 'percentage' | 'per_person_cents' | 'informational'
+export type PriceType = 'fixed_cents' | 'percentage' | 'per_person_cents' | 'per_person_per_hour_cents' | 'informational'
 
 export interface Extra {
   id: string
@@ -46,10 +46,11 @@ function extractVat(amountInclVat: number, rate: number): number {
  *
  * Key rules:
  * - Informational extras are excluded from all financial calculations
- * - Calculation order: per_person (city tax, required) → fixed → percentage (insurance last)
+ * - Calculation order: per_person → per_person_per_hour → fixed → percentage (insurance last)
  * - Percentage extras calculate on the subtotal BEFORE themselves (never on themselves)
  * - City tax guestCount is the actual number of guests — NOT the FareHarbor quantity
  *   (private cruises always use quantity=1 for FareHarbor, but city tax uses actual guests)
+ * - per_person_per_hour: price_value × guestCount × (durationMinutes / 60)
  * - All prices are INCLUSIVE of VAT; VAT is back-calculated
  * - Base cruise VAT rate is always 9% (hard-coded)
  */
@@ -57,6 +58,7 @@ export function calculateExtras(
   baseAmountCents: number,
   guestCount: number,
   selectedExtras: Extra[],
+  durationMinutes = 90,
 ): ExtrasCalculation {
   const BASE_VAT_RATE = 9
   const baseVat = extractVat(baseAmountCents, BASE_VAT_RATE)
@@ -85,7 +87,25 @@ export function calculateExtras(
     subtotal += amount
   }
 
-  // 2. Fixed extras
+  // 2. Per-person-per-hour extras (unlimited drinks)
+  for (const extra of priced.filter(e => e.price_type === 'per_person_per_hour_cents')) {
+    const hours = durationMinutes / 60
+    const amount = Math.round(extra.price_value * guestCount * hours)
+    const vat = extractVat(amount, extra.vat_rate)
+    lineItems.push({
+      extra_id: extra.id,
+      name: extra.name,
+      category: extra.category,
+      price_type: extra.price_type,
+      price_value: extra.price_value,
+      vat_rate: extra.vat_rate,
+      guest_count: guestCount,
+      amount_cents: amount,
+      vat_amount_cents: vat,
+    })
+    subtotal += amount
+  }
+
   for (const extra of priced.filter(e => e.price_type === 'fixed_cents')) {
     const vat = extractVat(extra.price_value, extra.vat_rate)
     lineItems.push({
@@ -101,7 +121,7 @@ export function calculateExtras(
     subtotal += extra.price_value
   }
 
-  // 3. Percentage extras (insurance) — calculated on subtotal before themselves
+  // 4. Percentage extras (insurance) — calculated on subtotal before themselves
   for (const extra of priced.filter(e => e.price_type === 'percentage')) {
     const amount = Math.round(subtotal * extra.price_value / 100)
     const vat = extractVat(amount, extra.vat_rate)

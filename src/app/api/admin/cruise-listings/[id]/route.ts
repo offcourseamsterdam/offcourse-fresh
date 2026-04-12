@@ -16,7 +16,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     .eq('id', id)
     .single()
   if (error) return apiError(error.message, 404)
-  return apiOk({ data })
+  return apiOk(data)
 }
 
 // PATCH /api/admin/cruise-listings/[id]
@@ -55,5 +55,5 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     .select('*')
     .single()
   if (error) return apiError(error.message)
-  return apiOk({ data })
+  return apiOk(data)
 }
