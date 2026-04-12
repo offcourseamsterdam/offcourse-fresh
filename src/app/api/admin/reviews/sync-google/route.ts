@@ -1,5 +1,5 @@
 import { apiOk, apiError } from '@/lib/api/response'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { requireRole } from '@/lib/auth/server'
 import { fetchGoogleReviews, searchPlace } from '@/lib/google-reviews/client'
 import type { GoogleReview } from '@/lib/google-reviews/client'
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     return apiError('Unauthorized', 403)
   }
 
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
 
   // 1. Determine which Place ID to use
   let placeId: string | undefined
