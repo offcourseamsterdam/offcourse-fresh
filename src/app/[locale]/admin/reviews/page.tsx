@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Star, RefreshCw, Loader2, Search, Trash2, ExternalLink, MessageSquare, Pencil, Link2, X } from 'lucide-react'
+import { Star, RefreshCw, Loader2, Search, Trash2, ExternalLink, MessageSquare, Pencil, Link2, X, Sparkles, RotateCcw, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 
@@ -22,6 +22,9 @@ type Review = {
   owner_reply_text: string | null
   owner_reply_time: string | null
   reply_synced_at: string | null
+  ai_draft_reply: string | null
+  confirmed_reply: string | null
+  reply_posted_at: string | null
 }
 
 type GoogleConfig = {
@@ -55,6 +58,9 @@ export default function AdminReviewsPage() {
   const [replyText, setReplyText] = useState('')
   const [replySubmitting, setReplySubmitting] = useState(false)
   const [replyError, setReplyError] = useState<string | null>(null)
+
+  // AI draft state
+  const [generatingFor, setGeneratingFor] = useState<string | null>(null)
 
   // ── Data fetching ────────────────────────────────────────────────────────────
 
@@ -199,6 +205,37 @@ export default function AdminReviewsPage() {
     setReplyingTo(null)
     setReplyText('')
     setReplyError(null)
+  }
+
+  async function generateAiReply(reviewId: string) {
+    setGeneratingFor(reviewId)
+    setReplyError(null)
+    try {
+      const res = await fetch('/api/admin/reviews/generate-reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reviewId }),
+      })
+      const json = await res.json()
+      if (json.ok) {
+        const draft = json.data.reply
+        // Update the review in state with the draft
+        setReviews(prev =>
+          prev.map(r => r.id === reviewId ? { ...r, ai_draft_reply: draft } : r)
+        )
+        // Open the reply editor with the AI draft pre-filled
+        setReplyingTo(reviewId)
+        setReplyText(draft)
+      } else {
+        setReplyError(json.error ?? 'Failed to generate reply')
+        setReplyingTo(reviewId)
+      }
+    } catch {
+      setReplyError('Network error generating reply')
+      setReplyingTo(reviewId)
+    } finally {
+      setGeneratingFor(null)
+    }
   }
 
   async function submitReply(reviewId: string) {
@@ -560,25 +597,43 @@ export default function AdminReviewsPage() {
                   </div>
                 )}
 
-                {/* Reply button (for Google reviews without a reply) */}
+                {/* Reply buttons (for reviews without a reply) */}
                 {!review.owner_reply_text &&
-                  review.source === 'google' &&
-                  config?.is_gbp_connected &&
                   replyingTo !== review.id && (
-                  <div className="ml-14">
+                  <div className="ml-14 flex items-center gap-3">
                     <button
-                      onClick={() => openReply(review)}
-                      className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-600 transition-colors"
+                      onClick={() => generateAiReply(review.id)}
+                      disabled={generatingFor === review.id}
+                      className="flex items-center gap-1.5 text-xs text-purple-500 hover:text-purple-700 transition-colors disabled:opacity-50"
                     >
-                      <MessageSquare size={12} />
-                      Reply
+                      {generatingFor === review.id ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <Sparkles size={12} />
+                      )}
+                      {generatingFor === review.id ? 'Generating...' : 'Generate Reply'}
                     </button>
+                    {review.source === 'google' && config?.is_gbp_connected && (
+                      <button
+                        onClick={() => openReply(review)}
+                        className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-600 transition-colors"
+                      >
+                        <MessageSquare size={12} />
+                        Write manually
+                      </button>
+                    )}
                   </div>
                 )}
 
                 {/* Reply editor (inline) */}
                 {replyingTo === review.id && (
                   <div className="ml-14 space-y-2">
+                    {review.ai_draft_reply && replyText === review.ai_draft_reply && (
+                      <div className="flex items-center gap-1.5 text-xs text-purple-500">
+                        <Sparkles size={11} />
+                        AI-generated draft — edit freely, then confirm
+                      </div>
+                    )}
                     <textarea
                       className="w-full text-sm border border-zinc-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-zinc-300 resize-none"
                       rows={3}
@@ -591,18 +646,49 @@ export default function AdminReviewsPage() {
                       <p className="text-xs text-red-600">{replyError}</p>
                     )}
                     <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        onClick={() => submitReply(review.id)}
-                        disabled={replySubmitting || !replyText.trim()}
+                      {review.source === 'google' && config?.is_gbp_connected ? (
+                        <Button
+                          size="sm"
+                          onClick={() => submitReply(review.id)}
+                          disabled={replySubmitting || !replyText.trim()}
+                        >
+                          {replySubmitting ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Check className="w-3.5 h-3.5" />
+                          )}
+                          {replySubmitting ? 'Posting...' : 'Confirm & Post'}
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            // Save draft locally without posting to Google
+                            submitReply(review.id)
+                          }}
+                          disabled={replySubmitting || !replyText.trim()}
+                        >
+                          {replySubmitting ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Check className="w-3.5 h-3.5" />
+                          )}
+                          {replySubmitting ? 'Saving...' : 'Save Reply'}
+                        </Button>
+                      )}
+                      <button
+                        onClick={() => generateAiReply(review.id)}
+                        disabled={generatingFor === review.id}
+                        className="text-xs text-purple-500 hover:text-purple-700 flex items-center gap-1 transition-colors disabled:opacity-50"
                       >
-                        {replySubmitting ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        {generatingFor === review.id ? (
+                          <Loader2 size={12} className="animate-spin" />
                         ) : (
-                          <MessageSquare className="w-3.5 h-3.5" />
+                          <RotateCcw size={12} />
                         )}
-                        {replySubmitting ? 'Sending...' : 'Send Reply'}
-                      </Button>
+                        Regenerate
+                      </button>
                       <button
                         onClick={closeReply}
                         className="text-xs text-zinc-400 hover:text-zinc-600 flex items-center gap-1 transition-colors"
