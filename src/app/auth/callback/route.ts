@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   const locale = searchParams.get('locale') || 'en'
 
   if (!code) {
-    return NextResponse.redirect(`${origin}/en/login?error=missing_code`)
+    return NextResponse.redirect(`${origin}/${locale}/login?error=missing_code`)
   }
 
   const supabase = await createClient()
@@ -18,29 +18,46 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     console.error('[auth/callback] exchangeCodeForSession error:', error.message)
-    return NextResponse.redirect(`${origin}/en/login?error=auth_failed`)
+    return NextResponse.redirect(`${origin}/${locale}/login?error=auth_failed`)
   }
 
   // Fetch user profile to determine where to redirect
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
-    return NextResponse.redirect(`${origin}/en/login?error=no_user`)
+    return NextResponse.redirect(`${origin}/${locale}/login?error=no_user`)
   }
 
-  const { data: profile } = await supabase
+  let { data: profile } = await supabase
     .from('user_profiles')
     .select('*')
     .eq('id', user.id)
     .single()
 
+  // Auto-create profile for new users (e.g. first-time OTP sign-in)
   if (!profile) {
-    return NextResponse.redirect(`${origin}/en/login?error=no_profile`)
+    const { data: newProfile, error: insertError } = await supabase
+      .from('user_profiles')
+      .insert({
+        id: user.id,
+        email: user.email ?? '',
+        role: 'guest',
+        is_active: true,
+      })
+      .select('*')
+      .single()
+
+    if (insertError) {
+      console.error('[auth/callback] Failed to create profile:', insertError.message)
+      return NextResponse.redirect(`${origin}/${locale}/login?error=no_profile`)
+    }
+
+    profile = newProfile
   }
 
   const typedProfile = profile as UserProfile
 
   if (!typedProfile.is_active) {
-    return NextResponse.redirect(`${origin}/en/login?error=deactivated`)
+    return NextResponse.redirect(`${origin}/${locale}/login?error=deactivated`)
   }
 
   // Redirect to the intended page or the role-appropriate dashboard

@@ -5,10 +5,22 @@ import { useTranslations, useLocale } from 'next-intl'
 import { Link, usePathname, useRouter } from '@/i18n/navigation'
 import { locales, localeNames, localeFlags, type Locale } from '@/lib/i18n/config'
 import { useAuth } from '@/lib/auth/hooks'
-import { getDashboardPath } from '@/lib/auth/types'
+import type { UserRole } from '@/lib/auth/types'
 import { Logo } from '@/components/ui/Logo'
 import { SearchBar } from '@/components/search/SearchBar'
 import { useSearch } from '@/lib/search/SearchContext'
+
+/** Dashboard paths without locale prefix — next-intl Link auto-prepends locale */
+function getDashboardPathNoLocale(role: UserRole): string {
+  const dashboards: Record<UserRole, string> = {
+    admin: '/admin',
+    captain: '/captain',
+    support: '/support',
+    partner: '/partner',
+    guest: '/account',
+  }
+  return dashboards[role]
+}
 
 interface NavListing {
   id: string
@@ -80,7 +92,7 @@ function NavLinks({
         <div className="pt-3 mt-1 border-t border-[#e5e7eb]">
           {profile ? (
             <>
-              <Link href={getDashboardPath(profile.role, locale) as string}
+              <Link href={getDashboardPathNoLocale(profile.role)}
                 className="block py-2.5 font-avenir text-primary font-medium hover:text-accent transition-colors"
                 onClick={onClose}>
                 My dashboard
@@ -91,7 +103,7 @@ function NavLinks({
               </button>
             </>
           ) : (
-            <Link href={`/${locale}/login`}
+            <Link href="/login"
               className="block py-2.5 font-avenir text-primary font-medium hover:text-accent transition-colors"
               onClick={onClose}>
               Log in
@@ -180,7 +192,7 @@ export function Navbar({ navListings = [] }: NavbarProps) {
                     </Link>
                   )}
                   <Link
-                    href={getDashboardPath(profile.role, locale) as string}
+                    href={getDashboardPathNoLocale(profile.role)}
                     className="w-7 h-7 rounded-full bg-primary text-white flex items-center justify-center font-avenir text-xs font-bold"
                     title={profile.display_name || profile.email}
                   >
@@ -189,7 +201,7 @@ export function Navbar({ navListings = [] }: NavbarProps) {
                 </>
               ) : (
                 <Link
-                  href={`/${locale}/login`}
+                  href="/login"
                   className="font-avenir text-xs text-muted hover:text-primary transition-colors px-2 py-1"
                 >
                   Log in
