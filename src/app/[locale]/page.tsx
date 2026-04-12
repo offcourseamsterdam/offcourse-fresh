@@ -42,8 +42,8 @@ export default async function HomePage({ params }: Props) {
       .limit(6),
     supabase
       .from('hero_carousel_items')
-      .select('src, alt, caption')
-      .eq('active', true)
+      .select('image_url, alt_text, caption')
+      .eq('is_active', true)
       .order('sort_order', { ascending: true }),
     supabase
       .from('boats')
@@ -54,7 +54,8 @@ export default async function HomePage({ params }: Props) {
 
   const listings = listingsResult.data
   const reviews = reviewsResult.data
-  const slides = (slidesResult.data ?? []) as unknown as { src: string; alt: string; caption: string }[]
+  const rawSlides = (slidesResult.data ?? []) as { image_url: string; alt_text: string | null; caption: string | null }[]
+  const slides = rawSlides.map(s => ({ src: s.image_url, alt: s.alt_text ?? '', caption: s.caption ?? '' }))
   const boats = boatsResult.data ?? []
 
   return (
