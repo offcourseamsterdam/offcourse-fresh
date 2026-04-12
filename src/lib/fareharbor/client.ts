@@ -77,6 +77,11 @@ function getCached<T>(key: string): T | null {
 }
 
 function setCache(key: string, data: unknown, ttlMs: number = 60_000) {
+  // Evict oldest entry if cache is too large
+  if (cache.size >= 500) {
+    const firstKey = cache.keys().next().value
+    if (firstKey) cache.delete(firstKey)
+  }
   cache.set(key, { data, expiresAt: Date.now() + ttlMs })
 }
 

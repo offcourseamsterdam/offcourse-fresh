@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { notFound } from 'next/navigation'
 import Image from 'next/image'
 import { Check } from 'lucide-react'
@@ -9,6 +10,18 @@ import type { Locale } from '@/lib/i18n/config'
 import type { Database } from '@/lib/supabase/types'
 
 type CruiseListing = Database['public']['Tables']['cruise_listings']['Row']
+
+// Deduplicate the listing fetch between generateMetadata and the page component
+const getListingBySlug = cache(async (slug: string) => {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('cruise_listings')
+    .select('*')
+    .eq('slug', slug)
+    .eq('is_published', true)
+    .single()
+  return data as CruiseListing | null
+})
 
 // JSONB field shapes (as stored by the edit page)
 type CruiseImage = { url: string; alt_text?: string | null }
@@ -24,20 +37,9 @@ interface Props {
 
 export async function generateMetadata({ params }: Props) {
   const { locale, slug } = await params
-  const supabase = await createClient()
 
-  const { data: listingData } = await supabase
-    .from('cruise_listings')
-    .select(
-      'title, tagline, seo_title, seo_meta_description, seo_title_nl, seo_title_de, seo_title_fr, seo_title_es, seo_title_pt, seo_title_zh, seo_meta_description_nl, seo_meta_description_de, seo_meta_description_fr, seo_meta_description_es, seo_meta_description_pt, seo_meta_description_zh'
-    )
-    .eq('slug', slug)
-    .eq('is_published', true)
-    .single()
-
-  if (!listingData) return {}
-
-  const meta = listingData as CruiseListing
+  const meta = await getListingBySlug(slug)
+  if (!meta) return {}
   const loc = locale as Locale
   const title = getLocalizedField(meta, 'seo_title', loc) ?? meta.title
   const description =
@@ -54,16 +56,8 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
   const { locale, slug } = await params
   const { date, guests, time } = await searchParams
   const t = await getTranslations('cruises')
-  const supabase = await createClient()
 
-  const { data: listingData } = await supabase
-    .from('cruise_listings')
-    .select('*')
-    .eq('slug', slug)
-    .eq('is_published', true)
-    .single()
-
-  const listing = listingData as CruiseListing | null
+  const listing = await getListingBySlug(slug)
   if (!listing) notFound()
 
   // All content lives in JSONB columns on the listing row (no separate tables)

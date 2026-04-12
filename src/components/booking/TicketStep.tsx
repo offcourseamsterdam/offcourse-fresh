@@ -5,8 +5,6 @@ import { Minus, Plus } from 'lucide-react'
 import type { AvailabilityCustomerType } from '@/types'
 import { fmtEuros } from '@/lib/utils'
 
-const CITY_TAX_PER_PERSON_CENTS = 260 // €2.60
-
 interface TicketStepProps {
   customerTypes: AvailabilityCustomerType[]
   ticketCounts: Record<number, number>
@@ -32,12 +30,6 @@ export function TicketStep({
   onConfirm,
 }: TicketStepProps) {
   const totalTickets = Object.values(ticketCounts).reduce((sum, c) => sum + c, 0)
-  const subtotalCents = customerTypes.reduce(
-    (sum, ct) => sum + (ticketCounts[ct.customerTypePk] || 0) * ct.priceCents,
-    0
-  )
-  const cityTaxCents = totalTickets * CITY_TAX_PER_PERSON_CENTS
-
   return (
     <div className="space-y-3">
       <p className="text-xs text-zinc-500 mb-1">Select your tickets</p>
@@ -81,18 +73,6 @@ export function TicketStep({
           </motion.div>
         )
       })}
-
-      {/* City tax line */}
-      {totalTickets > 0 && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="flex items-center justify-between px-4 py-2 text-xs text-zinc-500"
-        >
-          <span>City tax · {totalTickets} × €2.60</span>
-          <span className="font-medium">{fmtEuros(cityTaxCents)}</span>
-        </motion.div>
-      )}
 
       {/* Confirm button */}
       {totalTickets > 0 && (
