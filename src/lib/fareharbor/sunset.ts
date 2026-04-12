@@ -1,14 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/server'
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-/** Format a Date to YYYY-MM-DD */
-export function formatDateStr(date: Date): string {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
+import { toDateStr } from '@/lib/utils'
 
 const AMSTERDAM_LAT = 52.3676
 const AMSTERDAM_LNG = 4.9041
@@ -76,7 +67,7 @@ async function fetchFromApi(
  * sunrise-sunset.org API. Caches the result for future calls.
  */
 export async function getSunsetTime(date: Date): Promise<string | null> {
-  const dateStr = formatDateStr(date)
+  const dateStr = toDateStr(date)
   const supabase = await createServiceClient()
 
   // 1. Check cache
@@ -132,7 +123,7 @@ export async function preSeedSunsetTimes(daysAhead: number = 90): Promise<number
   for (let i = 0; i < daysAhead; i++) {
     const d = new Date(today)
     d.setDate(today.getDate() + i)
-    dates.push(formatDateStr(d))
+    dates.push(toDateStr(d))
   }
 
   // Find which dates are already cached

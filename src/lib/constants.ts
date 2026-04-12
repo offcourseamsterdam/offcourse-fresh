@@ -41,3 +41,8 @@ export function formatExtraPrice(extra: { price_type: string; price_value: numbe
 
 export const LISTING_CATEGORIES = ['private', 'shared', 'standard', 'special', 'seasonal', 'event'] as const
 export type ListingCategory = (typeof LISTING_CATEGORIES)[number]
+
+// ── Session storage keys ────────────────────────────────────────────────────
+
+export const SESSION_BOOKING_KEY = 'offcourse_booking'
+export const SESSION_CONTACT_KEY = 'offcourse_contact'

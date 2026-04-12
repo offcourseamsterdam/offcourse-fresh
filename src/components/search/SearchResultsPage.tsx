@@ -8,6 +8,7 @@ import { DagdeelTabs } from '@/components/search/DagdeelTabs'
 import { TypeChips, type CruiseTypeFilter } from '@/components/search/TypeChips'
 import { filterSlotsByDagdeel, type Dagdeel } from '@/lib/search/dagdeel'
 import { useRouter } from '@/i18n/navigation'
+import { formatDate } from '@/lib/utils'
 import type { SearchResult } from '@/types'
 import type { Locale } from '@/lib/i18n/config'
 
@@ -27,14 +28,6 @@ interface SearchResultsPageProps {
   date: string
   guests: number
   locale: string
-}
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
-
-function formatDate(dateStr: string): string {
-  if (!dateStr) return ''
-  const d = new Date(dateStr + 'T12:00:00')
-  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
 }
 
 // ── Component ───────────────────────────────────────────────────────────────
@@ -64,7 +57,7 @@ export function SearchResultsPage({ results, date, guests, locale }: SearchResul
   }, [results, activeDagdeel, activeType])
 
   const style = DAGDEEL_STYLES[activeDagdeel]
-  const formattedDate = formatDate(date)
+  const formattedDate = formatDate(date + 'T12:00:00', locale as Locale)
 
   return (
     <div className={`relative min-h-screen bg-gradient-to-b ${style.gradient} transition-all duration-300`}>

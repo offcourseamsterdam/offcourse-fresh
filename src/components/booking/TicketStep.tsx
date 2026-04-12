@@ -3,6 +3,7 @@
 import { motion } from 'framer-motion'
 import { Minus, Plus } from 'lucide-react'
 import type { AvailabilityCustomerType } from '@/types'
+import { fmtEuros } from '@/lib/utils'
 
 const CITY_TAX_PER_PERSON_CENTS = 260 // €2.60
 
@@ -12,10 +13,6 @@ interface TicketStepProps {
   maxCapacity: number
   onUpdateCount: (customerTypePk: number, count: number) => void
   onConfirm: () => void
-}
-
-function fmtPrice(cents: number): string {
-  return `€${(cents / 100).toFixed(2)}`
 }
 
 // Try to derive a human label from customer type data
@@ -60,7 +57,7 @@ export function TicketStep({
           >
             <div>
               <div className="text-sm font-semibold text-zinc-800">{label}</div>
-              <div className="text-xs text-zinc-500">{fmtPrice(ct.priceCents)} per person</div>
+              <div className="text-xs text-zinc-500">{fmtEuros(ct.priceCents)} per person</div>
             </div>
             <div className="flex items-center gap-3">
               <button
@@ -93,7 +90,7 @@ export function TicketStep({
           className="flex items-center justify-between px-4 py-2 text-xs text-zinc-500"
         >
           <span>City tax · {totalTickets} × €2.60</span>
-          <span className="font-medium">{fmtPrice(cityTaxCents)}</span>
+          <span className="font-medium">{fmtEuros(cityTaxCents)}</span>
         </motion.div>
       )}
 

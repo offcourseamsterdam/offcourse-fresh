@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { DatePickerPanel } from '@/components/search/DatePickerPanel'
 import { Minus, Plus } from 'lucide-react'
+import { toDateStr, getToday } from '@/lib/utils'
 
 interface DateStepProps {
   mode: 'private' | 'shared'
@@ -11,18 +12,6 @@ interface DateStepProps {
   onConfirm: (date: string, guests: number) => void
 }
 
-function toDateStr(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
-function getToday(): Date {
-  const d = new Date()
-  d.setHours(0, 0, 0, 0)
-  return d
-}
 
 export function DateStep({ mode, initialDate = '', initialGuests = 2, onConfirm }: DateStepProps) {
   const today = getToday()

@@ -8,6 +8,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { GuestInfoForm } from './GuestInfoForm'
 import { BookingSummary } from './BookingSummary'
 import { BOATS } from '@/lib/fareharbor/config'
+import { SESSION_BOOKING_KEY, SESSION_CONTACT_KEY } from '@/lib/constants'
+import { getErrorMessage } from '@/lib/utils'
 import type { CustomerDetails, AvailabilitySlot, AvailabilityCustomerType } from '@/types'
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
 
@@ -106,7 +108,7 @@ function PaymentForm({
     setError(null)
 
     // Save booking state for iDEAL redirect recovery
-    sessionStorage.setItem('offcourse_booking', JSON.stringify(bookingData))
+    sessionStorage.setItem(SESSION_BOOKING_KEY, JSON.stringify(bookingData))
 
     const result = await stripe.confirmPayment({
       elements,
@@ -120,7 +122,7 @@ function PaymentForm({
       setError(result.error.message ?? 'Payment failed. Please try again.')
       setPaying(false)
     } else if (result.paymentIntent?.status === 'succeeded') {
-      sessionStorage.removeItem('offcourse_booking')
+      sessionStorage.removeItem(SESSION_BOOKING_KEY)
       onSuccess(result.paymentIntent.id)
     }
   }
@@ -168,7 +170,7 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
 
   // Load booking data from sessionStorage
   useEffect(() => {
-    const stored = sessionStorage.getItem('offcourse_booking')
+    const stored = sessionStorage.getItem(SESSION_BOOKING_KEY)
     if (stored) {
       try {
         setBookingData(JSON.parse(stored))
@@ -180,7 +182,7 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
     }
 
     // Restore contact from sessionStorage (survives iDEAL redirect)
-    const storedContact = sessionStorage.getItem('offcourse_contact')
+    const storedContact = sessionStorage.getItem(SESSION_CONTACT_KEY)
     if (storedContact) {
       try { setContact(JSON.parse(storedContact)) } catch { /* ignore */ }
     }
@@ -200,7 +202,7 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
     if (!bookingData) return
     setContact(details)
     // Persist contact for iDEAL redirect recovery (component re-mounts after bank redirect)
-    sessionStorage.setItem('offcourse_contact', JSON.stringify(details))
+    sessionStorage.setItem(SESSION_CONTACT_KEY, JSON.stringify(details))
     setCreatingIntent(true)
     setError(null)
 
@@ -231,7 +233,7 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
       if (!json.ok) throw new Error(json.error || 'Failed to create payment')
       setClientSecret(json.data.clientSecret)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
+      setError(getErrorMessage(err))
     } finally {
       setCreatingIntent(false)
     }
@@ -240,13 +242,13 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
   // After Stripe payment success, create the FareHarbor booking
   async function handlePaymentSuccess(paymentIntentId: string) {
     if (!bookingData) return
-    const stored = sessionStorage.getItem('offcourse_booking')
+    const stored = sessionStorage.getItem(SESSION_BOOKING_KEY)
     const data: BookingData = stored ? JSON.parse(stored) : bookingData
 
     // Recover contact from sessionStorage (survives iDEAL redirect where React state is lost)
     let contactData = contact
     if (!contactData) {
-      const storedContact = sessionStorage.getItem('offcourse_contact')
+      const storedContact = sessionStorage.getItem(SESSION_CONTACT_KEY)
       if (storedContact) {
         try { contactData = JSON.parse(storedContact) } catch { /* ignore */ }
       }
@@ -297,8 +299,8 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
         return
       }
 
-      sessionStorage.removeItem('offcourse_booking')
-      sessionStorage.removeItem('offcourse_contact')
+      sessionStorage.removeItem(SESSION_BOOKING_KEY)
+      sessionStorage.removeItem(SESSION_CONTACT_KEY)
       window.location.href = `/book/${data.listingSlug}/confirmation?payment_intent=${paymentIntentId}`
     } catch {
       setError('Something went wrong creating your booking. Your payment was received — please contact us at info@offcourseamsterdam.com')

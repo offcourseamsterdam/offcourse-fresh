@@ -1,7 +1,7 @@
 'use client'
 
 import Image from 'next/image'
-import { fmtEuros } from '@/lib/utils'
+import { fmtEuros, formatDate } from '@/lib/utils'
 import { vatSummaryText } from '@/lib/extras/format'
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
 
@@ -18,11 +18,6 @@ interface BookingSummaryProps {
   extrasCalculation: ExtrasCalculation | null
   cancellationPolicy?: string | null
   cruiseLabel?: string
-}
-
-function fmtDate(dateStr: string): string {
-  const d = new Date(dateStr + 'T12:00:00')
-  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
 }
 
 function fmtDuration(minutes: number): string {
@@ -75,7 +70,7 @@ export function BookingSummary({
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-zinc-500">Date</span>
-            <span className="font-medium text-zinc-800">{fmtDate(date)}</span>
+            <span className="font-medium text-zinc-800">{formatDate(date + 'T12:00:00')}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-zinc-500">Time</span>

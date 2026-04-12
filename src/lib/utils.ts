@@ -76,3 +76,41 @@ export function slugify(text: string): string {
     .replace(/[\s_]+/g, '-')
     .replace(/^-+|-+$/g, '')
 }
+
+// ── Shared date helpers ─────────────────────────────────────────────────────
+
+/** Format a Date as YYYY-MM-DD string */
+export function toDateStr(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** Get today at midnight */
+export function getToday(): Date {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+// ── Price formatting (rounded) ──────────────────────────────────────────────
+
+/** Format cents as €X (no decimals, e.g. 16500 → "€165") */
+export function fmtEurosRounded(cents: number): string {
+  return `€${Math.round(cents / 100)}`
+}
+
+// ── Error handling ──────────────────────────────────────────────────────────
+
+/** Extract error message from unknown catch value */
+export function getErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : 'Unknown error'
+}
+
+// ── Text helpers ────────────────────────────────────────────────────────────
+
+/** Simple pluralization */
+export function pluralize(n: number, singular: string, plural: string): string {
+  return n === 1 ? singular : plural
+}

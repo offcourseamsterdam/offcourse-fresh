@@ -6,6 +6,7 @@ import { motion } from 'framer-motion'
 import { Users } from 'lucide-react'
 import type { AvailabilityCustomerType } from '@/types'
 import { BOATS } from '@/lib/fareharbor/config'
+import { fmtEurosRounded } from '@/lib/utils'
 
 interface BoatDurationStepProps {
   customerTypes: AvailabilityCustomerType[]
@@ -29,9 +30,6 @@ const BOAT_TAGLINES: Record<string, string> = {
   curacao: 'Spacious & social, up to 12 guests',
 }
 
-function fmtPrice(cents: number): string {
-  return `€${Math.round(cents / 100)}`
-}
 
 function fmtDuration(minutes: number): string {
   const h = Math.floor(minutes / 60)
@@ -157,7 +155,7 @@ export function BoatDurationStep({
                               : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
                           }`}
                         >
-                          {fmtDuration(ct.durationMinutes)} · {fmtPrice(ct.priceCents)}
+                          {fmtDuration(ct.durationMinutes)} · {fmtEurosRounded(ct.priceCents)}
                         </button>
                       )
                     })}
