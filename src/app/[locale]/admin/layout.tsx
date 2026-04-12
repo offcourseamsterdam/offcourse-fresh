@@ -23,7 +23,7 @@ const navSections: NavSection[] = [
       { href: '/admin/boats',      label: 'Boats',      icon: 'cruises' },
       { href: '/admin/cruises',    label: 'Cruises',    icon: 'cruises' },
       { href: '/admin/extras',     label: 'Extras',     icon: 'extras' },
-      { href: '/admin/reviews',    label: 'Reviews',    icon: 'reviews',    comingSoon: true },
+      { href: '/admin/reviews',    label: 'Reviews',    icon: 'reviews' },
     ],
   },
   {

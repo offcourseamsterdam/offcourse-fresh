@@ -5,6 +5,7 @@ import { FeaturedCruises } from '@/components/sections/FeaturedCruises'
 import { PrioritiesSection } from '@/components/sections/PrioritiesSection'
 import { FleetSection } from '@/components/sections/FleetSection'
 import { LocationSection } from '@/components/sections/LocationSection'
+import { ReviewsSection } from '@/components/sections/ReviewsSection'
 import type { Locale } from '@/lib/i18n/config'
 
 export const revalidate = 60
@@ -61,6 +62,7 @@ export default async function HomePage({ params }: Props) {
     <>
       <HeroSection slides={slides.length > 0 ? slides : undefined} />
       <FeaturedCruises listings={listings ?? []} locale={locale as Locale} />
+      <ReviewsSection reviews={reviews ?? []} locale={locale as Locale} />
       <PrioritiesSection />
       <FleetSection boats={boats.length > 0 ? boats : undefined} />
       <LocationSection />

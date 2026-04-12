@@ -1071,6 +1071,39 @@ export type Database = {
         }
         Relationships: []
       }
+      google_reviews_config: {
+        Row: {
+          created_at: string
+          id: string
+          last_synced_at: string | null
+          overall_rating: number | null
+          place_id: string
+          place_name: string | null
+          total_reviews: number | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_synced_at?: string | null
+          overall_rating?: number | null
+          place_id: string
+          place_name?: string | null
+          total_reviews?: number | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_synced_at?: string | null
+          overall_rating?: number | null
+          place_id?: string
+          place_name?: string | null
+          total_reviews?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       hero_carousel_items: {
         Row: {
           alt_text: string | null
@@ -1399,9 +1432,15 @@ export type Database = {
       }
       social_proof_reviews: {
         Row: {
+          author_photo_url: string | null
           created_at: string
+          google_profile_url: string | null
+          google_review_id: string | null
           id: string
           is_active: boolean
+          language: string | null
+          original_text: string | null
+          publish_time: string | null
           rating: number
           review_text: string
           review_text_de: string | null
@@ -1416,9 +1455,15 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          author_photo_url?: string | null
           created_at?: string
+          google_profile_url?: string | null
+          google_review_id?: string | null
           id?: string
           is_active?: boolean
+          language?: string | null
+          original_text?: string | null
+          publish_time?: string | null
           rating?: number
           review_text: string
           review_text_de?: string | null
@@ -1433,9 +1478,15 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          author_photo_url?: string | null
           created_at?: string
+          google_profile_url?: string | null
+          google_review_id?: string | null
           id?: string
           is_active?: boolean
+          language?: string | null
+          original_text?: string | null
+          publish_time?: string | null
           rating?: number
           review_text?: string
           review_text_de?: string | null

@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import { getTranslations } from 'next-intl/server'
 import { StarRating } from '@/components/ui/StarRating'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
@@ -32,10 +33,26 @@ export async function ReviewsSection({ reviews, locale }: ReviewsSectionProps) {
                 <blockquote className="text-[var(--color-foreground)] text-sm leading-relaxed flex-1">
                   &ldquo;{text}&rdquo;
                 </blockquote>
-                <footer className="flex items-center justify-between">
-                  <p className="font-semibold text-[var(--color-primary)] text-sm">{review.reviewer_name}</p>
+                <footer className="flex items-center gap-3">
+                  {review.author_photo_url && (
+                    <Image
+                      src={review.author_photo_url}
+                      alt={review.reviewer_name}
+                      width={32}
+                      height={32}
+                      className="w-8 h-8 rounded-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-[var(--color-primary)] text-sm truncate">
+                      {review.reviewer_name}
+                    </p>
+                  </div>
                   {review.source && (
-                    <span className="text-xs text-[var(--color-muted)] capitalize">{review.source}</span>
+                    <span className="text-xs text-[var(--color-muted)] capitalize flex-shrink-0">
+                      {review.source}
+                    </span>
                   )}
                 </footer>
               </article>

@@ -5,6 +5,7 @@ import { Check } from 'lucide-react'
 import { getTranslations } from 'next-intl/server'
 import { createClient } from '@/lib/supabase/server'
 import { BookingPanel } from '@/components/booking/BookingPanel'
+import { CruiseReviews } from '@/components/sections/CruiseReviews'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import type { Locale } from '@/lib/i18n/config'
 import type { Database } from '@/lib/supabase/types'
@@ -59,6 +60,15 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
 
   const listing = await getListingBySlug(slug)
   if (!listing) notFound()
+
+  // Fetch active reviews to show social proof on every cruise page
+  const supabase = await createClient()
+  const { data: reviews } = await supabase
+    .from('social_proof_reviews')
+    .select('*')
+    .eq('is_active', true)
+    .order('rating', { ascending: false })
+    .limit(3)
 
   // All content lives in JSONB columns on the listing row (no separate tables)
   const images = (listing.images as CruiseImage[] | null) ?? []
@@ -293,6 +303,11 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                     {cancellationPolicy}
                   </p>
                 </section>
+              )}
+
+              {/* Reviews */}
+              {reviews && reviews.length > 0 && (
+                <CruiseReviews reviews={reviews} locale={locale as Locale} />
               )}
             </div>
 
