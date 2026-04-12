@@ -1,6 +1,5 @@
-import Image from 'next/image'
 import { getTranslations } from 'next-intl/server'
-import { StarRating } from '@/components/ui/StarRating'
+import { ReviewCard } from '@/components/ui/ReviewCard'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import type { Database } from '@/lib/supabase/types'
 import type { Locale } from '@/lib/i18n/config'
@@ -25,39 +24,16 @@ export async function ReviewsSection({ reviews, locale }: ReviewsSectionProps) {
         </h2>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {reviews.map(review => {
-            const text = getLocalizedField(review, 'review_text', locale)
-            return (
-              <article key={review.id} className="bg-[var(--color-sand)] rounded-2xl p-6 flex flex-col gap-3">
-                <StarRating rating={review.rating} />
-                <blockquote className="text-[var(--color-foreground)] text-sm leading-relaxed flex-1">
-                  &ldquo;{text}&rdquo;
-                </blockquote>
-                <footer className="flex items-center gap-3">
-                  {review.author_photo_url && (
-                    <Image
-                      src={review.author_photo_url}
-                      alt={review.reviewer_name}
-                      width={32}
-                      height={32}
-                      className="w-8 h-8 rounded-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-[var(--color-primary)] text-sm truncate">
-                      {review.reviewer_name}
-                    </p>
-                  </div>
-                  {review.source && (
-                    <span className="text-xs text-[var(--color-muted)] capitalize flex-shrink-0">
-                      {review.source}
-                    </span>
-                  )}
-                </footer>
-              </article>
-            )
-          })}
+          {reviews.map(review => (
+            <ReviewCard
+              key={review.id}
+              reviewerName={review.reviewer_name}
+              reviewText={getLocalizedField(review, 'review_text', locale)}
+              rating={review.rating}
+              source={review.source}
+              authorPhotoUrl={review.author_photo_url}
+            />
+          ))}
         </div>
       </div>
     </section>
