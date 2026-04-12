@@ -6,7 +6,7 @@
  * Beer authorizes once, and we store + auto-refresh the tokens.
  */
 
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
@@ -117,55 +117,55 @@ export async function getValidAccessToken(): Promise<{
   accountId: string
   locationId: string
 }> {
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
 
   const { data: config } = await supabase
     .from('google_reviews_config')
-    .select('oauth_access_token, oauth_refresh_token, oauth_token_expires_at, gbp_account_id, gbp_location_id')
+    .select('access_token, refresh_token, token_expires_at, google_account_id, google_location_id')
     .limit(1)
     .single()
 
-  if (!config?.oauth_access_token || !config?.oauth_refresh_token) {
+  if (!config?.access_token || !config?.refresh_token) {
     throw new Error('NOT_CONNECTED')
   }
 
-  if (!config.gbp_account_id || !config.gbp_location_id) {
+  if (!config.google_account_id || !config.google_location_id) {
     throw new Error('NOT_CONNECTED')
   }
 
   // Check if token needs refreshing (5-minute buffer)
-  const expiresAt = config.oauth_token_expires_at
-    ? new Date(config.oauth_token_expires_at).getTime()
+  const expiresAt = config.token_expires_at
+    ? new Date(config.token_expires_at).getTime()
     : 0
   const fiveMinutes = 5 * 60 * 1000
   const needsRefresh = Date.now() > expiresAt - fiveMinutes
 
   if (!needsRefresh) {
     return {
-      accessToken: config.oauth_access_token,
-      accountId: config.gbp_account_id,
-      locationId: config.gbp_location_id,
+      accessToken: config.access_token,
+      accountId: config.google_account_id,
+      locationId: config.google_location_id,
     }
   }
 
   // Refresh the token
   try {
-    const tokens = await refreshAccessToken(config.oauth_refresh_token)
+    const tokens = await refreshAccessToken(config.refresh_token)
 
     const newExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString()
 
     await supabase
       .from('google_reviews_config')
       .update({
-        oauth_access_token: tokens.access_token,
-        oauth_token_expires_at: newExpiresAt,
+        access_token: tokens.access_token,
+        token_expires_at: newExpiresAt,
       })
-      .eq('gbp_account_id', config.gbp_account_id)
+      .eq('google_account_id', config.google_account_id)
 
     return {
       accessToken: tokens.access_token,
-      accountId: config.gbp_account_id,
-      locationId: config.gbp_location_id,
+      accountId: config.google_account_id,
+      locationId: config.google_location_id,
     }
   } catch {
     throw new Error('REAUTH_REQUIRED')

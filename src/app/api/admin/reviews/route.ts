@@ -20,7 +20,7 @@ export async function GET() {
       .order('sort_order', { ascending: true }),
     supabase
       .from('google_reviews_config')
-      .select('place_id, place_name, overall_rating, total_reviews, last_synced_at, gbp_account_id, oauth_email, oauth_connected_at')
+      .select('place_id, place_name, overall_rating, total_reviews, last_synced_at, google_account_id, google_location_id')
       .limit(1)
       .single(),
   ])
@@ -34,9 +34,9 @@ export async function GET() {
         overall_rating: configResult.data.overall_rating,
         total_reviews: configResult.data.total_reviews,
         last_synced_at: configResult.data.last_synced_at,
-        is_gbp_connected: Boolean(configResult.data.gbp_account_id && configResult.data.oauth_email),
-        oauth_email: configResult.data.oauth_email,
-        oauth_connected_at: configResult.data.oauth_connected_at,
+        is_gbp_connected: Boolean(configResult.data.google_account_id && configResult.data.google_location_id),
+        oauth_email: null,
+        oauth_connected_at: null,
       }
     : null
 

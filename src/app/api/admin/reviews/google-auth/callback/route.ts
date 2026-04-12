@@ -93,13 +93,11 @@ export async function GET(request: Request) {
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString()
 
     const oauthData = {
-      gbp_account_id: account.name,
-      gbp_location_id: location.name,
-      oauth_access_token: tokens.access_token,
-      oauth_refresh_token: tokens.refresh_token,
-      oauth_token_expires_at: expiresAt,
-      oauth_connected_at: new Date().toISOString(),
-      oauth_email: email,
+      google_account_id: account.name,
+      google_location_id: location.name,
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      token_expires_at: expiresAt,
     }
 
     // Update existing config row or insert if none exists

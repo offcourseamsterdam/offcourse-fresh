@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { requireRole } from '@/lib/auth/server'
 import { getValidAccessToken } from '@/lib/google-reviews/oauth'
 import { replyToReview, deleteReply, extractReviewId } from '@/lib/google-reviews/business-profile'
@@ -34,7 +34,7 @@ export async function PUT(request: NextRequest, ctx: Ctx) {
     return apiError('Reply text exceeds 4096 character limit', 400)
   }
 
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
 
   // Look up the review
   const { data: review } = await supabase
@@ -117,7 +117,7 @@ export async function DELETE(_request: NextRequest, ctx: Ctx) {
   }
 
   const { id } = await ctx.params
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
 
   // Look up the review
   const { data: review } = await supabase
