@@ -6,11 +6,11 @@ import { Plus, Trash2, GripVertical, Image as ImageIcon } from 'lucide-react'
 
 type Slide = {
   id: string
-  src: string
-  alt: string
-  caption: string
+  image_url: string
+  alt_text: string | null
+  caption: string | null
   sort_order: number
-  active: boolean
+  is_active: boolean
 }
 
 export default function HomepageAdminPage() {
@@ -19,7 +19,7 @@ export default function HomepageAdminPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
   const [showAdd, setShowAdd] = useState(false)
-  const [newSlide, setNewSlide] = useState({ src: '', alt: '', caption: '' })
+  const [newSlide, setNewSlide] = useState({ image_url: '', alt_text: '', caption: '' })
 
   useEffect(() => {
     load()
@@ -31,22 +31,22 @@ export default function HomepageAdminPage() {
       .from('hero_carousel_items')
       .select('*')
       .order('sort_order')
-    setSlides((data ?? []) as unknown as Slide[])
+    setSlides((data ?? []) as Slide[])
     setLoading(false)
   }
 
   async function addSlide() {
-    if (!newSlide.src) return
+    if (!newSlide.image_url) return
     setSaving('new')
     const { error } = await supabase.from('hero_carousel_items').insert({
-      src: newSlide.src,
-      alt: newSlide.alt,
+      image_url: newSlide.image_url,
+      alt_text: newSlide.alt_text,
       caption: newSlide.caption,
       sort_order: slides.length,
-      active: true,
+      is_active: true,
     })
     if (!error) {
-      setNewSlide({ src: '', alt: '', caption: '' })
+      setNewSlide({ image_url: '', alt_text: '', caption: '' })
       setShowAdd(false)
       await load()
     }
@@ -103,8 +103,8 @@ export default function HomepageAdminPage() {
 
                 {/* Preview */}
                 <div className="w-20 h-16 rounded-md overflow-hidden bg-zinc-100 flex-shrink-0">
-                  {slide.src ? (
-                    <img src={slide.src} alt={slide.alt} className="w-full h-full object-cover" />
+                  {slide.image_url ? (
+                    <img src={slide.image_url} alt={slide.alt_text ?? ''} className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       <ImageIcon size={16} className="text-zinc-300" />
@@ -117,21 +117,21 @@ export default function HomepageAdminPage() {
                   <input
                     className="w-full text-sm border border-zinc-200 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-zinc-300"
                     placeholder="Image URL"
-                    defaultValue={slide.src}
-                    onBlur={e => updateSlide(slide.id, 'src', e.target.value)}
+                    defaultValue={slide.image_url}
+                    onBlur={e => updateSlide(slide.id, 'image_url', e.target.value)}
                   />
                   <div className="grid grid-cols-2 gap-2">
                     <input
                       className="text-sm border border-zinc-200 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-zinc-300"
                       placeholder="Caption (shown on polaroid)"
-                      defaultValue={slide.caption}
+                      defaultValue={slide.caption ?? ''}
                       onBlur={e => updateSlide(slide.id, 'caption', e.target.value)}
                     />
                     <input
                       className="text-sm border border-zinc-200 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-zinc-300"
                       placeholder="Alt text (for accessibility)"
-                      defaultValue={slide.alt}
-                      onBlur={e => updateSlide(slide.id, 'alt', e.target.value)}
+                      defaultValue={slide.alt_text ?? ''}
+                      onBlur={e => updateSlide(slide.id, 'alt_text', e.target.value)}
                     />
                   </div>
                 </div>
@@ -141,8 +141,8 @@ export default function HomepageAdminPage() {
                   <label className="flex items-center gap-1.5 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={slide.active}
-                      onChange={e => updateSlide(slide.id, 'active', e.target.checked)}
+                      checked={slide.is_active}
+                      onChange={e => updateSlide(slide.id, 'is_active', e.target.checked)}
                       className="w-4 h-4 accent-zinc-900"
                     />
                     <span className="text-xs text-zinc-500">Active</span>
@@ -170,8 +170,8 @@ export default function HomepageAdminPage() {
             <input
               className="w-full text-sm border border-zinc-200 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-zinc-300"
               placeholder="Image URL *"
-              value={newSlide.src}
-              onChange={e => setNewSlide(s => ({ ...s, src: e.target.value }))}
+              value={newSlide.image_url}
+              onChange={e => setNewSlide(s => ({ ...s, image_url: e.target.value }))}
             />
             <div className="grid grid-cols-2 gap-2">
               <input
@@ -183,14 +183,14 @@ export default function HomepageAdminPage() {
               <input
                 className="text-sm border border-zinc-200 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-zinc-300"
                 placeholder="Alt text"
-                value={newSlide.alt}
-                onChange={e => setNewSlide(s => ({ ...s, alt: e.target.value }))}
+                value={newSlide.alt_text}
+                onChange={e => setNewSlide(s => ({ ...s, alt_text: e.target.value }))}
               />
             </div>
             <div className="flex gap-2">
               <button
                 onClick={addSlide}
-                disabled={!newSlide.src || saving === 'new'}
+                disabled={!newSlide.image_url || saving === 'new'}
                 className="px-4 py-1.5 bg-zinc-900 text-white text-sm rounded-lg hover:bg-zinc-700 disabled:opacity-40 transition-colors"
               >
                 {saving === 'new' ? 'Adding…' : 'Add'}
