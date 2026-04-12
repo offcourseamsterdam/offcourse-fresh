@@ -43,7 +43,15 @@ export async function GET(request: Request) {
     path: '/',
   })
 
-  const authUrl = getGoogleAuthUrl(state)
-
-  return NextResponse.redirect(authUrl)
+  try {
+    const authUrl = getGoogleAuthUrl(state)
+    return NextResponse.redirect(authUrl)
+  } catch (err) {
+    // Most likely: GOOGLE_OAUTH_CLIENT_ID or GOOGLE_OAUTH_CLIENT_SECRET not set
+    console.error('[google-auth] Failed to build auth URL:', err)
+    return apiError(
+      'Google OAuth not configured. Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in environment variables.',
+      503,
+    )
+  }
 }

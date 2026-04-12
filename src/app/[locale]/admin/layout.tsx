@@ -30,13 +30,13 @@ const navSections: NavSection[] = [
     label: 'Marketing',
     items: [
       { href: '/admin/blog',      label: 'Blog',                 icon: 'blog',      comingSoon: true },
-      { href: '/admin/campaigns', label: 'Campaigns & Partners', icon: 'campaigns' },
+      { href: '/admin/campaigns', label: 'Campaigns & Partners', icon: 'campaigns', comingSoon: true },
     ],
   },
   {
     label: 'Performance',
     items: [
-      { href: '/admin/statistics', label: 'Statistics', icon: 'statistics' },
+      { href: '/admin/statistics', label: 'Statistics', icon: 'statistics', comingSoon: true },
     ],
   },
   {
@@ -50,8 +50,8 @@ const navSections: NavSection[] = [
     items: [
       { href: '/admin/fareharbor',         label: 'FareHarbor API',        icon: 'fareharbor' },
       { href: '/admin/connections',        label: 'Other API Connections', icon: 'connections',  comingSoon: true },
-      { href: '/admin/review-tool',        label: 'Review Tool',           icon: 'reviewtool' },
-      { href: '/admin/image-optimization', label: 'Image Optimization',    icon: 'images' },
+      { href: '/admin/review-tool',        label: 'Review Tool',           icon: 'reviewtool',  comingSoon: true },
+      { href: '/admin/image-optimization', label: 'Image Optimization',    icon: 'images',      comingSoon: true },
     ],
   },
 ]
