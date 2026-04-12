@@ -126,7 +126,7 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
               <div
                 key={i}
                 onClick={() => !isCenter && setActive(i)}
-                className="absolute bottom-0 transition-all duration-700 ease-in-out"
+                className="absolute bottom-0 transition-[transform,opacity] duration-700 ease-in-out"
                 style={{
                   left: '50%',
                   transform: `translateX(calc(-50% + ${dist * 62}%)) scale(${isCenter ? 1 : 0.72}) rotate(${rotation}deg)`,

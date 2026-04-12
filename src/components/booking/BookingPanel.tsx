@@ -12,6 +12,7 @@ import { TicketStep } from './TicketStep'
 import { ExtrasStep } from './ExtrasStep'
 import { PriceSummary } from './PriceSummary'
 import { Button } from '@/components/ui/button'
+import { formatDuration } from '@/lib/utils'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -166,7 +167,6 @@ export function BookingPanel({
     date: initialDate || null,
   })
 
-  const mode = category
   const hasAutoAdvanced = useRef(false)
 
   // Fetch slots for a given date + guest count. Returns the slots array.
@@ -191,22 +191,22 @@ export function BookingPanel({
     hasAutoAdvanced.current = true
 
     async function autoAdvance() {
-      dispatch({ type: 'SET_DATE', date: initialDate, guests: initialGuests, category: mode })
+      dispatch({ type: 'SET_DATE', date: initialDate, guests: initialGuests, category })
       const slots = await fetchSlots(initialDate, initialGuests)
       const match = slots.find(s => s.startTime === initialTime)
       if (match) dispatch({ type: 'SELECT_SLOT', slot: match })
     }
 
     autoAdvance()
-  }, [initialDate, initialTime, initialGuests, mode, fetchSlots])
+  }, [initialDate, initialTime, initialGuests, category, fetchSlots])
 
   // Date confirmed — for shared, also fetch slots immediately
   const handleDateConfirm = useCallback(async (date: string, guests: number) => {
-    dispatch({ type: 'SET_DATE', date, guests, category: mode })
-    if (mode === 'shared') {
+    dispatch({ type: 'SET_DATE', date, guests, category })
+    if (category === 'shared') {
       await fetchSlots(date, guests)
     }
-  }, [mode, fetchSlots])
+  }, [category, fetchSlots])
 
   // Guests confirmed (private only) — now fetch slots
   const handleGuestsConfirm = useCallback(async (guests: number) => {
@@ -222,7 +222,7 @@ export function BookingPanel({
   }, [])
 
   // Helpers for step ordering
-  const steps: Step[] = mode === 'private'
+  const steps: Step[] = category === 'private'
     ? ['date', 'guests', 'time', 'boat', 'extras']
     : ['date', 'time', 'tickets', 'extras']
 
@@ -247,7 +247,7 @@ export function BookingPanel({
   const timeSummary = state.selectedSlot?.startTime
 
   const boatSummary = state.selectedBoat && state.selectedCustomerType
-    ? `${state.selectedBoat === 'diana' ? 'Diana' : 'Curaçao'} · ${Math.floor(state.selectedCustomerType.durationMinutes / 60)}.${Math.round((state.selectedCustomerType.durationMinutes % 60) / 6)}h`
+    ? `${state.selectedBoat === 'diana' ? 'Diana' : 'Curaçao'} · ${formatDuration(state.selectedCustomerType.durationMinutes)}`
     : undefined
 
   const ticketSummary = state.totalTickets > 0
@@ -256,19 +256,19 @@ export function BookingPanel({
 
   // Calculate base price for PriceSummary
   let basePriceCents = 0
-  if (mode === 'private' && state.selectedCustomerType) {
+  if (category === 'private' && state.selectedCustomerType) {
     basePriceCents = state.selectedCustomerType.priceCents
-  } else if (mode === 'shared' && state.selectedSlot) {
+  } else if (category === 'shared' && state.selectedSlot) {
     basePriceCents = state.selectedSlot.customerTypes.reduce(
       (sum, ct) => sum + (state.ticketCounts[ct.customerTypePk] || 0) * ct.priceCents,
       0
     )
   }
 
-  const guestCount = mode === 'private' ? state.guests : state.totalTickets
+  const guestCount = category === 'private' ? state.guests : state.totalTickets
 
   // Ticket breakdown for PriceSummary
-  const ticketBreakdown = mode === 'shared' && state.selectedSlot
+  const ticketBreakdown = category === 'shared' && state.selectedSlot
     ? state.selectedSlot.customerTypes
         .filter(ct => (state.ticketCounts[ct.customerTypePk] || 0) > 0)
         .map((ct, i) => ({
@@ -286,7 +286,7 @@ export function BookingPanel({
       listingSlug,
       listingTitle,
       listingHeroImageUrl,
-      category: mode,
+      category,
       date: state.date,
       guests: guestCount,
       selectedSlot: state.selectedSlot,
@@ -323,7 +323,7 @@ export function BookingPanel({
         onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'date' })}
       >
         <DateStep
-          mode={mode}
+          mode={category}
           initialDate={state.date || undefined}
           initialGuests={state.guests}
           onConfirm={handleDateConfirm}
@@ -331,7 +331,7 @@ export function BookingPanel({
       </StepAccordion>
 
       {/* Step 2: Guests (Private only) */}
-      {mode === 'private' && (
+      {category === 'private' && (
         <StepAccordion
           title="How many guests?"
           summary={guestsSummary}
@@ -360,14 +360,14 @@ export function BookingPanel({
         <TimeSlotStep
           slots={state.slots}
           loading={state.loadingSlots}
-          mode={mode}
+          mode={category}
           selectedSlotPk={state.selectedSlot?.pk ?? null}
           onSelect={(slot) => dispatch({ type: 'SELECT_SLOT', slot })}
         />
       </StepAccordion>
 
       {/* Boat + Duration (Private) */}
-      {mode === 'private' && (
+      {category === 'private' && (
         <StepAccordion
           title="Choose your boat"
           summary={boatSummary}
@@ -388,7 +388,7 @@ export function BookingPanel({
       )}
 
       {/* Tickets (Shared) */}
-      {mode === 'shared' && (
+      {category === 'shared' && (
         <StepAccordion
           title="Select tickets"
           summary={ticketSummary}
@@ -432,7 +432,7 @@ export function BookingPanel({
         <PriceSummary
           basePriceCents={basePriceCents}
           extrasCalculation={state.extrasCalculation}
-          mode={mode}
+          mode={category}
           cruiseLabel={boatSummary}
           ticketBreakdown={ticketBreakdown}
         />

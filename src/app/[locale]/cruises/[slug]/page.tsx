@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import Image from 'next/image'
+import { Check } from 'lucide-react'
 import { getTranslations } from 'next-intl/server'
 import { createClient } from '@/lib/supabase/server'
 import { BookingPanel } from '@/components/booking/BookingPanel'
@@ -212,9 +213,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                     {highlights.map((h, i) => (
                       <li key={i} className="flex items-start gap-2.5">
                         <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] flex items-center justify-center">
-                          <svg viewBox="0 0 24 24" className="w-3 h-3" fill="currentColor">
-                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-                          </svg>
+                          <Check className="w-3 h-3" />
                         </span>
                         <span className="text-sm text-[var(--color-foreground)]">{h.text}</span>
                       </li>
@@ -233,9 +232,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                     {inclusions.map((inc, i) => (
                       <li key={i} className="flex items-start gap-2.5">
                         <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-[var(--color-accent)] text-white flex items-center justify-center">
-                          <svg viewBox="0 0 24 24" className="w-3 h-3" fill="currentColor">
-                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-                          </svg>
+                          <Check className="w-3 h-3" />
                         </span>
                         <span className="text-sm text-[var(--color-foreground)]">{inc.text}</span>
                       </li>
@@ -254,9 +251,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                     {benefits.map((b, i) => (
                       <li key={i} className="flex items-start gap-3">
                         <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-[var(--color-accent)] text-white flex items-center justify-center">
-                          <svg viewBox="0 0 24 24" className="w-3 h-3" fill="currentColor">
-                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-                          </svg>
+                          <Check className="w-3 h-3" />
                         </span>
                         <span className="text-[var(--color-foreground)]">{b.text}</span>
                       </li>
