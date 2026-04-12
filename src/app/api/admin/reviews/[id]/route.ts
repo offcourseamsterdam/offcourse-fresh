@@ -26,6 +26,7 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
     'is_active', 'sort_order', 'author_photo_url',
     'review_text_nl', 'review_text_de', 'review_text_fr',
     'review_text_es', 'review_text_pt', 'review_text_zh',
+    'owner_reply_text', 'owner_reply_time', 'reply_synced_at',
   ] as const
   for (const key of allowed) {
     if (key in body) updates[key] = body[key]

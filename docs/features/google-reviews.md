@@ -74,9 +74,44 @@ The Places API supports `reviewSummary` (AI-powered summaries) — request it in
 - Cruise detail pages (`[locale]/cruises/[slug]/page.tsx`) — renders CruiseReviews
 - Admin sidebar (`admin/layout.tsx`) — links to reviews page
 
+## Reply to Reviews
+
+### How it works
+
+Replying to Google reviews requires the **Google Business Profile API** which uses OAuth 2.0 (not an API key). This is because Google needs to verify the replier is the actual business owner.
+
+**One-time setup:**
+1. In Google Cloud Console → Credentials → Create OAuth 2.0 Client ID (Web application)
+2. Set redirect URI to `{NEXT_PUBLIC_SITE_URL}/api/admin/reviews/google-auth/callback`
+3. Enable "My Business Account Management API" and "My Business Business Information API"
+4. Add `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` to `.env.local`
+5. Click "Connect Google Business" in admin → authorize → done
+
+**Reply flow:**
+1. Admin clicks "Reply" on a Google review → inline textarea opens
+2. Types reply → clicks "Send Reply"
+3. Frontend PUTs to `/api/admin/reviews/:id/reply`
+4. Route gets valid OAuth token (auto-refreshes if expired)
+5. Extracts review ID suffix from `google_review_id`
+6. Calls Business Profile API PUT to post the reply
+7. Saves reply text locally in `social_proof_reviews`
+
+### Key files (reply feature)
+
+| File | Description |
+|------|-------------|
+| `src/lib/google-reviews/oauth.ts` | OAuth token management (auth URL, exchange, refresh) |
+| `src/lib/google-reviews/business-profile.ts` | Business Profile API client (accounts, locations, reply) |
+| `src/app/api/admin/reviews/google-auth/route.ts` | Starts OAuth flow (redirects to Google) |
+| `src/app/api/admin/reviews/google-auth/callback/route.ts` | Handles OAuth callback, stores tokens |
+| `src/app/api/admin/reviews/[id]/reply/route.ts` | Send/delete review replies |
+| `supabase/migrations/016_google_oauth_and_replies.sql` | OAuth tokens + reply columns |
+
 ## Environment variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `GOOGLE_PLACES_API_KEY` | Yes | Google Cloud API key with Places API (New) enabled |
 | `GOOGLE_PLACE_ID` | Optional | Place ID for Off Course Amsterdam. Can also be set via admin UI. |
+| `GOOGLE_OAUTH_CLIENT_ID` | For replies | OAuth 2.0 Client ID from Google Cloud Console |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | For replies | OAuth 2.0 Client Secret |
