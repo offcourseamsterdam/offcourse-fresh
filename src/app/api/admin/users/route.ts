@@ -14,8 +14,7 @@ export async function GET() {
   }
 
   const supabase = await createServiceClient()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from('user_profiles')
     .select('*')
     .order('created_at', { ascending: false })
@@ -51,8 +50,7 @@ export async function PATCH(request: NextRequest) {
   if (is_active !== undefined) updates.is_active = is_active
 
   const supabase = await createServiceClient()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from('user_profiles')
     .update(updates)
     .eq('id', id)

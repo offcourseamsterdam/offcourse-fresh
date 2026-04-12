@@ -39,8 +39,7 @@ export async function POST(request: NextRequest) {
 
   // The handle_new_user trigger will have created the profile with role='guest'.
   // Update it to the intended role.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: profileError } = await (supabase as any)
+  const { error: profileError } = await supabase
     .from('user_profiles')
     .update({ role, display_name: display_name || null })
     .eq('id', authData.user.id)

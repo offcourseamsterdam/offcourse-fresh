@@ -82,7 +82,7 @@ export async function getSunsetTime(date: Date): Promise<string | null> {
   // 1. Check cache
   try {
     const { data: cached } = await supabase
-      .from('sunset_times' as any)
+      .from('sunset_times' as any) // TODO: create sunset_times table migration
       .select('sunset_time')
       .eq('date', dateStr)
       .eq('city', CITY)
@@ -99,7 +99,7 @@ export async function getSunsetTime(date: Date): Promise<string | null> {
 
   // 3. Cache in Supabase
   try {
-    await supabase.from('sunset_times' as any).upsert(
+    await supabase.from('sunset_times' as any) // TODO: create sunset_times table migration.upsert(
       {
         date: dateStr,
         city: CITY,
@@ -139,7 +139,7 @@ export async function preSeedSunsetTimes(daysAhead: number = 90): Promise<number
   let cachedDates = new Set<string>()
   try {
     const { data: existing } = await supabase
-      .from('sunset_times' as any)
+      .from('sunset_times' as any) // TODO: create sunset_times table migration
       .select('date')
       .eq('city', CITY)
       .in('date', dates)
@@ -158,7 +158,7 @@ export async function preSeedSunsetTimes(daysAhead: number = 90): Promise<number
     if (!result) continue
 
     try {
-      await supabase.from('sunset_times' as any).upsert(
+      await supabase.from('sunset_times' as any) // TODO: create sunset_times table migration.upsert(
         {
           date: dateStr,
           city: CITY,

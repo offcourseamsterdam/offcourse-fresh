@@ -87,12 +87,6 @@ export async function FeaturedCruises({ listings, locale }: FeaturedCruisesProps
                   {listing.price_display && (
                     <p className="font-avenir font-bold text-primary text-base mb-1">{listing.price_display}</p>
                   )}
-                  {(listing as any).minimum_duration_hours && (
-                    <p className="font-avenir text-muted text-xs mb-5">
-                      {(listing as any).minimum_duration_hours * 60} minutes minimum
-                    </p>
-                  )}
-
                   {/* CTAs */}
                   <div className="flex gap-3">
                     <Link
