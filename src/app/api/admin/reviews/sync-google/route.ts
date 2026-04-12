@@ -1,5 +1,6 @@
 import { apiOk, apiError } from '@/lib/api/response'
 import { createServiceClient } from '@/lib/supabase/server'
+import { requireRole } from '@/lib/auth/server'
 import { fetchGoogleReviews, searchPlace } from '@/lib/google-reviews/client'
 import type { GoogleReview } from '@/lib/google-reviews/client'
 
@@ -14,6 +15,12 @@ import type { GoogleReview } from '@/lib/google-reviews/client'
  *   { placeId?: string }   — if omitted, uses stored config or GOOGLE_PLACE_ID env var
  */
 export async function POST(request: Request) {
+  try {
+    await requireRole(['admin'])
+  } catch {
+    return apiError('Unauthorized', 403)
+  }
+
   const supabase = await createServiceClient()
 
   // 1. Determine which Place ID to use
@@ -162,6 +169,12 @@ export async function POST(request: Request) {
  * We handle this via the same route but with a query param.
  */
 export async function GET(request: Request) {
+  try {
+    await requireRole(['admin'])
+  } catch {
+    return apiError('Unauthorized', 403)
+  }
+
   const url = new URL(request.url)
   const query = url.searchParams.get('q')
 
