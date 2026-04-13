@@ -148,23 +148,34 @@ export function BoatDurationStep({
                 </p>
               )}
 
-              {/* Duration pills */}
+              {/* Duration pills — 3 columns */}
               {!isSoldOut && (
-                <div className="flex flex-wrap gap-2 mt-4">
+                <div className="grid grid-cols-3 gap-2 mt-4">
                   {boat.durations.map(ct => {
                     const isActive = selectedCustomerTypePk === ct.pk
+                    const isMostPopular = ct.durationMinutes === 120
                     return (
                       <button
                         key={ct.pk}
                         type="button"
                         onClick={() => onSelect(ct, boat.id)}
-                        className={`px-4 py-2 rounded-full text-xs font-bold transition-all duration-150 ${
+                        className={`relative px-2 py-2.5 rounded-xl text-xs font-bold transition-all duration-150 text-center ${
                           isActive
                             ? 'bg-[var(--color-primary)] text-white shadow-md'
                             : 'bg-white/80 text-[var(--color-primary)] hover:bg-white shadow-sm'
                         }`}
                       >
-                        {fmtDuration(ct.durationMinutes)} · {fmtEurosRounded(ct.priceCents)}
+                        {isMostPopular && (
+                          <span className={`absolute -top-2.5 left-1/2 -translate-x-1/2 text-[9px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${
+                            isActive
+                              ? 'bg-white text-[var(--color-primary)]'
+                              : 'bg-[var(--color-primary)] text-white'
+                          }`}>
+                            Most popular
+                          </span>
+                        )}
+                        <span className="block text-[13px]">{fmtDuration(ct.durationMinutes)}</span>
+                        <span className="block text-[11px] opacity-80 mt-0.5">{fmtEurosRounded(ct.priceCents)}</span>
                       </button>
                     )
                   })}
