@@ -1,6 +1,6 @@
 'use client'
 
-import { Pencil } from 'lucide-react'
+import { Pencil, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import {
   CATEGORY_EMOJI,
@@ -16,6 +16,7 @@ export interface ExtrasTableProps {
   extras: Extra[]
   onEdit: (extra: Extra) => void
   onToggleActive: (extra: Extra) => void
+  onDelete: (extra: Extra) => void
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -24,7 +25,7 @@ const categoryOrder: Category[] = ['food', 'drinks', 'protection', 'experience',
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export function ExtrasTable({ extras, onEdit, onToggleActive }: ExtrasTableProps) {
+export function ExtrasTable({ extras, onEdit, onToggleActive, onDelete }: ExtrasTableProps) {
   const groups = groupByCategory(extras)
   const sortedCategories = categoryOrder.filter(cat => groups[cat] && groups[cat].length > 0)
   const allCategoriesWithExtras = [
@@ -100,15 +101,24 @@ export function ExtrasTable({ extras, onEdit, onToggleActive }: ExtrasTableProps
                           onChange={() => onToggleActive(extra)}
                         />
                       </td>
-                      {/* Edit button */}
+                      {/* Edit + Delete buttons */}
                       <td className="px-4 py-3">
-                        <button
-                          onClick={() => onEdit(extra)}
-                          className="p-1.5 rounded hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 transition-colors"
-                          title="Edit"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => onEdit(extra)}
+                            className="p-1.5 rounded hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 transition-colors"
+                            title="Edit"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => onDelete(extra)}
+                            className="p-1.5 rounded hover:bg-red-50 text-zinc-300 hover:text-red-600 transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
