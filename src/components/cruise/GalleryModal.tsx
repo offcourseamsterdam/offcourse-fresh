@@ -61,14 +61,14 @@ export function GalleryModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
-          <h2 className="text-lg font-bold text-[var(--color-primary)] truncate pr-4 font-avenir">
+        <div className="flex items-center justify-between px-6 py-4 bg-[var(--color-primary)] flex-shrink-0">
+          <h2 className="text-lg font-bold text-white truncate pr-4 font-avenir">
             {title}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-[var(--color-muted)] hover:text-[var(--color-ink)] flex-shrink-0"
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/20 transition-colors text-white/70 hover:text-white flex-shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
@@ -77,7 +77,7 @@ export function GalleryModal({
         {/* Body: photos + reviews side by side */}
         <div className="flex flex-1 overflow-hidden min-h-0">
           {/* Photos grid */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[var(--color-primary)]">
             <div className="columns-2 sm:columns-3 gap-3">
               {videoUrl && (
                 <div className="mb-3 break-inside-avoid rounded-xl overflow-hidden">
