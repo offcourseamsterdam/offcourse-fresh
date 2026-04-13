@@ -1463,6 +1463,42 @@ export type Database = {
         }
         Relationships: []
       }
+      priorities_cards: {
+        Row: {
+          alt_text: string | null
+          body: string
+          created_at: string | null
+          id: string
+          image_url: string
+          rotate: string
+          sort_order: number
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          alt_text?: string | null
+          body?: string
+          created_at?: string | null
+          id?: string
+          image_url?: string
+          rotate?: string
+          sort_order?: number
+          title?: string
+          updated_at?: string | null
+        }
+        Update: {
+          alt_text?: string | null
+          body?: string
+          created_at?: string | null
+          id?: string
+          image_url?: string
+          rotate?: string
+          sort_order?: number
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       social_proof_reviews: {
         Row: {
           ai_draft_reply: string | null

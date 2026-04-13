@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Plus, Trash2, GripVertical, Image as ImageIcon, Upload, Loader2 } from 'lucide-react'
 
+// ── Types ────────────────────────────────────────────────────────────────────
+
 type Slide = {
   id: string
   image_url: string
@@ -14,54 +16,91 @@ type Slide = {
   media_type: string | null
 }
 
+type PriorityCard = {
+  id: string
+  image_url: string
+  alt_text: string | null
+  title: string
+  body: string
+  rotate: string
+  sort_order: number
+}
+
+// ── Shared upload helper ─────────────────────────────────────────────────────
+
+async function uploadFile(file: File): Promise<{ url: string; mediaType: string } | null> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await fetch('/api/admin/hero/upload', { method: 'POST', body: formData })
+  const json = await res.json()
+  if (!json.ok) {
+    alert('Upload failed: ' + json.error)
+    return null
+  }
+  return { url: json.data.url, mediaType: json.data.mediaType }
+}
+
+// ── Page ─────────────────────────────────────────────────────────────────────
+
 export default function HomepageAdminPage() {
   const supabase = createClient()
+
+  // ── Hero Carousel state ──────────────────────────────────────────────────
   const [slides, setSlides] = useState<Slide[]>([])
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState<string | null>(null)
-  const [uploading, setUploading] = useState<string | null>(null)
+  const [loadingSlides, setLoadingSlides] = useState(true)
+  const [savingSlide, setSavingSlide] = useState<string | null>(null)
+  const [uploadingSlide, setUploadingSlide] = useState<string | null>(null)
   const [showAdd, setShowAdd] = useState(false)
   const [newSlide, setNewSlide] = useState({ image_url: '', alt_text: '', caption: '', media_type: 'image' })
   const newFileInputRef = useRef<HTMLInputElement>(null)
   const rowFileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
+  // ── Priorities state ─────────────────────────────────────────────────────
+  const [priorityCards, setPriorityCards] = useState<PriorityCard[]>([])
+  const [loadingPriorities, setLoadingPriorities] = useState(true)
+  const [savingPriority, setSavingPriority] = useState<string | null>(null)
+  const [uploadingPriority, setUploadingPriority] = useState<string | null>(null)
+  const priorityFileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+
+  // ── Load data ────────────────────────────────────────────────────────────
   useEffect(() => {
-    load()
+    loadSlides()
+    loadPriorityCards()
   }, [])
 
-  async function load() {
-    setLoading(true)
+  async function loadSlides() {
+    setLoadingSlides(true)
     const { data } = await supabase
       .from('hero_carousel_items')
       .select('*')
       .order('sort_order')
     setSlides((data ?? []) as Slide[])
-    setLoading(false)
+    setLoadingSlides(false)
   }
 
-  async function uploadFile(file: File): Promise<{ url: string; mediaType: string } | null> {
-    const formData = new FormData()
-    formData.append('file', file)
-    const res = await fetch('/api/admin/hero/upload', { method: 'POST', body: formData })
-    const json = await res.json()
-    if (!json.ok) {
-      alert('Upload failed: ' + json.error)
-      return null
-    }
-    return { url: json.data.url, mediaType: json.data.mediaType }
+  async function loadPriorityCards() {
+    setLoadingPriorities(true)
+    const { data } = await supabase
+      .from('priorities_cards')
+      .select('*')
+      .order('sort_order')
+    setPriorityCards((data ?? []) as PriorityCard[])
+    setLoadingPriorities(false)
   }
+
+  // ── Hero Carousel handlers ──────────────────────────────────────────────
 
   async function handleNewFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    setUploading('new')
+    setUploadingSlide('new')
     try {
       const result = await uploadFile(file)
       if (result) {
         setNewSlide(s => ({ ...s, image_url: result.url, media_type: result.mediaType }))
       }
     } finally {
-      setUploading(null)
+      setUploadingSlide(null)
       if (newFileInputRef.current) newFileInputRef.current.value = ''
     }
   }
@@ -69,7 +108,7 @@ export default function HomepageAdminPage() {
   async function handleRowFileUpload(slideId: string, e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    setUploading(slideId)
+    setUploadingSlide(slideId)
     try {
       const result = await uploadFile(file)
       if (result) {
@@ -77,7 +116,7 @@ export default function HomepageAdminPage() {
         await updateSlide(slideId, 'media_type', result.mediaType)
       }
     } finally {
-      setUploading(null)
+      setUploadingSlide(null)
       const ref = rowFileInputRefs.current[slideId]
       if (ref) ref.value = ''
     }
@@ -85,7 +124,7 @@ export default function HomepageAdminPage() {
 
   async function addSlide() {
     if (!newSlide.image_url) return
-    setSaving('new')
+    setSavingSlide('new')
     const { error } = await supabase.from('hero_carousel_items').insert({
       image_url: newSlide.image_url,
       alt_text: newSlide.alt_text || null,
@@ -97,16 +136,16 @@ export default function HomepageAdminPage() {
     if (!error) {
       setNewSlide({ image_url: '', alt_text: '', caption: '', media_type: 'image' })
       setShowAdd(false)
-      await load()
+      await loadSlides()
     }
-    setSaving(null)
+    setSavingSlide(null)
   }
 
   async function updateSlide(id: string, field: string, value: string | boolean) {
-    setSaving(id)
+    setSavingSlide(id)
     await supabase.from('hero_carousel_items').update({ [field]: value }).eq('id', id)
     setSlides(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s))
-    setSaving(null)
+    setSavingSlide(null)
   }
 
   async function deleteSlide(id: string) {
@@ -115,6 +154,33 @@ export default function HomepageAdminPage() {
     setSlides(prev => prev.filter(s => s.id !== id))
   }
 
+  // ── Priorities handlers ─────────────────────────────────────────────────
+
+  async function handlePriorityFileUpload(cardId: string, e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadingPriority(cardId)
+    try {
+      const result = await uploadFile(file)
+      if (result) {
+        await updatePriorityCard(cardId, 'image_url', result.url)
+      }
+    } finally {
+      setUploadingPriority(null)
+      const ref = priorityFileInputRefs.current[cardId]
+      if (ref) ref.value = ''
+    }
+  }
+
+  async function updatePriorityCard(id: string, field: string, value: string) {
+    setSavingPriority(id)
+    await supabase.from('priorities_cards').update({ [field]: value, updated_at: new Date().toISOString() }).eq('id', id)
+    setPriorityCards(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c))
+    setSavingPriority(null)
+  }
+
+  // ── Render ──────────────────────────────────────────────────────────────
+
   return (
     <div className="p-8 max-w-4xl">
       <div className="mb-8">
@@ -122,12 +188,14 @@ export default function HomepageAdminPage() {
         <p className="text-sm text-zinc-500 mt-1">Manage content shown on the public homepage.</p>
       </div>
 
-      {/* Hero Section */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* Hero Carousel Section                                             */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
       <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden mb-8">
         <div className="px-6 py-4 border-b border-zinc-100 flex items-center justify-between">
           <div>
             <h2 className="font-semibold text-zinc-900">Hero — Polaroid Carousel</h2>
-            <p className="text-xs text-zinc-400 mt-0.5">Each slide shows as a polaroid with a caption. Upload images or videos. Drag to reorder (coming soon).</p>
+            <p className="text-xs text-zinc-400 mt-0.5">Each slide shows as a polaroid with a caption. Upload images or videos.</p>
           </div>
           <button
             onClick={() => setShowAdd(true)}
@@ -137,7 +205,7 @@ export default function HomepageAdminPage() {
           </button>
         </div>
 
-        {loading ? (
+        {loadingSlides ? (
           <div className="px-6 py-8 text-sm text-zinc-400">Loading slides…</div>
         ) : slides.length === 0 ? (
           <div className="px-6 py-12 text-center">
@@ -179,14 +247,14 @@ export default function HomepageAdminPage() {
                     />
                     <button
                       type="button"
-                      disabled={uploading === slide.id}
+                      disabled={uploadingSlide === slide.id}
                       onClick={() => rowFileInputRefs.current[slide.id]?.click()}
                       className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-zinc-200 rounded-md hover:border-zinc-400 text-zinc-600 transition-colors disabled:opacity-50 flex-shrink-0"
                     >
-                      {uploading === slide.id
+                      {uploadingSlide === slide.id
                         ? <Loader2 size={12} className="animate-spin" />
                         : <Upload size={12} />}
-                      {uploading === slide.id ? 'Uploading…' : 'Upload'}
+                      {uploadingSlide === slide.id ? 'Uploading…' : 'Upload'}
                     </button>
                     <input
                       className="flex-1 text-sm border border-zinc-200 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-zinc-300"
@@ -230,7 +298,7 @@ export default function HomepageAdminPage() {
                   </button>
                 </div>
 
-                {saving === slide.id && (
+                {savingSlide === slide.id && (
                   <span className="text-xs text-zinc-400 flex-shrink-0 mt-1">Saving…</span>
                 )}
               </li>
@@ -255,14 +323,14 @@ export default function HomepageAdminPage() {
               <div className="flex gap-2 items-center">
                 <button
                   type="button"
-                  disabled={uploading === 'new'}
+                  disabled={uploadingSlide === 'new'}
                   onClick={() => newFileInputRef.current?.click()}
                   className="flex items-center gap-1.5 px-3 py-2 text-sm border border-zinc-300 rounded-md hover:border-zinc-500 bg-white text-zinc-700 transition-colors disabled:opacity-50 flex-shrink-0"
                 >
-                  {uploading === 'new'
+                  {uploadingSlide === 'new'
                     ? <Loader2 size={14} className="animate-spin" />
                     : <Upload size={14} />}
-                  {uploading === 'new' ? 'Uploading…' : 'Upload file'}
+                  {uploadingSlide === 'new' ? 'Uploading…' : 'Upload file'}
                 </button>
                 <input
                   className="flex-1 text-sm border border-zinc-200 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-zinc-300"
@@ -301,10 +369,10 @@ export default function HomepageAdminPage() {
             <div className="flex gap-2">
               <button
                 onClick={addSlide}
-                disabled={!newSlide.image_url || saving === 'new'}
+                disabled={!newSlide.image_url || savingSlide === 'new'}
                 className="px-4 py-1.5 bg-zinc-900 text-white text-sm rounded-lg hover:bg-zinc-700 disabled:opacity-40 transition-colors"
               >
-                {saving === 'new' ? 'Adding…' : 'Add'}
+                {savingSlide === 'new' ? 'Adding…' : 'Add'}
               </button>
               <button
                 onClick={() => setShowAdd(false)}
@@ -314,6 +382,107 @@ export default function HomepageAdminPage() {
               </button>
             </div>
           </div>
+        )}
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* Priorities Section                                                */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden mb-8">
+        <div className="px-6 py-4 border-b border-zinc-100">
+          <h2 className="font-semibold text-zinc-900">Priorities — &quot;We Got Our Priorities Straight&quot;</h2>
+          <p className="text-xs text-zinc-400 mt-0.5">5 polaroid cards with image, title, and description. Upload images and edit text.</p>
+        </div>
+
+        {loadingPriorities ? (
+          <div className="px-6 py-8 text-sm text-zinc-400">Loading cards…</div>
+        ) : priorityCards.length === 0 ? (
+          <div className="px-6 py-12 text-center">
+            <ImageIcon className="w-8 h-8 text-zinc-200 mx-auto mb-3" />
+            <p className="text-sm text-zinc-400">No priority cards found in the database.</p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-zinc-100">
+            {priorityCards.map((card, idx) => (
+              <li key={card.id} className="px-6 py-5 flex items-start gap-4">
+                {/* Card number */}
+                <div className="w-6 h-6 rounded-full bg-zinc-100 flex items-center justify-center text-xs font-medium text-zinc-500 flex-shrink-0 mt-1">
+                  {idx + 1}
+                </div>
+
+                {/* Image preview */}
+                <div className="w-24 h-20 rounded-md overflow-hidden bg-zinc-100 flex-shrink-0">
+                  {card.image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={card.image_url} alt={card.alt_text ?? ''} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <ImageIcon size={20} className="text-zinc-300" />
+                    </div>
+                  )}
+                </div>
+
+                {/* Fields */}
+                <div className="flex-1 space-y-2">
+                  {/* Upload + URL */}
+                  <div className="flex gap-2 items-center">
+                    <input
+                      ref={el => { priorityFileInputRefs.current[card.id] = el }}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={e => handlePriorityFileUpload(card.id, e)}
+                    />
+                    <button
+                      type="button"
+                      disabled={uploadingPriority === card.id}
+                      onClick={() => priorityFileInputRefs.current[card.id]?.click()}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-zinc-200 rounded-md hover:border-zinc-400 text-zinc-600 transition-colors disabled:opacity-50 flex-shrink-0"
+                    >
+                      {uploadingPriority === card.id
+                        ? <Loader2 size={12} className="animate-spin" />
+                        : <Upload size={12} />}
+                      {uploadingPriority === card.id ? 'Uploading…' : 'Upload image'}
+                    </button>
+                    <input
+                      className="flex-1 text-sm border border-zinc-200 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-zinc-300"
+                      placeholder="or paste image URL"
+                      defaultValue={card.image_url}
+                      onBlur={e => updatePriorityCard(card.id, 'image_url', e.target.value)}
+                    />
+                  </div>
+                  {/* Title + Alt */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      className="text-sm border border-zinc-200 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-zinc-300"
+                      placeholder="Card title"
+                      defaultValue={card.title}
+                      onBlur={e => updatePriorityCard(card.id, 'title', e.target.value)}
+                    />
+                    <input
+                      className="text-sm border border-zinc-200 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-zinc-300"
+                      placeholder="Alt text"
+                      defaultValue={card.alt_text ?? ''}
+                      onBlur={e => updatePriorityCard(card.id, 'alt_text', e.target.value)}
+                    />
+                  </div>
+                  {/* Body text */}
+                  <textarea
+                    className="w-full text-sm border border-zinc-200 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-zinc-300 resize-none"
+                    placeholder="Card description"
+                    rows={2}
+                    defaultValue={card.body}
+                    onBlur={e => updatePriorityCard(card.id, 'body', e.target.value)}
+                  />
+                </div>
+
+                {/* Saving indicator */}
+                {savingPriority === card.id && (
+                  <span className="text-xs text-zinc-400 flex-shrink-0 mt-1">Saving…</span>
+                )}
+              </li>
+            ))}
+          </ul>
         )}
       </div>
     </div>
