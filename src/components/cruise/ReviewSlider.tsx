@@ -1,8 +1,8 @@
 'use client'
 
-import { useRef } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import Image from 'next/image'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { StarRating } from '@/components/ui/StarRating'
 
 export type SliderReview = {
@@ -21,6 +21,7 @@ interface ReviewSliderProps {
 
 export function ReviewSlider({ reviews }: ReviewSliderProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [modalReview, setModalReview] = useState<SliderReview | null>(null)
 
   if (reviews.length === 0) return null
 
@@ -66,9 +67,11 @@ export function ReviewSlider({ reviews }: ReviewSliderProps) {
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         {reviews.map((review) => (
-          <div
+          <button
+            type="button"
             key={review.id}
-            className="flex-shrink-0 w-[320px] bg-white rounded-xl p-5 shadow-sm snap-start"
+            className="flex-shrink-0 w-[320px] bg-white rounded-xl p-5 shadow-sm snap-start text-left cursor-pointer hover:shadow-md transition-shadow"
+            onClick={() => setModalReview(review)}
           >
             {/* Header: photo + name + stars */}
             <div className="flex items-center gap-3 mb-3">
@@ -104,16 +107,115 @@ export function ReviewSlider({ reviews }: ReviewSliderProps) {
               &ldquo;{review.review_text}&rdquo;
             </p>
 
-            {/* Source */}
-            {review.source && (
-              <p className="text-xs text-[var(--color-muted)] mt-2 capitalize">
-                {review.source}
-              </p>
-            )}
-          </div>
+            {/* Source + read more */}
+            <div className="flex items-center justify-between mt-2">
+              {review.source && (
+                <span className="text-xs text-[var(--color-muted)] capitalize">
+                  {review.source}
+                </span>
+              )}
+              <span className="text-xs text-[var(--color-primary)] font-semibold ml-auto">
+                Read more
+              </span>
+            </div>
+          </button>
         ))}
       </div>
+
+      {/* Review detail modal */}
+      {modalReview && (
+        <ReviewModal review={modalReview} onClose={() => setModalReview(null)} />
+      )}
     </section>
+  )
+}
+
+function ReviewModal({
+  review,
+  onClose,
+}: {
+  review: SliderReview
+  onClose: () => void
+}) {
+  useEffect(() => {
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = prev
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      {/* Dark overlay */}
+      <div className="absolute inset-0 bg-black/60" />
+
+      {/* Modal content */}
+      <div
+        className="relative z-10 bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-y-auto p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Close button */}
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute top-3 right-3 w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-[var(--color-muted)] hover:text-[var(--color-ink)]"
+        >
+          <X className="w-4 h-4" />
+        </button>
+
+        {/* Header */}
+        <div className="flex items-center gap-4 mb-4 pr-8">
+          {review.author_photo_url ? (
+            <Image
+              src={review.author_photo_url}
+              alt={review.reviewer_name}
+              width={56}
+              height={56}
+              className="w-14 h-14 rounded-full object-cover"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <div className="w-14 h-14 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] flex items-center justify-center text-xl font-bold flex-shrink-0">
+              {review.reviewer_name.charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-base font-semibold text-[var(--color-primary)]">
+              {review.reviewer_name}
+            </p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <StarRating rating={review.rating} />
+              {review.publish_time && (
+                <span className="text-xs text-[var(--color-muted)]">
+                  {formatReviewDate(review.publish_time)}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Full review text */}
+        <p className="text-sm text-[var(--color-ink)] leading-relaxed">
+          &ldquo;{review.review_text}&rdquo;
+        </p>
+
+        {/* Source */}
+        {review.source && (
+          <p className="text-xs text-[var(--color-muted)] mt-4 capitalize">
+            Posted on {review.source}
+          </p>
+        )}
+      </div>
+    </div>
   )
 }
 
