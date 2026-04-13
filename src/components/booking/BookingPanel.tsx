@@ -154,6 +154,10 @@ interface BookingPanelProps {
   initialTime?: string
   /** Info pills to display above the booking steps */
   infoPills?: InfoPill[]
+  /** Starting price text, e.g. "€35" */
+  priceDisplay?: string | null
+  /** Price sub-label, e.g. "per person" */
+  priceLabel?: string | null
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -168,6 +172,8 @@ export function BookingPanel({
   initialGuests = 2,
   initialTime,
   infoPills = [],
+  priceDisplay,
+  priceLabel,
 }: BookingPanelProps) {
   const [state, dispatch] = useReducer(reducer, {
     ...initialState,
@@ -320,6 +326,17 @@ export function BookingPanel({
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-zinc-100 p-5">
       <h3 className="font-bold text-[var(--color-primary)] text-base mb-3">Book this cruise</h3>
+
+      {/* Starting price */}
+      {priceDisplay && (
+        <div className="mb-3">
+          <p className="text-xs text-[var(--color-muted)]">Starting from</p>
+          <p className="text-2xl font-black text-[var(--color-primary)]">{priceDisplay}</p>
+          {priceLabel && (
+            <p className="text-xs text-[var(--color-muted)]">{priceLabel}</p>
+          )}
+        </div>
+      )}
 
       {/* Info pills */}
       {infoPills.length > 0 && (
