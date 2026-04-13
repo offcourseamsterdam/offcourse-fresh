@@ -1,4 +1,5 @@
 import Image from 'next/image'
+import { Minus, Plus } from 'lucide-react'
 import { fmtEuros } from '@/lib/utils'
 import { DEFAULT_DURATION_MINUTES } from '@/lib/constants'
 import type { Extra } from '@/lib/extras/calculate'
@@ -11,6 +12,8 @@ export interface ApiExtra extends Extra {
   description?: string | null
   ingredients?: string[] | null
   name: string
+  quantity_mode?: string
+  min_quantity?: number
 }
 
 export interface ExtraCardProps {
@@ -20,6 +23,10 @@ export interface ExtraCardProps {
   guestCount: number
   baseAmountCents: number
   durationMinutes?: number
+  /** Current quantity for counter-mode extras */
+  quantity?: number
+  /** Called when +/- buttons change the quantity */
+  onQuantityChange?: (id: string, qty: number) => void
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -56,26 +63,64 @@ export function ExtraCard({
   guestCount,
   baseAmountCents,
   durationMinutes = DEFAULT_DURATION_MINUTES,
+  quantity = 0,
+  onQuantityChange,
 }: ExtraCardProps) {
+  const isCounter = extra.quantity_mode === 'counter'
+  const minQty = extra.min_quantity ?? 1
+
+  function handleCardClick() {
+    if (isCounter && onQuantityChange) {
+      // Toggle between 0 and min_quantity
+      onQuantityChange(extra.id, quantity > 0 ? 0 : minQty)
+    } else {
+      onToggle(extra.id)
+    }
+  }
+
+  function handleMinus(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!onQuantityChange) return
+    if (quantity <= minQty) {
+      // Below or at minimum → deselect (set to 0)
+      onQuantityChange(extra.id, 0)
+    } else {
+      onQuantityChange(extra.id, quantity - 1)
+    }
+  }
+
+  function handlePlus(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!onQuantityChange) return
+    if (quantity === 0) {
+      // Jump to minimum
+      onQuantityChange(extra.id, minQty)
+    } else {
+      onQuantityChange(extra.id, quantity + 1)
+    }
+  }
+
   return (
     <button
-      onClick={() => onToggle(extra.id)}
+      onClick={handleCardClick}
       className={`w-full text-left flex items-center gap-3 rounded-lg border px-4 py-3 transition-all ${
         selected
           ? 'border-zinc-900 bg-zinc-900 text-white'
           : 'border-zinc-200 bg-white hover:border-zinc-400'
       }`}
     >
-      {/* Checkbox indicator */}
-      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-        selected
-          ? 'border-white bg-white'
-          : 'border-zinc-300 bg-transparent'
-      }`}>
-        {selected && (
-          <div className="w-2.5 h-2.5 rounded-full bg-zinc-900" />
-        )}
-      </div>
+      {/* Checkbox indicator (toggle mode only) */}
+      {!isCounter && (
+        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+          selected
+            ? 'border-white bg-white'
+            : 'border-zinc-300 bg-transparent'
+        }`}>
+          {selected && (
+            <div className="w-2.5 h-2.5 rounded-full bg-zinc-900" />
+          )}
+        </div>
+      )}
 
       {/* Optional thumbnail */}
       {extra.image_url && (
@@ -105,18 +150,34 @@ export function ExtraCard({
             {extra.ingredients.join(' · ')}
           </p>
         )}
+
+        {/* Counter UI (counter mode only) */}
+        {isCounter && selected && (
+          <div className="flex items-center gap-3 mt-2" onClick={e => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={handleMinus}
+              className="w-7 h-7 rounded-full border border-white/30 flex items-center justify-center hover:bg-white/10 transition-colors"
+            >
+              <Minus className="w-3.5 h-3.5" />
+            </button>
+            <span className="text-sm font-bold w-6 text-center">{quantity}</span>
+            <button
+              type="button"
+              onClick={handlePlus}
+              className="w-7 h-7 rounded-full border border-white/30 flex items-center justify-center hover:bg-white/10 transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Price + VAT */}
+      {/* Price */}
       <div className="flex-shrink-0 text-right">
         <p className={`text-sm font-semibold ${selected ? 'text-white' : 'text-zinc-900'}`}>
           {formatPriceLabel(extra, guestCount, baseAmountCents, durationMinutes)}
         </p>
-        {extra.vat_rate > 0 && (
-          <p className={`text-xs ${selected ? 'text-zinc-300' : 'text-zinc-400'}`}>
-            {extra.vat_rate}% VAT
-          </p>
-        )}
       </div>
     </button>
   )

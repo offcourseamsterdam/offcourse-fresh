@@ -13,7 +13,7 @@ import {
   VAT_RATES,
 } from '@/lib/constants'
 import { Toggle } from './Toggle'
-import type { Extra, FormState, Category, Scope, PriceType, ListingCategory } from './types'
+import type { Extra, FormState, Category, Scope, PriceType, ListingCategory, QuantityMode } from './types'
 
 // ── Props ──────────────────────────────────────────────────────────────────────
 
@@ -275,6 +275,45 @@ export function ExtrasFormModal({
             </div>
           </label>
         )}
+
+        {/* Quantity mode */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-zinc-600">Selection mode</label>
+            <div className="flex gap-2">
+              {(['toggle', 'counter'] as const).map(mode => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => onFormChange(f => ({ ...f, quantity_mode: mode as QuantityMode }))}
+                  className={`flex-1 py-2 rounded-md border text-xs font-medium transition-all ${
+                    form.quantity_mode === mode
+                      ? 'border-zinc-900 bg-zinc-900 text-white'
+                      : 'border-zinc-200 bg-white hover:border-zinc-400 text-zinc-600'
+                  }`}
+                >
+                  {mode === 'toggle' ? 'On/Off toggle' : 'Quantity counter'}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-zinc-400">Counter shows +/- buttons for ordering multiple units</p>
+          </div>
+
+          {form.quantity_mode === 'counter' && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-zinc-600">Minimum quantity</label>
+              <Input
+                type="number"
+                min="1"
+                step="1"
+                placeholder="1"
+                value={form.min_quantity}
+                onChange={e => onFormChange(f => ({ ...f, min_quantity: e.target.value }))}
+              />
+              <p className="text-xs text-zinc-400">Lowest selectable amount (e.g. 2 for a platter)</p>
+            </div>
+          )}
+        </div>
 
         {/* Sort order + Is active */}
         <div className="grid grid-cols-2 gap-4">

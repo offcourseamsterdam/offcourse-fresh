@@ -20,6 +20,8 @@ export interface ExtraCategoryGroupProps {
   guestCount: number
   baseAmountCents: number
   durationMinutes?: number
+  quantities: Map<string, number>
+  onQuantityChange: (id: string, qty: number) => void
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -32,6 +34,8 @@ export function ExtraCategoryGroup({
   guestCount,
   baseAmountCents,
   durationMinutes,
+  quantities,
+  onQuantityChange,
 }: ExtraCategoryGroupProps) {
   return (
     <div className="space-y-2">
@@ -54,6 +58,8 @@ export function ExtraCategoryGroup({
           guestCount={guestCount}
           baseAmountCents={baseAmountCents}
           durationMinutes={durationMinutes}
+          quantity={quantities.get(extra.id) ?? 0}
+          onQuantityChange={onQuantityChange}
         />
       ))}
     </div>

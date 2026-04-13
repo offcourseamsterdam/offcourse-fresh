@@ -968,6 +968,7 @@ export type Database = {
           ingredients: string[] | null
           is_active: boolean
           is_required: boolean
+          min_quantity: number
           name: string
           name_de: string | null
           name_es: string | null
@@ -977,6 +978,7 @@ export type Database = {
           name_zh: string | null
           price_type: string
           price_value: number
+          quantity_mode: string
           scope: string
           sort_order: number
           updated_at: string | null
@@ -998,6 +1000,7 @@ export type Database = {
           ingredients?: string[] | null
           is_active?: boolean
           is_required?: boolean
+          min_quantity?: number
           name: string
           name_de?: string | null
           name_es?: string | null
@@ -1007,6 +1010,7 @@ export type Database = {
           name_zh?: string | null
           price_type: string
           price_value?: number
+          quantity_mode?: string
           scope: string
           sort_order?: number
           updated_at?: string | null
@@ -1028,6 +1032,7 @@ export type Database = {
           ingredients?: string[] | null
           is_active?: boolean
           is_required?: boolean
+          min_quantity?: number
           name?: string
           name_de?: string | null
           name_es?: string | null
@@ -1037,6 +1042,7 @@ export type Database = {
           name_zh?: string | null
           price_type?: string
           price_value?: number
+          quantity_mode?: string
           scope?: string
           sort_order?: number
           updated_at?: string | null

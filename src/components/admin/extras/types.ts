@@ -15,6 +15,8 @@ export interface Extra {
   is_required: boolean
   is_active: boolean
   sort_order: number
+  quantity_mode: string
+  min_quantity: number
   created_at: string
 }
 
@@ -25,6 +27,8 @@ export type Category = 'food' | 'drinks' | 'protection' | 'experience' | 'tax' |
 export type ListingCategory = 'private' | 'shared' | 'standard' | 'special' | 'seasonal' | 'event'
 
 // ── Form state ────────────────────────────────────────────────────────────────
+
+export type QuantityMode = 'toggle' | 'counter'
 
 export interface FormState {
   name: string
@@ -39,6 +43,8 @@ export interface FormState {
   is_required: boolean
   is_active: boolean
   sort_order: string
+  quantity_mode: QuantityMode
+  min_quantity: string
 }
 
 export function blankForm(): FormState {
@@ -55,6 +61,8 @@ export function blankForm(): FormState {
     is_required: false,
     is_active: true,
     sort_order: '0',
+    quantity_mode: 'toggle',
+    min_quantity: '1',
   }
 }
 
@@ -79,6 +87,8 @@ export function extraToForm(extra: Extra): FormState {
     is_required: extra.is_required,
     is_active: extra.is_active,
     sort_order: String(extra.sort_order),
+    quantity_mode: (extra.quantity_mode ?? 'toggle') as QuantityMode,
+    min_quantity: String(extra.min_quantity ?? 1),
   }
 }
 
@@ -102,6 +112,8 @@ export function formToPayload(form: FormState) {
     is_required: form.is_required,
     is_active: form.is_active,
     sort_order: parseInt(form.sort_order) || 0,
+    quantity_mode: form.quantity_mode,
+    min_quantity: parseInt(form.min_quantity) || 1,
   }
   if (payload.price_type !== 'per_person_cents') {
     payload.is_required = false

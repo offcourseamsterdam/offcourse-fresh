@@ -10,6 +10,8 @@ export interface Extra {
   price_value: number
   vat_rate: number
   is_required: boolean
+  quantity_mode?: string
+  min_quantity?: number
 }
 
 export interface ExtraLineItem {
@@ -20,6 +22,7 @@ export interface ExtraLineItem {
   price_value: number
   vat_rate: number
   guest_count?: number
+  quantity: number
   amount_cents: number
   vat_amount_cents: number
 }
@@ -53,12 +56,14 @@ function extractVat(amountInclVat: number, rate: number): number {
  * - per_person_per_hour: price_value × guestCount × (durationMinutes / 60)
  * - All prices are INCLUSIVE of VAT; VAT is back-calculated
  * - Base cruise VAT rate is always 9% (hard-coded)
+ * - Counter-mode extras: amount is multiplied by quantity
  */
 export function calculateExtras(
   baseAmountCents: number,
   guestCount: number,
   selectedExtras: Extra[],
   durationMinutes = 90,
+  quantities: Map<string, number> = new Map(),
 ): ExtrasCalculation {
   const BASE_VAT_RATE = 9
   const baseVat = extractVat(baseAmountCents, BASE_VAT_RATE)
@@ -69,9 +74,19 @@ export function calculateExtras(
   const lineItems: ExtraLineItem[] = []
   let subtotal = baseAmountCents
 
+  // Get the quantity multiplier for an extra (1 for toggle mode, actual qty for counter mode)
+  function getQty(extra: Extra): number {
+    if (extra.quantity_mode === 'counter') {
+      return quantities.get(extra.id) ?? 1
+    }
+    return 1
+  }
+
   // 1. Per-person extras (city tax) — always first, required ones always included
   for (const extra of priced.filter(e => e.price_type === 'per_person_cents')) {
-    const amount = Math.round(extra.price_value * guestCount)
+    const qty = getQty(extra)
+    const unitAmount = Math.round(extra.price_value * guestCount)
+    const amount = unitAmount * qty
     const vat = extractVat(amount, extra.vat_rate)
     lineItems.push({
       extra_id: extra.id,
@@ -81,6 +96,7 @@ export function calculateExtras(
       price_value: extra.price_value,
       vat_rate: extra.vat_rate,
       guest_count: guestCount,
+      quantity: qty,
       amount_cents: amount,
       vat_amount_cents: vat,
     })
@@ -89,8 +105,10 @@ export function calculateExtras(
 
   // 2. Per-person-per-hour extras (unlimited drinks)
   for (const extra of priced.filter(e => e.price_type === 'per_person_per_hour_cents')) {
+    const qty = getQty(extra)
     const hours = durationMinutes / 60
-    const amount = Math.round(extra.price_value * guestCount * hours)
+    const unitAmount = Math.round(extra.price_value * guestCount * hours)
+    const amount = unitAmount * qty
     const vat = extractVat(amount, extra.vat_rate)
     lineItems.push({
       extra_id: extra.id,
@@ -100,14 +118,18 @@ export function calculateExtras(
       price_value: extra.price_value,
       vat_rate: extra.vat_rate,
       guest_count: guestCount,
+      quantity: qty,
       amount_cents: amount,
       vat_amount_cents: vat,
     })
     subtotal += amount
   }
 
+  // 3. Fixed-price extras
   for (const extra of priced.filter(e => e.price_type === 'fixed_cents')) {
-    const vat = extractVat(extra.price_value, extra.vat_rate)
+    const qty = getQty(extra)
+    const amount = extra.price_value * qty
+    const vat = extractVat(amount, extra.vat_rate)
     lineItems.push({
       extra_id: extra.id,
       name: extra.name,
@@ -115,10 +137,11 @@ export function calculateExtras(
       price_type: extra.price_type,
       price_value: extra.price_value,
       vat_rate: extra.vat_rate,
-      amount_cents: extra.price_value,
+      quantity: qty,
+      amount_cents: amount,
       vat_amount_cents: vat,
     })
-    subtotal += extra.price_value
+    subtotal += amount
   }
 
   // 4. Percentage extras (insurance) — calculated on subtotal before themselves
@@ -132,6 +155,7 @@ export function calculateExtras(
       price_type: extra.price_type,
       price_value: extra.price_value,
       vat_rate: extra.vat_rate,
+      quantity: 1,
       amount_cents: amount,
       vat_amount_cents: vat,
     })
