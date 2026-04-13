@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -9,7 +9,7 @@ interface RouteParams {
 // GET /api/admin/cruise-listings/[id]
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   const { id } = await params
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('cruise_listings')
     .select('*')
@@ -47,7 +47,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     return apiError('No valid fields to update', 400)
   }
 
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('cruise_listings')
     .update(patch)

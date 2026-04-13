@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Resend } from 'resend'
 import type { BookingSource } from '@/lib/constants'
 
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
 
     // Idempotency: if a booking already exists for this payment intent, return it (website only)
     if (stripePaymentIntentId) {
-      const supabase = await createServiceClient()
+      const supabase = createAdminClient()
       const { data: existing } = await supabase
         .from('bookings')
         .select('id, fareharbor_booking_uuid')
@@ -194,7 +194,7 @@ interface BookingPayload {
 
 async function saveToSupabase(p: BookingPayload) {
   try {
-    const supabase = await createServiceClient()
+    const supabase = createAdminClient()
     const isInternal = p.bookingSource !== 'website'
     // booking_id: use Stripe PI for website bookings, FH UUID for internal
     const bookingId = isInternal ? (p.fhBookingUuid ?? `internal_${Date.now()}`) : (p.stripePaymentIntentId ?? '')

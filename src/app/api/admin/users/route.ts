@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { requireRole } from '@/lib/auth/server'
 import { VALID_ROLES } from '@/lib/auth/types'
 import type { UserRole } from '@/lib/auth/types'
@@ -13,7 +13,7 @@ export async function GET() {
     return apiError('Unauthorized', 403)
   }
 
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('user_profiles')
     .select('*')
@@ -49,7 +49,7 @@ export async function PATCH(request: NextRequest) {
   if (role !== undefined) updates.role = role
   if (is_active !== undefined) updates.is_active = is_active
 
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('user_profiles')
     .update(updates)

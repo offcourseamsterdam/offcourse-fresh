@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { requireRole } from '@/lib/auth/server'
 import { VALID_ROLES } from '@/lib/auth/types'
 import type { UserRole } from '@/lib/auth/types'
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     return apiError('Invalid role', 400)
   }
 
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
 
   // Create Supabase auth user and send invite email
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
