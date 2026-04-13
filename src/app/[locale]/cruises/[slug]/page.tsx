@@ -194,7 +194,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
           <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">
             {listing.category}
           </span>
-          <h1 className="text-3xl sm:text-4xl font-black text-[var(--color-primary)] mt-3">
+          <h1 className="text-3xl sm:text-4xl font-black text-[var(--color-primary)] mt-3 uppercase">
             {title}
           </h1>
           {tagline && (
