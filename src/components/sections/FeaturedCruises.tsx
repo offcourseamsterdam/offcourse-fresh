@@ -197,7 +197,7 @@ export function FeaturedCruises({ listings }: FeaturedCruisesProps) {
           <h2 className="font-briston text-[48px] sm:text-[64px] lg:text-[72px] text-accent leading-none mb-3">
             OFF THE BEATEN CANAL
           </h2>
-          <p className="font-palmore text-[32px] sm:text-[40px] text-primary leading-tight">
+          <p className="font-palmore text-[32px] sm:text-[40px] leading-tight" style={{ color: '#980201' }}>
             we drift different
           </p>
 
