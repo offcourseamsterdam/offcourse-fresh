@@ -136,15 +136,15 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
 
       <div className="min-h-screen bg-texture-sand">
         {/* ── Title + tagline above gallery ── */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-4">
-          <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] capitalize">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-6">
+          <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">
             {listing.category}
           </span>
-          <h1 className="text-3xl sm:text-4xl font-black text-[var(--color-primary)] mt-1">
+          <h1 className="text-3xl sm:text-4xl font-black text-[var(--color-primary)] mt-2">
             {title}
           </h1>
           {tagline && (
-            <p className="text-[var(--color-muted)] mt-1 text-base">{tagline}</p>
+            <p className="text-[var(--color-muted)] mt-2 text-base">{tagline}</p>
           )}
         </div>
 
@@ -200,9 +200,10 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
 
               {/* Description */}
               {description && (
-                <p className="text-[var(--color-ink)] leading-relaxed text-base whitespace-pre-line">
-                  {description}
-                </p>
+                <div
+                  className="text-[var(--color-ink)] leading-relaxed text-base prose prose-sm max-w-none [&_p]:mb-4 [&_br]:block"
+                  dangerouslySetInnerHTML={{ __html: description }}
+                />
               )}
 
               {/* Highlights */}
