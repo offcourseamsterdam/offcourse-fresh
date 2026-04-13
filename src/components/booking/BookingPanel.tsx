@@ -275,6 +275,9 @@ export function BookingPanel({
 
   const guestCount = category === 'private' ? state.guests : state.totalTickets
 
+  // City tax: €2.60/person, shared cruises only
+  const cityTaxCents = category === 'shared' ? state.totalTickets * 260 : 0
+
   // Ticket breakdown for PriceSummary
   const ticketBreakdown = category === 'shared' && state.selectedSlot
     ? state.selectedSlot.customerTypes
@@ -305,6 +308,7 @@ export function BookingPanel({
       selectedExtraIds: state.selectedExtraIds,
       extrasCalculation: state.extrasCalculation,
       basePriceCents,
+      cityTaxCents,
     }
     sessionStorage.setItem('offcourse_booking', JSON.stringify(bookingData))
 
@@ -458,6 +462,7 @@ export function BookingPanel({
           mode={category}
           cruiseLabel={boatSummary}
           ticketBreakdown={ticketBreakdown}
+          cityTaxCents={cityTaxCents}
         />
       )}
 

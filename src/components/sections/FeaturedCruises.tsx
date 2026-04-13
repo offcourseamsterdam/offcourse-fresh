@@ -117,20 +117,20 @@ function CruiseCard({ listing, rotation, slots, loading, date, guests }: {
         </h3>
       </div>
 
-      {/* Below polaroid — tagline, price, buttons */}
-      <div className="text-center mt-4 px-2">
+      {/* Below polaroid — tagline, price, buttons (white Verdana text on lavender bg) */}
+      <div className="text-center mt-4 px-2" style={{ fontFamily: 'Verdana, Geneva, sans-serif' }}>
         {listing.tagline && (
-          <p className="font-palmore text-muted text-sm leading-relaxed mb-3 italic">
+          <p className="text-white text-base leading-relaxed mb-3 italic">
             {listing.tagline}
           </p>
         )}
 
         {/* Price */}
         {listing.price_display && (
-          <p className="font-avenir font-bold text-accent text-lg mb-0.5">{listing.price_display}</p>
+          <p className="font-bold text-white text-xl mb-0.5">{listing.price_display}</p>
         )}
         {listing.duration_display && (
-          <p className="font-avenir text-muted text-xs mb-4">{listing.duration_display}</p>
+          <p className="text-white/70 text-xs mb-4">{listing.duration_display}</p>
         )}
 
         {/* CTAs */}
@@ -143,7 +143,7 @@ function CruiseCard({ listing, rotation, slots, loading, date, guests }: {
           </Link>
           <Link
             href={`/cruises/${listing.slug}`}
-            className="flex-1 max-w-[140px] border-2 border-primary text-primary py-2 font-avenir text-sm text-center hover:bg-primary hover:text-white transition-all duration-300"
+            className="flex-1 max-w-[140px] border-2 border-white text-white py-2 font-avenir text-sm text-center hover:bg-white hover:text-primary transition-all duration-300"
           >
             More Info
           </Link>
