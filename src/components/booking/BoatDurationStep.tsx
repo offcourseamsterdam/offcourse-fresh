@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
+import Image from 'next/image'
 import { motion } from 'framer-motion'
 import type { AvailabilityCustomerType } from '@/types'
 import { BOATS } from '@/lib/fareharbor/config'
@@ -18,6 +19,7 @@ interface BoatOption {
   name: string
   maxGuests: number
   tagline: string
+  imageUrl: string
   durations: AvailabilityCustomerType[]
   status: 'available' | 'sold_out' | 'too_many_guests'
 }
@@ -73,6 +75,7 @@ export function BoatDurationStep({
           name: boat.name,
           maxGuests: boat.maxGuests,
           tagline: BOAT_TAGLINES[boat.id] || '',
+          imageUrl: boat.imageUrl,
           durations: durations.filter(d => d.totalCapacity >= 1),
           status,
         }
@@ -112,20 +115,31 @@ export function BoatDurationStep({
             }`}
           >
             <div className={`${bgClass} p-5`}>
-              {/* Boat name in Briston */}
-              <h3 className="font-briston text-[28px] text-[var(--color-primary)] uppercase leading-none">
-                {boat.name}
-              </h3>
+              <div className="flex gap-4">
+                {/* Text */}
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-briston text-[28px] text-[var(--color-primary)] uppercase leading-none">
+                    {boat.name}
+                  </h3>
+                  <p className="font-palmore text-[16px] text-[var(--color-primary)]/70 mt-1">
+                    {boat.tagline}
+                  </p>
+                  <p className="text-xs text-[var(--color-muted)] mt-1 font-avenir">
+                    Up to {boat.maxGuests} guests
+                  </p>
+                </div>
 
-              {/* Tagline in Palmore */}
-              <p className="font-palmore text-[16px] text-[var(--color-primary)]/70 mt-1">
-                {boat.tagline}
-              </p>
-
-              {/* Guest count */}
-              <p className="text-xs text-[var(--color-muted)] mt-1 font-avenir">
-                Up to {boat.maxGuests} guests
-              </p>
+                {/* Thumbnail */}
+                <div className={`relative w-20 h-20 rounded-lg overflow-hidden flex-shrink-0 shadow-sm ${isSoldOut ? 'grayscale' : ''}`}>
+                  <Image
+                    src={boat.imageUrl}
+                    alt={boat.name}
+                    fill
+                    className="object-cover"
+                    sizes="80px"
+                  />
+                </div>
+              </div>
 
               {/* Sold out badge */}
               {isSoldOut && (
