@@ -79,7 +79,7 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
       <section className="bg-texture-sand min-h-screen flex flex-col relative z-10" style={{ marginBottom: '-140px' }}>
 
         {/* ── Top: logo + headline + search ────────────── */}
-        <div className="flex-1 flex flex-col items-center justify-center text-center px-4 sm:px-6 pt-28 pb-12 relative z-10">
+        <div className="flex-1 flex flex-col items-center justify-center text-center px-4 sm:px-6 pt-28 pb-12 relative z-20">
 
           {/* Hero logo — vertical version */}
           <div className="mb-10">

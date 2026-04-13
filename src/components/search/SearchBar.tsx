@@ -96,8 +96,8 @@ export function SearchBar({
   }
 
   const guestsPanelProps = {
-    guests, date, loading,
-    onSetGuests: setGuests, onSubmit: handleSubmit,
+    guests,
+    onSetGuests: setGuests,
   }
 
   return (

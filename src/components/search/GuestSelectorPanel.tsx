@@ -1,17 +1,11 @@
 export interface GuestSelectorPanelProps {
   guests: number
-  date: string
-  loading: boolean
   onSetGuests: (updater: (prev: number) => number) => void
-  onSubmit: (e?: React.MouseEvent) => void
 }
 
 export function GuestSelectorPanel({
   guests,
-  date,
-  loading,
   onSetGuests,
-  onSubmit,
 }: GuestSelectorPanelProps) {
   return (
     <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-gray-100 p-4 sm:p-5 z-50 w-full sm:w-64">
@@ -32,12 +26,6 @@ export function GuestSelectorPanel({
           </button>
         </div>
       </div>
-      {date && (
-        <button type="button" onClick={onSubmit} disabled={loading}
-          className="mt-4 w-full py-2.5 rounded-full bg-[#CC0000] hover:bg-[#aa0000] text-white font-avenir font-bold text-sm transition-all disabled:opacity-40">
-          {loading ? 'Searching\u2026' : 'Search'}
-        </button>
-      )}
     </div>
   )
 }
