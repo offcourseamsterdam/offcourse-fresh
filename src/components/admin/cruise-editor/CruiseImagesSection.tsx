@@ -60,16 +60,6 @@ function SortableImageCard({
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={img.url} alt={img.alt_text ?? ''} className="w-full h-full object-cover" />
 
-      {/* Drag handle — always visible top-right */}
-      <button
-        {...attributes}
-        {...listeners}
-        className="absolute top-2 right-2 bg-black/50 text-white rounded-md p-1 cursor-grab active:cursor-grabbing hover:bg-black/70 transition-colors"
-        aria-label="Drag to reorder"
-      >
-        <GripVertical className="w-4 h-4" />
-      </button>
-
       {/* Hover overlay with actions */}
       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-2">
         {!isHero && (
@@ -87,6 +77,16 @@ function SortableImageCard({
           Remove
         </button>
       </div>
+
+      {/* Drag handle — rendered after overlay so it sits on top */}
+      <button
+        {...attributes}
+        {...listeners}
+        className="absolute top-2 right-2 bg-black/50 text-white rounded-md p-1 cursor-grab active:cursor-grabbing hover:bg-black/70 transition-colors"
+        aria-label="Drag to reorder"
+      >
+        <GripVertical className="w-4 h-4" />
+      </button>
 
       {/* Hero badge */}
       {isHero && (
