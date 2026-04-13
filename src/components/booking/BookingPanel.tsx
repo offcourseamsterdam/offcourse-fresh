@@ -41,7 +41,7 @@ type Action =
   | { type: 'CONFIRM_GUESTS'; guests: number }
   | { type: 'SLOTS_LOADING' }
   | { type: 'SLOTS_LOADED'; slots: AvailabilitySlot[] }
-  | { type: 'SELECT_SLOT'; slot: AvailabilitySlot }
+  | { type: 'SELECT_SLOT'; slot: AvailabilitySlot; category: 'private' | 'shared' }
   | { type: 'SELECT_BOAT_DURATION'; customerType: AvailabilityCustomerType; boatId: string }
   | { type: 'UPDATE_TICKET_COUNT'; customerTypePk: number; count: number }
   | { type: 'CONFIRM_TICKETS' }
@@ -86,7 +86,7 @@ function reducer(state: BookingPanelState, action: Action): BookingPanelState {
       return {
         ...state,
         selectedSlot: action.slot,
-        step: 'boat', // works for both modes — BookingPanel renders the right step
+        step: action.category === 'private' ? 'boat' : 'tickets',
         selectedBoat: null,
         selectedCustomerType: null,
         ticketCounts: {},
@@ -275,6 +275,9 @@ export function BookingPanel({
 
   const guestCount = category === 'private' ? state.guests : state.totalTickets
 
+  // City tax: €2.60/person, shared cruises only
+  const cityTaxCents = category === 'shared' ? state.totalTickets * 260 : 0
+
   // Ticket breakdown for PriceSummary
   const ticketBreakdown = category === 'shared' && state.selectedSlot
     ? state.selectedSlot.customerTypes
@@ -305,6 +308,7 @@ export function BookingPanel({
       selectedExtraIds: state.selectedExtraIds,
       extrasCalculation: state.extrasCalculation,
       basePriceCents,
+      cityTaxCents,
     }
     sessionStorage.setItem('offcourse_booking', JSON.stringify(bookingData))
 
@@ -385,7 +389,7 @@ export function BookingPanel({
           loading={state.loadingSlots}
           mode={category}
           selectedSlotPk={state.selectedSlot?.pk ?? null}
-          onSelect={(slot) => dispatch({ type: 'SELECT_SLOT', slot })}
+          onSelect={(slot) => dispatch({ type: 'SELECT_SLOT', slot, category })}
         />
       </StepAccordion>
 
@@ -458,6 +462,7 @@ export function BookingPanel({
           mode={category}
           cruiseLabel={boatSummary}
           ticketBreakdown={ticketBreakdown}
+          cityTaxCents={cityTaxCents}
         />
       )}
 

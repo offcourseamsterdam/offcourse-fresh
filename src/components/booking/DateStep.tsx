@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { DatePickerPanel } from '@/components/search/DatePickerPanel'
-import { Minus, Plus } from 'lucide-react'
 import { toDateStr, getToday } from '@/lib/utils'
 
 interface DateStepProps {
@@ -38,39 +37,12 @@ export function DateStep({ mode, initialDate = '', initialGuests = 2, onConfirm 
 
   function handlePickDate(d: string) {
     setDate(d)
-    onConfirm(d, guests)
+    // For shared, guest count is determined by ticket selection — pass 1 for slot fetching
+    onConfirm(d, mode === 'shared' ? 1 : guests)
   }
 
   return (
     <div className="space-y-4">
-      {/* Shared: guest counter above calendar */}
-      {mode === 'shared' && (
-        <div className="flex items-center justify-between bg-zinc-50 rounded-xl px-4 py-3">
-          <div>
-            <div className="text-sm font-semibold text-zinc-800">Guests</div>
-            <div className="text-xs text-zinc-500">How many tickets?</div>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setGuests(g => Math.max(1, g - 1))}
-              disabled={guests <= 1}
-              className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center text-zinc-600 hover:border-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              <Minus className="w-3.5 h-3.5" />
-            </button>
-            <span className="w-6 text-center font-semibold text-zinc-800 tabular-nums">{guests}</span>
-            <button
-              type="button"
-              onClick={() => setGuests(g => Math.min(12, g + 1))}
-              disabled={guests >= 12}
-              className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center text-zinc-600 hover:border-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      )}
 
       <DatePickerPanel
         todayStr={todayStr}
