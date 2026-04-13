@@ -144,9 +144,18 @@ export function transformToSlot(
 ): AvailabilitySlot {
   const startTime = getTimeFromISO(availability.start_at)
 
+  // Calculate actual duration from start/end timestamps (reliable for all cruise types)
+  const slotDurationMinutes = Math.round(
+    (new Date(availability.end_at).getTime() - new Date(availability.start_at).getTime()) / 60000
+  )
+
   const customerTypes: AvailabilityCustomerType[] = availability.customer_type_rates
     .map(rate => {
       const config = typeMap.get(rate.customer_type.pk)
+      // Use config duration if parsed from name (e.g. "Diana 1.5h"), otherwise
+      // fall back to actual slot duration from start_at/end_at timestamps.
+      // This fixes shared cruise types like "Adult"/"Child" that have no duration in the name.
+      const durationMinutes = config?.duration ?? slotDurationMinutes || 120
       return {
         pk: rate.pk,
         totalCapacity: rate.capacity,
@@ -155,7 +164,7 @@ export function transformToSlot(
         minimumParty: rate.minimum_party_size ?? 1,
         maximumParty: rate.maximum_party_size ?? (config?.maxGuests ?? 12),
         priceCents: rate.customer_prototype?.total ?? 0,
-        durationMinutes: config?.duration ?? 120,
+        durationMinutes,
       }
     })
 

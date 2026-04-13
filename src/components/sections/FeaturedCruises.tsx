@@ -90,7 +90,7 @@ function CruiseCard({ listing, rotation, slots, loading, date, guests }: {
   const isPrivate = listing.category === 'private'
 
   return (
-    <div className={`w-full sm:w-80 flex-shrink-0 ${rotation} transition-transform hover:rotate-0 duration-300`}>
+    <div className={`w-full sm:w-80 flex-shrink-0 ${rotation} transition-transform hover:rotate-0 hover:scale-105 duration-300`}>
       {/* Polaroid frame */}
       <div className="bg-white p-4 pb-3 shadow-polaroid">
         {/* Image with badge */}
