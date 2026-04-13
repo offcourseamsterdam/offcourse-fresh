@@ -36,7 +36,7 @@ const cards: Card[] = [
     img: 'https://offcourseamsterdam.com/lovable-uploads/7bfebada-39ca-4fe1-9e54-d91a54bc47f9.png',
     alt: 'Amsterdam canal life',
     title: 'we drift different',
-    body: 'Local stories, hidden quirks, and personal tales about our life in Amsterdam. We'll point out our favourite spots throughout the city.',
+    body: "Local stories, hidden quirks, and personal tales about our life in Amsterdam. We'll point out our favourite spots throughout the city.",
     rotate: '-rotate-1',
   },
   {
