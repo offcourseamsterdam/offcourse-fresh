@@ -4,10 +4,11 @@ import { Check, ChevronRight } from 'lucide-react'
 
 interface StepBarProps {
   step: number
+  isInternal?: boolean
 }
 
-export function StepBar({ step }: StepBarProps) {
-  const steps = ['Date & Listings', 'Time & Duration', 'Guest Info', 'Extras', 'Payment', 'Confirmation']
+export function StepBar({ step, isInternal }: StepBarProps) {
+  const steps = ['Date & Listings', 'Time & Duration', 'Guest Info', 'Extras', isInternal ? 'Deposit' : 'Payment', 'Confirmation']
   return (
     <div className="flex items-center gap-2 mb-8 flex-wrap">
       {steps.map((label, i) => {

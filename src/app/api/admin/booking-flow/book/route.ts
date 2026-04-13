@@ -3,6 +3,7 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { createServiceClient } from '@/lib/supabase/server'
 import { Resend } from 'resend'
+import type { BookingSource } from '@/lib/constants'
 
 let _resend: Resend | null = null
 function getResend(): Resend {
@@ -31,6 +32,8 @@ function getResend(): Resend {
  *   extrasVatAmountCents?: number
  *   baseVatAmountCents?: number
  *   totalVatAmountCents?: number
+ *   bookingSource?: BookingSource — defaults to 'website'; non-website skips Stripe
+ *   depositAmountCents?: number   — platform deposit (0 for comp, >0 for platforms)
  * }
  *
  * category: 'private' | 'shared'
@@ -46,13 +49,17 @@ export async function POST(request: NextRequest) {
       amountCents, stripePaymentIntentId,
       baseAmountCents, extrasSelected, extrasAmountCents,
       extrasVatAmountCents, baseVatAmountCents, totalVatAmountCents,
+      bookingSource = 'website' as BookingSource,
+      depositAmountCents,
     } = body
 
     if (!availPk || !customerTypeRatePk || !guestCount || !contact?.name || !contact?.email || !contact?.phone) {
       return apiError('Missing required fields: availPk, customerTypeRatePk, guestCount, contact.name, contact.email, contact.phone', 400)
     }
 
-    // Idempotency: if a booking already exists for this payment intent, return it
+    const isInternal = bookingSource !== 'website'
+
+    // Idempotency: if a booking already exists for this payment intent, return it (website only)
     if (stripePaymentIntentId) {
       const supabase = await createServiceClient()
       const { data: existing } = await supabase
@@ -117,7 +124,9 @@ export async function POST(request: NextRequest) {
         extrasVatAmountCents: Number(extrasVatAmountCents ?? 0),
         baseVatAmountCents: Number(baseVatAmountCents ?? 0),
         totalVatAmountCents: Number(totalVatAmountCents ?? 0),
-        stripePaymentIntentId: String(stripePaymentIntentId ?? ''),
+        stripePaymentIntentId: isInternal ? null : String(stripePaymentIntentId ?? ''),
+        bookingSource: String(bookingSource) as BookingSource,
+        depositAmountCents: isInternal ? Number(depositAmountCents ?? 0) : null,
       }),
       sendSlackNotification({
         listingTitle: String(listingTitle ?? ''),
@@ -129,9 +138,11 @@ export async function POST(request: NextRequest) {
         contact,
         amountCents: Number(baseAmountCents ?? 0) + Number(extrasAmountCents ?? 0),
         fhBookingUuid: booking?.uuid,
-        stripePaymentIntentId: String(stripePaymentIntentId ?? ''),
+        stripePaymentIntentId: isInternal ? '' : String(stripePaymentIntentId ?? ''),
         extrasSelected: extrasSelected ?? [],
         totalVatAmountCents: Number(totalVatAmountCents ?? 0),
+        bookingSource: bookingSource as BookingSource,
+        depositAmountCents: isInternal ? Number(depositAmountCents ?? 0) : null,
       }),
       sendConfirmationEmail({
         contact,
@@ -176,22 +187,24 @@ interface BookingPayload {
   extrasVatAmountCents: number
   baseVatAmountCents: number
   totalVatAmountCents: number
-  stripePaymentIntentId: string
+  stripePaymentIntentId: string | null
+  bookingSource: BookingSource
+  depositAmountCents: number | null
 }
 
 async function saveToSupabase(p: BookingPayload) {
   try {
     const supabase = await createServiceClient()
-    // Insert into the existing bookings table, mapping to its column names.
-    // New columns (stripe_payment_intent_id, fareharbor_availability_pk, etc.)
-    // were added via ALTER TABLE in migration 010.
+    const isInternal = p.bookingSource !== 'website'
+    // booking_id: use Stripe PI for website bookings, FH UUID for internal
+    const bookingId = isInternal ? (p.fhBookingUuid ?? `internal_${Date.now()}`) : (p.stripePaymentIntentId ?? '')
     await supabase.from('bookings').insert({
-      booking_id: p.stripePaymentIntentId,
+      booking_id: bookingId,
       booking_uuid: p.fhBookingUuid ?? null,
       fareharbor_availability_pk: p.availPk,
       fareharbor_customer_type_rate_pk: p.customerTypeRatePk,
       stripe_payment_intent_id: p.stripePaymentIntentId,
-      stripe_amount: p.baseAmountCents + p.extrasAmountCents, // grand total charged to card
+      stripe_amount: isInternal ? 0 : p.baseAmountCents + p.extrasAmountCents,
       base_amount_cents: p.baseAmountCents,
       base_vat_rate: 9,
       base_vat_amount_cents: p.baseVatAmountCents,
@@ -211,8 +224,10 @@ async function saveToSupabase(p: BookingPayload) {
       customer_phone: p.contact.phone,
       guest_note: p.note || null,
       status: 'confirmed',
-      payment_status: 'paid',
+      payment_status: isInternal ? 'comp' : 'paid',
       currency: 'eur',
+      booking_source: p.bookingSource,
+      deposit_amount_cents: p.depositAmountCents,
     })
   } catch (err) {
     console.error('[book] saveToSupabase error:', err)
@@ -242,6 +257,8 @@ interface SlackPayload {
   stripePaymentIntentId: string
   extrasSelected: object[]
   totalVatAmountCents: number
+  bookingSource?: BookingSource
+  depositAmountCents?: number | null
 }
 
 async function sendSlackNotification(p: SlackPayload) {
@@ -251,19 +268,22 @@ async function sendSlackNotification(p: SlackPayload) {
   const startTime = p.startAt ? new Date(p.startAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' }) : '—'
   const endTime = p.endAt ? new Date(p.endAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' }) : '—'
 
+  const isInternal = p.bookingSource && p.bookingSource !== 'website'
   const text = [
-    `*New booking confirmed!* 🎉`,
+    isInternal ? `*New internal booking!* 📋 (${p.bookingSource})` : `*New booking confirmed!* 🎉`,
     `*${p.listingTitle}*`,
     `📅 ${p.date} · ${startTime} – ${endTime}`,
     `👥 ${p.guestCount} guest${p.guestCount !== 1 ? 's' : ''} · ${p.category}`,
-    `💰 ${fmtAmountEur(p.amountCents)}`,
+    isInternal
+      ? (p.depositAmountCents != null ? `💰 Deposit: ${fmtAmountEur(p.depositAmountCents)}` : '')
+      : `💰 ${fmtAmountEur(p.amountCents)}`,
     p.extrasSelected.length > 0
       ? `📦 Extras: ${(p.extrasSelected as Array<{name: string; amount_cents: number}>).map(e => `${e.name} €${(e.amount_cents / 100).toFixed(2)}`).join(' · ')}`
       : '',
     `🧾 VAT: €${(p.totalVatAmountCents / 100).toFixed(2)}`,
     `👤 ${p.contact.name} · ${p.contact.email} · ${p.contact.phone}`,
     p.fhBookingUuid ? `🎫 FH: ${p.fhBookingUuid}` : '',
-    `💳 PI: ${p.stripePaymentIntentId}`,
+    !isInternal && p.stripePaymentIntentId ? `💳 PI: ${p.stripePaymentIntentId}` : '',
   ].filter(Boolean).join('\n')
 
   try {

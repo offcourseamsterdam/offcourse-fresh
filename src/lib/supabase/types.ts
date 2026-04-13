@@ -168,6 +168,7 @@ export type Database = {
           base_vat_rate: number | null
           booking_date: string | null
           booking_id: string
+          booking_source: string
           booking_uuid: string | null
           campaign_id: string | null
           category: string | null
@@ -176,6 +177,7 @@ export type Database = {
           customer_email: string
           customer_name: string
           customer_phone: string | null
+          deposit_amount_cents: number | null
           end_time: string | null
           external_id: string | null
           extras_amount_cents: number | null
@@ -209,6 +211,7 @@ export type Database = {
           base_vat_rate?: number | null
           booking_date?: string | null
           booking_id: string
+          booking_source?: string
           booking_uuid?: string | null
           campaign_id?: string | null
           category?: string | null
@@ -217,6 +220,7 @@ export type Database = {
           customer_email: string
           customer_name: string
           customer_phone?: string | null
+          deposit_amount_cents?: number | null
           end_time?: string | null
           external_id?: string | null
           extras_amount_cents?: number | null
@@ -250,6 +254,7 @@ export type Database = {
           base_vat_rate?: number | null
           booking_date?: string | null
           booking_id?: string
+          booking_source?: string
           booking_uuid?: string | null
           campaign_id?: string | null
           category?: string | null
@@ -258,6 +263,7 @@ export type Database = {
           customer_email?: string
           customer_name?: string
           customer_phone?: string | null
+          deposit_amount_cents?: number | null
           end_time?: string | null
           external_id?: string | null
           extras_amount_cents?: number | null

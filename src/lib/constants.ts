@@ -42,6 +42,17 @@ export function formatExtraPrice(extra: { price_type: string; price_value: numbe
 export const LISTING_CATEGORIES = ['private', 'shared', 'standard', 'special', 'seasonal', 'event'] as const
 export type ListingCategory = (typeof LISTING_CATEGORIES)[number]
 
+// ── Booking sources ─────────────────────────────────────────────────────────
+
+export const BOOKING_SOURCES = [
+  { value: 'website', label: 'Website (regular)' },
+  { value: 'complimentary', label: 'Complimentary' },
+  { value: 'withlocals', label: 'Withlocals' },
+  { value: 'clickandboat', label: 'Click&Boat' },
+] as const
+
+export type BookingSource = typeof BOOKING_SOURCES[number]['value']
+
 // ── Session storage keys ────────────────────────────────────────────────────
 
 export const SESSION_BOOKING_KEY = 'offcourse_booking'

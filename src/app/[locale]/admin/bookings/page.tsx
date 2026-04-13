@@ -1,9 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Fragment } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Loader2, RefreshCw } from 'lucide-react'
+import { Loader2, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
+import { BookingDetailRow } from '@/components/admin/BookingDetailRow'
+import { BOOKING_SOURCES } from '@/lib/constants'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -25,7 +27,17 @@ interface Booking {
   stripe_amount: number | null
   status: string | null
   guest_note: string | null
+  booking_source: string | null
+  deposit_amount_cents: number | null
+  extras_selected: Array<{ name: string; amount_cents: number; category?: string }> | null
+  base_amount_cents: number | null
+  extras_amount_cents: number | null
+  base_vat_amount_cents: number | null
+  extras_vat_amount_cents: number | null
+  total_vat_amount_cents: number | null
 }
+
+type SourceFilter = 'all' | 'website' | 'internal'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -44,7 +56,7 @@ function fmtTime(iso: string | null) {
 }
 
 function fmtAmount(cents: number | null) {
-  if (!cents) return '—'
+  if (cents == null || cents === 0) return '—'
   return `€${(cents / 100).toFixed(0)}`
 }
 
@@ -57,12 +69,31 @@ function StatusBadge({ status }: { status: string | null }) {
   return <Badge variant={map[status ?? ''] ?? 'secondary'}>{status ?? '—'}</Badge>
 }
 
+function TypeBadge({ source }: { source: string | null }) {
+  const isInternal = source && source !== 'website'
+  if (!isInternal) return <span className="text-xs text-zinc-400">Regular</span>
+  const label = BOOKING_SOURCES.find(s => s.value === source)?.label ?? source
+  const colorMap: Record<string, string> = {
+    complimentary: 'bg-purple-100 text-purple-700',
+    withlocals: 'bg-blue-100 text-blue-700',
+    clickandboat: 'bg-sky-100 text-sky-700',
+  }
+  const color = colorMap[source] ?? 'bg-zinc-100 text-zinc-600'
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${color}`}>
+      {label}
+    </span>
+  )
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 
 export default function BookingsPage() {
   const [bookings, setBookings] = useState<Booking[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
 
   const fetchBookings = useCallback(async () => {
     setLoading(true)
@@ -84,8 +115,21 @@ export default function BookingsPage() {
 
   useEffect(() => { fetchBookings() }, [fetchBookings])
 
+  function toggleRow(id: string) {
+    setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
+  }
+
+  const filteredBookings = bookings?.filter(b => {
+    if (sourceFilter === 'all') return true
+    if (sourceFilter === 'website') return !b.booking_source || b.booking_source === 'website'
+    if (sourceFilter === 'internal') return b.booking_source && b.booking_source !== 'website'
+    return true
+  }) ?? []
+
   const confirmed = bookings?.filter(b => b.status === 'confirmed' || b.status === 'booked').length ?? 0
-  const totalRevenue = bookings?.filter(b => b.status === 'confirmed' || b.status === 'booked').reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0) ?? 0
+  const totalRevenue = bookings
+    ?.filter(b => (b.status === 'confirmed' || b.status === 'booked') && b.booking_source === 'website')
+    .reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0) ?? 0
 
   return (
     <div className="p-8 max-w-6xl space-y-6">
@@ -108,12 +152,29 @@ export default function BookingsPage() {
         </div>
       )}
 
-      {/* Summary */}
+      {/* Summary + filter */}
       {bookings && bookings.length > 0 && (
-        <div className="flex items-center gap-6 text-sm text-zinc-500">
-          <span><span className="font-semibold text-zinc-900">{bookings.length}</span> total</span>
-          <span><span className="font-semibold text-emerald-700">{confirmed}</span> confirmed</span>
-          <span className="font-semibold text-zinc-900">{fmtAmount(totalRevenue)}</span>
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-6 text-sm text-zinc-500">
+            <span><span className="font-semibold text-zinc-900">{bookings.length}</span> total</span>
+            <span><span className="font-semibold text-emerald-700">{confirmed}</span> confirmed</span>
+            <span className="font-semibold text-zinc-900">{fmtAmount(totalRevenue)}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {(['all', 'website', 'internal'] as SourceFilter[]).map(f => (
+              <button
+                key={f}
+                onClick={() => setSourceFilter(f)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  sourceFilter === f
+                    ? 'bg-zinc-900 text-white'
+                    : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200'
+                }`}
+              >
+                {f === 'all' ? 'All' : f === 'website' ? 'Regular' : 'Internal'}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -132,7 +193,7 @@ export default function BookingsPage() {
       )}
 
       {/* Table */}
-      {bookings && bookings.length > 0 && (
+      {filteredBookings.length > 0 && (
         <div className="rounded-lg border border-zinc-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -144,43 +205,87 @@ export default function BookingsPage() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Guest</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Guests</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Amount</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Type</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Status</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Ref</th>
+                  <th className="px-4 py-3 w-10" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 bg-white">
-                {bookings.map(b => (
-                  <tr key={b.id} className="hover:bg-zinc-50 transition-colors">
-                    <td className="px-4 py-3 text-zinc-900 whitespace-nowrap">{fmtDate(b.booking_date)}</td>
-                    <td className="px-4 py-3 text-zinc-600 whitespace-nowrap">
-                      {fmtTime(b.start_time)}
-                      {b.end_time ? ` – ${fmtTime(b.end_time)}` : ''}
-                    </td>
-                    <td className="px-4 py-3 text-zinc-900">
-                      <p>{b.listing_title ?? b.tour_item_name ?? '—'}</p>
-                      {b.category && <p className="text-xs text-zinc-400 capitalize">{b.category}</p>}
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="text-zinc-900 font-medium">{b.customer_name ?? '—'}</p>
-                      {b.customer_email && <p className="text-zinc-400 text-xs">{b.customer_email}</p>}
-                      {b.customer_phone && <p className="text-zinc-400 text-xs">{b.customer_phone}</p>}
-                    </td>
-                    <td className="px-4 py-3 text-zinc-600">{b.guest_count ?? '—'}</td>
-                    <td className="px-4 py-3 text-zinc-900 font-medium whitespace-nowrap">{fmtAmount(b.stripe_amount)}</td>
-                    <td className="px-4 py-3"><StatusBadge status={b.status} /></td>
-                    <td className="px-4 py-3 text-zinc-400 text-xs font-mono">
-                      {b.stripe_payment_intent_id
-                        ? <span title={b.stripe_payment_intent_id}>{b.stripe_payment_intent_id.slice(0, 10)}…</span>
-                        : b.booking_uuid
-                        ? <span title={b.booking_uuid}>{b.booking_uuid.slice(0, 8)}…</span>
-                        : '—'
-                      }
-                    </td>
-                  </tr>
+                {filteredBookings.map(b => (
+                  <Fragment key={b.id}>
+                    <tr
+                      className="hover:bg-zinc-50 transition-colors cursor-pointer"
+                      onClick={() => toggleRow(b.id)}
+                    >
+                      <td className="px-4 py-3 text-zinc-900 whitespace-nowrap">{fmtDate(b.booking_date)}</td>
+                      <td className="px-4 py-3 text-zinc-600 whitespace-nowrap">
+                        {fmtTime(b.start_time)}
+                        {b.end_time ? ` – ${fmtTime(b.end_time)}` : ''}
+                      </td>
+                      <td className="px-4 py-3 text-zinc-900">
+                        <p>{b.listing_title ?? b.tour_item_name ?? '—'}</p>
+                        {b.category && <p className="text-xs text-zinc-400 capitalize">{b.category}</p>}
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="text-zinc-900 font-medium">{b.customer_name ?? '—'}</p>
+                        {b.customer_email && <p className="text-zinc-400 text-xs">{b.customer_email}</p>}
+                      </td>
+                      <td className="px-4 py-3 text-zinc-600">{b.guest_count ?? '—'}</td>
+                      <td className="px-4 py-3 text-zinc-900 font-medium whitespace-nowrap">
+                        {b.booking_source && b.booking_source !== 'website'
+                          ? (b.deposit_amount_cents != null ? `€${(b.deposit_amount_cents / 100).toFixed(0)}` : '—')
+                          : fmtAmount(b.stripe_amount)
+                        }
+                      </td>
+                      <td className="px-4 py-3"><TypeBadge source={b.booking_source} /></td>
+                      <td className="px-4 py-3"><StatusBadge status={b.status} /></td>
+                      <td className="px-4 py-3 text-zinc-400 text-xs font-mono">
+                        {b.stripe_payment_intent_id
+                          ? <span title={b.stripe_payment_intent_id}>{b.stripe_payment_intent_id.slice(0, 10)}…</span>
+                          : b.booking_uuid
+                          ? <span title={b.booking_uuid}>{b.booking_uuid.slice(0, 8)}…</span>
+                          : '—'
+                        }
+                      </td>
+                      <td className="px-4 py-3 text-zinc-400">
+                        {expanded[b.id]
+                          ? <ChevronUp className="w-4 h-4" />
+                          : <ChevronDown className="w-4 h-4" />
+                        }
+                      </td>
+                    </tr>
+                    {expanded[b.id] && (
+                      <tr>
+                        <td colSpan={10} className="p-0">
+                          <BookingDetailRow
+                            customerName={b.customer_name}
+                            customerEmail={b.customer_email}
+                            customerPhone={b.customer_phone}
+                            guestNote={b.guest_note}
+                            baseAmountCents={b.base_amount_cents}
+                            extrasAmountCents={b.extras_amount_cents}
+                            totalVatAmountCents={b.total_vat_amount_cents}
+                            stripeAmount={b.stripe_amount}
+                            depositAmountCents={b.deposit_amount_cents}
+                            extrasSelected={b.extras_selected}
+                            bookingSource={b.booking_source}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* Empty filtered state */}
+      {!loading && bookings && bookings.length > 0 && filteredBookings.length === 0 && (
+        <div className="text-sm text-zinc-400 py-8 text-center">
+          No {sourceFilter === 'internal' ? 'internal' : 'regular'} bookings yet.
         </div>
       )}
     </div>

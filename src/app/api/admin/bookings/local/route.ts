@@ -13,8 +13,8 @@ export async function GET() {
     const supabase = await createServiceClient()
     const { data, error } = await supabase
       .from('bookings')
-      .select('id, created_at, booking_uuid, customer_name, customer_email, customer_phone, tour_item_name, start_time, end_time, booking_date, guest_count, category, listing_title, stripe_payment_intent_id, stripe_amount, status, guest_note')
-      .not('stripe_payment_intent_id', 'is', null)
+      .select('id, created_at, booking_uuid, customer_name, customer_email, customer_phone, tour_item_name, start_time, end_time, booking_date, guest_count, category, listing_title, stripe_payment_intent_id, stripe_amount, status, guest_note, booking_source, deposit_amount_cents, extras_selected, base_amount_cents, extras_amount_cents, base_vat_amount_cents, extras_vat_amount_cents, total_vat_amount_cents')
+      .eq('status', 'confirmed')
       .order('booking_date', { ascending: false })
       .order('created_at', { ascending: false })
 
