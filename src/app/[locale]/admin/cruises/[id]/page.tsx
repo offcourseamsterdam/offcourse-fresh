@@ -15,7 +15,6 @@ import {
   CruiseFAQsTab,
   CruiseCancellationTab,
   CruiseExtrasTab,
-  CruiseConfigTab,
   CruiseSeoTab,
 } from '@/components/admin/cruise-editor'
 import type { CruiseListing } from '@/components/admin/cruise-editor'
@@ -102,13 +101,18 @@ export default function CruiseEditPage() {
       {/* Tabs */}
       <Tabs defaultValue="content">
         <TabsList className="w-full justify-start border-b border-zinc-200 bg-transparent rounded-none pb-0 h-auto gap-0">
-          {['content', 'images', 'pricing', 'benefits', 'extras', 'config', 'seo'].map(tab => (
+          {['content', 'images', 'pricing', 'benefits', 'extras', 'filters', 'seo'].map(tab => (
             <TabsTrigger
               key={tab}
               value={tab}
               className="capitalize rounded-none border-b-2 border-transparent data-[state=active]:border-zinc-900 data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 pb-2 text-sm"
             >
-              {tab}
+              {tab === 'filters' ? (
+                <span className="flex items-center gap-1.5">
+                  Filters
+                  <span className="text-[10px] bg-zinc-100 text-zinc-400 px-1.5 py-0.5 rounded-full leading-none">soon</span>
+                </span>
+              ) : tab}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -133,8 +137,17 @@ export default function CruiseEditPage() {
         <TabsContent value="extras" className="pt-6">
           <CruiseExtrasTab listingId={listing.id} listingCategory={listing.category ?? 'private'} />
         </TabsContent>
-        <TabsContent value="config" className="pt-6">
-          <CruiseConfigTab listing={listing} onSave={setListing} />
+        <TabsContent value="filters" className="pt-6">
+          <div className="max-w-xl space-y-3">
+            <p className="text-sm font-medium text-zinc-700">Availability filters</p>
+            <p className="text-sm text-zinc-400 leading-relaxed">
+              Fine-grained time, day-of-week, and seasonal availability rules per listing — coming soon.
+              These control which FareHarbor time slots are shown to guests after boat and duration filtering.
+            </p>
+            <div className="border border-dashed border-zinc-200 rounded-lg p-6 text-center text-sm text-zinc-300">
+              🚧 In progress
+            </div>
+          </div>
         </TabsContent>
         <TabsContent value="seo" className="pt-6">
           <CruiseSeoTab listing={listing} onSave={setListing} />

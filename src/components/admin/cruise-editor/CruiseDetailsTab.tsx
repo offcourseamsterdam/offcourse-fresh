@@ -15,6 +15,7 @@ export function CruiseDetailsTab({ listing, onSave }: CruiseTabProps) {
     google_maps_url: listing.google_maps_url ?? '',
     duration_display: listing.duration_display ?? '',
     max_guests: listing.max_guests?.toString() ?? '',
+    fareharbor_item_pk: listing.fareharbor_item_pk?.toString() ?? '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -25,6 +26,7 @@ export function CruiseDetailsTab({ listing, onSave }: CruiseTabProps) {
     const json = await patchListing(listing.id, {
       ...form,
       max_guests: form.max_guests ? Number(form.max_guests) : null,
+      fareharbor_item_pk: form.fareharbor_item_pk ? Number(form.fareharbor_item_pk) : null,
     })
     if (json.ok && json.data) onSave(json.data)
     else setError(json.error ?? 'Save failed')
@@ -110,6 +112,18 @@ export function CruiseDetailsTab({ listing, onSave }: CruiseTabProps) {
           />
         </Field>
       </div>
+      <Field label="FareHarbor item PK">
+        <input
+          className={inputCls}
+          type="number"
+          value={form.fareharbor_item_pk}
+          onChange={e => setForm(f => ({ ...f, fareharbor_item_pk: e.target.value }))}
+          placeholder="e.g. 12345"
+        />
+        <p className="text-xs text-zinc-400 mt-1">
+          The FareHarbor product ID this listing connects to. Find it in your FareHarbor dashboard under Items.
+        </p>
+      </Field>
       {error && <p className="text-sm text-red-600">{error}</p>}
       <TabSaveButton saving={saving} onClick={save} />
     </div>
