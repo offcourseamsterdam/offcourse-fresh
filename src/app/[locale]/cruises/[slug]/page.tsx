@@ -115,7 +115,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
 
-      <div className="min-h-screen bg-white">
+      <div className="min-h-screen bg-texture-sand">
         {/* Hero image */}
         <div className="relative h-64 sm:h-96 bg-[var(--color-primary)]">
           {heroUrl ? (
