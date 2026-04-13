@@ -202,7 +202,7 @@ export function BookingPanel({
       dispatch({ type: 'SET_DATE', date: initialDate, guests: initialGuests, category })
       const slots = await fetchSlots(initialDate, initialGuests)
       const match = slots.find(s => s.startTime === initialTime)
-      if (match) dispatch({ type: 'SELECT_SLOT', slot: match })
+      if (match) dispatch({ type: 'SELECT_SLOT', slot: match, category })
     }
 
     autoAdvance()
