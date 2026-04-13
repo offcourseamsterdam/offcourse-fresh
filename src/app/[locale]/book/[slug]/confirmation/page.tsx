@@ -42,7 +42,7 @@ export default async function ConfirmationPage({ params, searchParams }: Props) 
 
   // Generate Google Calendar link
   const calendarUrl = booking?.start_time && booking?.end_time
-    ? `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(booking.listing_title || 'Off Course Amsterdam')}&dates=${booking.start_time.replace(/[-:]/g, '').replace('.000', '')}/${booking.end_time.replace(/[-:]/g, '').replace('.000', '')}&details=${encodeURIComponent('Your canal cruise with Off Course Amsterdam. Meeting point: Keizersgracht 62.')}&location=${encodeURIComponent('Keizersgracht 62, Amsterdam')}`
+    ? `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(booking.listing_title || 'Off Course Amsterdam')}&dates=${booking.start_time.replace(/[-:]/g, '').replace('.000', '')}/${booking.end_time.replace(/[-:]/g, '').replace('.000', '')}&details=${encodeURIComponent('Your canal cruise with Off Course Amsterdam. Meeting point: Brouwersgracht 29. Look for the big pier/jetty on the waterfront.')}&location=${encodeURIComponent('Brouwersgracht 29, Amsterdam')}`
     : null
 
   return (
@@ -116,8 +116,16 @@ export default async function ConfirmationPage({ params, searchParams }: Props) 
                 <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
                   <p className="text-sm font-medium text-amber-900 mb-1">Where to meet us</p>
                   <p className="text-sm text-amber-800">
-                    Keizersgracht 62, Amsterdam. Be there 10 minutes before your departure time — your skipper will be ready and waiting.
+                    Brouwersgracht 29, Amsterdam. Look for the big pier/jetty on the waterfront. Be there 10 minutes before your departure time — your skipper will be ready and waiting.
                   </p>
+                  <a
+                    href="https://maps.app.goo.gl/UR1tijSgfdMVfgLi6"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 mt-2 text-xs font-medium text-amber-700 underline underline-offset-2 hover:text-amber-900"
+                  >
+                    Open in Google Maps →
+                  </a>
                 </div>
 
                 {/* Add to calendar */}

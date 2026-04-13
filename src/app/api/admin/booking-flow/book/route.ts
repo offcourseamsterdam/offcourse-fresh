@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
       sendConfirmationEmail({
         contact,
         listingTitle: String(listingTitle ?? ''),
-        departureLocation: String(departureLocation ?? 'Keizersgracht 62, Amsterdam'),
+        departureLocation: String(departureLocation ?? 'Brouwersgracht 29, Amsterdam'),
         date: String(date ?? ''),
         startAt: startAt ?? null,
         endAt: endAt ?? null,
@@ -395,8 +395,9 @@ async function sendConfirmationEmail(p: EmailPayload) {
 
       <div class="notice-block">
         <strong>📍 Where to meet us</strong>
-        ${p.departureLocation}<br/>
-        Please be there <strong>10 minutes before</strong> your departure time — your skipper will be ready and waiting.
+        ${p.departureLocation} — look for the big pier/jetty on the waterfront.<br/>
+        Please be there <strong>10 minutes before</strong> your departure time — your skipper will be ready and waiting.<br/>
+        <a href="https://maps.app.goo.gl/UR1tijSgfdMVfgLi6" style="color:#92400e;">Open in Google Maps →</a>
       </div>
 
       <p class="footer-text">
