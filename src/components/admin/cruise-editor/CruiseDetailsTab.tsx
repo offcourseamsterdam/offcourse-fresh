@@ -12,6 +12,7 @@ export function CruiseDetailsTab({ listing, onSave }: CruiseTabProps) {
     description: listing.description ?? '',
     category: listing.category ?? 'private',
     departure_location: listing.departure_location ?? '',
+    google_maps_url: listing.google_maps_url ?? '',
     duration_display: listing.duration_display ?? '',
     max_guests: listing.max_guests?.toString() ?? '',
   })
@@ -76,8 +77,19 @@ export function CruiseDetailsTab({ listing, onSave }: CruiseTabProps) {
           className={inputCls}
           value={form.departure_location}
           onChange={e => setForm(f => ({ ...f, departure_location: e.target.value }))}
-          placeholder="e.g. Prinsengracht 123"
+          placeholder="e.g. Brouwersgracht 29"
         />
+      </Field>
+      <Field label="Google Maps URL">
+        <input
+          className={inputCls}
+          value={form.google_maps_url}
+          onChange={e => setForm(f => ({ ...f, google_maps_url: e.target.value }))}
+          placeholder="https://www.google.com/maps/embed?pb=..."
+        />
+        <p className="text-xs text-zinc-400 mt-1">
+          Paste a Google Maps embed URL. Go to Google Maps &rarr; Share &rarr; Embed a map &rarr; copy the src URL.
+        </p>
       </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Duration display">

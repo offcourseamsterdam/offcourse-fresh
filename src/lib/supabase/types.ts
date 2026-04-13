@@ -495,6 +495,7 @@ export type Database = {
           duration_display: string | null
           faqs: Json | null
           fareharbor_item_pk: number
+          google_maps_url: string | null
           hero_image_url: string | null
           highlights: Json | null
           id: string
@@ -559,6 +560,7 @@ export type Database = {
           duration_display?: string | null
           faqs?: Json | null
           fareharbor_item_pk: number
+          google_maps_url?: string | null
           hero_image_url?: string | null
           highlights?: Json | null
           id?: string
@@ -623,6 +625,7 @@ export type Database = {
           duration_display?: string | null
           faqs?: Json | null
           fareharbor_item_pk?: number
+          google_maps_url?: string | null
           hero_image_url?: string | null
           highlights?: Json | null
           id?: string

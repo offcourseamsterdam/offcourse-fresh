@@ -36,6 +36,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     'boat_id',
     'allowed_resource_pks','allowed_customer_type_pks','availability_filters',
     'display_order','is_published','is_featured','category','departure_location',
+    'google_maps_url','video_url',
     'hero_image_url','benefits','highlights','inclusions','faqs','images',
     'cancellation_policy','duration_display','max_guests','slug',
   ]
