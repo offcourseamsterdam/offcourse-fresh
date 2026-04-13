@@ -1,11 +1,11 @@
 import { cache } from 'react'
 import { notFound } from 'next/navigation'
-import Image from 'next/image'
 import { Check } from 'lucide-react'
 import { getTranslations } from 'next-intl/server'
 import { createClient } from '@/lib/supabase/server'
 import { BookingPanel } from '@/components/booking/BookingPanel'
 import { CruiseReviews } from '@/components/sections/CruiseReviews'
+import { ImageGallery } from '@/components/cruise/ImageGallery'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import type { Locale } from '@/lib/i18n/config'
 import type { Database } from '@/lib/supabase/types'
@@ -61,14 +61,20 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
   const listing = await getListingBySlug(slug)
   if (!listing) notFound()
 
-  // Fetch active reviews to show social proof on every cruise page
+  // Fetch active reviews for gallery popup + reviews section
   const supabase = await createClient()
   const { data: reviews } = await supabase
     .from('social_proof_reviews')
     .select('*')
     .eq('is_active', true)
     .order('rating', { ascending: false })
-    .limit(3)
+    .limit(6)
+
+  // Total review count for the rating badge
+  const { count: reviewCount } = await supabase
+    .from('social_proof_reviews')
+    .select('*', { count: 'exact', head: true })
+    .eq('is_active', true)
 
   // All content lives in JSONB columns on the listing row (no separate tables)
   const images = (listing.images as CruiseImage[] | null) ?? []
@@ -108,6 +114,19 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
     },
   }
 
+  // Serialize reviews for the client-side gallery component
+  const galleryReviews = (reviews ?? []).map((r) => ({
+    id: r.id,
+    reviewer_name: r.reviewer_name,
+    review_text: getLocalizedField(r, 'review_text', loc),
+    rating: r.rating,
+    source: r.source,
+    author_photo_url: r.author_photo_url,
+  }))
+
+  // Video URL from listing (optional — only shown when present)
+  const videoUrl = (listing as Record<string, unknown>).video_url as string | null | undefined
+
   return (
     <>
       <script
@@ -116,54 +135,33 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
       />
 
       <div className="min-h-screen bg-texture-sand">
-        {/* Hero image */}
-        <div className="relative h-64 sm:h-96 bg-[var(--color-primary)]">
-          {heroUrl ? (
-            <Image
-              src={heroUrl}
-              alt={title}
-              fill
-              priority
-              className="object-cover"
-              sizes="100vw"
-            />
-          ) : (
-            <div className="absolute inset-0 bg-gradient-to-br from-[var(--color-primary)] to-[var(--color-primary)]/70" />
-          )}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
-          <div className="absolute bottom-6 left-6 right-6 text-white">
-            <span className="text-xs font-semibold uppercase tracking-wider text-white/70 capitalize">
-              {listing.category}
-            </span>
-            <h1 className="text-3xl sm:text-4xl font-black mt-1">{title}</h1>
-            {tagline && <p className="text-white/80 mt-1">{tagline}</p>}
-          </div>
+        {/* ── Image gallery (Booking.com-style grid) ── */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+          <ImageGallery
+            images={images}
+            heroUrl={heroUrl}
+            videoUrl={videoUrl}
+            title={title}
+            reviews={galleryReviews}
+            reviewCount={reviewCount ?? undefined}
+          />
         </div>
 
-        {/* Image gallery strip — show non-hero images */}
-        {images.length > 0 && (
-          <div className="flex gap-2 overflow-x-auto p-4 bg-[var(--color-sand)]">
-            {images
-              .filter(img => img.url !== listing.hero_image_url)
-              .map((img, i) => (
-                <div
-                  key={img.url + i}
-                  className="relative flex-shrink-0 w-24 h-20 sm:w-32 sm:h-24 rounded-lg overflow-hidden"
-                >
-                  <Image
-                    src={img.url}
-                    alt={img.alt_text ?? ''}
-                    fill
-                    className="object-cover"
-                    sizes="128px"
-                  />
-                </div>
-              ))}
-          </div>
-        )}
+        {/* ── Title + tagline below gallery ── */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-2">
+          <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] capitalize">
+            {listing.category}
+          </span>
+          <h1 className="text-3xl sm:text-4xl font-black text-[var(--color-primary)] mt-1">
+            {title}
+          </h1>
+          {tagline && (
+            <p className="text-[var(--color-muted)] mt-1 text-base">{tagline}</p>
+          )}
+        </div>
 
-        {/* Main content */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        {/* ── Main content ── */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
 
             {/* Left: content */}
@@ -172,7 +170,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
               {/* Quick info pills */}
               <div className="flex flex-wrap gap-3">
                 {listing.departure_location && (
-                  <span className="flex items-center gap-1.5 text-sm text-[var(--color-foreground)] bg-[var(--color-sand)] px-3 py-1.5 rounded-full">
+                  <span className="flex items-center gap-1.5 text-sm text-[var(--color-ink)] bg-white px-3 py-1.5 rounded-full shadow-sm">
                     <svg viewBox="0 0 24 24" className="w-4 h-4 text-[var(--color-primary)]" fill="currentColor">
                       <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
                     </svg>
@@ -180,7 +178,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                   </span>
                 )}
                 {listing.duration_display && (
-                  <span className="flex items-center gap-1.5 text-sm text-[var(--color-foreground)] bg-[var(--color-sand)] px-3 py-1.5 rounded-full">
+                  <span className="flex items-center gap-1.5 text-sm text-[var(--color-ink)] bg-white px-3 py-1.5 rounded-full shadow-sm">
                     <svg viewBox="0 0 24 24" className="w-4 h-4 text-[var(--color-primary)]" fill="currentColor">
                       <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z" />
                     </svg>
@@ -188,21 +186,21 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                   </span>
                 )}
                 {listing.max_guests && (
-                  <span className="flex items-center gap-1.5 text-sm text-[var(--color-foreground)] bg-[var(--color-sand)] px-3 py-1.5 rounded-full">
+                  <span className="flex items-center gap-1.5 text-sm text-[var(--color-ink)] bg-white px-3 py-1.5 rounded-full shadow-sm">
                     <svg viewBox="0 0 24 24" className="w-4 h-4 text-[var(--color-primary)]" fill="currentColor">
                       <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
                     </svg>
                     Up to {listing.max_guests} guests
                   </span>
                 )}
-                <span className="flex items-center gap-1.5 text-sm text-[var(--color-foreground)] bg-[var(--color-sand)] px-3 py-1.5 rounded-full capitalize">
+                <span className="flex items-center gap-1.5 text-sm text-[var(--color-ink)] bg-white px-3 py-1.5 rounded-full shadow-sm capitalize">
                   {listing.category === 'private' ? t('private') : t('shared')}
                 </span>
               </div>
 
               {/* Description */}
               {description && (
-                <p className="text-[var(--color-foreground)] leading-relaxed text-base whitespace-pre-line">
+                <p className="text-[var(--color-ink)] leading-relaxed text-base whitespace-pre-line">
                   {description}
                 </p>
               )}
@@ -219,7 +217,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                         <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] flex items-center justify-center">
                           <Check className="w-3 h-3" />
                         </span>
-                        <span className="text-sm text-[var(--color-foreground)]">{h.text}</span>
+                        <span className="text-sm text-[var(--color-ink)]">{h.text}</span>
                       </li>
                     ))}
                   </ul>
@@ -238,7 +236,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                         <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-[var(--color-accent)] text-white flex items-center justify-center">
                           <Check className="w-3 h-3" />
                         </span>
-                        <span className="text-sm text-[var(--color-foreground)]">{inc.text}</span>
+                        <span className="text-sm text-[var(--color-ink)]">{inc.text}</span>
                       </li>
                     ))}
                   </ul>
@@ -257,7 +255,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                         <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-[var(--color-accent)] text-white flex items-center justify-center">
                           <Check className="w-3 h-3" />
                         </span>
-                        <span className="text-[var(--color-foreground)]">{b.text}</span>
+                        <span className="text-[var(--color-ink)]">{b.text}</span>
                       </li>
                     ))}
                   </ul>
@@ -272,7 +270,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                     {faqs.map((faq, i) => (
                       <details
                         key={i}
-                        className="group border border-gray-100 rounded-xl overflow-hidden"
+                        className="group border border-gray-100 rounded-xl overflow-hidden bg-white"
                       >
                         <summary className="flex items-center justify-between p-4 cursor-pointer font-semibold text-[var(--color-primary)] hover:bg-[var(--color-sand)] transition-colors">
                           {faq.question}
@@ -284,7 +282,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                             <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
                           </svg>
                         </summary>
-                        <div className="p-4 pt-0 text-[var(--color-foreground)] text-sm leading-relaxed border-t border-gray-100">
+                        <div className="p-4 pt-0 text-[var(--color-ink)] text-sm leading-relaxed border-t border-gray-100">
                           {faq.answer}
                         </div>
                       </details>
