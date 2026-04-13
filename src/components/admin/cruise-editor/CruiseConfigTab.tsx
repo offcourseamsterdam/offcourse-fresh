@@ -49,11 +49,11 @@ export function CruiseConfigTab({ listing, onSave }: CruiseTabProps) {
         if (json.ok) {
           const items = json.data as FHItemCache[]
           setFhItems(items)
-          const item = items.find(i => i.fareharbor_pk === form.fareharbor_item_pk)
+          const item = items.find(i => i.fareharbor_pk === listing.fareharbor_item_pk)
           if (item) setFhItem(item)
         }
       })
-  }, [form.fareharbor_item_pk])
+  }, [listing.fareharbor_item_pk])
 
   function togglePk(list: number[], pk: number) {
     return list.includes(pk) ? list.filter(p => p !== pk) : [...list, pk]
