@@ -1,12 +1,12 @@
 import { cache } from 'react'
 import { notFound } from 'next/navigation'
-import Image from 'next/image'
 import { Check } from 'lucide-react'
 import { getTranslations } from 'next-intl/server'
 import { createClient } from '@/lib/supabase/server'
 import { BookingPanel } from '@/components/booking/BookingPanel'
 import { CruiseReviews } from '@/components/sections/CruiseReviews'
 import { ImageGallery } from '@/components/cruise/ImageGallery'
+import { ExtrasGrid } from '@/components/cruise/ExtrasGrid'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import { formatExtraPrice } from '@/lib/constants'
 import type { Locale } from '@/lib/i18n/config'
@@ -157,6 +157,24 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
     rating: r.rating,
     source: r.source,
     author_photo_url: r.author_photo_url,
+  }))
+
+  // Serialize extras for the client-side ExtrasGrid component
+  const serializedFood = foodExtras.map((e) => ({
+    id: e.id,
+    name: getLocalizedField(e, 'name', loc),
+    description: getLocalizedField(e, 'description', loc) || null,
+    image_url: e.image_url,
+    ingredients: e.ingredients,
+    price_display: formatExtraPrice(e),
+  }))
+  const serializedDrinks = drinkExtras.map((e) => ({
+    id: e.id,
+    name: getLocalizedField(e, 'name', loc),
+    description: getLocalizedField(e, 'description', loc) || null,
+    image_url: e.image_url,
+    ingredients: e.ingredients,
+    price_display: formatExtraPrice(e),
   }))
 
   // Video URL from listing (optional — only shown when present)
@@ -357,117 +375,16 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
               )}
 
               {/* Things you need to know */}
-              {(foodExtras.length > 0 || drinkExtras.length > 0 || cancellationPolicy) && (
+              {(serializedFood.length > 0 || serializedDrinks.length > 0 || cancellationPolicy) && (
                 <section>
-                  <h2 className="font-briston text-[28px] sm:text-[36px] text-[var(--color-accent)] uppercase tracking-wide mb-6">
+                  <h2 className="font-palmore text-[32px] sm:text-[40px] text-[var(--color-accent)] mb-6">
                     Things you need to know
                   </h2>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Food column */}
-                    {foodExtras.length > 0 && (
-                      <div className="bg-white rounded-xl p-5 shadow-sm">
-                        <h3 className="font-palmore text-[20px] text-[var(--color-primary)] mb-4">
-                          Food
-                        </h3>
-                        <div className="space-y-4">
-                          {foodExtras.map((extra) => (
-                            <div key={extra.id} className="flex gap-3">
-                              {extra.image_url && (
-                                <div className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
-                                  <Image
-                                    src={extra.image_url}
-                                    alt={getLocalizedField(extra, 'name', loc)}
-                                    fill
-                                    className="object-cover"
-                                    sizes="64px"
-                                  />
-                                </div>
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-baseline justify-between gap-2">
-                                  <p className="text-sm font-semibold text-[var(--color-ink)]">
-                                    {getLocalizedField(extra, 'name', loc)}
-                                  </p>
-                                  <span className="text-sm font-semibold text-[var(--color-primary)] flex-shrink-0">
-                                    {formatExtraPrice(extra)}
-                                  </span>
-                                </div>
-                                {extra.description && (
-                                  <p className="text-xs text-[var(--color-muted)] mt-0.5">
-                                    {getLocalizedField(extra, 'description', loc)}
-                                  </p>
-                                )}
-                                {extra.ingredients && extra.ingredients.length > 0 && (
-                                  <p className="text-xs text-[var(--color-muted)] mt-1">
-                                    {extra.ingredients.join(' · ')}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Drinks column */}
-                    {drinkExtras.length > 0 && (
-                      <div className="bg-white rounded-xl p-5 shadow-sm">
-                        <h3 className="font-palmore text-[20px] text-[var(--color-primary)] mb-4">
-                          Drinks
-                        </h3>
-                        <div className="space-y-4">
-                          {drinkExtras.map((extra) => (
-                            <div key={extra.id} className="flex gap-3">
-                              {extra.image_url && (
-                                <div className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
-                                  <Image
-                                    src={extra.image_url}
-                                    alt={getLocalizedField(extra, 'name', loc)}
-                                    fill
-                                    className="object-cover"
-                                    sizes="64px"
-                                  />
-                                </div>
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-baseline justify-between gap-2">
-                                  <p className="text-sm font-semibold text-[var(--color-ink)]">
-                                    {getLocalizedField(extra, 'name', loc)}
-                                  </p>
-                                  <span className="text-sm font-semibold text-[var(--color-primary)] flex-shrink-0">
-                                    {formatExtraPrice(extra)}
-                                  </span>
-                                </div>
-                                {extra.description && (
-                                  <p className="text-xs text-[var(--color-muted)] mt-0.5">
-                                    {getLocalizedField(extra, 'description', loc)}
-                                  </p>
-                                )}
-                                {extra.ingredients && extra.ingredients.length > 0 && (
-                                  <p className="text-xs text-[var(--color-muted)] mt-1">
-                                    {extra.ingredients.join(' · ')}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Cancellation policy — spans both columns */}
-                    {cancellationPolicy && (
-                      <div className="bg-white rounded-xl p-5 shadow-sm sm:col-span-2">
-                        <h3 className="font-palmore text-[20px] text-[var(--color-primary)] mb-3">
-                          Cancellation Policy
-                        </h3>
-                        <p className="text-sm text-[var(--color-muted)] leading-relaxed whitespace-pre-line">
-                          {cancellationPolicy}
-                        </p>
-                      </div>
-                    )}
-                  </div>
+                  <ExtrasGrid
+                    foodExtras={serializedFood}
+                    drinkExtras={serializedDrinks}
+                    cancellationPolicy={cancellationPolicy}
+                  />
                 </section>
               )}
 
