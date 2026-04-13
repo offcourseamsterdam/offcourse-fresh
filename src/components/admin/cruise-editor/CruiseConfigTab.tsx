@@ -21,6 +21,7 @@ interface BoatOption {
 export function CruiseConfigTab({ listing, onSave }: CruiseTabProps) {
   const [form, setForm] = useState({
     slug: listing.slug ?? '',
+    fareharbor_item_pk: listing.fareharbor_item_pk,
     boat_id: listing.boat_id ?? null,
     allowed_resource_pks: listing.allowed_resource_pks ?? [],
     allowed_customer_type_pks: listing.allowed_customer_type_pks ?? [],
@@ -29,6 +30,7 @@ export function CruiseConfigTab({ listing, onSave }: CruiseTabProps) {
     is_featured: listing.is_featured,
     display_order: listing.display_order,
   })
+  const [fhItems, setFhItems] = useState<FHItemCache[]>([])
   const [fhItem, setFhItem] = useState<FHItemCache | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -45,13 +47,13 @@ export function CruiseConfigTab({ listing, onSave }: CruiseTabProps) {
       .then(r => r.json())
       .then(json => {
         if (json.ok) {
-          const item = (json.data as FHItemCache[]).find(
-            i => i.fareharbor_pk === listing.fareharbor_item_pk
-          )
+          const items = json.data as FHItemCache[]
+          setFhItems(items)
+          const item = items.find(i => i.fareharbor_pk === form.fareharbor_item_pk)
           if (item) setFhItem(item)
         }
       })
-  }, [listing.fareharbor_item_pk])
+  }, [form.fareharbor_item_pk])
 
   function togglePk(list: number[], pk: number) {
     return list.includes(pk) ? list.filter(p => p !== pk) : [...list, pk]
@@ -84,6 +86,7 @@ export function CruiseConfigTab({ listing, onSave }: CruiseTabProps) {
     }
     const json = await patchListing(listing.id, {
       slug: form.slug,
+      fareharbor_item_pk: form.fareharbor_item_pk,
       boat_id: form.boat_id,
       allowed_resource_pks: form.allowed_resource_pks,
       allowed_customer_type_pks: form.allowed_customer_type_pks,
@@ -99,6 +102,37 @@ export function CruiseConfigTab({ listing, onSave }: CruiseTabProps) {
 
   return (
     <div className="space-y-6 max-w-xl">
+      {/* FareHarbor item selector */}
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-zinc-600">
+          FareHarbor item
+          <span className="ml-1.5 text-zinc-400 font-normal">— the FH product this listing is connected to</span>
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {fhItems.map(item => (
+            <button
+              key={item.fareharbor_pk}
+              onClick={() => {
+                setForm(f => ({ ...f, fareharbor_item_pk: item.fareharbor_pk }))
+                setFhItem(item)
+              }}
+              className={`px-3 py-1.5 rounded-md border text-xs transition-all ${
+                form.fareharbor_item_pk === item.fareharbor_pk
+                  ? 'border-zinc-900 bg-zinc-900 text-white'
+                  : 'border-zinc-200 bg-white hover:border-zinc-400'
+              }`}
+            >
+              FH {item.fareharbor_pk}
+            </button>
+          ))}
+        </div>
+        {form.fareharbor_item_pk && (
+          <p className="text-xs text-zinc-400">
+            Currently connected to FH item <span className="font-mono font-medium text-zinc-600">{form.fareharbor_item_pk}</span>
+          </p>
+        )}
+      </div>
+
       <Field label="Slug">
         <input
           className={inputCls}

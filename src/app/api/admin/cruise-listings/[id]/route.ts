@@ -33,7 +33,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     'seo_title_nl','seo_title_de','seo_title_fr','seo_title_es','seo_title_pt','seo_title_zh',
     'seo_meta_description_nl','seo_meta_description_de','seo_meta_description_fr',
     'seo_meta_description_es','seo_meta_description_pt','seo_meta_description_zh',
-    'boat_id',
+    'boat_id','fareharbor_item_pk',
     'allowed_resource_pks','allowed_customer_type_pks','availability_filters',
     'display_order','is_published','is_featured','category','departure_location',
     'google_maps_url','video_url',
