@@ -30,38 +30,40 @@ export function StepAccordion({
         type="button"
         onClick={isCompleted && onReopen ? onReopen : undefined}
         disabled={!isCompleted || !onReopen}
-        className={`w-full flex items-center gap-3 py-4 px-1 text-left transition-colors ${
+        className={`w-full flex items-center gap-2.5 px-1 text-left transition-colors ${
+          isCompleted ? 'py-2' : 'py-3'
+        } ${
           isCompleted && onReopen ? 'cursor-pointer hover:bg-zinc-50/50' : 'cursor-default'
         }`}
       >
         {/* Step indicator */}
         <div
-          className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all duration-300 ${
+          className={`flex-shrink-0 rounded-full flex items-center justify-center font-semibold transition-all duration-300 ${
             isCompleted
-              ? 'bg-emerald-500 text-white'
+              ? 'w-5 h-5 bg-emerald-500 text-white text-[10px]'
               : isActive
-                ? 'bg-[var(--color-primary)] text-white'
-                : 'bg-zinc-100 text-zinc-400'
+                ? 'w-7 h-7 bg-[var(--color-primary)] text-white text-xs'
+                : 'w-7 h-7 bg-zinc-100 text-zinc-400 text-xs'
           }`}
         >
-          {isCompleted ? <Check className="w-3.5 h-3.5" /> : stepNumber}
+          {isCompleted ? <Check className="w-3 h-3" /> : stepNumber}
         </div>
 
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 flex items-center gap-2">
           <span
-            className={`text-sm font-medium ${
-              isActive ? 'text-[var(--color-primary)]' : isCompleted ? 'text-zinc-700' : 'text-zinc-400'
+            className={`font-medium ${
+              isCompleted ? 'text-xs text-zinc-500' : isActive ? 'text-sm text-[var(--color-primary)]' : 'text-sm text-zinc-400'
             }`}
           >
             {title}
           </span>
           {isCompleted && summary && (
-            <p className="text-xs text-zinc-500 mt-0.5 truncate">{summary}</p>
+            <span className="text-xs text-zinc-700 font-medium truncate">{summary}</span>
           )}
         </div>
 
         {isCompleted && onReopen && (
-          <ChevronDown className="w-4 h-4 text-zinc-400 flex-shrink-0" />
+          <ChevronDown className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />
         )}
       </button>
 
@@ -75,7 +77,7 @@ export function StepAccordion({
             transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
             className="overflow-hidden"
           >
-            <div className="pb-5 px-1">
+            <div className="pb-4 px-1">
               {children}
             </div>
           </motion.div>

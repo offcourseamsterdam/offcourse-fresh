@@ -364,6 +364,9 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
             {/* Right: booking widget */}
             <div className="lg:col-span-1">
               <div className="sticky top-24">
+                <h3 className="font-briston text-[24px] text-[var(--color-primary)] uppercase mb-3">
+                  Book this cruise
+                </h3>
                 <BookingPanel
                   listingId={listing.id}
                   listingSlug={listing.slug}
@@ -373,13 +376,10 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                   initialDate={date}
                   initialGuests={guests ? Number(guests) : undefined}
                   initialTime={time}
-                  priceDisplay={listing.price_display}
-                  priceLabel={listing.price_label}
                   infoPills={[
                     ...(listing.duration_display ? [{ icon: 'duration' as const, label: listing.duration_display }] : []),
                     ...(listing.max_guests ? [{ icon: 'guests' as const, label: `Up to ${listing.max_guests} guests` }] : []),
                     { icon: 'category' as const, label: listing.category === 'private' ? t('private') : t('shared') },
-                    ...(listing.price_display ? [{ icon: 'price' as const, label: `From ${listing.price_display}` }] : []),
                   ]}
                 />
               </div>

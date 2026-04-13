@@ -48,20 +48,23 @@ export function ExtraCategoryGroup({
         <div className="flex-1 h-px bg-zinc-100" />
       </div>
 
-      {/* Extras in this category */}
-      {extras.map(extra => (
-        <ExtraCard
-          key={extra.id}
-          extra={extra}
-          selected={selectedIds.has(extra.id)}
-          onToggle={onToggle}
-          guestCount={guestCount}
-          baseAmountCents={baseAmountCents}
-          durationMinutes={durationMinutes}
-          quantity={quantities.get(extra.id) ?? 0}
-          onQuantityChange={onQuantityChange}
-        />
-      ))}
+      {/* Extras in this category — food uses compact 2-col grid */}
+      <div className={category === 'food' ? 'grid grid-cols-2 gap-1.5' : 'space-y-1.5'}>
+        {extras.map(extra => (
+          <ExtraCard
+            key={extra.id}
+            extra={extra}
+            selected={selectedIds.has(extra.id)}
+            onToggle={onToggle}
+            guestCount={guestCount}
+            baseAmountCents={baseAmountCents}
+            durationMinutes={durationMinutes}
+            quantity={quantities.get(extra.id) ?? 0}
+            onQuantityChange={onQuantityChange}
+            compact={category === 'food'}
+          />
+        ))}
+      </div>
     </div>
   )
 }

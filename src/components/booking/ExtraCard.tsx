@@ -27,6 +27,8 @@ export interface ExtraCardProps {
   quantity?: number
   /** Called when +/- buttons change the quantity */
   onQuantityChange?: (id: string, qty: number) => void
+  /** Compact mode for grid layout (food category) */
+  compact?: boolean
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -65,6 +67,7 @@ export function ExtraCard({
   durationMinutes = DEFAULT_DURATION_MINUTES,
   quantity = 0,
   onQuantityChange,
+  compact = false,
 }: ExtraCardProps) {
   const isCounter = extra.quantity_mode === 'counter'
   const minQty = extra.min_quantity ?? 1
@@ -103,82 +106,98 @@ export function ExtraCard({
   return (
     <button
       onClick={handleCardClick}
-      className={`w-full text-left flex items-center gap-3 rounded-lg border px-4 py-3 transition-all ${
+      className={`w-full text-left rounded-lg border transition-all ${
+        compact ? 'flex flex-col p-2.5 gap-1' : 'flex items-center gap-3 px-4 py-3'
+      } ${
         selected
           ? 'border-zinc-900 bg-zinc-900 text-white'
           : 'border-zinc-200 bg-white hover:border-zinc-400'
       }`}
     >
-      {/* Checkbox indicator (toggle mode only) */}
-      {!isCounter && (
-        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-          selected
-            ? 'border-white bg-white'
-            : 'border-zinc-300 bg-transparent'
-        }`}>
-          {selected && (
-            <div className="w-2.5 h-2.5 rounded-full bg-zinc-900" />
+      {compact ? (
+        <>
+          {/* Compact: stacked layout for grid */}
+          <p className={`text-xs font-medium truncate ${selected ? 'text-white' : 'text-zinc-900'}`}>
+            {extra.name}
+          </p>
+          <p className={`text-[11px] font-semibold ${selected ? 'text-white/80' : 'text-zinc-500'}`}>
+            {formatPriceLabel(extra, guestCount, baseAmountCents, durationMinutes)}
+          </p>
+        </>
+      ) : (
+        <>
+          {/* Checkbox indicator (toggle mode only) */}
+          {!isCounter && (
+            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+              selected
+                ? 'border-white bg-white'
+                : 'border-zinc-300 bg-transparent'
+            }`}>
+              {selected && (
+                <div className="w-2.5 h-2.5 rounded-full bg-zinc-900" />
+              )}
+            </div>
           )}
-        </div>
-      )}
 
-      {/* Optional thumbnail */}
-      {extra.image_url && (
-        <div className="relative w-10 h-10 rounded-md overflow-hidden flex-shrink-0 bg-zinc-100">
-          <Image
-            src={extra.image_url}
-            alt={extra.name}
-            fill
-            className="object-cover"
-            sizes="40px"
-          />
-        </div>
-      )}
+          {/* Optional thumbnail */}
+          {extra.image_url && (
+            <div className="relative w-10 h-10 rounded-md overflow-hidden flex-shrink-0 bg-zinc-100">
+              <Image
+                src={extra.image_url}
+                alt={extra.name}
+                fill
+                className="object-cover"
+                sizes="40px"
+              />
+            </div>
+          )}
 
-      {/* Text */}
-      <div className="flex-1 min-w-0">
-        <p className={`text-sm font-medium truncate ${selected ? 'text-white' : 'text-zinc-900'}`}>
-          {extra.name}
-        </p>
-        {extra.description && (
-          <p className={`text-xs mt-0.5 line-clamp-1 ${selected ? 'text-zinc-300' : 'text-zinc-400'}`}>
-            {extra.description}
-          </p>
-        )}
-        {extra.ingredients && extra.ingredients.length > 0 && (
-          <p className={`text-xs mt-0.5 line-clamp-2 ${selected ? 'text-zinc-300' : 'text-zinc-400'}`}>
-            {extra.ingredients.join(' · ')}
-          </p>
-        )}
+          {/* Text */}
+          <div className="flex-1 min-w-0">
+            <p className={`text-sm font-medium truncate ${selected ? 'text-white' : 'text-zinc-900'}`}>
+              {extra.name}
+            </p>
+            {extra.description && (
+              <p className={`text-xs mt-0.5 line-clamp-1 ${selected ? 'text-zinc-300' : 'text-zinc-400'}`}>
+                {extra.description}
+              </p>
+            )}
+            {extra.ingredients && extra.ingredients.length > 0 && (
+              <p className={`text-xs mt-0.5 line-clamp-2 ${selected ? 'text-zinc-300' : 'text-zinc-400'}`}>
+                {extra.ingredients.join(' · ')}
+              </p>
+            )}
 
-        {/* Counter UI (counter mode only) */}
-        {isCounter && selected && (
-          <div className="flex items-center gap-3 mt-2" onClick={e => e.stopPropagation()}>
-            <button
-              type="button"
-              onClick={handleMinus}
-              className="w-7 h-7 rounded-full border border-white/30 flex items-center justify-center hover:bg-white/10 transition-colors"
-            >
-              <Minus className="w-3.5 h-3.5" />
-            </button>
-            <span className="text-sm font-bold w-6 text-center">{quantity}</span>
-            <button
-              type="button"
-              onClick={handlePlus}
-              className="w-7 h-7 rounded-full border border-white/30 flex items-center justify-center hover:bg-white/10 transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
+            {/* Counter UI (counter mode only) */}
+            {isCounter && selected && (
+              <div className="flex items-center gap-3 mt-2" onClick={e => e.stopPropagation()}>
+                <button
+                  type="button"
+                  onClick={handleMinus}
+                  className="w-7 h-7 rounded-full border border-white/30 flex items-center justify-center hover:bg-white/10 transition-colors"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-sm font-bold w-6 text-center">{quantity}</span>
+                <button
+                  type="button"
+                  onClick={handlePlus}
+                  className="w-7 h-7 rounded-full border border-white/30 flex items-center justify-center hover:bg-white/10 transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      {/* Price */}
-      <div className="flex-shrink-0 text-right">
-        <p className={`text-sm font-semibold ${selected ? 'text-white' : 'text-zinc-900'}`}>
-          {formatPriceLabel(extra, guestCount, baseAmountCents, durationMinutes)}
-        </p>
-      </div>
+          {/* Price */}
+          <div className="flex-shrink-0 text-right">
+            <p className={`text-sm font-semibold ${selected ? 'text-white' : 'text-zinc-900'}`}>
+              {formatPriceLabel(extra, guestCount, baseAmountCents, durationMinutes)}
+            </p>
+          </div>
+        </>
+      )}
     </button>
   )
 }
