@@ -8,6 +8,8 @@ export interface CruiseListing {
   description: string | null
   category: string
   departure_location: string | null
+  google_maps_url: string | null
+  video_url: string | null
   duration_display: string | null
   max_guests: number | null
   starting_price: number | null
