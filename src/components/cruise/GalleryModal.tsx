@@ -47,7 +47,7 @@ export function GalleryModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center"
+      className="fixed inset-0 z-[100] flex items-start justify-center pt-20 pb-6 px-4"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
@@ -57,7 +57,7 @@ export function GalleryModal({
 
       {/* Modal content */}
       <div
-        className="relative z-10 w-full max-w-5xl mx-4 my-8 max-h-[calc(100vh-4rem)] flex flex-col bg-white rounded-2xl shadow-2xl overflow-hidden"
+        className="relative z-10 w-full max-w-5xl max-h-[calc(100vh-6rem)] flex flex-col bg-white rounded-2xl shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
