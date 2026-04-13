@@ -536,6 +536,7 @@ export type Database = {
           title_pt: string | null
           title_zh: string | null
           updated_at: string | null
+          video_url: string | null
         }
         Insert: {
           allowed_customer_type_pks?: number[] | null
@@ -599,6 +600,7 @@ export type Database = {
           title_pt?: string | null
           title_zh?: string | null
           updated_at?: string | null
+          video_url?: string | null
         }
         Update: {
           allowed_customer_type_pks?: number[] | null
@@ -662,6 +664,7 @@ export type Database = {
           title_pt?: string | null
           title_zh?: string | null
           updated_at?: string | null
+          video_url?: string | null
         }
         Relationships: [
           {

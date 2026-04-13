@@ -125,7 +125,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
   }))
 
   // Video URL from listing (optional — only shown when present)
-  const videoUrl = (listing as Record<string, unknown>).video_url as string | null | undefined
+  const videoUrl = listing.video_url
 
   return (
     <>
