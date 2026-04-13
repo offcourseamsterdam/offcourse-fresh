@@ -1,5 +1,6 @@
 import { cache } from 'react'
 import { notFound } from 'next/navigation'
+import Image from 'next/image'
 import { Check } from 'lucide-react'
 import { getTranslations } from 'next-intl/server'
 import { createClient } from '@/lib/supabase/server'
@@ -7,6 +8,7 @@ import { BookingPanel } from '@/components/booking/BookingPanel'
 import { CruiseReviews } from '@/components/sections/CruiseReviews'
 import { ImageGallery } from '@/components/cruise/ImageGallery'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
+import { formatExtraPrice } from '@/lib/constants'
 import type { Locale } from '@/lib/i18n/config'
 import type { Database } from '@/lib/supabase/types'
 
@@ -75,6 +77,39 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
     .from('social_proof_reviews')
     .select('*', { count: 'exact', head: true })
     .eq('is_active', true)
+
+  // Fetch food & drink extras for the "Things you need to know" section
+  const { data: allExtras } = await supabase
+    .from('extras')
+    .select('*')
+    .eq('is_active', true)
+    .in('category', ['food', 'drinks'])
+    .order('sort_order', { ascending: true })
+
+  const { data: listingExtrasOverrides } = await supabase
+    .from('listing_extras')
+    .select('extra_id, is_enabled')
+    .eq('listing_id', listing.id)
+
+  const overrideMap = new Map(
+    (listingExtrasOverrides ?? []).map((o) => [o.extra_id, o.is_enabled])
+  )
+
+  const foodAndDrinkExtras = (allExtras ?? []).filter((extra) => {
+    if (extra.scope === 'global') {
+      if (
+        extra.applicable_categories &&
+        !extra.applicable_categories.includes(listing.category ?? '')
+      )
+        return false
+      if (overrideMap.get(extra.id) === false) return false
+      return true
+    }
+    return overrideMap.get(extra.id) === true
+  })
+
+  const foodExtras = foodAndDrinkExtras.filter((e) => e.category === 'food')
+  const drinkExtras = foodAndDrinkExtras.filter((e) => e.category === 'drinks')
 
   // All content lives in JSONB columns on the listing row (no separate tables)
   const images = (listing.images as CruiseImage[] | null) ?? []
@@ -321,15 +356,118 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                 </section>
               )}
 
-              {/* Cancellation policy */}
-              {cancellationPolicy && (
+              {/* Things you need to know */}
+              {(foodExtras.length > 0 || drinkExtras.length > 0 || cancellationPolicy) && (
                 <section>
-                  <h2 className="text-xl font-bold text-[var(--color-primary)] mb-3">
-                    Cancellation policy
+                  <h2 className="font-briston text-[28px] sm:text-[36px] text-[var(--color-accent)] uppercase tracking-wide mb-6">
+                    Things you need to know
                   </h2>
-                  <p className="text-sm text-[var(--color-muted)] leading-relaxed whitespace-pre-line">
-                    {cancellationPolicy}
-                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Food column */}
+                    {foodExtras.length > 0 && (
+                      <div className="bg-white rounded-xl p-5 shadow-sm">
+                        <h3 className="font-palmore text-[20px] text-[var(--color-primary)] mb-4">
+                          Food
+                        </h3>
+                        <div className="space-y-4">
+                          {foodExtras.map((extra) => (
+                            <div key={extra.id} className="flex gap-3">
+                              {extra.image_url && (
+                                <div className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
+                                  <Image
+                                    src={extra.image_url}
+                                    alt={getLocalizedField(extra, 'name', loc)}
+                                    fill
+                                    className="object-cover"
+                                    sizes="64px"
+                                  />
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-baseline justify-between gap-2">
+                                  <p className="text-sm font-semibold text-[var(--color-ink)]">
+                                    {getLocalizedField(extra, 'name', loc)}
+                                  </p>
+                                  <span className="text-sm font-semibold text-[var(--color-primary)] flex-shrink-0">
+                                    {formatExtraPrice(extra)}
+                                  </span>
+                                </div>
+                                {extra.description && (
+                                  <p className="text-xs text-[var(--color-muted)] mt-0.5">
+                                    {getLocalizedField(extra, 'description', loc)}
+                                  </p>
+                                )}
+                                {extra.ingredients && extra.ingredients.length > 0 && (
+                                  <p className="text-xs text-[var(--color-muted)] mt-1">
+                                    {extra.ingredients.join(' · ')}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Drinks column */}
+                    {drinkExtras.length > 0 && (
+                      <div className="bg-white rounded-xl p-5 shadow-sm">
+                        <h3 className="font-palmore text-[20px] text-[var(--color-primary)] mb-4">
+                          Drinks
+                        </h3>
+                        <div className="space-y-4">
+                          {drinkExtras.map((extra) => (
+                            <div key={extra.id} className="flex gap-3">
+                              {extra.image_url && (
+                                <div className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
+                                  <Image
+                                    src={extra.image_url}
+                                    alt={getLocalizedField(extra, 'name', loc)}
+                                    fill
+                                    className="object-cover"
+                                    sizes="64px"
+                                  />
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-baseline justify-between gap-2">
+                                  <p className="text-sm font-semibold text-[var(--color-ink)]">
+                                    {getLocalizedField(extra, 'name', loc)}
+                                  </p>
+                                  <span className="text-sm font-semibold text-[var(--color-primary)] flex-shrink-0">
+                                    {formatExtraPrice(extra)}
+                                  </span>
+                                </div>
+                                {extra.description && (
+                                  <p className="text-xs text-[var(--color-muted)] mt-0.5">
+                                    {getLocalizedField(extra, 'description', loc)}
+                                  </p>
+                                )}
+                                {extra.ingredients && extra.ingredients.length > 0 && (
+                                  <p className="text-xs text-[var(--color-muted)] mt-1">
+                                    {extra.ingredients.join(' · ')}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Cancellation policy — spans both columns */}
+                    {cancellationPolicy && (
+                      <div className="bg-white rounded-xl p-5 shadow-sm sm:col-span-2">
+                        <h3 className="font-palmore text-[20px] text-[var(--color-primary)] mb-3">
+                          Cancellation Policy
+                        </h3>
+                        <p className="text-sm text-[var(--color-muted)] leading-relaxed whitespace-pre-line">
+                          {cancellationPolicy}
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </section>
               )}
 
