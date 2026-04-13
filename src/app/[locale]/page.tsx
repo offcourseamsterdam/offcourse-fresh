@@ -62,7 +62,7 @@ export default async function HomePage({ params }: Props) {
   return (
     <>
       <HeroSection slides={slides.length > 0 ? slides : undefined} />
-      <FeaturedCruises listings={listings ?? []} locale={locale as Locale} />
+      <FeaturedCruises listings={listings ?? []} />
       <ReviewsSection reviews={reviews ?? []} locale={locale as Locale} />
       <PrioritiesSection />
       <FleetSection boats={boats.length > 0 ? boats : undefined} />

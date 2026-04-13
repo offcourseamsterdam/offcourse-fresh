@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import { SearchBar } from '@/components/search/SearchBar'
-import { useRouter } from '@/i18n/navigation'
 import { hideOnError } from '@/lib/utils/image'
 import { useSearch } from '@/lib/search/SearchContext'
 
@@ -57,7 +56,6 @@ const DEFAULT_SLIDES: HeroSlide[] = [
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] }) {
-  const router = useRouter()
   const N = slides.length
   const [active, setActive] = useState(0)
   const heroSearchRef = useRef<HTMLDivElement>(null)
@@ -98,10 +96,11 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
     return () => clearInterval(timer)
   }, [N])
 
-  // Search handler
+  // Search handler — triggers inline results on homepage instead of navigating
+  const { triggerHomepageSearch } = useSearch()
   const handleSearch = useCallback((date: string, guests: number) => {
-    router.push(`/search?date=${date}&guests=${guests}`)
-  }, [router])
+    triggerHomepageSearch(date, guests)
+  }, [triggerHomepageSearch])
 
   useEffect(() => {
     return registerSearchHandler(handleSearch)
@@ -109,7 +108,7 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
 
   return (
     <section
-      className="bg-texture-sand min-h-screen flex flex-col relative z-10 overflow-hidden"
+      className="bg-texture-sand min-h-screen flex flex-col relative z-10"
       style={{ marginBottom: '-80px' }}
     >
       {/* ── Logo + search ─── */}
@@ -131,7 +130,7 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
 
       {/* ── Polaroid carousel — sits below search, hovers over next section ─── */}
       <div
-        className="relative w-full flex-1"
+        className="relative w-full flex-1 overflow-hidden"
         style={{ minHeight: 'clamp(200px, 24vh, 280px)' }}
       >
         {slides.map((slide, i) => {
