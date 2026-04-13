@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { useTranslations } from 'next-intl'
 import Image from 'next/image'
 import { SearchBar } from '@/components/search/SearchBar'
 import { useRouter } from '@/i18n/navigation'
@@ -79,7 +78,6 @@ function useCardSpacing() {
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] }) {
-  useTranslations('home.hero')
   const router = useRouter()
   const N = slides.length
   const [active, setActive] = useState(0)
@@ -116,11 +114,11 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
   return (
     <section className="bg-texture-sand min-h-screen flex flex-col relative z-10" style={{ marginBottom: '-80px' }}>
 
-      {/* ── Top: logo + headline + search ─── */}
-      <div className="flex-1 flex flex-col items-center justify-center text-center px-4 sm:px-6 pt-28 pb-3 relative z-20">
+      {/* ── Logo + search ─── */}
+      <div className="flex flex-col items-center text-center px-4 sm:px-6 pt-28 pb-10 relative z-20">
 
         {/* Hero logo */}
-        <div className="mb-10">
+        <div className="mb-8">
           <Image
             src="/logos/logo-vertical.svg"
             alt="Off Course Amsterdam — Your Friend With A Boat"
@@ -131,28 +129,16 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
           />
         </div>
 
-        {/* Social proof */}
-        <div className="flex items-center justify-center gap-2 mb-8">
-          <div className="flex gap-0.5">
-            {[1, 2, 3, 4, 5].map(i => (
-              <svg key={i} className="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-              </svg>
-            ))}
-          </div>
-          <span className="font-avenir text-sm text-muted">110+ reviews across platforms</span>
-        </div>
-
         {/* Search bar */}
         <div ref={heroSearchRef} className="w-full max-w-2xl">
           <SearchBar onSearch={handleSearch} />
         </div>
       </div>
 
-      {/* ── Polaroid carousel ─── */}
+      {/* ── Polaroid carousel — sits below search, above fold ─── */}
       <div
-        className="relative w-full overflow-visible"
-        style={{ height: 'clamp(240px, 30vh, 360px)' }}
+        className="relative w-full overflow-visible flex-1"
+        style={{ minHeight: 'clamp(180px, 22vh, 280px)', maxHeight: '300px' }}
       >
         {slides.map((slide, i) => {
           let dist = i - active
@@ -176,7 +162,7 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
               className="absolute bottom-0"
               style={{
                 left: '50%',
-                width: 'clamp(220px, 36vw, 460px)',
+                width: 'clamp(160px, 24vw, 320px)',
                 transform: `translateX(calc(-50% + ${dist * cardSpacing}vw)) rotate(${rotation}deg)`,
                 transformOrigin: 'bottom center',
                 zIndex: isCenter ? 20 : Math.max(1, 15 - Math.abs(dist) * 5),
