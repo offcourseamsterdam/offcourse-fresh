@@ -1,6 +1,5 @@
 import { cache } from 'react'
 import { notFound } from 'next/navigation'
-import Image from 'next/image'
 import { Check } from 'lucide-react'
 import { getTranslations } from 'next-intl/server'
 import { createClient } from '@/lib/supabase/server'
@@ -8,6 +7,7 @@ import { BookingPanel } from '@/components/booking/BookingPanel'
 import { ImageGallery } from '@/components/cruise/ImageGallery'
 import { ExtrasGrid } from '@/components/cruise/ExtrasGrid'
 import { ReviewSlider } from '@/components/cruise/ReviewSlider'
+import { BoatCard } from '@/components/cruise/BoatCard'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import { formatExtraPrice } from '@/lib/constants'
 import type { Locale } from '@/lib/i18n/config'
@@ -284,37 +284,16 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                   </h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {listingBoats.map((boat) => (
-                      <div key={boat.id} className="bg-white rounded-xl overflow-hidden shadow-sm">
-                        {boat.photo_url && (
-                          <div className="relative w-full aspect-[16/10]">
-                            <Image
-                              src={boat.photo_url}
-                              alt={boat.name}
-                              fill
-                              className="object-cover"
-                              sizes="(min-width: 640px) 50vw, 100vw"
-                            />
-                          </div>
-                        )}
-                        <div className="p-4">
-                          <h3 className="font-avenir font-bold text-lg text-[var(--color-primary)]">
-                            {boat.name}
-                          </h3>
-                          <div className="flex items-center gap-3 mt-1 text-xs text-[var(--color-muted)]">
-                            {boat.max_capacity && (
-                              <span>Up to {boat.max_capacity} guests</span>
-                            )}
-                            {boat.is_electric && (
-                              <span>Electric</span>
-                            )}
-                          </div>
-                          {boat.description && (
-                            <p className="text-sm text-[var(--color-ink)] mt-2 line-clamp-3">
-                              {getLocalizedField(boat, 'description', loc)}
-                            </p>
-                          )}
-                        </div>
-                      </div>
+                      <BoatCard
+                        key={boat.id}
+                        name={boat.name}
+                        maxCapacity={boat.max_capacity}
+                        isElectric={boat.is_electric ?? false}
+                        description={getLocalizedField(boat, 'description', loc) || null}
+                        photoUrl={boat.photo_url}
+                        photoCoveredUrl={boat.photo_covered_url}
+                        photoInteriorUrl={boat.photo_interior_url}
+                      />
                     ))}
                   </div>
                 </section>
