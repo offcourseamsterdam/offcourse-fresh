@@ -411,7 +411,7 @@ export function BookingPanel({
 
       {/* Extras */}
       <StepAccordion
-        title="Add extras"
+        title="Add food, drinks & extras"
         summary={state.selectedExtraIds.length > 0 ? `${state.selectedExtraIds.length} extras selected` : undefined}
         stepNumber={stepNumber('extras')}
         isActive={isStepActive('extras')}
