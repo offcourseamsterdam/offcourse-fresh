@@ -69,7 +69,7 @@ export function ExtrasFormModal({
         return
       }
       if (json?.ok) {
-        onEditingExtraUpdate(prev => prev ? { ...prev, image_url: json!.data?.url } : prev)
+        onEditingExtraUpdate(prev => prev ? { ...prev, image_url: json!.data?.url ?? null } : prev)
         onExtrasUpdate(editingExtra.id, json!.data?.url ?? '')
       } else {
         alert('Image upload failed: ' + (json?.error ?? 'Unknown error'))
