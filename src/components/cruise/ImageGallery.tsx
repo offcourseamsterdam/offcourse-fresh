@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
-import { Camera } from 'lucide-react'
+import { Camera, ChevronRight } from 'lucide-react'
 import { GalleryModal } from './GalleryModal'
 
 export type GalleryImage = { url: string; alt_text?: string | null }
@@ -34,6 +34,7 @@ export function ImageGallery({
 }: ImageGalleryProps) {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isHoveringImages, setIsHoveringImages] = useState(false)
+  const [isHoveringReview, setIsHoveringReview] = useState(false)
   const [activeReviewIndex, setActiveReviewIndex] = useState(0)
 
   // All images: hero first, then the rest (deduplicated)
@@ -50,14 +51,16 @@ export function ImageGallery({
   const hasVideo = !!videoUrl
   const totalReviews = reviewCount ?? reviews.length
 
-  // Auto-rotate reviews every 5 seconds
-  useEffect(() => {
-    if (reviews.length <= 1) return
-    const interval = setInterval(() => {
-      setActiveReviewIndex((prev) => (prev + 1) % reviews.length)
-    }, 5000)
-    return () => clearInterval(interval)
+  const nextReview = useCallback(() => {
+    setActiveReviewIndex((prev) => (prev + 1) % reviews.length)
   }, [reviews.length])
+
+  // Auto-rotate reviews every 5 seconds (pause when hovering the popup)
+  useEffect(() => {
+    if (reviews.length <= 1 || isHoveringReview) return
+    const interval = setInterval(nextReview, 5000)
+    return () => clearInterval(interval)
+  }, [reviews.length, isHoveringReview, nextReview])
 
   const avgRating =
     reviews.length > 0
@@ -73,15 +76,14 @@ export function ImageGallery({
           ? 'Good'
           : 'Nice'
 
+  // Review popup is visible unless hovering images (but NOT when hovering the popup itself)
+  const showReviewPopup = !isHoveringImages || isHoveringReview
+
   const openModal = () => setIsModalOpen(true)
 
   return (
     <>
-      <div
-        className="relative"
-        onMouseEnter={() => setIsHoveringImages(true)}
-        onMouseLeave={() => setIsHoveringImages(false)}
-      >
+      <div className="relative">
         {/* ── Desktop gallery grid ── */}
         <div
           className="hidden sm:grid gap-1.5 rounded-2xl overflow-hidden"
@@ -90,6 +92,8 @@ export function ImageGallery({
             gridTemplateRows: '1fr 1fr 1fr',
             height: '420px',
           }}
+          onMouseEnter={() => setIsHoveringImages(true)}
+          onMouseLeave={() => setIsHoveringImages(false)}
         >
           {/* Hero — always spans all 3 rows in column 1 */}
           <button
@@ -139,33 +143,31 @@ export function ImageGallery({
                     className="object-cover group-hover:brightness-90 transition-all duration-200"
                     sizes="25vw"
                   />
-                  {/* "Show all photos" on the last visible cell */}
                   {i === 2 && allImages.length > 4 && <ShowAllOverlay count={allImages.length} />}
                 </button>
               ))}
             </>
           ) : (
             <>
-              {/* No video → middle column has 2 images, right column has 3 images */}
-              {/* Middle column: 2 images spanning rows */}
-              {gridImages.slice(0, 2).map((img, i) => (
-                <button
-                  type="button"
-                  key={img.url}
-                  className={`relative cursor-pointer group focus:outline-none ${
-                    i === 0 ? 'row-span-2' : ''
-                  }`}
-                  onClick={openModal}
-                >
-                  <Image
-                    src={img.url}
-                    alt={img.alt_text ?? ''}
-                    fill
-                    className="object-cover group-hover:brightness-90 transition-all duration-200"
-                    sizes="25vw"
-                  />
-                </button>
-              ))}
+              {/* Middle column: 2 equal-height images in a flex container spanning 3 rows */}
+              <div className="row-span-3 flex flex-col gap-1.5">
+                {gridImages.slice(0, 2).map((img) => (
+                  <button
+                    type="button"
+                    key={img.url}
+                    className="relative flex-1 cursor-pointer group focus:outline-none"
+                    onClick={openModal}
+                  >
+                    <Image
+                      src={img.url}
+                      alt={img.alt_text ?? ''}
+                      fill
+                      className="object-cover group-hover:brightness-90 transition-all duration-200"
+                      sizes="25vw"
+                    />
+                  </button>
+                ))}
+              </div>
               {/* Right column: 3 images, one per row */}
               {gridImages.slice(2, 5).map((img, i) => (
                 <button
@@ -181,7 +183,6 @@ export function ImageGallery({
                     className="object-cover group-hover:brightness-90 transition-all duration-200"
                     sizes="25vw"
                   />
-                  {/* "Show all photos" on bottom-right cell */}
                   {i === 2 && allImages.length > 6 && <ShowAllOverlay count={allImages.length} />}
                 </button>
               ))}
@@ -217,12 +218,10 @@ export function ImageGallery({
         {reviews.length > 0 && (
           <div
             className={`absolute bottom-4 left-4 z-10 w-64 bg-white rounded-xl shadow-xl p-4 transition-opacity duration-300 hidden sm:block ${
-              isHoveringImages ? 'opacity-0 pointer-events-none' : 'opacity-100'
+              showReviewPopup ? 'opacity-100' : 'opacity-0 pointer-events-none'
             }`}
-            onMouseEnter={(e) => {
-              e.stopPropagation()
-              setIsHoveringImages(false)
-            }}
+            onMouseEnter={() => setIsHoveringReview(true)}
+            onMouseLeave={() => setIsHoveringReview(false)}
           >
             {/* Rating badge */}
             <div className="flex items-center gap-2 mb-2">
@@ -237,8 +236,8 @@ export function ImageGallery({
               </div>
             </div>
 
-            {/* Current review */}
-            <div className="border-t border-gray-100 pt-2 mt-1">
+            {/* Current review — fixed height */}
+            <div className="border-t border-gray-100 pt-2 mt-1 h-[120px]">
               <p className="text-[10px] uppercase tracking-wider text-[var(--color-muted)] mb-1.5 font-semibold">
                 What guests loved most
               </p>
@@ -266,9 +265,9 @@ export function ImageGallery({
               </p>
             </div>
 
-            {/* Pagination dots */}
-            {reviews.length > 1 && (
-              <div className="flex items-center justify-center gap-1.5 mt-3">
+            {/* Dots + next chevron */}
+            <div className="flex items-center justify-between mt-2">
+              <div className="flex items-center gap-1.5">
                 {reviews.map((_, i) => (
                   <button
                     type="button"
@@ -281,7 +280,17 @@ export function ImageGallery({
                   />
                 ))}
               </div>
-            )}
+              {reviews.length > 1 && (
+                <button
+                  type="button"
+                  onClick={nextReview}
+                  className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+                  aria-label="Next review"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
