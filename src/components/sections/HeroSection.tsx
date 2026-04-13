@@ -152,7 +152,7 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
       {/* ── Polaroid carousel ─── */}
       <div
         className="relative w-full overflow-visible"
-        style={{ height: 'clamp(380px, 52vh, 600px)' }}
+        style={{ height: 'clamp(240px, 30vh, 360px)' }}
       >
         {slides.map((slide, i) => {
           let dist = i - active
@@ -192,7 +192,7 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
               <div className="bg-white shadow-polaroid relative overflow-hidden" style={{ padding: '10px 10px 0 10px' }}>
 
                 {/* Photo */}
-                <div style={{ aspectRatio: '3/4' }} className="overflow-hidden bg-[#d1d5db] relative">
+                <div style={{ aspectRatio: '5/4' }} className="overflow-hidden bg-[#d1d5db] relative">
                   <img
                     src={slide.src}
                     alt={slide.alt}
@@ -207,10 +207,10 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
                 </div>
 
                 {/* Caption area */}
-                <div className="flex items-center justify-center" style={{ height: '52px' }}>
+                <div className="flex items-center justify-center" style={{ height: '48px' }}>
                   <p
                     className="font-palmore text-primary text-center leading-tight"
-                    style={{ fontSize: 'clamp(12px, 1.2vw, 16px)' }}
+                    style={{ fontSize: 'clamp(15px, 1.6vw, 22px)' }}
                   >
                     {slide.caption}
                   </p>
