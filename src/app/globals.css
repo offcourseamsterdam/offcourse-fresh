@@ -184,6 +184,10 @@
     background-position: center;
   }
 
+  .bg-texture-pink {
+    background-color: #d4c0d4;
+  }
+
   .bg-texture-yellow {
     background-image: url('/textures/bg-yellow.png');
     background-size: cover;

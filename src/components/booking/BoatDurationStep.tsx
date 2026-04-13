@@ -30,7 +30,7 @@ const BOAT_TAGLINES: Record<string, string> = {
 // Alternate texture backgrounds per boat
 const BOAT_BG: Record<string, string> = {
   diana: 'bg-texture-yellow',
-  curacao: 'bg-texture-sand',
+  curacao: 'bg-texture-pink',
 }
 
 function fmtDuration(minutes: number): string {
