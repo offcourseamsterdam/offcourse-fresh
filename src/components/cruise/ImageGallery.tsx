@@ -93,14 +93,14 @@ export function ImageGallery({
             gridTemplateRows: '1fr 1fr 1fr',
             height: '420px',
           }}
-          onMouseEnter={() => setIsHoveringImages(true)}
-          onMouseLeave={() => setIsHoveringImages(false)}
         >
           {/* Hero — always spans all 3 rows in column 1 */}
           <button
             type="button"
             className="relative row-span-3 cursor-pointer group focus:outline-none"
             onClick={openModal}
+            onMouseEnter={() => setIsHoveringImages(true)}
+            onMouseLeave={() => setIsHoveringImages(false)}
             aria-label="View all photos"
           >
             {allImages[0] && (
@@ -118,7 +118,10 @@ export function ImageGallery({
           {hasVideo ? (
             <>
               {/* Video column — spans all 3 rows, portrait / Instagram-style */}
-              <div className="relative row-span-3 overflow-hidden">
+              <div className="relative row-span-3 overflow-hidden"
+                onMouseEnter={() => setIsHoveringImages(true)}
+                onMouseLeave={() => setIsHoveringImages(false)}
+              >
                 <video
                   src={videoUrl!}
                   className="w-full h-full object-cover"
@@ -135,6 +138,8 @@ export function ImageGallery({
                   type="button"
                   key={img.url}
                   className="relative cursor-pointer group focus:outline-none"
+                  onMouseEnter={() => setIsHoveringImages(true)}
+                  onMouseLeave={() => setIsHoveringImages(false)}
                   onClick={openModal}
                 >
                   <Image
@@ -157,6 +162,8 @@ export function ImageGallery({
                     type="button"
                     key={img.url}
                     className="relative flex-1 cursor-pointer group focus:outline-none"
+                    onMouseEnter={() => setIsHoveringImages(true)}
+                    onMouseLeave={() => setIsHoveringImages(false)}
                     onClick={openModal}
                   >
                     <Image
@@ -175,6 +182,8 @@ export function ImageGallery({
                   type="button"
                   key={img.url}
                   className="relative cursor-pointer group focus:outline-none"
+                  onMouseEnter={() => setIsHoveringImages(true)}
+                  onMouseLeave={() => setIsHoveringImages(false)}
                   onClick={openModal}
                 >
                   <Image
