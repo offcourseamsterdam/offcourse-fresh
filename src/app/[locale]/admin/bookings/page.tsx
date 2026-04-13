@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect, useCallback, Fragment } from 'react'
+import { useParams } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Loader2, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
+import { Loader2, RefreshCw, ChevronDown, ChevronUp, Plus } from 'lucide-react'
 import { BookingDetailRow } from '@/components/admin/BookingDetailRow'
 import { BOOKING_SOURCES } from '@/lib/constants'
 
@@ -89,6 +90,8 @@ function TypeBadge({ source }: { source: string | null }) {
 // ── Page ───────────────────────────────────────────────────────────────────
 
 export default function BookingsPage() {
+  const params = useParams()
+  const locale = params.locale as string
   const [bookings, setBookings] = useState<Booking[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -139,10 +142,16 @@ export default function BookingsPage() {
           <h1 className="text-2xl font-semibold text-zinc-900">Bookings</h1>
           <p className="text-sm text-zinc-500 mt-1">From our booking flow · stored in Supabase</p>
         </div>
-        <Button variant="outline" size="sm" onClick={fetchBookings} disabled={loading}>
-          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={fetchBookings} disabled={loading}>
+            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            Refresh
+          </Button>
+          <Button variant="primary" size="sm" onClick={() => window.location.href = `/${locale}/admin/fareharbor`}>
+            <Plus className="w-3.5 h-3.5" />
+            New booking
+          </Button>
+        </div>
       </div>
 
       {/* Error */}
