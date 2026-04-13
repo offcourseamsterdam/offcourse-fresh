@@ -61,7 +61,7 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
 
   // Auto-advance polaroid carousel
   useEffect(() => {
-    const timer = setInterval(() => setActive(i => (i + 1) % N), 3500)
+    const timer = setInterval(() => setActive(i => (i + 1) % N), 7000)
     return () => clearInterval(timer)
   }, [])
 
@@ -126,7 +126,7 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
               <div
                 key={i}
                 onClick={() => !isCenter && setActive(i)}
-                className="absolute bottom-0 transition-[transform,opacity] duration-700 ease-in-out"
+                className="absolute bottom-0 transition-[transform,opacity] duration-1000 ease-in-out"
                 style={{
                   left: '50%',
                   transform: `translateX(calc(-50% + ${dist * 62}%)) scale(${isCenter ? 1 : 0.72}) rotate(${rotation}deg)`,
@@ -138,9 +138,9 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
                 }}
               >
                 {/* Polaroid frame */}
-                <div className="bg-white shadow-polaroid p-3 sm:p-4" style={{ width: 'clamp(240px, 30vw, 380px)' }}>
+                <div className="bg-white shadow-polaroid p-3 sm:p-4" style={{ width: 'clamp(280px, 34vw, 440px)' }}>
                   {/* Photo area */}
-                  <div className="aspect-[4/3] overflow-hidden bg-[#d1d5db]">
+                  <div className="aspect-[3/2] overflow-hidden bg-[#d1d5db]">
                     <img
                       src={slide.src}
                       alt={slide.alt}
