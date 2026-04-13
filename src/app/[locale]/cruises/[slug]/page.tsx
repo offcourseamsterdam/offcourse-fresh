@@ -1,5 +1,6 @@
 import { cache } from 'react'
 import { notFound } from 'next/navigation'
+import Image from 'next/image'
 import { Check } from 'lucide-react'
 import { getTranslations } from 'next-intl/server'
 import { createClient } from '@/lib/supabase/server'
@@ -111,6 +112,21 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
   const foodExtras = foodAndDrinkExtras.filter((e) => e.category === 'food')
   const drinkExtras = foodAndDrinkExtras.filter((e) => e.category === 'drinks')
 
+  // Fetch boats for the "Our boats" section, filtered by allowed customer types
+  const { data: allBoats } = await supabase
+    .from('boats')
+    .select('*')
+    .eq('is_active', true)
+    .order('display_order', { ascending: true })
+
+  // Filter boats: only show boats whose customer_type_pks overlap with the listing's allowed types
+  const allowedCtPks = listing.allowed_customer_type_pks as number[] | null
+  const listingBoats = (allBoats ?? []).filter((boat) => {
+    if (!allowedCtPks || allowedCtPks.length === 0) return true // no filter = show all
+    const boatCtPks = (boat.fareharbor_customer_type_pks as number[] | null) ?? []
+    return boatCtPks.some((pk) => allowedCtPks.includes(pk))
+  })
+
   // All content lives in JSONB columns on the listing row (no separate tables)
   const images = (listing.images as CruiseImage[] | null) ?? []
   const benefits = (listing.benefits as Benefit[] | null) ?? []
@@ -221,46 +237,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
             {/* Left: content */}
             <div className="lg:col-span-2 space-y-10">
 
-              {/* Quick info pills */}
-              <div className="flex flex-wrap gap-3">
-                {listing.departure_location && (
-                  <span className="flex items-center gap-1.5 text-sm text-[var(--color-ink)] bg-white px-3 py-1.5 rounded-full shadow-sm">
-                    <svg viewBox="0 0 24 24" className="w-4 h-4 text-[var(--color-primary)]" fill="currentColor">
-                      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
-                    </svg>
-                    {listing.departure_location}
-                  </span>
-                )}
-                {listing.duration_display && (
-                  <span className="flex items-center gap-1.5 text-sm text-[var(--color-ink)] bg-white px-3 py-1.5 rounded-full shadow-sm">
-                    <svg viewBox="0 0 24 24" className="w-4 h-4 text-[var(--color-primary)]" fill="currentColor">
-                      <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z" />
-                    </svg>
-                    {listing.duration_display}
-                  </span>
-                )}
-                {listing.max_guests && (
-                  <span className="flex items-center gap-1.5 text-sm text-[var(--color-ink)] bg-white px-3 py-1.5 rounded-full shadow-sm">
-                    <svg viewBox="0 0 24 24" className="w-4 h-4 text-[var(--color-primary)]" fill="currentColor">
-                      <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
-                    </svg>
-                    Up to {listing.max_guests} guests
-                  </span>
-                )}
-                <span className="flex items-center gap-1.5 text-sm text-[var(--color-ink)] bg-white px-3 py-1.5 rounded-full shadow-sm capitalize">
-                  {listing.category === 'private' ? t('private') : t('shared')}
-                </span>
-              </div>
-
-              {/* Description */}
-              {description && (
-                <div
-                  className="text-[var(--color-ink)] leading-relaxed text-base prose prose-sm max-w-none [&_p]:mb-4 [&_br]:block"
-                  dangerouslySetInnerHTML={{ __html: description }}
-                />
-              )}
-
-              {/* Highlights */}
+              {/* Highlights (above description) */}
               {highlights.length > 0 && (
                 <section>
                   <h2 className="text-xl font-bold text-[var(--color-primary)] mb-4">
@@ -276,6 +253,58 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                       </li>
                     ))}
                   </ul>
+                </section>
+              )}
+
+              {/* Description */}
+              {description && (
+                <div
+                  className="text-[var(--color-ink)] leading-relaxed text-base prose prose-sm max-w-none [&_p]:mb-4 [&_br]:block"
+                  dangerouslySetInnerHTML={{ __html: description }}
+                />
+              )}
+
+              {/* Our boats */}
+              {listingBoats.length > 0 && (
+                <section>
+                  <h2 className="font-palmore text-[32px] sm:text-[40px] text-[var(--color-accent)] mb-6">
+                    Our boats
+                  </h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {listingBoats.map((boat) => (
+                      <div key={boat.id} className="bg-white rounded-xl overflow-hidden shadow-sm">
+                        {boat.photo_url && (
+                          <div className="relative w-full aspect-[16/10]">
+                            <Image
+                              src={boat.photo_url}
+                              alt={boat.name}
+                              fill
+                              className="object-cover"
+                              sizes="(min-width: 640px) 50vw, 100vw"
+                            />
+                          </div>
+                        )}
+                        <div className="p-4">
+                          <h3 className="font-avenir font-bold text-lg text-[var(--color-primary)]">
+                            {boat.name}
+                          </h3>
+                          <div className="flex items-center gap-3 mt-1 text-xs text-[var(--color-muted)]">
+                            {boat.max_capacity && (
+                              <span>Up to {boat.max_capacity} guests</span>
+                            )}
+                            {boat.is_electric && (
+                              <span>Electric</span>
+                            )}
+                          </div>
+                          {boat.description && (
+                            <p className="text-sm text-[var(--color-ink)] mt-2 line-clamp-3">
+                              {getLocalizedField(boat, 'description', loc)}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </section>
               )}
 
@@ -360,6 +389,11 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                 </section>
               )}
 
+              {/* Reviews (above map) */}
+              {reviews && reviews.length > 0 && (
+                <ReviewSlider reviews={serializedReviews} />
+              )}
+
               {/* Meeting point map */}
               <section>
                 <h2 className="font-palmore text-[32px] sm:text-[40px] text-[var(--color-accent)] mb-4">
@@ -386,11 +420,6 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                   />
                 </div>
               </section>
-
-              {/* Reviews */}
-              {reviews && reviews.length > 0 && (
-                <ReviewSlider reviews={serializedReviews} />
-              )}
             </div>
 
             {/* Right: booking widget */}
@@ -416,6 +445,12 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                   initialDate={date}
                   initialGuests={guests ? Number(guests) : undefined}
                   initialTime={time}
+                  infoPills={[
+                    ...(listing.departure_location ? [{ icon: 'location' as const, label: listing.departure_location }] : []),
+                    ...(listing.duration_display ? [{ icon: 'duration' as const, label: listing.duration_display }] : []),
+                    ...(listing.max_guests ? [{ icon: 'guests' as const, label: `Up to ${listing.max_guests} guests` }] : []),
+                    { icon: 'category' as const, label: listing.category === 'private' ? t('private') : t('shared') },
+                  ]}
                 />
               </div>
             </div>

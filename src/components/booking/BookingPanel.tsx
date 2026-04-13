@@ -137,6 +137,11 @@ const initialState: BookingPanelState = {
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
+interface InfoPill {
+  icon: 'location' | 'duration' | 'guests' | 'category'
+  label: string
+}
+
 interface BookingPanelProps {
   listingId: string
   listingSlug: string
@@ -147,6 +152,8 @@ interface BookingPanelProps {
   initialGuests?: number
   /** Pre-selected time from search results (e.g. "10:00") — auto-advances past date/time steps */
   initialTime?: string
+  /** Info pills to display above the booking steps */
+  infoPills?: InfoPill[]
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -160,6 +167,7 @@ export function BookingPanel({
   initialDate = '',
   initialGuests = 2,
   initialTime,
+  infoPills = [],
 }: BookingPanelProps) {
   const [state, dispatch] = useReducer(reducer, {
     ...initialState,
@@ -311,7 +319,27 @@ export function BookingPanel({
 
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-zinc-100 p-5">
-      <h3 className="font-bold text-[var(--color-primary)] text-base mb-4">Book this cruise</h3>
+      <h3 className="font-bold text-[var(--color-primary)] text-base mb-3">Book this cruise</h3>
+
+      {/* Info pills */}
+      {infoPills.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-4">
+          {infoPills.map((pill, i) => (
+            <span key={i} className="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] bg-[var(--color-sand)] px-2.5 py-1 rounded-full">
+              {pill.icon === 'location' && (
+                <svg viewBox="0 0 24 24" className="w-3 h-3" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" /></svg>
+              )}
+              {pill.icon === 'duration' && (
+                <svg viewBox="0 0 24 24" className="w-3 h-3" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z" /></svg>
+              )}
+              {pill.icon === 'guests' && (
+                <svg viewBox="0 0 24 24" className="w-3 h-3" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" /></svg>
+              )}
+              {pill.label}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Step 1: Date */}
       <StepAccordion
