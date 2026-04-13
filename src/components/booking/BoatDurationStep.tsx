@@ -1,9 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import Image from 'next/image'
 import { motion } from 'framer-motion'
-import { Users } from 'lucide-react'
 import type { AvailabilityCustomerType } from '@/types'
 import { BOATS } from '@/lib/fareharbor/config'
 import { fmtEurosRounded } from '@/lib/utils'
@@ -20,22 +18,26 @@ interface BoatOption {
   name: string
   maxGuests: number
   tagline: string
-  imageUrl: string
   durations: AvailabilityCustomerType[]
   status: 'available' | 'sold_out' | 'too_many_guests'
 }
 
 const BOAT_TAGLINES: Record<string, string> = {
-  diana: 'Intimate & cozy, up to 8 guests',
-  curacao: 'Spacious & social, up to 12 guests',
+  diana: 'intimate & cozy',
+  curacao: 'spacious & social',
 }
 
+// Alternate texture backgrounds per boat
+const BOAT_BG: Record<string, string> = {
+  diana: 'bg-texture-yellow',
+  curacao: 'bg-texture-sand',
+}
 
 function fmtDuration(minutes: number): string {
   const h = Math.floor(minutes / 60)
   const m = minutes % 60
   if (m === 0) return `${h}h`
-  return `${h}.${Math.round(m / 6)}h` // 90min = 1.5h
+  return `${h}.${Math.round(m / 6)}h`
 }
 
 export function BoatDurationStep({
@@ -44,7 +46,6 @@ export function BoatDurationStep({
   selectedCustomerTypePk,
   onSelect,
 }: BoatDurationStepProps) {
-  // Group customer types by boat (using boatId from FareHarbor name parsing)
   const boats = useMemo<BoatOption[]>(() => {
     const boatMap = new Map<string, AvailabilityCustomerType[]>()
 
@@ -72,12 +73,10 @@ export function BoatDurationStep({
           name: boat.name,
           maxGuests: boat.maxGuests,
           tagline: BOAT_TAGLINES[boat.id] || '',
-          imageUrl: boat.imageUrl,
           durations: durations.filter(d => d.totalCapacity >= 1),
           status,
         }
       })
-      // Don't show boats where group is too large
       .filter(b => b.status !== 'too_many_guests')
   }, [customerTypes, guests])
 
@@ -96,6 +95,7 @@ export function BoatDurationStep({
       {boats.map((boat, index) => {
         const isSoldOut = boat.status === 'sold_out'
         const hasSelection = boat.durations.some(d => d.pk === selectedCustomerTypePk)
+        const bgClass = BOAT_BG[boat.id] ?? (index % 2 === 0 ? 'bg-texture-yellow' : 'bg-texture-sand')
 
         return (
           <motion.div
@@ -103,65 +103,59 @@ export function BoatDurationStep({
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1, duration: 0.3, ease: 'easeOut' }}
-            className={`rounded-xl border-2 p-4 transition-all duration-200 ${
-              isSoldOut
-                ? 'border-zinc-100 bg-zinc-50 opacity-60'
-                : hasSelection
-                  ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/[0.02] shadow-sm'
-                  : 'border-zinc-200 hover:border-zinc-300'
+            className={`rounded-xl overflow-hidden transition-all duration-200 ${
+              isSoldOut ? 'opacity-50' : ''
+            } ${
+              hasSelection
+                ? 'ring-2 ring-[var(--color-primary)] ring-offset-2'
+                : ''
             }`}
           >
-            <div className="flex gap-4">
-              {/* Boat photo */}
-              <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-lg overflow-hidden flex-shrink-0">
-                <Image
-                  src={boat.imageUrl}
-                  alt={boat.name}
-                  fill
-                  className={`object-cover ${isSoldOut ? 'grayscale' : ''}`}
-                  sizes="(max-width: 640px) 96px, 112px"
-                />
-              </div>
+            <div className={`${bgClass} p-5`}>
+              {/* Boat name in Briston */}
+              <h3 className="font-briston text-[28px] text-[var(--color-primary)] uppercase leading-none">
+                {boat.name}
+              </h3>
 
-              {/* Boat info + duration pills */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-semibold text-sm text-zinc-800">{boat.name}</span>
-                  {isSoldOut ? (
-                    <span className="text-xs font-medium text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-full">
-                      Sold out
-                    </span>
-                  ) : (
-                    <div className="flex items-center gap-1 text-xs text-zinc-500">
-                      <Users className="w-3 h-3" />
-                      <span>Max {boat.maxGuests}</span>
-                    </div>
-                  )}
+              {/* Tagline in Palmore */}
+              <p className="font-palmore text-[16px] text-[var(--color-primary)]/70 mt-1">
+                {boat.tagline}
+              </p>
+
+              {/* Guest count */}
+              <p className="text-xs text-[var(--color-muted)] mt-1 font-avenir">
+                Up to {boat.maxGuests} guests
+              </p>
+
+              {/* Sold out badge */}
+              {isSoldOut && (
+                <p className="text-sm font-semibold text-[var(--color-muted)] mt-3">
+                  Sold out for this time
+                </p>
+              )}
+
+              {/* Duration pills */}
+              {!isSoldOut && (
+                <div className="flex flex-wrap gap-2 mt-4">
+                  {boat.durations.map(ct => {
+                    const isActive = selectedCustomerTypePk === ct.pk
+                    return (
+                      <button
+                        key={ct.pk}
+                        type="button"
+                        onClick={() => onSelect(ct, boat.id)}
+                        className={`px-4 py-2 rounded-full text-xs font-bold transition-all duration-150 ${
+                          isActive
+                            ? 'bg-[var(--color-primary)] text-white shadow-md'
+                            : 'bg-white/80 text-[var(--color-primary)] hover:bg-white shadow-sm'
+                        }`}
+                      >
+                        {fmtDuration(ct.durationMinutes)} · {fmtEurosRounded(ct.priceCents)}
+                      </button>
+                    )
+                  })}
                 </div>
-
-                {/* Duration pills */}
-                {!isSoldOut && (
-                  <div className="flex flex-wrap gap-2">
-                    {boat.durations.map(ct => {
-                      const isActive = selectedCustomerTypePk === ct.pk
-                      return (
-                        <button
-                          key={ct.pk}
-                          type="button"
-                          onClick={() => onSelect(ct, boat.id)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 ${
-                            isActive
-                              ? 'bg-[var(--color-primary)] text-white shadow-sm'
-                              : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
-                          }`}
-                        >
-                          {fmtDuration(ct.durationMinutes)} · {fmtEurosRounded(ct.priceCents)}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
+              )}
             </div>
           </motion.div>
         )
