@@ -87,14 +87,14 @@ export function ImageGallery({
           className="hidden sm:grid gap-1.5 rounded-2xl overflow-hidden"
           style={{
             gridTemplateColumns: hasVideo ? '2fr 1fr 1fr' : '2fr 1fr 1fr',
-            gridTemplateRows: '1fr 1fr',
+            gridTemplateRows: '1fr 1fr 1fr',
             height: '420px',
           }}
         >
-          {/* Hero — always spans both rows in column 1 */}
+          {/* Hero — always spans all 3 rows in column 1 */}
           <button
             type="button"
-            className="relative row-span-2 cursor-pointer group focus:outline-none"
+            className="relative row-span-3 cursor-pointer group focus:outline-none"
             onClick={openModal}
             aria-label="View all photos"
           >
@@ -112,8 +112,8 @@ export function ImageGallery({
 
           {hasVideo ? (
             <>
-              {/* Video column — spans both rows, portrait / Instagram-style */}
-              <div className="relative row-span-2 overflow-hidden">
+              {/* Video column — spans all 3 rows, portrait / Instagram-style */}
+              <div className="relative row-span-3 overflow-hidden">
                 <video
                   src={videoUrl!}
                   className="w-full h-full object-cover"
@@ -124,8 +124,8 @@ export function ImageGallery({
                 />
               </div>
 
-              {/* Two images in the right column */}
-              {gridImages.slice(0, 2).map((img, i) => (
+              {/* Three images in the right column */}
+              {gridImages.slice(0, 3).map((img, i) => (
                 <button
                   type="button"
                   key={img.url}
@@ -140,14 +140,34 @@ export function ImageGallery({
                     sizes="25vw"
                   />
                   {/* "Show all photos" on the last visible cell */}
-                  {i === 1 && allImages.length > 3 && <ShowAllOverlay count={allImages.length} />}
+                  {i === 2 && allImages.length > 4 && <ShowAllOverlay count={allImages.length} />}
                 </button>
               ))}
             </>
           ) : (
             <>
-              {/* No video → 2×2 grid on the right (4 images) */}
-              {gridImages.slice(0, 4).map((img, i) => (
+              {/* No video → middle column has 2 images, right column has 3 images */}
+              {/* Middle column: 2 images spanning rows */}
+              {gridImages.slice(0, 2).map((img, i) => (
+                <button
+                  type="button"
+                  key={img.url}
+                  className={`relative cursor-pointer group focus:outline-none ${
+                    i === 0 ? 'row-span-2' : ''
+                  }`}
+                  onClick={openModal}
+                >
+                  <Image
+                    src={img.url}
+                    alt={img.alt_text ?? ''}
+                    fill
+                    className="object-cover group-hover:brightness-90 transition-all duration-200"
+                    sizes="25vw"
+                  />
+                </button>
+              ))}
+              {/* Right column: 3 images, one per row */}
+              {gridImages.slice(2, 5).map((img, i) => (
                 <button
                   type="button"
                   key={img.url}
@@ -162,7 +182,7 @@ export function ImageGallery({
                     sizes="25vw"
                   />
                   {/* "Show all photos" on bottom-right cell */}
-                  {i === 3 && allImages.length > 5 && <ShowAllOverlay count={allImages.length} />}
+                  {i === 2 && allImages.length > 6 && <ShowAllOverlay count={allImages.length} />}
                 </button>
               ))}
             </>

@@ -135,20 +135,8 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
       />
 
       <div className="min-h-screen bg-texture-sand">
-        {/* ── Image gallery (Booking.com-style grid) ── */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-          <ImageGallery
-            images={images}
-            heroUrl={heroUrl}
-            videoUrl={videoUrl}
-            title={title}
-            reviews={galleryReviews}
-            reviewCount={reviewCount ?? undefined}
-          />
-        </div>
-
-        {/* ── Title + tagline below gallery ── */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-2">
+        {/* ── Title + tagline above gallery ── */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-4">
           <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] capitalize">
             {listing.category}
           </span>
@@ -158,6 +146,18 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
           {tagline && (
             <p className="text-[var(--color-muted)] mt-1 text-base">{tagline}</p>
           )}
+        </div>
+
+        {/* ── Image gallery (Booking.com-style grid) ── */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <ImageGallery
+            images={images}
+            heroUrl={heroUrl}
+            videoUrl={videoUrl}
+            title={title}
+            reviews={galleryReviews}
+            reviewCount={reviewCount ?? undefined}
+          />
         </div>
 
         {/* ── Main content ── */}
