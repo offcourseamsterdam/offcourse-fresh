@@ -18,15 +18,9 @@ interface BoatOption {
   id: string
   name: string
   maxGuests: number
-  tagline: string
   imageUrl: string
   durations: AvailabilityCustomerType[]
   status: 'available' | 'sold_out' | 'too_many_guests'
-}
-
-const BOAT_TAGLINES: Record<string, string> = {
-  diana: 'intimate & cozy',
-  curacao: 'spacious & social',
 }
 
 // Alternate texture backgrounds per boat
@@ -74,7 +68,6 @@ export function BoatDurationStep({
           id: boat.id,
           name: boat.name,
           maxGuests: boat.maxGuests,
-          tagline: BOAT_TAGLINES[boat.id] || '',
           imageUrl: boat.imageUrl,
           durations: durations.filter(d => d.totalCapacity >= 1),
           status,
@@ -121,10 +114,7 @@ export function BoatDurationStep({
                   <h3 className="font-briston text-[28px] text-[var(--color-primary)] uppercase leading-none">
                     {boat.name}
                   </h3>
-                  <p className="font-palmore text-[16px] text-[var(--color-primary)]/70 mt-1">
-                    {boat.tagline}
-                  </p>
-                  <p className="text-xs text-[var(--color-muted)] mt-1 font-avenir">
+                  <p className="text-xs text-[var(--color-muted)] mt-2 font-avenir">
                     Up to {boat.maxGuests} guests
                   </p>
                 </div>
