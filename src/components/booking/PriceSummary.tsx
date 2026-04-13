@@ -13,8 +13,6 @@ interface PriceSummaryProps {
   cruiseLabel?: string
   /** For shared: per-ticket breakdown */
   ticketBreakdown?: { label: string; count: number; priceCents: number }[]
-  /** City tax in cents (€2.60/person, shared only) */
-  cityTaxCents?: number
 }
 
 function AnimatedPrice({ value }: { value: number }) {
@@ -40,10 +38,9 @@ export function PriceSummary({
   mode,
   cruiseLabel,
   ticketBreakdown,
-  cityTaxCents = 0,
 }: PriceSummaryProps) {
   const extrasTotalCents = extrasCalculation?.extras_amount_cents ?? 0
-  const grandTotalCents = basePriceCents + extrasTotalCents + cityTaxCents
+  const grandTotalCents = basePriceCents + extrasTotalCents
 
   if (basePriceCents === 0) return null
 
@@ -62,12 +59,7 @@ export function PriceSummary({
         ))
       )}
 
-      {/* City tax (shared only) */}
-      {cityTaxCents > 0 && (
-        <Row label="City tax" value={cityTaxCents} />
-      )}
-
-      {/* Extras line items */}
+      {/* Extras line items (includes City Tax from required extras) */}
       {extrasCalculation?.line_items.map(li => (
         <Row key={li.extra_id} label={li.name} value={li.amount_cents} />
       ))}
