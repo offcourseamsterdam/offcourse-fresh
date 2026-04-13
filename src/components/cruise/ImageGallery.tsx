@@ -237,33 +237,38 @@ export function ImageGallery({
               </div>
             </div>
 
-            {/* Current review — fixed height */}
-            <div className="border-t border-gray-100 pt-2 mt-1 h-[120px]">
+            {/* Current review — fixed height with slide animation */}
+            <div className="border-t border-gray-100 pt-2 mt-1 h-[120px] overflow-hidden">
               <p className="text-[10px] uppercase tracking-wider text-[var(--color-muted)] mb-1.5 font-semibold">
                 What guests loved most
               </p>
-              <div className="flex items-center gap-2 mb-1">
-                {reviews[activeReviewIndex]?.author_photo_url ? (
-                  <Image
-                    src={reviews[activeReviewIndex].author_photo_url!}
-                    alt=""
-                    width={20}
-                    height={20}
-                    className="w-5 h-5 rounded-full object-cover"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <div className="w-5 h-5 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] flex items-center justify-center text-[10px] font-bold">
-                    {reviews[activeReviewIndex]?.reviewer_name?.charAt(0)}
-                  </div>
-                )}
-                <span className="text-xs font-semibold text-[var(--color-ink)]">
-                  {reviews[activeReviewIndex]?.reviewer_name}
-                </span>
+              <div
+                key={activeReviewIndex}
+                className="animate-slide-in-right"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  {reviews[activeReviewIndex]?.author_photo_url ? (
+                    <Image
+                      src={reviews[activeReviewIndex].author_photo_url!}
+                      alt=""
+                      width={20}
+                      height={20}
+                      className="w-5 h-5 rounded-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-5 h-5 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] flex items-center justify-center text-[10px] font-bold">
+                      {reviews[activeReviewIndex]?.reviewer_name?.charAt(0)}
+                    </div>
+                  )}
+                  <span className="text-xs font-semibold text-[var(--color-ink)]">
+                    {reviews[activeReviewIndex]?.reviewer_name}
+                  </span>
+                </div>
+                <p className="text-xs text-[var(--color-ink)] leading-relaxed line-clamp-3">
+                  &ldquo;{reviews[activeReviewIndex]?.review_text}&rdquo;
+                </p>
               </div>
-              <p className="text-xs text-[var(--color-ink)] leading-relaxed line-clamp-3">
-                &ldquo;{reviews[activeReviewIndex]?.review_text}&rdquo;
-              </p>
             </div>
 
             {/* Dots + next chevron */}
