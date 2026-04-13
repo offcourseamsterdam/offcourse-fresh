@@ -4,9 +4,9 @@ import { Check } from 'lucide-react'
 import { getTranslations } from 'next-intl/server'
 import { createClient } from '@/lib/supabase/server'
 import { BookingPanel } from '@/components/booking/BookingPanel'
-import { CruiseReviews } from '@/components/sections/CruiseReviews'
 import { ImageGallery } from '@/components/cruise/ImageGallery'
 import { ExtrasGrid } from '@/components/cruise/ExtrasGrid'
+import { ReviewSlider } from '@/components/cruise/ReviewSlider'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import { formatExtraPrice } from '@/lib/constants'
 import type { Locale } from '@/lib/i18n/config'
@@ -149,14 +149,15 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
     },
   }
 
-  // Serialize reviews for the client-side gallery component
-  const galleryReviews = (reviews ?? []).map((r) => ({
+  // Serialize reviews for client-side components (gallery popup + review slider)
+  const serializedReviews = (reviews ?? []).map((r) => ({
     id: r.id,
     reviewer_name: r.reviewer_name,
     review_text: getLocalizedField(r, 'review_text', loc),
     rating: r.rating,
     source: r.source,
     author_photo_url: r.author_photo_url,
+    publish_time: r.publish_time,
   }))
 
   // Serialize extras for the client-side ExtrasGrid component
@@ -208,7 +209,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
             heroUrl={heroUrl}
             videoUrl={videoUrl}
             title={title}
-            reviews={galleryReviews}
+            reviews={serializedReviews}
             reviewCount={reviewCount ?? undefined}
           />
         </div>
@@ -390,7 +391,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
 
               {/* Reviews */}
               {reviews && reviews.length > 0 && (
-                <CruiseReviews reviews={reviews} locale={locale as Locale} />
+                <ReviewSlider reviews={serializedReviews} />
               )}
             </div>
 

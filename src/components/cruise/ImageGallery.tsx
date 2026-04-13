@@ -13,6 +13,7 @@ export type GalleryReview = {
   rating: number
   source: string | null
   author_photo_url: string | null
+  publish_time?: string | null
 }
 
 interface ImageGalleryProps {
