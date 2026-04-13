@@ -129,9 +129,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
 
   // All content lives in JSONB columns on the listing row (no separate tables)
   const images = (listing.images as CruiseImage[] | null) ?? []
-  const benefits = (listing.benefits as Benefit[] | null) ?? []
   const highlights = (listing.highlights as Benefit[] | null) ?? []
-  const inclusions = (listing.inclusions as Benefit[] | null) ?? []
   const faqs = (listing.faqs as Faq[] | null) ?? []
   const cancellationPolicy =
     typeof listing.cancellation_policy === 'string'
@@ -237,7 +235,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
             {/* Left: content */}
             <div className="lg:col-span-2 space-y-10">
 
-              {/* Highlights (above description) */}
+              {/* Highlights */}
               {highlights.length > 0 && (
                 <section>
                   <h2 className="text-xl font-bold text-[var(--color-primary)] mb-4">
@@ -262,6 +260,20 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                   className="text-[var(--color-ink)] leading-relaxed text-base prose prose-sm max-w-none [&_p]:mb-4 [&_br]:block"
                   dangerouslySetInnerHTML={{ __html: description }}
                 />
+              )}
+
+              {/* Things you need to know */}
+              {(serializedFood.length > 0 || serializedDrinks.length > 0 || cancellationPolicy) && (
+                <section>
+                  <h2 className="font-palmore text-[32px] sm:text-[40px] text-[var(--color-accent)] mb-6">
+                    Things you need to know
+                  </h2>
+                  <ExtrasGrid
+                    foodExtras={serializedFood}
+                    drinkExtras={serializedDrinks}
+                    cancellationPolicy={cancellationPolicy}
+                  />
+                </section>
               )}
 
               {/* Our boats */}
@@ -308,88 +320,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                 </section>
               )}
 
-              {/* Inclusions */}
-              {inclusions.length > 0 && (
-                <section>
-                  <h2 className="text-xl font-bold text-[var(--color-primary)] mb-4">
-                    What&apos;s included
-                  </h2>
-                  <ul className="space-y-2">
-                    {inclusions.map((inc, i) => (
-                      <li key={i} className="flex items-start gap-2.5">
-                        <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-[var(--color-accent)] text-white flex items-center justify-center">
-                          <Check className="w-3 h-3" />
-                        </span>
-                        <span className="text-sm text-[var(--color-ink)]">{inc.text}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-
-              {/* Benefits */}
-              {benefits.length > 0 && (
-                <section>
-                  <h2 className="text-xl font-bold text-[var(--color-primary)] mb-4">
-                    Why you&apos;ll love it
-                  </h2>
-                  <ul className="space-y-3">
-                    {benefits.map((b, i) => (
-                      <li key={i} className="flex items-start gap-3">
-                        <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-[var(--color-accent)] text-white flex items-center justify-center">
-                          <Check className="w-3 h-3" />
-                        </span>
-                        <span className="text-[var(--color-ink)]">{b.text}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-
-              {/* FAQ */}
-              {faqs.length > 0 && (
-                <section>
-                  <h2 className="text-xl font-bold text-[var(--color-primary)] mb-4">{t('faq')}</h2>
-                  <div className="space-y-4">
-                    {faqs.map((faq, i) => (
-                      <details
-                        key={i}
-                        className="group border border-gray-100 rounded-xl overflow-hidden bg-white"
-                      >
-                        <summary className="flex items-center justify-between p-4 cursor-pointer font-semibold text-[var(--color-primary)] hover:bg-[var(--color-sand)] transition-colors">
-                          {faq.question}
-                          <svg
-                            viewBox="0 0 24 24"
-                            className="w-5 h-5 flex-shrink-0 transition-transform group-open:rotate-180"
-                            fill="currentColor"
-                          >
-                            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
-                          </svg>
-                        </summary>
-                        <div className="p-4 pt-0 text-[var(--color-ink)] text-sm leading-relaxed border-t border-gray-100">
-                          {faq.answer}
-                        </div>
-                      </details>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {/* Things you need to know */}
-              {(serializedFood.length > 0 || serializedDrinks.length > 0 || cancellationPolicy) && (
-                <section>
-                  <h2 className="font-palmore text-[32px] sm:text-[40px] text-[var(--color-accent)] mb-6">
-                    Things you need to know
-                  </h2>
-                  <ExtrasGrid
-                    foodExtras={serializedFood}
-                    drinkExtras={serializedDrinks}
-                    cancellationPolicy={cancellationPolicy}
-                  />
-                </section>
-              )}
-
-              {/* Reviews (above map) */}
+              {/* Reviews */}
               {reviews && reviews.length > 0 && (
                 <ReviewSlider reviews={serializedReviews} />
               )}
@@ -420,6 +351,35 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                   />
                 </div>
               </section>
+
+              {/* FAQ (at the bottom) */}
+              {faqs.length > 0 && (
+                <section>
+                  <h2 className="font-palmore text-[32px] sm:text-[40px] text-[var(--color-accent)] mb-4">{t('faq')}</h2>
+                  <div className="space-y-4">
+                    {faqs.map((faq, i) => (
+                      <details
+                        key={i}
+                        className="group border border-gray-100 rounded-xl overflow-hidden bg-white"
+                      >
+                        <summary className="flex items-center justify-between p-4 cursor-pointer font-semibold text-[var(--color-primary)] hover:bg-[var(--color-sand)] transition-colors">
+                          {faq.question}
+                          <svg
+                            viewBox="0 0 24 24"
+                            className="w-5 h-5 flex-shrink-0 transition-transform group-open:rotate-180"
+                            fill="currentColor"
+                          >
+                            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+                          </svg>
+                        </summary>
+                        <div className="p-4 pt-0 text-[var(--color-ink)] text-sm leading-relaxed border-t border-gray-100">
+                          {faq.answer}
+                        </div>
+                      </details>
+                    ))}
+                  </div>
+                </section>
+              )}
             </div>
 
             {/* Right: booking widget */}
@@ -446,10 +406,10 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                   initialGuests={guests ? Number(guests) : undefined}
                   initialTime={time}
                   infoPills={[
-                    ...(listing.departure_location ? [{ icon: 'location' as const, label: listing.departure_location }] : []),
                     ...(listing.duration_display ? [{ icon: 'duration' as const, label: listing.duration_display }] : []),
                     ...(listing.max_guests ? [{ icon: 'guests' as const, label: `Up to ${listing.max_guests} guests` }] : []),
                     { icon: 'category' as const, label: listing.category === 'private' ? t('private') : t('shared') },
+                    ...(listing.price_display ? [{ icon: 'price' as const, label: `From ${listing.price_display}` }] : []),
                   ]}
                 />
               </div>
