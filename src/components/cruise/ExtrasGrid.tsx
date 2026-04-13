@@ -33,7 +33,7 @@ export function ExtrasGrid({ foodExtras, drinkExtras, cancellationPolicy }: Extr
             </h3>
             <div className="space-y-4">
               {foodExtras.map((extra) => (
-                <ExtraCard key={extra.id} extra={extra} onReadMore={setModalExtra} />
+                <ExtraCard key={extra.id} extra={extra} onClick={setModalExtra} />
               ))}
             </div>
           </div>
@@ -47,7 +47,7 @@ export function ExtrasGrid({ foodExtras, drinkExtras, cancellationPolicy }: Extr
             </h3>
             <div className="space-y-4">
               {drinkExtras.map((extra) => (
-                <ExtraCard key={extra.id} extra={extra} onReadMore={setModalExtra} />
+                <ExtraCard key={extra.id} extra={extra} onClick={setModalExtra} />
               ))}
             </div>
           </div>
@@ -76,16 +76,17 @@ export function ExtrasGrid({ foodExtras, drinkExtras, cancellationPolicy }: Extr
 
 function ExtraCard({
   extra,
-  onReadMore,
+  onClick,
 }: {
   extra: ExtraItem
-  onReadMore: (e: ExtraItem) => void
+  onClick: (e: ExtraItem) => void
 }) {
-  const hasLongText = (extra.description && extra.description.length > 80) ||
-    (extra.ingredients && extra.ingredients.length > 3)
-
   return (
-    <div className="flex gap-3">
+    <button
+      type="button"
+      onClick={() => onClick(extra)}
+      className="w-full text-left flex gap-3 rounded-lg p-2 -m-2 transition-transform duration-200 ease-out hover:scale-[1.02] hover:bg-[var(--color-sand)]/50 cursor-pointer"
+    >
       {extra.image_url && (
         <div className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
           <Image
@@ -116,17 +117,8 @@ function ExtraCard({
             {extra.ingredients.join(' · ')}
           </p>
         )}
-        {hasLongText && (
-          <button
-            type="button"
-            onClick={() => onReadMore(extra)}
-            className="text-xs text-[var(--color-primary)] font-semibold mt-1 hover:underline"
-          >
-            Read more
-          </button>
-        )}
       </div>
-    </div>
+    </button>
   )
 }
 
