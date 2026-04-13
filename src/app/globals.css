@@ -188,6 +188,14 @@
     background-color: #d4c0d4;
   }
 
+  .bg-texture-teal {
+    background-color: #1a9a7a;
+  }
+
+  .bg-texture-periwinkle {
+    background-color: #8da4d8;
+  }
+
   .bg-texture-yellow {
     background-image: url('/textures/bg-yellow.png');
     background-size: cover;
