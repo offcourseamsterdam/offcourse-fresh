@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { applyAllFilters } from '@/lib/fareharbor/filters'
 import { buildTypeMapFromAvailabilities } from '@/lib/fareharbor/config'
@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     return apiError('date required (YYYY-MM-DD)', 400)
   }
 
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
 
   const { data: rawListings, error: listingsError } = await supabase
     .from('cruise_listings')

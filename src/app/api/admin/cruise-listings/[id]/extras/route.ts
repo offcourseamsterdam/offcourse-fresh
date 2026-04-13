@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
  * GET /api/admin/cruise-listings/[id]/extras?guestCount=4
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!Number.isFinite(guestCount) || guestCount < 1) {
     return apiError('guestCount must be a positive integer', 400)
   }
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
 
   const { data: listing, error: listingError } = await supabase
     .from('cruise_listings')
@@ -63,7 +63,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (!extraId || typeof isEnabled !== 'boolean') {
     return apiError('extraId and isEnabled are required', 400)
   }
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
 
   const { error } = await supabase
     .from('listing_extras')

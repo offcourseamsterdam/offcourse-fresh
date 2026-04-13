@@ -1,5 +1,5 @@
 import { apiOk, apiError } from '@/lib/api/response'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { requireRole } from '@/lib/auth/server'
 
 /** GET /api/admin/reviews — list all reviews + GBP connection status (admin only) */
@@ -10,7 +10,7 @@ export async function GET() {
     return apiError('Unauthorized', 403)
   }
 
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
 
   // Fetch reviews and config in parallel
   const [reviewsResult, configResult] = await Promise.all([

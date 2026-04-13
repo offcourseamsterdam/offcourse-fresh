@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import type { Database } from '@/lib/supabase/types'
 
 type ListingInsert = Database['public']['Tables']['cruise_listings']['Insert']
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
       return apiError('fareharbor_item_pk, slug, and title are required', 400)
     }
 
-    const supabase = await createServiceClient()
+    const supabase = createAdminClient()
     const insert: ListingInsert = {
       fareharbor_item_pk,
       slug,

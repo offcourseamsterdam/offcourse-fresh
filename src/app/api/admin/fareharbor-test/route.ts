@@ -3,7 +3,7 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { getCustomerTypeMap } from '@/lib/fareharbor/config'
 import { syncFareHarborItems, loadSyncedItems } from '@/lib/fareharbor/sync'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 // v2
 export async function GET(request: NextRequest) {
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
       }
 
       case 'listings': {
-        const supabase = await createServiceClient()
+        const supabase = createAdminClient()
         const { data, error } = await supabase
           .from('cruise_listings')
           .select('*')
