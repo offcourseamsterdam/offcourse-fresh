@@ -1,5 +1,5 @@
 import { apiOk, apiError } from '@/lib/api/response'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
  * GET /api/admin/boats
@@ -10,7 +10,7 @@ import { createServiceClient } from '@/lib/supabase/server'
  */
 export async function GET() {
   try {
-    const supabase = await createServiceClient()
+    const supabase = createAdminClient()
     const { data, error } = await supabase
       .from('boats')
       .select('id, name, max_capacity, fareharbor_customer_type_pks')

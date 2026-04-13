@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { v4 as uuidv4 } from 'uuid'
 
 export async function POST(req: NextRequest) {
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
   const path = `${listingId}/${uuidv4()}.${ext}`
   const buffer = Buffer.from(await file.arrayBuffer())
 
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
   const { error: uploadError } = await supabase.storage
     .from('cruise-images')
     .upload(path, buffer, {

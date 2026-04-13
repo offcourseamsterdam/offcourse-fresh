@@ -1,9 +1,9 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export async function GET() {
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('extras')
     .select('*')
@@ -13,7 +13,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
   const body = await request.json()
 
   const allowed = {

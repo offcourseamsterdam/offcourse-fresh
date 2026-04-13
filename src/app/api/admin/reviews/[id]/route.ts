@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { requireRole } from '@/lib/auth/server'
 
 interface Ctx {
@@ -16,7 +16,7 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
   }
 
   const { id } = await ctx.params
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
   const body = await request.json()
 
   // Only allow updating safe fields
@@ -56,7 +56,7 @@ export async function DELETE(_request: NextRequest, ctx: Ctx) {
   }
 
   const { id } = await ctx.params
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
 
   const { error } = await supabase
     .from('social_proof_reviews')
