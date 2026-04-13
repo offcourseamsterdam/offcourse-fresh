@@ -37,7 +37,7 @@ export function ReviewSlider({ reviews }: ReviewSliderProps) {
   return (
     <section>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="font-palmore text-[32px] sm:text-[40px] text-[var(--color-accent)]">
+        <h2 className="font-briston text-[28px] sm:text-[36px] text-[var(--color-accent)] uppercase">
           What people say
         </h2>
         <div className="flex gap-2">

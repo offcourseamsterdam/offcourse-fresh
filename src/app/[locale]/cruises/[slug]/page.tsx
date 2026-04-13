@@ -265,7 +265,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
               {/* Things you need to know */}
               {(serializedFood.length > 0 || serializedDrinks.length > 0 || cancellationPolicy) && (
                 <section>
-                  <h2 className="font-palmore text-[32px] sm:text-[40px] text-[var(--color-accent)] mb-6">
+                  <h2 className="font-briston text-[28px] sm:text-[36px] text-[var(--color-accent)] uppercase mb-6">
                     Things you need to know
                   </h2>
                   <ExtrasGrid
@@ -279,7 +279,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
               {/* Our boats */}
               {listingBoats.length > 0 && (
                 <section>
-                  <h2 className="font-palmore text-[32px] sm:text-[40px] text-[var(--color-accent)] mb-6">
+                  <h2 className="font-briston text-[28px] sm:text-[36px] text-[var(--color-accent)] uppercase mb-6">
                     Our boats
                   </h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -306,7 +306,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
 
               {/* Meeting point map */}
               <section>
-                <h2 className="font-palmore text-[32px] sm:text-[40px] text-[var(--color-accent)] mb-4">
+                <h2 className="font-briston text-[28px] sm:text-[36px] text-[var(--color-accent)] uppercase mb-4">
                   Where we meet
                 </h2>
                 {listing.departure_location && (
@@ -334,7 +334,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
               {/* FAQ (at the bottom) */}
               {faqs.length > 0 && (
                 <section>
-                  <h2 className="font-palmore text-[32px] sm:text-[40px] text-[var(--color-accent)] mb-4">{t('faq')}</h2>
+                  <h2 className="font-briston text-[28px] sm:text-[36px] text-[var(--color-accent)] uppercase mb-4">{t('faq')}</h2>
                   <div className="space-y-4">
                     {faqs.map((faq, i) => (
                       <details
