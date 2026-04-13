@@ -268,6 +268,8 @@ SLACK_WEBHOOK_URL=
 RESEND_API_KEY=
 SUPABASE_MANAGEMENT_TOKEN=
 VERCEL_API_KEY:
+GOOGLE_API_KEY:
+OAUTH_CLIENT_ID:
 ```
 
 > Keys live in `.env.local` (gitignored). See `.env.example` for the full list.

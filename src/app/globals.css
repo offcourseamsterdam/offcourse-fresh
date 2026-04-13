@@ -193,4 +193,27 @@
   .font-avenir {
     font-family: 'Avenir_Next', ui-sans-serif, system-ui, sans-serif;
   }
+
+  /* Hide scrollbar while keeping scroll functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Scroll snap align helper */
+  .scroll-snap-align-start {
+    scroll-snap-align: start;
+  }
+
+  /* Modal slide-up animation */
+  @keyframes modal-in {
+    from { opacity: 0; transform: translateY(16px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .animate-modal-in {
+    animation: modal-in 220ms cubic-bezier(0.25, 0.1, 0.25, 1) both;
+  }
 }
