@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
   const listings = rawListings ?? []
 
   if (listings.length === 0) {
-    return apiOk({ date, data: [], _note: 'no_listings_in_db' })
+    return apiOk([])
   }
 
   try {
@@ -100,7 +100,7 @@ export async function GET(request: NextRequest) {
       })
     )
 
-    return apiOk({ date, data: results })
+    return apiOk(results)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return apiError(message)
