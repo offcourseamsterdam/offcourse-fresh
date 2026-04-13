@@ -185,7 +185,9 @@
   }
 
   .bg-texture-pink {
-    background-color: #d4c0d4;
+    background-image: url('/textures/bg-purple.png');
+    background-size: cover;
+    background-position: center;
   }
 
   .bg-texture-teal {
@@ -193,7 +195,9 @@
   }
 
   .bg-texture-periwinkle {
-    background-color: #8da4d8;
+    background-image: url('/textures/bg-lavender.png');
+    background-size: cover;
+    background-position: center;
   }
 
   .bg-texture-yellow {
