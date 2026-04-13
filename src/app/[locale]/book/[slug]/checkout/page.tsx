@@ -33,7 +33,7 @@ export default async function CheckoutPage({ params }: Props) {
       : (listing.cancellation_policy as { text?: string } | null)?.text ?? null
 
   return (
-    <div className="min-h-screen bg-zinc-50">
+    <div className="min-h-screen bg-texture-teal">
       <CheckoutFlow
         listingSlug={slug}
         cancellationPolicy={cancellationPolicy}

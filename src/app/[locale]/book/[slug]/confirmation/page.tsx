@@ -46,7 +46,7 @@ export default async function ConfirmationPage({ params, searchParams }: Props) 
     : null
 
   return (
-    <div className="min-h-screen bg-zinc-50 flex items-center justify-center px-4 py-12">
+    <div className="min-h-screen bg-texture-periwinkle flex items-center justify-center px-4 py-12">
       <div className="max-w-lg w-full">
         {/* Success card */}
         <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">

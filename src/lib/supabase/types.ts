@@ -495,6 +495,7 @@ export type Database = {
           duration_display: string | null
           faqs: Json | null
           fareharbor_item_pk: number
+          google_maps_url: string | null
           hero_image_url: string | null
           highlights: Json | null
           id: string
@@ -536,6 +537,7 @@ export type Database = {
           title_pt: string | null
           title_zh: string | null
           updated_at: string | null
+          video_url: string | null
         }
         Insert: {
           allowed_customer_type_pks?: number[] | null
@@ -558,6 +560,7 @@ export type Database = {
           duration_display?: string | null
           faqs?: Json | null
           fareharbor_item_pk: number
+          google_maps_url?: string | null
           hero_image_url?: string | null
           highlights?: Json | null
           id?: string
@@ -599,6 +602,7 @@ export type Database = {
           title_pt?: string | null
           title_zh?: string | null
           updated_at?: string | null
+          video_url?: string | null
         }
         Update: {
           allowed_customer_type_pks?: number[] | null
@@ -621,6 +625,7 @@ export type Database = {
           duration_display?: string | null
           faqs?: Json | null
           fareharbor_item_pk?: number
+          google_maps_url?: string | null
           hero_image_url?: string | null
           highlights?: Json | null
           id?: string
@@ -662,6 +667,7 @@ export type Database = {
           title_pt?: string | null
           title_zh?: string | null
           updated_at?: string | null
+          video_url?: string | null
         }
         Relationships: [
           {
@@ -962,6 +968,7 @@ export type Database = {
           ingredients: string[] | null
           is_active: boolean
           is_required: boolean
+          min_quantity: number
           name: string
           name_de: string | null
           name_es: string | null
@@ -971,6 +978,7 @@ export type Database = {
           name_zh: string | null
           price_type: string
           price_value: number
+          quantity_mode: string
           scope: string
           sort_order: number
           updated_at: string | null
@@ -992,6 +1000,7 @@ export type Database = {
           ingredients?: string[] | null
           is_active?: boolean
           is_required?: boolean
+          min_quantity?: number
           name: string
           name_de?: string | null
           name_es?: string | null
@@ -1001,6 +1010,7 @@ export type Database = {
           name_zh?: string | null
           price_type: string
           price_value?: number
+          quantity_mode?: string
           scope: string
           sort_order?: number
           updated_at?: string | null
@@ -1022,6 +1032,7 @@ export type Database = {
           ingredients?: string[] | null
           is_active?: boolean
           is_required?: boolean
+          min_quantity?: number
           name?: string
           name_de?: string | null
           name_es?: string | null
@@ -1031,6 +1042,7 @@ export type Database = {
           name_zh?: string | null
           price_type?: string
           price_value?: number
+          quantity_mode?: string
           scope?: string
           sort_order?: number
           updated_at?: string | null

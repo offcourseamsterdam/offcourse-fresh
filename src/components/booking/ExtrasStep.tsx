@@ -37,6 +37,7 @@ export function ExtrasStep({
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [quantities, setQuantities] = useState<Map<string, number>>(new Map())
 
   // ── Fetch extras on mount ────────────────────────────────────────────────
 
@@ -57,6 +58,14 @@ export function ExtrasStep({
             fetched.filter(e => e.is_required).map(e => e.id)
           )
           setSelectedIds(required)
+          // Initialize quantities for required counter-mode extras
+          const initQty = new Map<string, number>()
+          for (const e of fetched) {
+            if (e.is_required && e.quantity_mode === 'counter') {
+              initQty.set(e.id, e.min_quantity ?? 1)
+            }
+          }
+          setQuantities(initQty)
         } else {
           setFetchError(json.error ?? 'Failed to load extras')
         }
@@ -71,16 +80,16 @@ export function ExtrasStep({
     return () => { cancelled = true }
   }, [listingId, guestCount])
 
-  // ── Recalculate and notify parent whenever selection changes ─────────────
+  // ── Recalculate and notify parent whenever selection/quantities change ───
 
   useEffect(() => {
     if (!extras.length) return
     const allSelected = extras.filter(e =>
       e.is_required || (e.price_type !== 'informational' && selectedIds.has(e.id))
     )
-    const calc = calculateExtras(baseAmountCents, guestCount, allSelected, durationMinutes)
+    const calc = calculateExtras(baseAmountCents, guestCount, allSelected, durationMinutes, quantities)
     onExtrasChange(allSelected.map(e => e.id), calc)
-  }, [selectedIds, extras, baseAmountCents, guestCount, durationMinutes, onExtrasChange])
+  }, [selectedIds, quantities, extras, baseAmountCents, guestCount, durationMinutes, onExtrasChange])
 
   // ── Derived sets ─────────────────────────────────────────────────────────
 
@@ -103,12 +112,39 @@ export function ExtrasStep({
   // ── Toggle handler ───────────────────────────────────────────────────────
 
   function toggleExtra(id: string) {
+    const extra = extras.find(e => e.id === id)
+    if (extra?.quantity_mode === 'counter') {
+      // For counter mode, toggle delegates to quantity change
+      const currentQty = quantities.get(id) ?? 0
+      handleQuantityChange(id, currentQty > 0 ? 0 : (extra.min_quantity ?? 1))
+      return
+    }
     setSelectedIds(prev => {
       const next = new Set(prev)
       if (next.has(id)) {
         next.delete(id)
       } else {
         next.add(id)
+      }
+      return next
+    })
+  }
+
+  // ── Quantity change handler ──────────────────────────────────────────────
+
+  function handleQuantityChange(id: string, qty: number) {
+    setQuantities(prev => {
+      const next = new Map(prev)
+      next.set(id, qty)
+      return next
+    })
+    // Sync selectedIds based on quantity
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (qty > 0) {
+        next.add(id)
+      } else {
+        next.delete(id)
       }
       return next
     })
@@ -151,6 +187,8 @@ export function ExtrasStep({
           guestCount={guestCount}
           baseAmountCents={baseAmountCents}
           durationMinutes={durationMinutes}
+          quantities={quantities}
+          onQuantityChange={handleQuantityChange}
         />
       ))}
     </div>

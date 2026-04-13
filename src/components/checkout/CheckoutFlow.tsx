@@ -347,7 +347,7 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
       {/* Back link */}
       <a
         href={`/cruises/${listingSlug}`}
-        className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-800 mb-8 transition-colors"
+        className="inline-flex items-center gap-1 text-sm text-white/70 hover:text-white mb-8 transition-colors"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path d="M15 18l-6-6 6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -355,6 +355,8 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
         Back to cruise
       </a>
 
+      {/* White card container */}
+      <div className="bg-white rounded-2xl shadow-lg p-6 sm:p-8">
       {/* Progress indicator */}
       <CheckoutProgress step={currentStep} />
 
@@ -415,6 +417,7 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
             />
           </div>
         </div>
+      </div>
       </div>
     </div>
   )
