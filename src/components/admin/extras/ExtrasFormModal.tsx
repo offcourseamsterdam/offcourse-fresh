@@ -62,17 +62,20 @@ export function ExtrasFormModal({
         method: 'POST',
         body: formData,
       })
-      const json = await res.json()
-      if (json.ok) {
-        // Update editingExtra preview directly from upload response
-        onEditingExtraUpdate(prev => prev ? { ...prev, image_url: json.data?.url } : prev)
-        // Also update the list so the thumbnail refreshes
-        onExtrasUpdate(editingExtra.id, json.data?.url)
-      } else {
-        alert('Image upload failed: ' + json.error)
+      const text = await res.text()
+      let json: { ok: boolean; data?: { url: string }; error?: string } | null = null
+      try { json = JSON.parse(text) } catch {
+        alert(`Upload failed (HTTP ${res.status}): Server returned non-JSON response. Check Vercel logs.\n\n${text.slice(0, 300)}`)
+        return
       }
-    } catch {
-      alert('Upload failed')
+      if (json?.ok) {
+        onEditingExtraUpdate(prev => prev ? { ...prev, image_url: json!.data?.url } : prev)
+        onExtrasUpdate(editingExtra.id, json!.data?.url ?? '')
+      } else {
+        alert('Image upload failed: ' + (json?.error ?? 'Unknown error'))
+      }
+    } catch (err) {
+      alert('Upload failed: ' + (err instanceof Error ? err.message : 'Network error — check your connection'))
     } finally {
       setUploadingImage(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
