@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Image from 'next/image'
 import { Camera, ChevronRight } from 'lucide-react'
 import { GalleryModal } from './GalleryModal'
@@ -200,29 +200,8 @@ export function ImageGallery({
           )}
         </div>
 
-        {/* ── Mobile: single hero image ── */}
-        <button
-          type="button"
-          className="sm:hidden relative w-full h-64 rounded-2xl overflow-hidden focus:outline-none"
-          onClick={openModal}
-        >
-          {allImages[0] && (
-            <Image
-              src={allImages[0].url}
-              alt={allImages[0].alt_text ?? title}
-              fill
-              priority
-              className="object-cover"
-              sizes="100vw"
-            />
-          )}
-          {allImages.length > 1 && (
-            <span className="absolute bottom-3 right-3 bg-white/90 backdrop-blur-sm text-xs font-semibold text-[var(--color-primary)] px-2.5 py-1.5 rounded-lg flex items-center gap-1.5">
-              <Camera className="w-3.5 h-3.5" />
-              {allImages.length} photos
-            </span>
-          )}
-        </button>
+        {/* ── Mobile: swipeable image carousel with dot indicators ── */}
+        <MobileCarousel images={allImages} title={title} onTap={openModal} />
 
         {/* ── Review popup overlay ── */}
         {reviews.length > 0 && (
@@ -322,6 +301,104 @@ export function ImageGallery({
         />
       )}
     </>
+  )
+}
+
+/* ── Mobile swipeable carousel ── */
+function MobileCarousel({
+  images,
+  title,
+  onTap,
+}: {
+  images: GalleryImage[]
+  title: string
+  onTap: () => void
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [activeIndex, setActiveIndex] = useState(0)
+
+  // Track active slide via scroll position
+  useEffect(() => {
+    const container = scrollRef.current
+    if (!container) return
+
+    function handleScroll() {
+      if (!container) return
+      const scrollLeft = container.scrollLeft
+      const width = container.offsetWidth
+      const index = Math.round(scrollLeft / width)
+      setActiveIndex(index)
+    }
+
+    container.addEventListener('scroll', handleScroll, { passive: true })
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  function scrollToNext() {
+    const container = scrollRef.current
+    if (!container) return
+    const nextIndex = Math.min(activeIndex + 1, images.length - 1)
+    container.scrollTo({ left: nextIndex * container.offsetWidth, behavior: 'smooth' })
+  }
+
+  if (images.length === 0) return null
+
+  return (
+    <div className="sm:hidden relative">
+      {/* Scroll-snap container */}
+      <div
+        ref={scrollRef}
+        className="flex overflow-x-auto scrollbar-hide rounded-2xl"
+        style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
+      >
+        {images.map((img, i) => (
+          <button
+            key={img.url}
+            type="button"
+            onClick={onTap}
+            className="relative flex-shrink-0 w-full aspect-[16/10] focus:outline-none"
+            style={{ scrollSnapAlign: 'start' }}
+          >
+            <Image
+              src={img.url}
+              alt={img.alt_text ?? title}
+              fill
+              priority={i === 0}
+              className="object-cover"
+              sizes="100vw"
+            />
+          </button>
+        ))}
+      </div>
+
+      {/* Right chevron arrow */}
+      {images.length > 1 && activeIndex < images.length - 1 && (
+        <button
+          type="button"
+          onClick={scrollToNext}
+          className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center shadow-md"
+          aria-label="Next image"
+        >
+          <ChevronRight className="w-4 h-4 text-[var(--color-ink)]" />
+        </button>
+      )}
+
+      {/* Dot indicators */}
+      {images.length > 1 && (
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5">
+          {images.map((_, i) => (
+            <span
+              key={i}
+              className={`block rounded-full transition-all duration-200 ${
+                i === activeIndex
+                  ? 'w-2 h-2 bg-white'
+                  : 'w-1.5 h-1.5 bg-white/50'
+              }`}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 

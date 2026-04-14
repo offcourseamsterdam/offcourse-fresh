@@ -9,6 +9,7 @@ import { ExtrasGrid } from '@/components/cruise/ExtrasGrid'
 import { ReviewSlider } from '@/components/cruise/ReviewSlider'
 import { BoatCard } from '@/components/cruise/BoatCard'
 import { StickyBookingHeader } from '@/components/cruise/StickyBookingHeader'
+import { MobileBookingCTA } from '@/components/cruise/MobileBookingCTA'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import { formatExtraPrice } from '@/lib/constants'
 import type { Locale } from '@/lib/i18n/config'
@@ -233,15 +234,8 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
         priceDisplay={listing.price_display}
       />
 
-      {/* ── Mobile-only fixed bottom CTA ── */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 lg:hidden px-4 pb-4 pt-2 bg-gradient-to-t from-white via-white to-white/0">
-        <a
-          href="#booking"
-          className="block w-full text-center bg-[var(--color-primary)] text-white font-bold text-base py-3.5 rounded-xl hover:bg-[var(--color-primary-dark)] transition-colors"
-        >
-          See tickets and prices
-        </a>
-      </div>
+      {/* ── Mobile-only fixed bottom CTA (hides when #booking is visible) ── */}
+      <MobileBookingCTA />
 
       <div className="min-h-screen bg-texture-sand pb-24 lg:pb-0">
 

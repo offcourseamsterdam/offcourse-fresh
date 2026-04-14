@@ -183,6 +183,9 @@ export function BookingPanel({
   })
 
   const hasAutoAdvanced = useRef(false)
+  const timeSlotsRef = useRef<HTMLDivElement>(null)
+  const bookingCardRef = useRef<HTMLDivElement>(null)
+  const extrasRef = useRef<HTMLDivElement>(null)
 
   // Fetch slots for a given date + guest count. Returns the slots array.
   const fetchSlots = useCallback(async (date: string, guests: number): Promise<AvailabilitySlot[]> => {
@@ -304,6 +307,8 @@ export function BookingPanel({
     } else {
       await fetchSlots(date, state.guests)
     }
+    // Scroll time slots into view after they load
+    setTimeout(() => timeSlotsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100)
   }, [category, state.guests, fetchSlots])
 
   // Inline layout: guest count change (private only, re-fetches slots)
@@ -363,7 +368,7 @@ export function BookingPanel({
 
         {/* Time slots — shown after date selection */}
         {hasDate && (
-          <div>
+          <div ref={timeSlotsRef}>
             <p className="font-avenir font-semibold text-[15px] text-[var(--color-ink)] mb-3">
               Select time
             </p>
@@ -372,14 +377,17 @@ export function BookingPanel({
               loading={state.loadingSlots}
               mode={category}
               selectedSlotPk={state.selectedSlot?.pk ?? null}
-              onSelect={(slot) => dispatch({ type: 'SELECT_SLOT', slot, category })}
+              onSelect={(slot) => {
+                dispatch({ type: 'SELECT_SLOT', slot, category })
+                setTimeout(() => bookingCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100)
+              }}
             />
           </div>
         )}
 
         {/* Booking card — shown after time selection */}
         {hasTime && (
-          <div className="border-2 border-[var(--color-primary)] rounded-2xl p-5 bg-white">
+          <div ref={bookingCardRef} className="border-2 border-[var(--color-primary)] rounded-2xl p-5 bg-white">
             <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-1">
               {category === 'private' ? 'Cruise details' : 'Ticket'}
             </h3>
@@ -465,6 +473,7 @@ export function BookingPanel({
                         } else if (category === 'shared' && state.totalTickets > 0) {
                           dispatch({ type: 'CONFIRM_TICKETS' })
                         }
+                        setTimeout(() => extrasRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100)
                       }}
                       disabled={!hasBoatOrTickets}
                     >
@@ -479,7 +488,7 @@ export function BookingPanel({
 
         {/* Extras step */}
         {showExtras && (
-          <div className="border border-zinc-200 rounded-2xl p-5 bg-white">
+          <div ref={extrasRef} className="border border-zinc-200 rounded-2xl p-5 bg-white">
             <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-3">
               Add food, drinks & extras
             </h3>
