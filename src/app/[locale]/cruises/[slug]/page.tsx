@@ -8,6 +8,7 @@ import { ImageGallery } from '@/components/cruise/ImageGallery'
 import { ExtrasGrid } from '@/components/cruise/ExtrasGrid'
 import { ReviewSlider } from '@/components/cruise/ReviewSlider'
 import { BoatCard } from '@/components/cruise/BoatCard'
+import { StickyBookingHeader } from '@/components/cruise/StickyBookingHeader'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import { formatExtraPrice } from '@/lib/constants'
 import type { Locale } from '@/lib/i18n/config'
@@ -195,6 +196,30 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
   // Video URL from listing (optional — only shown when present)
   const videoUrl = listing.video_url
 
+  // Average rating for hero badge
+  const avgRating = reviews && reviews.length > 0
+    ? (reviews.reduce((sum, r) => sum + (r.rating ?? 0), 0) / reviews.length).toFixed(1)
+    : null
+  const totalReviews = reviewCount ?? reviews?.length ?? 0
+
+  // Shared booking panel props
+  const bookingPanelProps = {
+    listingId: listing.id,
+    listingSlug: listing.slug,
+    listingTitle: title,
+    listingHeroImageUrl: heroUrl,
+    category: listing.category as 'private' | 'shared',
+    initialDate: date,
+    initialGuests: guests ? Number(guests) : undefined,
+    initialTime: time,
+    cancellationPolicy,
+    infoPills: [
+      ...(listing.duration_display ? [{ icon: 'duration' as const, label: listing.duration_display }] : []),
+      ...(listing.max_guests ? [{ icon: 'guests' as const, label: `Up to ${listing.max_guests} guests` }] : []),
+      { icon: 'category' as const, label: listing.category === 'private' ? t('private') : t('shared') },
+    ],
+  }
+
   return (
     <>
       <script
@@ -202,39 +227,59 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
 
-      {/* ── Mobile-only fixed booking bar ── */}
-      {listing.price_display && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 lg:hidden bg-white/95 backdrop-blur-sm border-t border-gray-200 px-4 py-3 flex items-center justify-between">
-          <div>
-            <p className="font-bold text-[var(--color-primary)] text-lg leading-tight">{listing.price_display}</p>
-            {listing.price_label && (
-              <p className="text-xs text-[var(--color-muted)]">{listing.price_label}</p>
-            )}
-          </div>
-          <a
-            href="#booking"
-            className="bg-[var(--color-accent)] text-white font-bold text-sm px-6 py-2.5 rounded-full hover:bg-[var(--color-accent-dark)] transition-colors"
-          >
-            Book now
-          </a>
-        </div>
-      )}
+      {/* ── Sticky booking header (mobile, appears on scroll) ── */}
+      <StickyBookingHeader
+        title={title}
+        priceDisplay={listing.price_display}
+      />
 
-      <div className="min-h-screen bg-texture-sand pb-20 lg:pb-0">
-        {/* ── Title + tagline above gallery ── */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 sm:pt-20 pb-6">
+      {/* ── Mobile-only fixed bottom CTA ── */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 lg:hidden px-4 pb-4 pt-2 bg-gradient-to-t from-white via-white to-white/0">
+        <a
+          href="#booking"
+          className="block w-full text-center bg-[var(--color-primary)] text-white font-bold text-base py-3.5 rounded-xl hover:bg-[var(--color-primary-dark)] transition-colors"
+        >
+          See tickets and prices
+        </a>
+      </div>
+
+      <div className="min-h-screen bg-texture-sand pb-24 lg:pb-0">
+
+        {/* ══════════════════════════════════════════════════════════════════
+            HERO SECTION
+        ══════════════════════════════════════════════════════════════════ */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 sm:pt-20 pb-4">
+          {/* Category + Title */}
           <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">
             {listing.category}
           </span>
-          <h1 className="text-3xl sm:text-4xl font-black text-[var(--color-primary)] mt-3 uppercase">
+          <h1 className="text-2xl sm:text-4xl font-black text-[var(--color-primary)] mt-2 uppercase">
             {title}
           </h1>
           {tagline && (
-            <p className="text-[var(--color-muted)] mt-2 text-base">{tagline}</p>
+            <p className="text-[var(--color-muted)] mt-1 text-sm sm:text-base">{tagline}</p>
+          )}
+
+          {/* Rating badge row */}
+          {avgRating && totalReviews > 0 && (
+            <div className="flex items-center gap-2 mt-3">
+              <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-[var(--color-primary)] text-white font-bold text-sm">
+                {avgRating}
+              </span>
+              <div className="flex flex-col">
+                <span className="text-sm">
+                  <span className="font-bold text-[var(--color-ink)]">Exceptional</span>
+                  <span className="text-[var(--color-muted)]"> &middot; {totalReviews} reviews</span>
+                </span>
+                <a href="#reviews" className="text-sm text-[var(--color-primary)] font-medium hover:underline">
+                  See all reviews
+                </a>
+              </div>
+            </div>
           )}
         </div>
 
-        {/* ── Image gallery (Booking.com-style grid) ── */}
+        {/* ── Image gallery ── */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ImageGallery
             images={images}
@@ -246,11 +291,24 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
           />
         </div>
 
-        {/* ── Main content ── */}
+        {/* ══════════════════════════════════════════════════════════════════
+            INLINE BOOKING (mobile/tablet only)
+        ══════════════════════════════════════════════════════════════════ */}
+        <div id="booking" className="lg:hidden max-w-7xl mx-auto px-4 sm:px-6 py-8">
+          <div className="border-t border-gray-200 pt-6 mb-6" />
+          <h2 className="font-avenir font-bold text-xl text-[var(--color-ink)] mb-6">
+            Tickets and prices
+          </h2>
+          <BookingPanel {...bookingPanelProps} layout="inline" />
+        </div>
+
+        {/* ══════════════════════════════════════════════════════════════════
+            MAIN CONTENT
+        ══════════════════════════════════════════════════════════════════ */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
 
-            {/* Left: content */}
+            {/* Left: content sections */}
             <div className="lg:col-span-2 space-y-10">
 
               {/* Highlights */}
@@ -319,7 +377,9 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
 
               {/* Reviews */}
               {reviews && reviews.length > 0 && (
-                <ReviewSlider reviews={serializedReviews} />
+                <section id="reviews">
+                  <ReviewSlider reviews={serializedReviews} />
+                </section>
               )}
 
               {/* Meeting point map */}
@@ -349,7 +409,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                 </div>
               </section>
 
-              {/* FAQ (at the bottom) */}
+              {/* FAQ */}
               {faqs.length > 0 && (
                 <section>
                   <h2 className="font-briston text-[28px] sm:text-[36px] text-[var(--color-accent)] uppercase mb-4">{t('faq')}</h2>
@@ -379,27 +439,13 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
               )}
             </div>
 
-            {/* Right: booking widget */}
-            <div id="booking" className="lg:col-span-1">
+            {/* Right: desktop booking sidebar (hidden on mobile) */}
+            <div className="hidden lg:block lg:col-span-1">
               <div className="sticky top-24">
                 <h3 className="font-briston text-[24px] text-[var(--color-primary)] uppercase mb-3">
                   Book this cruise
                 </h3>
-                <BookingPanel
-                  listingId={listing.id}
-                  listingSlug={listing.slug}
-                  listingTitle={title}
-                  listingHeroImageUrl={heroUrl}
-                  category={listing.category as 'private' | 'shared'}
-                  initialDate={date}
-                  initialGuests={guests ? Number(guests) : undefined}
-                  initialTime={time}
-                  infoPills={[
-                    ...(listing.duration_display ? [{ icon: 'duration' as const, label: listing.duration_display }] : []),
-                    ...(listing.max_guests ? [{ icon: 'guests' as const, label: `Up to ${listing.max_guests} guests` }] : []),
-                    { icon: 'category' as const, label: listing.category === 'private' ? t('private') : t('shared') },
-                  ]}
-                />
+                <BookingPanel {...bookingPanelProps} layout="sidebar" />
               </div>
             </div>
           </div>
