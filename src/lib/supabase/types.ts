@@ -18,6 +18,7 @@ export type Database = {
         Row: {
           browser_name: string | null
           campaign_slug: string | null
+          channel_id: string | null
           country_code: string | null
           created_at: string | null
           device_type: string | null
@@ -43,6 +44,7 @@ export type Database = {
         Insert: {
           browser_name?: string | null
           campaign_slug?: string | null
+          channel_id?: string | null
           country_code?: string | null
           created_at?: string | null
           device_type?: string | null
@@ -68,6 +70,7 @@ export type Database = {
         Update: {
           browser_name?: string | null
           campaign_slug?: string | null
+          channel_id?: string | null
           country_code?: string | null
           created_at?: string | null
           device_type?: string | null
@@ -90,7 +93,15 @@ export type Database = {
           utm_term?: string | null
           visitor_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "analytics_sessions_channel_id_fkey"
+            columns: ["channel_id"]
+            isOneToOne: false
+            referencedRelation: "channels"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       boats: {
         Row: {
@@ -345,9 +356,12 @@ export type Database = {
       }
       campaign_links: {
         Row: {
+          campaign_id: string | null
           commission_percentage: number | null
+          commission_type: string
           created_at: string | null
           destination_url: string
+          fixed_commission_amount: number | null
           id: string
           investment_amount: number | null
           is_active: boolean | null
@@ -356,9 +370,12 @@ export type Database = {
           slug: string
         }
         Insert: {
+          campaign_id?: string | null
           commission_percentage?: number | null
+          commission_type?: string
           created_at?: string | null
           destination_url: string
+          fixed_commission_amount?: number | null
           id?: string
           investment_amount?: number | null
           is_active?: boolean | null
@@ -367,9 +384,12 @@ export type Database = {
           slug: string
         }
         Update: {
+          campaign_id?: string | null
           commission_percentage?: number | null
+          commission_type?: string
           created_at?: string | null
           destination_url?: string
+          fixed_commission_amount?: number | null
           id?: string
           investment_amount?: number | null
           is_active?: boolean | null
@@ -378,6 +398,13 @@ export type Database = {
           slug?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "campaign_links_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "campaign_links_partner_id_fkey"
             columns: ["partner_id"]
@@ -434,6 +461,7 @@ export type Database = {
       campaigns: {
         Row: {
           category: string
+          channel_id: string | null
           created_at: string | null
           id: string
           investment_amount: number | null
@@ -441,12 +469,14 @@ export type Database = {
           is_active: boolean | null
           name: string
           notes: string | null
+          partner_id: string | null
           percentage_value: number | null
           slug: string
           updated_at: string | null
         }
         Insert: {
           category: string
+          channel_id?: string | null
           created_at?: string | null
           id?: string
           investment_amount?: number | null
@@ -454,12 +484,14 @@ export type Database = {
           is_active?: boolean | null
           name: string
           notes?: string | null
+          partner_id?: string | null
           percentage_value?: number | null
           slug: string
           updated_at?: string | null
         }
         Update: {
           category?: string
+          channel_id?: string | null
           created_at?: string | null
           id?: string
           investment_amount?: number | null
@@ -467,9 +499,64 @@ export type Database = {
           is_active?: boolean | null
           name?: string
           notes?: string | null
+          partner_id?: string | null
           percentage_value?: number | null
           slug?: string
           updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaigns_channel_id_fkey"
+            columns: ["channel_id"]
+            isOneToOne: false
+            referencedRelation: "channels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaigns_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      channels: {
+        Row: {
+          color: string | null
+          created_at: string
+          description: string | null
+          display_order: number
+          icon: string | null
+          id: string
+          is_active: boolean
+          name: string
+          slug: string
+          updated_at: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          description?: string | null
+          display_order?: number
+          icon?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          slug: string
+          updated_at?: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          description?: string | null
+          display_order?: number
+          icon?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          slug?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -501,6 +588,7 @@ export type Database = {
           id: string
           images: Json | null
           inclusions: Json | null
+          is_archived: boolean
           is_featured: boolean | null
           is_published: boolean | null
           max_guests: number | null
@@ -566,6 +654,7 @@ export type Database = {
           id?: string
           images?: Json | null
           inclusions?: Json | null
+          is_archived?: boolean
           is_featured?: boolean | null
           is_published?: boolean | null
           max_guests?: number | null
@@ -631,6 +720,7 @@ export type Database = {
           id?: string
           images?: Json | null
           inclusions?: Json | null
+          is_archived?: boolean
           is_featured?: boolean | null
           is_published?: boolean | null
           max_guests?: number | null
@@ -1403,24 +1493,96 @@ export type Database = {
         }
         Relationships: []
       }
-      partners: {
+      notification_settings: {
         Row: {
-          created_at: string | null
+          channel_id: string | null
+          created_at: string
+          email_recipients: string[]
           id: string
-          name: string
-          report_token: string
+          notify_monthly: boolean
+          notify_per_booking: boolean
+          notify_quarterly: boolean
+          notify_weekly: boolean
+          partner_id: string | null
+          updated_at: string
         }
         Insert: {
-          created_at?: string | null
+          channel_id?: string | null
+          created_at?: string
+          email_recipients?: string[]
           id?: string
-          name: string
-          report_token?: string
+          notify_monthly?: boolean
+          notify_per_booking?: boolean
+          notify_quarterly?: boolean
+          notify_weekly?: boolean
+          partner_id?: string | null
+          updated_at?: string
         }
         Update: {
-          created_at?: string | null
+          channel_id?: string | null
+          created_at?: string
+          email_recipients?: string[]
           id?: string
-          name?: string
+          notify_monthly?: boolean
+          notify_per_booking?: boolean
+          notify_quarterly?: boolean
+          notify_weekly?: boolean
+          partner_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_settings_channel_id_fkey"
+            columns: ["channel_id"]
+            isOneToOne: false
+            referencedRelation: "channels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_settings_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      partners: {
+        Row: {
+          contact_name: string | null
+          created_at: string | null
+          email: string | null
+          id: string
+          is_active: boolean
+          name: string
+          notes: string | null
+          phone: string | null
+          report_token: string
+          website: string | null
+        }
+        Insert: {
+          contact_name?: string | null
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          notes?: string | null
+          phone?: string | null
           report_token?: string
+          website?: string | null
+        }
+        Update: {
+          contact_name?: string | null
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          notes?: string | null
+          phone?: string | null
+          report_token?: string
+          website?: string | null
         }
         Relationships: []
       }
@@ -1639,6 +1801,41 @@ export type Database = {
           tag_name?: string
         }
         Relationships: []
+      }
+      tracking_events: {
+        Row: {
+          created_at: string
+          event_name: string
+          id: string
+          metadata: Json | null
+          session_id: string
+          visitor_id: string
+        }
+        Insert: {
+          created_at?: string
+          event_name: string
+          id?: string
+          metadata?: Json | null
+          session_id: string
+          visitor_id: string
+        }
+        Update: {
+          created_at?: string
+          event_name?: string
+          id?: string
+          metadata?: Json | null
+          session_id?: string
+          visitor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tracking_events_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_profiles: {
         Row: {

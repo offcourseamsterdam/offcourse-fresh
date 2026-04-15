@@ -7,6 +7,7 @@ import { MobileBookingCTA } from '@/components/cruise/MobileBookingCTA'
 import { CruiseContentSections } from '@/components/cruise/CruiseContentSections'
 import { getListingBySlug, getCruisePageData } from '@/lib/cruise/get-cruise-page-data'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
+import { TrackPageView } from '@/components/tracking/TrackPageView'
 import type { Locale } from '@/lib/i18n/config'
 
 export const revalidate = 60
@@ -72,6 +73,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
 
   return (
     <>
+      <TrackPageView event="view_cruise_detail" metadata={{ slug, category: listing.category }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       <StickyBookingHeader title={data.title} priceDisplay={listing.price_display} />

@@ -23,6 +23,7 @@ import {
   ChevronDown,
   Clock,
   Tag,
+  Handshake,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -60,6 +61,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   reviewtool: Search,
   images: ImageIcon,
   extras: Tag,
+  affiliates: Handshake,
 }
 
 export default function DashboardSidebar({

@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
       extrasVatAmountCents, baseVatAmountCents, totalVatAmountCents,
       bookingSource = 'website' as BookingSource,
       depositAmountCents,
+      sessionId,
     } = body
 
     if (!availPk || !customerTypeRatePk || !guestCount || !contact?.name || !contact?.email || !contact?.phone) {
@@ -127,6 +128,7 @@ export async function POST(request: NextRequest) {
         stripePaymentIntentId: isInternal ? null : String(stripePaymentIntentId ?? ''),
         bookingSource: String(bookingSource) as BookingSource,
         depositAmountCents: isInternal ? Number(depositAmountCents ?? 0) : null,
+        sessionId: sessionId ?? null,
       }),
       sendSlackNotification({
         listingTitle: String(listingTitle ?? ''),
@@ -190,6 +192,7 @@ interface BookingPayload {
   stripePaymentIntentId: string | null
   bookingSource: BookingSource
   depositAmountCents: number | null
+  sessionId: string | null
 }
 
 async function saveToSupabase(p: BookingPayload) {
@@ -228,6 +231,7 @@ async function saveToSupabase(p: BookingPayload) {
       currency: 'eur',
       booking_source: p.bookingSource,
       deposit_amount_cents: p.depositAmountCents,
+      session_id: p.sessionId,
     })
   } catch (err) {
     console.error('[book] saveToSupabase error:', err)

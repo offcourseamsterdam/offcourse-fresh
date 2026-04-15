@@ -8,6 +8,7 @@ import { Footer } from '@/components/layout/Footer'
 import { WhatsAppButton } from '@/components/layout/WhatsAppButton'
 import AuthProvider from '@/components/auth/AuthProvider'
 import { SearchProvider } from '@/lib/search/SearchContext'
+import { TrackingScript } from '@/components/tracking/TrackingScript'
 import { createClient } from '@/lib/supabase/server'
 import type { Locale } from '@/lib/i18n/config'
 
@@ -91,6 +92,7 @@ export default async function LocaleLayout({ children, params }: Props) {
           <main>{children}</main>
           {!isAdminRoute && <Footer />}
           {!isAdminRoute && <WhatsAppButton />}
+          <TrackingScript />
         </SearchProvider>
       </AuthProvider>
     </NextIntlClientProvider>

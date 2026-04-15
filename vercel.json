@@ -3,6 +3,18 @@
     {
       "path": "/api/fareharbor/sync",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/weekly-summary",
+      "schedule": "0 6 * * 1"
+    },
+    {
+      "path": "/api/cron/monthly-summary",
+      "schedule": "0 6 1 * *"
+    },
+    {
+      "path": "/api/cron/quarterly-invoice",
+      "schedule": "0 6 1 1,4,7,10 *"
     }
   ]
 }
