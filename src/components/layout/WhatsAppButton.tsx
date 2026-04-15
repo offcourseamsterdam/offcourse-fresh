@@ -14,33 +14,40 @@ function useShowAdminButton() {
   return show
 }
 
-/** Track whether the #booking section is visible (= CTA bar is hidden) */
-function useBookingVisible() {
-  const [bookingVisible, setBookingVisible] = useState(false)
+/**
+ * Track whether the mobile CTA bar is showing.
+ * The CTA bar only exists on cruise pages (where #booking exists).
+ * It's visible when #booking is NOT in view, hidden when #booking IS in view.
+ * On non-cruise pages (no #booking element) → CTA bar never exists → return false.
+ */
+function useMobileCTAVisible() {
+  const [ctaVisible, setCtaVisible] = useState(false)
   useEffect(() => {
     const el = document.getElementById('booking')
-    if (!el) return
+    if (!el) return // No booking section = no CTA bar = stay at default position
+    // Booking section exists → CTA bar shows until user scrolls to booking
+    setCtaVisible(true)
     const observer = new IntersectionObserver(
-      ([entry]) => setBookingVisible(entry.isIntersecting),
+      ([entry]) => setCtaVisible(!entry.isIntersecting),
       { threshold: 0.1 }
     )
     observer.observe(el)
     return () => observer.disconnect()
   }, [])
-  return bookingVisible
+  return ctaVisible
 }
 
 export function WhatsAppButton() {
   const showAdmin = useShowAdminButton()
   const locale = useLocale()
-  const bookingVisible = useBookingVisible()
+  const ctaVisible = useMobileCTAVisible()
 
-  // On mobile: sit above the CTA bar (84px) when it's showing.
-  // When booking section is in view the CTA hides, drop to bottom-6.
-  // On desktop (lg+): always bottom-6 (CTA bar is hidden via lg:hidden).
-  const bottomClass = bookingVisible
-    ? 'bottom-6'
-    : 'bottom-[84px] lg:bottom-6'
+  // Default: bottom-right corner (bottom-6).
+  // On cruise pages when the CTA bar is showing: animate up above it (bottom-[84px]).
+  // On desktop (lg+): always bottom-6 (CTA bar is lg:hidden).
+  const bottomClass = ctaVisible
+    ? 'bottom-[84px] lg:bottom-6'
+    : 'bottom-6'
 
   return (
     <>
