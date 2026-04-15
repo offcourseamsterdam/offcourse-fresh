@@ -13,12 +13,18 @@ interface TicketStepProps {
 }
 
 // Try to derive a human label from customer type data
-// FareHarbor customer types often have names like "Adult", "Child", etc.
 function getCustomerTypeLabel(ct: AvailabilityCustomerType, index: number): string {
-  // For now, use a simple mapping. When FH customer type names are available
-  // from the API, these will be replaced.
+  if (ct.name) return ct.name
   if (ct.minimumParty >= 18 || index === 0) return 'Adult'
   return 'Child'
+}
+
+/** Format duration as "1h30" or "2h" */
+function formatDuration(minutes: number): string {
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  if (m === 0) return `${h}h`
+  return `${h}h${m.toString().padStart(2, '0')}`
 }
 
 export function TicketStep({
@@ -45,7 +51,9 @@ export function TicketStep({
           >
             <div>
               <div className="text-sm font-semibold text-zinc-800">{label}</div>
-              <div className="text-xs text-zinc-500">{fmtEuros(ct.priceCents)} per person</div>
+              <div className="text-xs text-zinc-500">
+                {fmtEuros(ct.priceCents)} per person{ct.durationMinutes ? ` · ${formatDuration(ct.durationMinutes)}` : ''}
+              </div>
             </div>
             <div className="flex items-center gap-3">
               <button

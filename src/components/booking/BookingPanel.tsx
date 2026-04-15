@@ -78,7 +78,16 @@ function BookingPanelSidebar(props: BookingPanelProps) {
       {category === 'shared' && (
         <StepAccordion title="Select tickets" summary={ticketSummary} stepNumber={stepNumber('tickets')} isActive={isStepActive('tickets')} isCompleted={isStepCompleted('tickets')} onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'tickets' })}>
           {state.selectedSlot && (
-            <TicketStep customerTypes={state.selectedSlot.customerTypes} ticketCounts={state.ticketCounts} maxCapacity={state.selectedSlot.capacity} onUpdateCount={(pk, count) => dispatch({ type: 'UPDATE_TICKET_COUNT', customerTypePk: pk, count })} onConfirm={() => dispatch({ type: 'CONFIRM_TICKETS' })} />
+            <>
+              <TicketStep customerTypes={state.selectedSlot.customerTypes} ticketCounts={state.ticketCounts} maxCapacity={state.selectedSlot.capacity} onUpdateCount={(pk, count) => dispatch({ type: 'UPDATE_TICKET_COUNT', customerTypePk: pk, count })} onConfirm={() => dispatch({ type: 'CONFIRM_TICKETS' })} />
+              {state.totalTickets > 0 && (
+                <div className="mt-3 flex justify-end">
+                  <Button variant="primary" size="md" className="rounded-xl font-bold px-8" onClick={() => dispatch({ type: 'CONFIRM_TICKETS' })}>
+                    Next
+                  </Button>
+                </div>
+              )}
+            </>
           )}
         </StepAccordion>
       )}
