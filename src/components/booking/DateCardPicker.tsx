@@ -12,7 +12,7 @@ interface DateCardPickerProps {
   onSelectDate: (date: string) => void
 }
 
-function buildUpcomingDates(count: number): { dateStr: string; day: number; dayName: string; month: string }[] {
+function buildUpcomingDates(count: number): { dateStr: string; day: number; dayName: string; month: string; isToday: boolean }[] {
   const today = getToday()
   const dates = []
   for (let i = 0; i < count; i++) {
@@ -23,6 +23,7 @@ function buildUpcomingDates(count: number): { dateStr: string; day: number; dayN
       day: d.getDate(),
       dayName: SHORT_DAYS[d.getDay()],
       month: SHORT_MONTHS[d.getMonth()],
+      isToday: i === 0,
     })
   }
   return dates
@@ -30,7 +31,7 @@ function buildUpcomingDates(count: number): { dateStr: string; day: number; dayN
 
 export function DateCardPicker({ selectedDate, onSelectDate }: DateCardPickerProps) {
   const [showCalendar, setShowCalendar] = useState(false)
-  const dates = buildUpcomingDates(4)
+  const dates = buildUpcomingDates(14)
 
   // Calendar state for the expanded view
   const today = getToday()
@@ -57,7 +58,7 @@ export function DateCardPicker({ selectedDate, onSelectDate }: DateCardPickerPro
     setShowCalendar(false)
   }
 
-  // Check if selected date is one of the 4 quick-pick cards
+  // Check if selected date is one of the quick-pick cards
   const isQuickPickSelected = dates.some(d => d.dateStr === selectedDate)
 
   return (
@@ -76,7 +77,7 @@ export function DateCardPicker({ selectedDate, onSelectDate }: DateCardPickerPro
         </button>
       </div>
 
-      {/* 4 date cards */}
+      {/* Date cards (14 days, scrollable) */}
       <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-1">
         {dates.map((d) => {
           const isSelected = selectedDate === d.dateStr
@@ -91,6 +92,9 @@ export function DateCardPicker({ selectedDate, onSelectDate }: DateCardPickerPro
                   : 'border border-gray-200 text-gray-700 bg-white hover:border-gray-400'
               }`}
             >
+              {d.isToday && (
+                <div className="text-[10px] font-medium text-[var(--color-accent)] mb-0.5">Today</div>
+              )}
               <div className={`text-xs font-semibold uppercase ${isSelected ? 'text-[var(--color-primary)]' : 'text-gray-500'}`}>
                 {d.dayName}
               </div>

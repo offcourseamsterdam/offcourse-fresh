@@ -9,14 +9,14 @@ import { TicketStep } from './TicketStep'
 import { ExtrasStep } from './ExtrasStep'
 import { PriceSummary } from './PriceSummary'
 import { Button } from '@/components/ui/button'
-import { BookingPanelInline } from './BookingPanelInline'
+import { BookingPanelSlider } from './BookingPanelSlider'
 import { useBookingPanel } from './useBookingPanel'
 import type { BookingPanelProps } from './booking-state'
 
 export type { BookingPanelProps } from './booking-state'
 
 export function BookingPanel(props: BookingPanelProps) {
-  if (props.layout === 'inline') return <BookingPanelInline {...props} />
+  if (props.layout === 'inline') return <BookingPanelSlider {...props} />
   return <BookingPanelSidebar {...props} />
 }
 

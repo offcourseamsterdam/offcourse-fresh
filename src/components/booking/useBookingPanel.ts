@@ -81,6 +81,7 @@ export function useBookingPanel({
 
   const handleInlineDateSelect = useCallback(async (date: string) => {
     dispatch({ type: 'SET_DATE', date, guests: category === 'shared' ? 1 : state.guests, category })
+    dispatch({ type: 'SLOTS_LOADING' })
     if (category === 'shared') {
       await fetchSlots(date, 1)
     } else {
