@@ -116,7 +116,7 @@ export function useBookingPanel({
       })
     : undefined
 
-  const guestsSummary = state.guests > 0 && isStepCompleted('guests')
+  const guestsSummary = state.guests > 0
     ? `${state.guests} ${state.guests === 1 ? 'guest' : 'guests'}`
     : undefined
 

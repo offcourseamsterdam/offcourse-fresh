@@ -25,6 +25,7 @@ export interface BookingPanelState {
 
 export type Action =
   | { type: 'SET_DATE'; date: string; guests: number; category: 'private' | 'shared' }
+  | { type: 'SET_GUESTS'; guests: number }
   | { type: 'CONFIRM_GUESTS'; guests: number }
   | { type: 'SLOTS_LOADING' }
   | { type: 'SLOTS_LOADED'; slots: AvailabilitySlot[] }
@@ -55,6 +56,8 @@ export function reducer(state: BookingPanelState, action: Action): BookingPanelS
         selectedExtraIds: [],
         extrasCalculation: null,
       }
+    case 'SET_GUESTS':
+      return { ...state, guests: action.guests }
     case 'CONFIRM_GUESTS':
       return {
         ...state,

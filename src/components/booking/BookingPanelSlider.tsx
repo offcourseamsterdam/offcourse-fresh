@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useMemo } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { DateCardPicker } from './DateCardPicker'
 import { TimeSlotStep } from './TimeSlotStep'
 import { BoatDurationStep } from './BoatDurationStep'
@@ -13,11 +14,28 @@ import { fmtEuros } from '@/lib/utils'
 import { useBookingPanel } from './useBookingPanel'
 import type { BookingPanelProps } from './booking-state'
 
+// Slide direction: +1 = forward (slide left), -1 = backward (slide right)
+const slideVariants = {
+  enter: (direction: number) => ({
+    x: direction > 0 ? '40%' : '-40%',
+    opacity: 0,
+  }),
+  center: {
+    x: 0,
+    opacity: 1,
+  },
+  exit: (direction: number) => ({
+    x: direction > 0 ? '-40%' : '40%',
+    opacity: 0,
+  }),
+}
+
 export function BookingPanelSlider(props: BookingPanelProps) {
   const {
     state, dispatch, category,
     timeSlotsRef, bookingCardRef, extrasRef,
-    handleInlineDateSelect, handleInlineGuestChange, handleExtrasChange, handleProceedToCheckout,
+    handleInlineDateSelect, handleExtrasChange, handleProceedToCheckout,
+    fetchSlots,
     basePriceCents, guestCount, cityTaxCents, ticketBreakdown, boatSummary,
     dateSummary, guestsSummary, timeSummary, ticketSummary,
     listingId,
@@ -28,8 +46,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
   // Private: 0=date, 1=guests, 2=time, 3=boat, 4=extras
   // Shared:  0=date+time+tickets, 1=extras
   const [panelIndex, setPanelIndex] = useState(0)
-
-  const totalPanels = category === 'private' ? 5 : 2
+  const [direction, setDirection] = useState(1) // 1=forward, -1=backward
 
   // ── Summary tabs for completed steps ──────────────────────────────────────
 
@@ -42,7 +59,6 @@ export function BookingPanelSlider(props: BookingPanelProps) {
       if (panelIndex > 2 && timeSummary) tabs.push({ label: timeSummary, panelIndex: 2 })
       if (panelIndex > 3 && boatSummary) tabs.push({ label: boatSummary, panelIndex: 3 })
     } else {
-      // Shared: panel 0 is date+time+tickets, panel 1 is extras
       if (panelIndex > 0) {
         if (dateSummary) tabs.push({ label: dateSummary, panelIndex: 0 })
         if (timeSummary) tabs.push({ label: timeSummary, panelIndex: 0 })
@@ -56,12 +72,12 @@ export function BookingPanelSlider(props: BookingPanelProps) {
   // ── Navigation ────────────────────────────────────────────────────────────
 
   const goToPanel = useCallback((index: number) => {
-    setPanelIndex(Math.max(0, Math.min(index, totalPanels - 1)))
-  }, [totalPanels])
+    setDirection(index > panelIndex ? 1 : -1)
+    setPanelIndex(index)
+  }, [panelIndex])
 
   const handleTabClick = useCallback((targetPanel: number) => {
     goToPanel(targetPanel)
-    // Reopen the appropriate step in the reducer
     if (category === 'private') {
       const stepMap = ['date', 'guests', 'time', 'boat', 'extras'] as const
       dispatch({ type: 'REOPEN_STEP', step: stepMap[targetPanel] })
@@ -69,19 +85,6 @@ export function BookingPanelSlider(props: BookingPanelProps) {
       dispatch({ type: 'REOPEN_STEP', step: targetPanel === 0 ? 'date' : 'extras' })
     }
   }, [category, dispatch, goToPanel])
-
-  const advancePanel = useCallback(() => {
-    if (panelIndex < totalPanels - 1) {
-      setPanelIndex(panelIndex + 1)
-    }
-  }, [panelIndex, totalPanels])
-
-  // ── Private tour panel helpers ────────────────────────────────────────────
-
-  const canAdvanceDate = !!state.date
-  const canAdvanceGuests = state.guests > 0
-  const canAdvanceTime = !!state.selectedSlot
-  const canAdvanceBoat = !!state.selectedCustomerType
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -94,37 +97,49 @@ export function BookingPanelSlider(props: BookingPanelProps) {
 
   function PrivateSlider() {
     return (
-      <div className="space-y-0">
+      <div>
         {/* Summary tabs */}
         <BookingSummaryTabs tabs={summaryTabs} currentPanel={panelIndex} onTabClick={handleTabClick} />
 
-        {/* Sliding container */}
-        <div className="overflow-hidden">
-          <div
-            className="flex transition-transform duration-300 ease-out"
-            style={{ transform: `translateX(-${panelIndex * 100}%)` }}
-          >
-            {/* Panel 0: DATE */}
-            <div className="min-w-full">
+        {/* Active panel only */}
+        <AnimatePresence mode="wait" custom={direction}>
+          {panelIndex === 0 && (
+            <motion.div
+              key="panel-date"
+              custom={direction}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+            >
               <DateCardPicker
                 selectedDate={state.date}
                 onSelectDate={(date) => {
                   handleInlineDateSelect(date)
-                  // Auto-advance to guests after selecting date
-                  setTimeout(() => setPanelIndex(1), 150)
+                  setTimeout(() => goToPanel(1), 150)
                 }}
               />
-              {canAdvanceDate && (
+              {state.date && (
                 <div className="flex justify-end mt-4">
-                  <Button variant="primary" size="md" className="rounded-xl font-bold px-10" onClick={() => setPanelIndex(1)}>
+                  <Button variant="primary" size="md" className="rounded-xl font-bold px-10" onClick={() => goToPanel(1)}>
                     Next
                   </Button>
                 </div>
               )}
-            </div>
+            </motion.div>
+          )}
 
-            {/* Panel 1: GUESTS */}
-            <div className="min-w-full">
+          {panelIndex === 1 && (
+            <motion.div
+              key="panel-guests"
+              custom={direction}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+            >
               <div className="space-y-4">
                 <p className="font-avenir font-semibold text-[15px] text-[var(--color-ink)]">How many guests?</p>
                 <div className="flex items-center justify-between bg-zinc-50 rounded-xl px-4 py-3">
@@ -132,7 +147,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
-                      onClick={() => handleInlineGuestChange(Math.max(1, state.guests - 1))}
+                      onClick={() => dispatch({ type: 'SET_GUESTS', guests: Math.max(1, state.guests - 1) })}
                       disabled={state.guests <= 1}
                       className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center text-zinc-600 hover:border-zinc-500 disabled:opacity-30 transition-colors"
                     >
@@ -141,7 +156,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                     <span className="w-6 text-center font-semibold text-zinc-800 tabular-nums">{state.guests}</span>
                     <button
                       type="button"
-                      onClick={() => handleInlineGuestChange(Math.min(12, state.guests + 1))}
+                      onClick={() => dispatch({ type: 'SET_GUESTS', guests: Math.min(12, state.guests + 1) })}
                       disabled={state.guests >= 12}
                       className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center text-zinc-600 hover:border-zinc-500 disabled:opacity-30 transition-colors"
                     >
@@ -150,18 +165,31 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                   </div>
                 </div>
                 <div className="flex justify-end">
-                  <Button variant="primary" size="md" className="rounded-xl font-bold px-10" onClick={() => {
-                    dispatch({ type: 'CONFIRM_GUESTS', guests: state.guests })
-                    setPanelIndex(2)
+                  <Button variant="primary" size="md" className="rounded-xl font-bold px-10" onClick={async () => {
+                    // Show loading, advance to time panel, and fetch slots
+                    dispatch({ type: 'SLOTS_LOADING' })
+                    goToPanel(2)
+                    if (state.date) {
+                      await fetchSlots(state.date, state.guests)
+                    }
                   }}>
                     Next
                   </Button>
                 </div>
               </div>
-            </div>
+            </motion.div>
+          )}
 
-            {/* Panel 2: TIME */}
-            <div className="min-w-full">
+          {panelIndex === 2 && (
+            <motion.div
+              key="panel-time"
+              custom={direction}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+            >
               <div ref={timeSlotsRef}>
                 <p className="font-avenir font-semibold text-[15px] text-[var(--color-ink)] mb-3">
                   Select time
@@ -173,14 +201,23 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                   selectedSlotPk={state.selectedSlot?.pk ?? null}
                   onSelect={(slot) => {
                     dispatch({ type: 'SELECT_SLOT', slot, category })
-                    setTimeout(() => setPanelIndex(3), 150)
+                    setTimeout(() => goToPanel(3), 150)
                   }}
                 />
               </div>
-            </div>
+            </motion.div>
+          )}
 
-            {/* Panel 3: BOAT + DURATION */}
-            <div className="min-w-full">
+          {panelIndex === 3 && (
+            <motion.div
+              key="panel-boat"
+              custom={direction}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+            >
               <div ref={bookingCardRef} className="border-2 border-[var(--color-primary)] rounded-2xl p-5 bg-white">
                 <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-1">
                   Cruise details
@@ -202,7 +239,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                     selectedCustomerTypePk={state.selectedCustomerType?.pk ?? null}
                     onSelect={(ct, boatId) => {
                       dispatch({ type: 'SELECT_BOAT_DURATION', customerType: ct, boatId })
-                      setTimeout(() => setPanelIndex(4), 150)
+                      setTimeout(() => goToPanel(4), 150)
                     }}
                   />
                 )}
@@ -217,10 +254,19 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                   </div>
                 )}
               </div>
-            </div>
+            </motion.div>
+          )}
 
-            {/* Panel 4: EXTRAS */}
-            <div className="min-w-full">
+          {panelIndex === 4 && (
+            <motion.div
+              key="panel-extras"
+              custom={direction}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+            >
               <div ref={extrasRef} className="space-y-4">
                 <div className="border border-zinc-200 rounded-2xl p-5 bg-white">
                   <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-3">
@@ -256,9 +302,9 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                   </div>
                 )}
               </div>
-            </div>
-          </div>
-        </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     )
   }
@@ -270,18 +316,23 @@ export function BookingPanelSlider(props: BookingPanelProps) {
     const hasTickets = state.totalTickets > 0
 
     return (
-      <div className="space-y-0">
+      <div>
         {/* Summary tabs */}
         <BookingSummaryTabs tabs={summaryTabs} currentPanel={panelIndex} onTabClick={handleTabClick} />
 
-        {/* Sliding container */}
-        <div className="overflow-hidden">
-          <div
-            className="flex transition-transform duration-300 ease-out"
-            style={{ transform: `translateX(-${panelIndex * 100}%)` }}
-          >
-            {/* Panel 0: DATE + TIME + TICKETS (all together) */}
-            <div className="min-w-full space-y-6">
+        {/* Active panel only */}
+        <AnimatePresence mode="wait" custom={direction}>
+          {panelIndex === 0 && (
+            <motion.div
+              key="shared-panel-0"
+              custom={direction}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="space-y-6"
+            >
               <DateCardPicker
                 selectedDate={state.date}
                 onSelectDate={handleInlineDateSelect}
@@ -345,7 +396,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                           className="rounded-xl font-bold px-10"
                           onClick={() => {
                             dispatch({ type: 'CONFIRM_TICKETS' })
-                            setPanelIndex(1)
+                            goToPanel(1)
                           }}
                           disabled={!hasTickets}
                         >
@@ -356,10 +407,19 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                   )}
                 </div>
               )}
-            </div>
+            </motion.div>
+          )}
 
-            {/* Panel 1: EXTRAS */}
-            <div className="min-w-full">
+          {panelIndex === 1 && (
+            <motion.div
+              key="shared-panel-1"
+              custom={direction}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+            >
               <div ref={extrasRef} className="space-y-4">
                 <div className="border border-zinc-200 rounded-2xl p-5 bg-white">
                   <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-3">
@@ -395,9 +455,9 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                   </div>
                 )}
               </div>
-            </div>
-          </div>
-        </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     )
   }
