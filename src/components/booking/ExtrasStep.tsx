@@ -10,6 +10,11 @@ import { type ApiExtra } from './ExtraCard'
 // Optional extras rendered in this category order
 const OPTIONAL_CATEGORY_ORDER = ['protection', 'food', 'drinks', 'experience']
 
+// Food and drinks are split into separate pages
+const FOOD_CATEGORIES = ['food']
+const DRINKS_CATEGORIES = ['drinks']
+const OTHER_CATEGORIES = ['protection', 'experience']
+
 // ── Props ──────────────────────────────────────────────────────────────────
 
 interface ExtrasStepProps {
@@ -38,6 +43,7 @@ export function ExtrasStep({
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [quantities, setQuantities] = useState<Map<string, number>>(new Map())
+  const [page, setPage] = useState<'food' | 'drinks'>('food')
 
   // ── Fetch extras on mount ────────────────────────────────────────────────
 
@@ -175,9 +181,53 @@ export function ExtrasStep({
     )
   }
 
+  // Split categories into food vs drinks+other pages
+  const foodCats = categoriesInOrder.filter(c => FOOD_CATEGORIES.includes(c))
+  const drinksCats = categoriesInOrder.filter(c => DRINKS_CATEGORIES.includes(c))
+  const otherCats = categoriesInOrder.filter(c => OTHER_CATEGORIES.includes(c))
+
+  // If no food items, skip straight to drinks page
+  const hasFood = foodCats.length > 0
+  const hasDrinks = drinksCats.length > 0 || otherCats.length > 0
+
+  // Count selected food items for badge
+  const selectedFoodCount = foodCats.flatMap(c => grouped[c] ?? []).filter(e => selectedIds.has(e.id)).length
+
   return (
-    <div className="space-y-5">
-      {categoriesInOrder.map(cat => (
+    <div className="space-y-4">
+      {/* Page indicator */}
+      {hasFood && hasDrinks && (
+        <div className="flex gap-1.5">
+          <button
+            type="button"
+            onClick={() => setPage('food')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+              page === 'food'
+                ? 'bg-[var(--color-primary)] text-white'
+                : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200'
+            }`}
+          >
+            🍽️ Food
+            {selectedFoodCount > 0 && page !== 'food' && (
+              <span className="bg-white/20 text-white text-[10px] px-1.5 py-0.5 rounded-full">{selectedFoodCount}</span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setPage('drinks')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+              page === 'drinks'
+                ? 'bg-[var(--color-primary)] text-white'
+                : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200'
+            }`}
+          >
+            🥂 Drinks
+          </button>
+        </div>
+      )}
+
+      {/* FOOD page */}
+      {(page === 'food' || !hasFood) && foodCats.map(cat => (
         <ExtraCategoryGroup
           key={cat}
           category={cat}
@@ -191,6 +241,51 @@ export function ExtrasStep({
           onQuantityChange={handleQuantityChange}
         />
       ))}
+
+      {/* Food → Drinks "Next" button */}
+      {page === 'food' && hasFood && hasDrinks && (
+        <button
+          type="button"
+          onClick={() => setPage('drinks')}
+          className="w-full py-2.5 rounded-xl bg-[var(--color-primary)] text-white font-bold text-sm hover:opacity-90 transition-opacity"
+        >
+          Next — Drinks
+        </button>
+      )}
+
+      {/* DRINKS page */}
+      {(page === 'drinks' || !hasFood) && (
+        <div className="space-y-5">
+          {drinksCats.map(cat => (
+            <ExtraCategoryGroup
+              key={cat}
+              category={cat}
+              extras={grouped[cat]}
+              selectedIds={selectedIds}
+              onToggle={toggleExtra}
+              guestCount={guestCount}
+              baseAmountCents={baseAmountCents}
+              durationMinutes={durationMinutes}
+              quantities={quantities}
+              onQuantityChange={handleQuantityChange}
+            />
+          ))}
+          {otherCats.map(cat => (
+            <ExtraCategoryGroup
+              key={cat}
+              category={cat}
+              extras={grouped[cat]}
+              selectedIds={selectedIds}
+              onToggle={toggleExtra}
+              guestCount={guestCount}
+              baseAmountCents={baseAmountCents}
+              durationMinutes={durationMinutes}
+              quantities={quantities}
+              onQuantityChange={handleQuantityChange}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
