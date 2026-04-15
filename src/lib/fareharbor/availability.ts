@@ -154,7 +154,7 @@ export function transformToSlot(
         boatId: config?.boat ?? 'curacao',
         minimumParty: rate.minimum_party_size ?? 1,
         maximumParty: rate.maximum_party_size ?? (config?.maxGuests ?? 12),
-        priceCents: rate.customer_prototype?.total ?? 0,
+        priceCents: rate.customer_prototype?.total_including_tax ?? rate.customer_prototype?.total ?? 0,
         durationMinutes: config?.duration ?? 120,
       }
     })

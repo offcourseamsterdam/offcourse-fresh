@@ -2,7 +2,6 @@
 
 import { useMemo } from 'react'
 import Image from 'next/image'
-import { motion } from 'framer-motion'
 import type { AvailabilityCustomerType } from '@/types'
 import { BOATS } from '@/lib/fareharbor/config'
 import { fmtEurosRounded } from '@/lib/utils'
@@ -94,11 +93,8 @@ export function BoatDurationStep({
         const bgClass = BOAT_BG[boat.id] ?? (index % 2 === 0 ? 'bg-texture-yellow' : 'bg-texture-sand')
 
         return (
-          <motion.div
+          <div
             key={boat.id}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1, duration: 0.3, ease: 'easeOut' }}
             className={`rounded-xl overflow-hidden transition-all duration-200 ${
               isSoldOut ? 'opacity-50' : ''
             } ${
@@ -172,7 +168,7 @@ export function BoatDurationStep({
                 </div>
               )}
             </div>
-          </motion.div>
+          </div>
         )
       })}
     </div>

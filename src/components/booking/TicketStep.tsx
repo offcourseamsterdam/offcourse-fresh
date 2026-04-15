@@ -1,6 +1,5 @@
 'use client'
 
-import { motion } from 'framer-motion'
 import { Minus, Plus } from 'lucide-react'
 import type { AvailabilityCustomerType } from '@/types'
 import { fmtEuros } from '@/lib/utils'
@@ -40,11 +39,8 @@ export function TicketStep({
         const remaining = maxCapacity - totalTickets + count
 
         return (
-          <motion.div
+          <div
             key={ct.pk}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.08, duration: 0.25 }}
             className="flex items-center justify-between bg-zinc-50 rounded-xl px-4 py-3"
           >
             <div>
@@ -70,22 +66,10 @@ export function TicketStep({
                 <Plus className="w-3.5 h-3.5" />
               </button>
             </div>
-          </motion.div>
+          </div>
         )
       })}
 
-      {/* Confirm button */}
-      {totalTickets > 0 && (
-        <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="w-full py-2.5 rounded-xl bg-[var(--color-primary)] text-white text-sm font-semibold hover:bg-[var(--color-primary-dark)] transition-colors"
-          >
-            Continue with {totalTickets} {totalTickets === 1 ? 'ticket' : 'tickets'}
-          </button>
-        </motion.div>
-      )}
     </div>
   )
 }

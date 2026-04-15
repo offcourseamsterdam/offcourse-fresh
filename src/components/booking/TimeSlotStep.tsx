@@ -1,6 +1,5 @@
 'use client'
 
-import { motion } from 'framer-motion'
 import type { AvailabilitySlot } from '@/types'
 import { Loader2 } from 'lucide-react'
 
@@ -56,12 +55,9 @@ export function TimeSlotStep({ slots, loading, mode, selectedSlotPk, onSelect }:
           const capacityRatio = slot.capacity / maxCapacity
           const urgencyLabel = mode === 'shared' ? getCapacityLabel(slot.capacity) : null
           return (
-            <motion.button
+            <button
               key={slot.pk}
               type="button"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05, duration: 0.25, ease: 'easeOut' }}
               onClick={() => !isSoldOut && onSelect(slot)}
               disabled={isSoldOut}
               className={`relative overflow-hidden rounded-xl border-2 py-2.5 px-3 text-sm font-semibold transition-all duration-200 ${
@@ -77,11 +73,9 @@ export function TimeSlotStep({ slots, loading, mode, selectedSlotPk, onSelect }:
               {/* Capacity bar — shared tours only */}
               {mode === 'shared' && !isSoldOut && !isSelected && (
                 <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-zinc-100">
-                  <motion.div
-                    className={`h-full ${getCapacityColor(capacityRatio)} rounded-full`}
-                    initial={{ width: 0 }}
-                    animate={{ width: `${capacityRatio * 100}%` }}
-                    transition={{ delay: index * 0.05 + 0.2, duration: 0.4, ease: 'easeOut' }}
+                  <div
+                    className={`h-full ${getCapacityColor(capacityRatio)} rounded-full transition-all duration-500`}
+                    style={{ width: `${capacityRatio * 100}%` }}
                   />
                 </div>
               )}
@@ -92,7 +86,7 @@ export function TimeSlotStep({ slots, loading, mode, selectedSlotPk, onSelect }:
                   {urgencyLabel}
                 </span>
               )}
-            </motion.button>
+            </button>
           )
         })}
       </div>

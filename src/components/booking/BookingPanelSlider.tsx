@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { DateCardPicker } from './DateCardPicker'
 import { TimeSlotStep } from './TimeSlotStep'
@@ -46,7 +46,12 @@ export function BookingPanelSlider(props: BookingPanelProps) {
   // Private: 0=date+guests, 1=time, 2=boat, 3=extras
   // Shared:  0=date+time+tickets, 1=extras
   const [panelIndex, setPanelIndex] = useState(0)
-  const [direction, setDirection] = useState(1) // 1=forward, -1=backward
+  const [direction, setDirection] = useState(1)
+
+  // Track whether extras panel has been visited (to keep it mounted)
+  const hasVisitedExtras = useRef(false)
+  const extrasPanelIndex = category === 'private' ? 3 : 1
+  if (panelIndex === extrasPanelIndex) hasVisitedExtras.current = true
 
   // ── Summary tabs for completed steps ──────────────────────────────────────
 
@@ -59,7 +64,6 @@ export function BookingPanelSlider(props: BookingPanelProps) {
       if (panelIndex > 1 && timeSummary) tabs.push({ label: timeSummary, panelIndex: 1 })
       if (panelIndex > 2 && boatSummary) tabs.push({ label: boatSummary, panelIndex: 2 })
     } else {
-      // Shared: show tabs inline as selections are made, even on panel 0
       if (dateSummary) tabs.push({ label: dateSummary, panelIndex: 0 })
       if (timeSummary) tabs.push({ label: timeSummary, panelIndex: 0 })
       if (ticketSummary) tabs.push({ label: ticketSummary, panelIndex: 0 })
@@ -85,6 +89,48 @@ export function BookingPanelSlider(props: BookingPanelProps) {
     }
   }, [category, dispatch, goToPanel])
 
+  // ── Extras section (kept mounted once visited) ────────────────────────────
+
+  function ExtrasSection({ visible }: { visible: boolean }) {
+    return (
+      <div ref={extrasRef} className={`space-y-4 ${visible ? '' : 'hidden'}`}>
+        <div className="border border-zinc-200 rounded-2xl p-5 bg-white">
+          <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-3">
+            Add food, drinks & extras
+          </h3>
+          <ExtrasStep
+            listingId={listingId}
+            guestCount={guestCount}
+            baseAmountCents={basePriceCents}
+            durationMinutes={state.selectedCustomerType?.durationMinutes ?? state.selectedSlot?.customerTypes[0]?.durationMinutes}
+            onExtrasChange={handleExtrasChange}
+          />
+        </div>
+
+        {basePriceCents > 0 && (
+          <div className="space-y-4">
+            <PriceSummary
+              basePriceCents={basePriceCents}
+              extrasCalculation={state.extrasCalculation}
+              mode={category}
+              cruiseLabel={boatSummary}
+              ticketBreakdown={ticketBreakdown}
+              cityTaxCents={cityTaxCents}
+            />
+            <Button
+              variant="primary"
+              size="lg"
+              className="w-full rounded-xl text-base font-bold"
+              onClick={handleProceedToCheckout}
+            >
+              Proceed to booking
+            </Button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   if (category === 'private') {
@@ -97,12 +143,10 @@ export function BookingPanelSlider(props: BookingPanelProps) {
   function PrivateSlider() {
     return (
       <div>
-        {/* Summary tabs */}
         <BookingSummaryTabs tabs={summaryTabs} currentPanel={panelIndex} onTabClick={handleTabClick} />
 
-        {/* Active panel only */}
         <AnimatePresence mode="wait" custom={direction}>
-          {/* Panel 0: DATE + GUESTS — no slide on interactions within this panel */}
+          {/* Panel 0: DATE + GUESTS */}
           {panelIndex === 0 && (
             <motion.div
               key="panel-date-guests"
@@ -119,7 +163,6 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                 onSelectDate={handleInlineDateSelect}
               />
 
-              {/* Guest counter — always visible */}
               <div>
                 <p className="font-avenir font-semibold text-[15px] text-[var(--color-ink)] mb-2">How many guests?</p>
                 <div className="flex items-center justify-between bg-zinc-50 rounded-xl px-4 py-3">
@@ -184,7 +227,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                   selectedSlotPk={state.selectedSlot?.pk ?? null}
                   onSelect={(slot) => {
                     dispatch({ type: 'SELECT_SLOT', slot, category })
-                    setTimeout(() => goToPanel(2), 150)
+                    goToPanel(2)
                   }}
                 />
               </div>
@@ -223,7 +266,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                     selectedCustomerTypePk={state.selectedCustomerType?.pk ?? null}
                     onSelect={(ct, boatId) => {
                       dispatch({ type: 'SELECT_BOAT_DURATION', customerType: ct, boatId })
-                      setTimeout(() => goToPanel(3), 150)
+                      goToPanel(3)
                     }}
                   />
                 )}
@@ -240,56 +283,10 @@ export function BookingPanelSlider(props: BookingPanelProps) {
               </div>
             </motion.div>
           )}
-
-          {/* Panel 3: EXTRAS */}
-          {panelIndex === 3 && (
-            <motion.div
-              key="panel-extras"
-              custom={direction}
-              variants={slideVariants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={{ duration: 0.2, ease: 'easeOut' }}
-            >
-              <div ref={extrasRef} className="space-y-4">
-                <div className="border border-zinc-200 rounded-2xl p-5 bg-white">
-                  <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-3">
-                    Add food, drinks & extras
-                  </h3>
-                  <ExtrasStep
-                    listingId={listingId}
-                    guestCount={guestCount}
-                    baseAmountCents={basePriceCents}
-                    durationMinutes={state.selectedCustomerType?.durationMinutes ?? state.selectedSlot?.customerTypes[0]?.durationMinutes}
-                    onExtrasChange={handleExtrasChange}
-                  />
-                </div>
-
-                {basePriceCents > 0 && (
-                  <div className="space-y-4">
-                    <PriceSummary
-                      basePriceCents={basePriceCents}
-                      extrasCalculation={state.extrasCalculation}
-                      mode={category}
-                      cruiseLabel={boatSummary}
-                      ticketBreakdown={ticketBreakdown}
-                      cityTaxCents={cityTaxCents}
-                    />
-                    <Button
-                      variant="primary"
-                      size="lg"
-                      className="w-full rounded-xl text-base font-bold"
-                      onClick={handleProceedToCheckout}
-                    >
-                      Proceed to booking
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          )}
         </AnimatePresence>
+
+        {/* Extras — kept mounted once visited, hidden when not active */}
+        {hasVisitedExtras.current && <ExtrasSection visible={panelIndex === 3} />}
       </div>
     )
   }
@@ -302,11 +299,10 @@ export function BookingPanelSlider(props: BookingPanelProps) {
 
     return (
       <div>
-        {/* Summary tabs — shown inline as selections are made */}
         <BookingSummaryTabs tabs={summaryTabs} currentPanel={panelIndex} onTabClick={handleTabClick} />
 
         <AnimatePresence mode="wait" custom={direction}>
-          {/* Panel 0: DATE + TIME + TICKETS — no slide animation within this panel */}
+          {/* Panel 0: DATE + TIME + TICKETS */}
           {panelIndex === 0 && (
             <motion.div
               key="shared-panel-0"
@@ -323,7 +319,6 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                 onSelectDate={handleInlineDateSelect}
               />
 
-              {/* Time slots — shown after date selection */}
               {state.date && (
                 <div ref={timeSlotsRef}>
                   <p className="font-avenir font-semibold text-[15px] text-[var(--color-ink)] mb-3">
@@ -342,7 +337,6 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                 </div>
               )}
 
-              {/* Ticket counters — shown after time selection */}
               {hasTime && state.selectedSlot && (
                 <div ref={bookingCardRef} className="border-2 border-[var(--color-primary)] rounded-2xl p-5 bg-white">
                   <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-1">
@@ -394,56 +388,10 @@ export function BookingPanelSlider(props: BookingPanelProps) {
               )}
             </motion.div>
           )}
-
-          {/* Panel 1: EXTRAS — slides in from right */}
-          {panelIndex === 1 && (
-            <motion.div
-              key="shared-panel-1"
-              custom={direction}
-              variants={slideVariants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={{ duration: 0.2, ease: 'easeOut' }}
-            >
-              <div ref={extrasRef} className="space-y-4">
-                <div className="border border-zinc-200 rounded-2xl p-5 bg-white">
-                  <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-3">
-                    Add food, drinks & extras
-                  </h3>
-                  <ExtrasStep
-                    listingId={listingId}
-                    guestCount={guestCount}
-                    baseAmountCents={basePriceCents}
-                    durationMinutes={state.selectedCustomerType?.durationMinutes ?? state.selectedSlot?.customerTypes[0]?.durationMinutes}
-                    onExtrasChange={handleExtrasChange}
-                  />
-                </div>
-
-                {basePriceCents > 0 && (
-                  <div className="space-y-4">
-                    <PriceSummary
-                      basePriceCents={basePriceCents}
-                      extrasCalculation={state.extrasCalculation}
-                      mode={category}
-                      cruiseLabel={boatSummary}
-                      ticketBreakdown={ticketBreakdown}
-                      cityTaxCents={cityTaxCents}
-                    />
-                    <Button
-                      variant="primary"
-                      size="lg"
-                      className="w-full rounded-xl text-base font-bold"
-                      onClick={handleProceedToCheckout}
-                    >
-                      Proceed to booking
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          )}
         </AnimatePresence>
+
+        {/* Extras — kept mounted once visited, hidden when not active */}
+        {hasVisitedExtras.current && <ExtrasSection visible={panelIndex === 1} />}
       </div>
     )
   }
