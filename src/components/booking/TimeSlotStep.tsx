@@ -69,7 +69,7 @@ export function TimeSlotStep({ slots, loading, mode, selectedSlotPk, onSelect }:
                   ? 'border-zinc-100 text-zinc-300 cursor-not-allowed line-through bg-zinc-50'
                   : isSelected
                     ? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-white scale-[1.02] shadow-md'
-                    : 'border-zinc-200 text-zinc-700 hover:border-[var(--color-primary)] hover:scale-[1.02] cursor-pointer'
+                    : 'border-zinc-200 text-zinc-700 bg-white hover:border-[var(--color-primary)] hover:scale-[1.02] cursor-pointer'
               }`}
             >
               {slot.startTime}
