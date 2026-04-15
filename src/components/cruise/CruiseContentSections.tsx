@@ -2,6 +2,7 @@ import { Check } from 'lucide-react'
 import { ExtrasGrid } from './ExtrasGrid'
 import { ReviewSlider } from './ReviewSlider'
 import { BoatCard } from './BoatCard'
+import { TruncatedDescription } from './TruncatedDescription'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import type { Locale } from '@/lib/i18n/config'
 
@@ -47,10 +48,7 @@ export function CruiseContentSections({
 
       {/* Description */}
       {description && (
-        <div
-          className="text-[var(--color-ink)] leading-relaxed text-base prose prose-sm max-w-none [&_p]:mb-4 [&_br]:block"
-          dangerouslySetInnerHTML={{ __html: description }}
-        />
+        <TruncatedDescription html={description} maxLength={500} />
       )}
 
       {/* Things you need to know */}

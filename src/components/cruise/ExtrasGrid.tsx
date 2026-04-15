@@ -129,36 +129,53 @@ function ExtraDetailModal({
   extra: ExtraItem
   onClose: () => void
 }) {
+  const [isVisible, setIsVisible] = useState(false)
+
   useEffect(() => {
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    // Trigger slide-up animation on next frame
+    requestAnimationFrame(() => setIsVisible(true))
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') handleClose()
     }
     document.addEventListener('keydown', onKey)
     return () => {
       document.body.style.overflow = prev
       document.removeEventListener('keydown', onKey)
     }
-  }, [onClose])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function handleClose() {
+    setIsVisible(false)
+    setTimeout(onClose, 250) // wait for slide-down animation
+  }
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center sm:p-4"
+      onClick={handleClose}
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50" />
+      <div className={`absolute inset-0 bg-black/50 transition-opacity duration-250 ${isVisible ? 'opacity-100' : 'opacity-0'}`} />
 
-      {/* Modal content */}
+      {/* Drawer content — slides up from bottom on mobile, centered modal on desktop */}
       <div
-        className="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
+        className={`relative bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl max-h-[85vh] overflow-y-auto transition-transform duration-250 ease-out ${
+          isVisible ? 'translate-y-0' : 'translate-y-full'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Drag handle (mobile) */}
+        <div className="sm:hidden flex justify-center pt-3 pb-1">
+          <div className="w-10 h-1 rounded-full bg-zinc-300" />
+        </div>
+
         {/* Close button */}
         <button
           type="button"
-          onClick={onClose}
+          onClick={handleClose}
           className="absolute top-3 right-3 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-white/90 shadow-sm hover:bg-white transition-colors text-[var(--color-muted)] hover:text-[var(--color-ink)]"
         >
           <X className="w-4 h-4" />
@@ -166,7 +183,7 @@ function ExtraDetailModal({
 
         {/* Large image */}
         {extra.image_url && (
-          <div className="relative w-full aspect-[4/3] rounded-t-2xl overflow-hidden">
+          <div className="relative w-full aspect-[4/3] sm:rounded-t-2xl overflow-hidden">
             <Image
               src={extra.image_url}
               alt={extra.name}
