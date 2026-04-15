@@ -102,13 +102,13 @@ export function BookingPanelSlider(props: BookingPanelProps) {
 
         {/* Active panel only */}
         <AnimatePresence mode="wait" custom={direction}>
-          {/* Panel 0: DATE + GUESTS */}
+          {/* Panel 0: DATE + GUESTS — no slide on interactions within this panel */}
           {panelIndex === 0 && (
             <motion.div
               key="panel-date-guests"
               custom={direction}
               variants={slideVariants}
-              initial="enter"
+              initial={false}
               animate="center"
               exit="exit"
               transition={{ duration: 0.2, ease: 'easeOut' }}
