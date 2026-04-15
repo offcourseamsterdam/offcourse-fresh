@@ -59,11 +59,10 @@ export function BookingPanelSlider(props: BookingPanelProps) {
       if (panelIndex > 1 && timeSummary) tabs.push({ label: timeSummary, panelIndex: 1 })
       if (panelIndex > 2 && boatSummary) tabs.push({ label: boatSummary, panelIndex: 2 })
     } else {
-      if (panelIndex > 0) {
-        if (dateSummary) tabs.push({ label: dateSummary, panelIndex: 0 })
-        if (timeSummary) tabs.push({ label: timeSummary, panelIndex: 0 })
-        if (ticketSummary) tabs.push({ label: ticketSummary, panelIndex: 0 })
-      }
+      // Shared: show tabs inline as selections are made, even on panel 0
+      if (dateSummary) tabs.push({ label: dateSummary, panelIndex: 0 })
+      if (timeSummary) tabs.push({ label: timeSummary, panelIndex: 0 })
+      if (ticketSummary) tabs.push({ label: ticketSummary, panelIndex: 0 })
     }
 
     return tabs
@@ -303,17 +302,17 @@ export function BookingPanelSlider(props: BookingPanelProps) {
 
     return (
       <div>
-        {/* Summary tabs */}
+        {/* Summary tabs — shown inline as selections are made */}
         <BookingSummaryTabs tabs={summaryTabs} currentPanel={panelIndex} onTabClick={handleTabClick} />
 
-        {/* Active panel only */}
         <AnimatePresence mode="wait" custom={direction}>
+          {/* Panel 0: DATE + TIME + TICKETS — no slide animation within this panel */}
           {panelIndex === 0 && (
             <motion.div
               key="shared-panel-0"
               custom={direction}
               variants={slideVariants}
-              initial="enter"
+              initial={false}
               animate="center"
               exit="exit"
               transition={{ duration: 0.2, ease: 'easeOut' }}
@@ -396,6 +395,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
             </motion.div>
           )}
 
+          {/* Panel 1: EXTRAS — slides in from right */}
           {panelIndex === 1 && (
             <motion.div
               key="shared-panel-1"
