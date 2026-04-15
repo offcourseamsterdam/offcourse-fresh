@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useMemo, useRef } from 'react'
+import { getToday, toDateStr } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
 import { DateCardPicker } from './DateCardPicker'
 import { TimeSlotStep } from './TimeSlotStep'
@@ -44,13 +45,13 @@ export function BookingPanelSlider(props: BookingPanelProps) {
   // ── Panel index ──────────────────────────────────────────────────────────
 
   // Private: 0=date+guests, 1=time, 2=boat, 3=extras
-  // Shared:  0=date+time+tickets, 1=extras
+  // Shared:  0=date+time, 1=tickets, 2=extras
   const [panelIndex, setPanelIndex] = useState(0)
   const [direction, setDirection] = useState(1)
 
   // Track whether extras panel has been visited (to keep it mounted)
   const hasVisitedExtras = useRef(false)
-  const extrasPanelIndex = category === 'private' ? 3 : 1
+  const extrasPanelIndex = category === 'private' ? 3 : 2
   if (panelIndex === extrasPanelIndex) hasVisitedExtras.current = true
 
   // ── Summary tabs for completed steps ──────────────────────────────────────
@@ -64,9 +65,10 @@ export function BookingPanelSlider(props: BookingPanelProps) {
       if (panelIndex > 1 && timeSummary) tabs.push({ label: timeSummary, panelIndex: 1 })
       if (panelIndex > 2 && boatSummary) tabs.push({ label: boatSummary, panelIndex: 2 })
     } else {
+      // Shared: 0=date+time, 1=tickets, 2=extras
       if (dateSummary) tabs.push({ label: dateSummary, panelIndex: 0 })
       if (timeSummary) tabs.push({ label: timeSummary, panelIndex: 0 })
-      if (ticketSummary) tabs.push({ label: ticketSummary, panelIndex: 0 })
+      if (panelIndex > 1 && ticketSummary) tabs.push({ label: ticketSummary, panelIndex: 1 })
     }
 
     return tabs
@@ -85,9 +87,26 @@ export function BookingPanelSlider(props: BookingPanelProps) {
       const stepMap = ['date', 'time', 'boat', 'extras'] as const
       dispatch({ type: 'REOPEN_STEP', step: stepMap[targetPanel] })
     } else {
-      dispatch({ type: 'REOPEN_STEP', step: targetPanel === 0 ? 'date' : 'extras' })
+      // Shared: 0=date+time, 1=tickets, 2=extras
+      const sharedStepMap = ['date', 'tickets', 'extras'] as const
+      dispatch({ type: 'REOPEN_STEP', step: sharedStepMap[targetPanel] })
     }
   }, [category, dispatch, goToPanel])
+
+  // ── Suggest next date when fully booked ─────────────────────────────────────
+
+  const suggestDate = useMemo(() => {
+    if (!state.date) return undefined
+    const selected = new Date(state.date + 'T12:00:00')
+    const tomorrow = new Date(selected)
+    tomorrow.setDate(selected.getDate() + 1)
+    const today = getToday()
+    const isToday = state.date === toDateStr(today)
+    return {
+      label: isToday ? 'tomorrow' : tomorrow.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' }),
+      dateStr: toDateStr(tomorrow),
+    }
+  }, [state.date])
 
   // ── Shared extras JSX (inlined, NOT a function component) ─────────────────
 
@@ -233,6 +252,13 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                     dispatch({ type: 'SELECT_SLOT', slot, category })
                     goToPanel(2)
                   }}
+                  suggestDate={suggestDate ? {
+                    label: suggestDate.label,
+                    onSelect: () => {
+                      handleInlineDateSelect(suggestDate.dateStr)
+                      goToPanel(0)
+                    },
+                  } : undefined}
                 />
               </div>
             </motion.div>
@@ -295,10 +321,9 @@ export function BookingPanelSlider(props: BookingPanelProps) {
     )
   }
 
-  // ── SHARED FLOW ───────────────────────────────────────────────────────────
+  // ── SHARED FLOW (3 panels: date+time → tickets → extras) ──────────────────
 
   function SharedSlider() {
-    const hasTime = !!state.selectedSlot
     const hasTickets = state.totalTickets > 0
 
     return (
@@ -306,7 +331,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
         <BookingSummaryTabs tabs={summaryTabs} currentPanel={panelIndex} onTabClick={handleTabClick} />
 
         <AnimatePresence mode="wait" custom={direction}>
-          {/* Panel 0: DATE + TIME + TICKETS */}
+          {/* Panel 0: DATE + TIME */}
           {panelIndex === 0 && (
             <motion.div
               key="shared-panel-0"
@@ -335,13 +360,30 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                     selectedSlotPk={state.selectedSlot?.pk ?? null}
                     onSelect={(slot) => {
                       dispatch({ type: 'SELECT_SLOT', slot, category })
-                      setTimeout(() => bookingCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100)
+                      goToPanel(1)
                     }}
+                    suggestDate={suggestDate ? {
+                      label: suggestDate.label,
+                      onSelect: () => handleInlineDateSelect(suggestDate.dateStr),
+                    } : undefined}
                   />
                 </div>
               )}
+            </motion.div>
+          )}
 
-              {hasTime && state.selectedSlot && (
+          {/* Panel 1: TICKETS */}
+          {panelIndex === 1 && (
+            <motion.div
+              key="shared-panel-1"
+              custom={direction}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+            >
+              {state.selectedSlot && (
                 <div ref={bookingCardRef} className="border-2 border-[var(--color-primary)] rounded-2xl p-5 bg-white">
                   <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-1">
                     Ticket
@@ -379,7 +421,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                           className="rounded-xl font-bold px-10"
                           onClick={() => {
                             dispatch({ type: 'CONFIRM_TICKETS' })
-                            goToPanel(1)
+                            goToPanel(2)
                           }}
                           disabled={!hasTickets}
                         >
@@ -394,7 +436,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
           )}
         </AnimatePresence>
 
-        {/* Extras — kept mounted once visited, hidden when not on panel 1 */}
+        {/* Extras — kept mounted once visited, hidden when not on panel 2 */}
         {extrasBlock}
       </div>
     )

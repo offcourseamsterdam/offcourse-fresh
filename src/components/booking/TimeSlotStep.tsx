@@ -9,6 +9,8 @@ interface TimeSlotStepProps {
   mode: 'private' | 'shared'
   selectedSlotPk: number | null
   onSelect: (slot: AvailabilitySlot) => void
+  /** When no slots available, suggest checking this date (label + callback) */
+  suggestDate?: { label: string; onSelect: () => void }
 }
 
 function getCapacityColor(ratio: number): string {
@@ -22,7 +24,7 @@ function getCapacityLabel(capacity: number): string | null {
   return null
 }
 
-export function TimeSlotStep({ slots, loading, mode, selectedSlotPk, onSelect }: TimeSlotStepProps) {
+export function TimeSlotStep({ slots, loading, mode, selectedSlotPk, onSelect, suggestDate }: TimeSlotStepProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -35,8 +37,22 @@ export function TimeSlotStep({ slots, loading, mode, selectedSlotPk, onSelect }:
   if (slots.length === 0) {
     return (
       <div className="text-center py-6">
-        <p className="text-sm text-zinc-500">No available time slots for this date.</p>
-        <p className="text-xs text-zinc-400 mt-1">Try another date?</p>
+        <p className="text-sm text-zinc-700 font-medium">We&apos;re fully booked for this date.</p>
+        {suggestDate ? (
+          <p className="text-sm text-zinc-500 mt-1">
+            Check{' '}
+            <button
+              type="button"
+              onClick={suggestDate.onSelect}
+              className="text-[var(--color-primary)] font-semibold hover:underline"
+            >
+              {suggestDate.label}
+            </button>
+            ?
+          </p>
+        ) : (
+          <p className="text-xs text-zinc-400 mt-1">Try another date?</p>
+        )}
       </div>
     )
   }
