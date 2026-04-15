@@ -8,16 +8,39 @@ function useShowAdminButton() {
   const [show, setShow] = useState(false)
   useEffect(() => {
     const host = window.location.hostname
-    // Hide only on the real production domain
     const isRealProduction = host === 'offcourseamsterdam.com' || host === 'www.offcourseamsterdam.com'
     setShow(!isRealProduction)
   }, [])
   return show
 }
 
+/** Track whether the #booking section is visible (= CTA bar is hidden) */
+function useBookingVisible() {
+  const [bookingVisible, setBookingVisible] = useState(false)
+  useEffect(() => {
+    const el = document.getElementById('booking')
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => setBookingVisible(entry.isIntersecting),
+      { threshold: 0.1 }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+  return bookingVisible
+}
+
 export function WhatsAppButton() {
   const showAdmin = useShowAdminButton()
   const locale = useLocale()
+  const bookingVisible = useBookingVisible()
+
+  // On mobile: when the CTA bar is showing (booking NOT visible), sit above it (bottom-22).
+  // When CTA hides (booking IS visible), drop to the normal bottom position (bottom-6).
+  // On desktop (sm+): always bottom-6.
+  const bottomClass = bookingVisible
+    ? 'bottom-6'
+    : 'bottom-22 sm:bottom-6'
 
   return (
     <>
@@ -26,7 +49,7 @@ export function WhatsAppButton() {
           href={`/${locale}/admin`}
           aria-label="Go to admin panel"
           title="Admin panel (dev shortcut)"
-          className="fixed bottom-22 sm:bottom-6 right-24 z-50 w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform text-white text-xs font-bold"
+          className={`fixed ${bottomClass} right-24 z-50 w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-all duration-300 text-white text-xs font-bold`}
         >
           ADM
         </a>
@@ -36,7 +59,7 @@ export function WhatsAppButton() {
         target="_blank"
         rel="noopener noreferrer"
         aria-label="Chat with us on WhatsApp"
-        className="fixed bottom-22 sm:bottom-6 right-6 z-50 w-14 h-14 bg-[#25D366] rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform"
+        className={`fixed ${bottomClass} right-6 z-50 w-14 h-14 bg-[#25D366] rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-all duration-300`}
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
