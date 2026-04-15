@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
       session_id,
       visitor_id,
       event_name,
-      metadata: metadata ?? null,
+      metadata: (metadata ?? null) as import('@/lib/supabase/types').Json,
     })
 
     return NextResponse.json({ ok: true })
