@@ -1,11 +1,7 @@
 'use client'
 
-import { useReducer, useCallback, useEffect, useRef } from 'react'
-import type { AvailabilitySlot, AvailabilityCustomerType } from '@/types'
-import type { ExtrasCalculation } from '@/lib/extras/calculate'
 import { StepAccordion } from './StepAccordion'
 import { DateStep } from './DateStep'
-import { DateCardPicker } from './DateCardPicker'
 import { GuestStep } from './GuestStep'
 import { TimeSlotStep } from './TimeSlotStep'
 import { BoatDurationStep } from './BoatDurationStep'
@@ -13,521 +9,31 @@ import { TicketStep } from './TicketStep'
 import { ExtrasStep } from './ExtrasStep'
 import { PriceSummary } from './PriceSummary'
 import { Button } from '@/components/ui/button'
-import { formatDuration, fmtEuros } from '@/lib/utils'
+import { BookingPanelInline } from './BookingPanelInline'
+import { useBookingPanel } from './useBookingPanel'
+import type { BookingPanelProps } from './booking-state'
 
-// ── Types ────────────────────────────────────────────────────────────────────
+export type { BookingPanelProps } from './booking-state'
 
-type Step = 'date' | 'guests' | 'time' | 'boat' | 'tickets' | 'extras'
-
-interface BookingPanelState {
-  step: Step
-  date: string | null
-  guests: number
-  slots: AvailabilitySlot[]
-  loadingSlots: boolean
-  selectedSlot: AvailabilitySlot | null
-  // Private tour state
-  selectedBoat: string | null
-  selectedCustomerType: AvailabilityCustomerType | null
-  // Shared tour state
-  ticketCounts: Record<number, number>
-  totalTickets: number
-  // Extras
-  selectedExtraIds: string[]
-  extrasCalculation: ExtrasCalculation | null
+export function BookingPanel(props: BookingPanelProps) {
+  if (props.layout === 'inline') return <BookingPanelInline {...props} />
+  return <BookingPanelSidebar {...props} />
 }
 
-type Action =
-  | { type: 'SET_DATE'; date: string; guests: number; category: 'private' | 'shared' }
-  | { type: 'CONFIRM_GUESTS'; guests: number }
-  | { type: 'SLOTS_LOADING' }
-  | { type: 'SLOTS_LOADED'; slots: AvailabilitySlot[] }
-  | { type: 'SELECT_SLOT'; slot: AvailabilitySlot; category: 'private' | 'shared' }
-  | { type: 'SELECT_BOAT_DURATION'; customerType: AvailabilityCustomerType; boatId: string }
-  | { type: 'UPDATE_TICKET_COUNT'; customerTypePk: number; count: number }
-  | { type: 'CONFIRM_TICKETS' }
-  | { type: 'UPDATE_EXTRAS'; selectedExtraIds: string[]; calculation: ExtrasCalculation }
-  | { type: 'REOPEN_STEP'; step: Step }
+// ── Sidebar layout (accordion-based, desktop) ──────────────────────────────
 
-function reducer(state: BookingPanelState, action: Action): BookingPanelState {
-  switch (action.type) {
-    case 'SET_DATE':
-      return {
-        ...state,
-        date: action.date,
-        guests: action.guests,
-        // Private: go to guests step. Shared: go straight to time (slots fetched externally).
-        step: action.category === 'private' ? 'guests' : 'time',
-        loadingSlots: action.category === 'shared',
-        slots: [],
-        selectedSlot: null,
-        selectedBoat: null,
-        selectedCustomerType: null,
-        ticketCounts: {},
-        totalTickets: 0,
-        selectedExtraIds: [],
-        extrasCalculation: null,
-      }
-    case 'CONFIRM_GUESTS':
-      return {
-        ...state,
-        guests: action.guests,
-        step: 'time',
-        loadingSlots: true,
-        slots: [],
-        selectedSlot: null,
-        selectedBoat: null,
-        selectedCustomerType: null,
-      }
-    case 'SLOTS_LOADING':
-      return { ...state, loadingSlots: true }
-    case 'SLOTS_LOADED':
-      return { ...state, loadingSlots: false, slots: action.slots }
-    case 'SELECT_SLOT':
-      return {
-        ...state,
-        selectedSlot: action.slot,
-        step: action.category === 'private' ? 'boat' : 'tickets',
-        selectedBoat: null,
-        selectedCustomerType: null,
-        ticketCounts: {},
-        totalTickets: 0,
-      }
-    case 'SELECT_BOAT_DURATION':
-      return {
-        ...state,
-        selectedBoat: action.boatId,
-        selectedCustomerType: action.customerType,
-        step: 'extras',
-      }
-    case 'UPDATE_TICKET_COUNT': {
-      const newCounts = { ...state.ticketCounts, [action.customerTypePk]: action.count }
-      if (action.count === 0) delete newCounts[action.customerTypePk]
-      const total = Object.values(newCounts).reduce((s, c) => s + c, 0)
-      return { ...state, ticketCounts: newCounts, totalTickets: total }
-    }
-    case 'CONFIRM_TICKETS':
-      return { ...state, step: 'extras' }
-    case 'UPDATE_EXTRAS':
-      return {
-        ...state,
-        selectedExtraIds: action.selectedExtraIds,
-        extrasCalculation: action.calculation,
-      }
-    case 'REOPEN_STEP':
-      return { ...state, step: action.step }
-    default:
-      return state
-  }
-}
+function BookingPanelSidebar(props: BookingPanelProps) {
+  const {
+    state, dispatch, category,
+    handleDateConfirm, handleGuestsConfirm, handleExtrasChange, handleProceedToCheckout,
+    isStepCompleted, isStepActive, stepNumber,
+    dateSummary, guestsSummary, timeSummary, boatSummary, ticketSummary,
+    basePriceCents, guestCount, cityTaxCents, ticketBreakdown,
+    listingId,
+  } = useBookingPanel(props)
 
-const initialState: BookingPanelState = {
-  step: 'date',
-  date: null,
-  guests: 2,
-  slots: [],
-  loadingSlots: false,
-  selectedSlot: null,
-  selectedBoat: null,
-  selectedCustomerType: null,
-  ticketCounts: {},
-  totalTickets: 0,
-  selectedExtraIds: [],
-  extrasCalculation: null,
-}
+  const infoPills = props.infoPills ?? []
 
-// ── Props ────────────────────────────────────────────────────────────────────
-
-interface InfoPill {
-  icon: 'duration' | 'guests' | 'category'
-  label: string
-}
-
-interface BookingPanelProps {
-  listingId: string
-  listingSlug: string
-  listingTitle: string
-  listingHeroImageUrl: string | null
-  category: 'private' | 'shared'
-  initialDate?: string
-  initialGuests?: number
-  /** Pre-selected time from search results (e.g. "10:00") — auto-advances past date/time steps */
-  initialTime?: string
-  /** Info pills to display above the booking steps */
-  infoPills?: InfoPill[]
-  /** 'sidebar' = accordion steps (desktop); 'inline' = Booking.com-style flat layout (mobile) */
-  layout?: 'sidebar' | 'inline'
-  /** Cancellation policy text (shown in inline ticket card) */
-  cancellationPolicy?: string | null
-}
-
-// ── Component ────────────────────────────────────────────────────────────────
-
-export function BookingPanel({
-  listingId,
-  listingSlug,
-  listingTitle,
-  listingHeroImageUrl,
-  category,
-  initialDate = '',
-  initialGuests = 2,
-  initialTime,
-  infoPills = [],
-  layout = 'sidebar',
-  cancellationPolicy,
-}: BookingPanelProps) {
-  const [state, dispatch] = useReducer(reducer, {
-    ...initialState,
-    guests: initialGuests,
-    date: initialDate || null,
-  })
-
-  const hasAutoAdvanced = useRef(false)
-  const timeSlotsRef = useRef<HTMLDivElement>(null)
-  const bookingCardRef = useRef<HTMLDivElement>(null)
-  const extrasRef = useRef<HTMLDivElement>(null)
-
-  // Fetch slots for a given date + guest count. Returns the slots array.
-  const fetchSlots = useCallback(async (date: string, guests: number): Promise<AvailabilitySlot[]> => {
-    try {
-      const params = new URLSearchParams({ date, guests: String(guests), slug: listingSlug })
-      const res = await fetch(`/api/search/slots?${params}`)
-      const json = await res.json()
-      const slots = json.data?.slots ?? []
-      dispatch({ type: 'SLOTS_LOADED', slots })
-      return slots
-    } catch {
-      dispatch({ type: 'SLOTS_LOADED', slots: [] })
-      return []
-    }
-  }, [listingSlug])
-
-  // Auto-advance: when arriving from a search result with a pre-selected time,
-  // skip the date step, fetch slots, and auto-select the matching timeslot
-  useEffect(() => {
-    if (hasAutoAdvanced.current || !initialDate || !initialTime) return
-    hasAutoAdvanced.current = true
-
-    async function autoAdvance() {
-      dispatch({ type: 'SET_DATE', date: initialDate, guests: initialGuests, category })
-      const slots = await fetchSlots(initialDate, initialGuests)
-      const match = slots.find(s => s.startTime === initialTime)
-      if (match) dispatch({ type: 'SELECT_SLOT', slot: match, category })
-    }
-
-    autoAdvance()
-  }, [initialDate, initialTime, initialGuests, category, fetchSlots])
-
-  // Date confirmed — for shared, also fetch slots immediately
-  const handleDateConfirm = useCallback(async (date: string, guests: number) => {
-    dispatch({ type: 'SET_DATE', date, guests, category })
-    if (category === 'shared') {
-      await fetchSlots(date, guests)
-    }
-  }, [category, fetchSlots])
-
-  // Guests confirmed (private only) — now fetch slots
-  const handleGuestsConfirm = useCallback(async (guests: number) => {
-    dispatch({ type: 'CONFIRM_GUESTS', guests })
-    if (state.date) {
-      await fetchSlots(state.date, guests)
-    }
-  }, [state.date, fetchSlots])
-
-  // Extras selection changed — update price summary in real time
-  const handleExtrasChange = useCallback((ids: string[], calc: ExtrasCalculation) => {
-    dispatch({ type: 'UPDATE_EXTRAS', selectedExtraIds: ids, calculation: calc })
-  }, [])
-
-  // Helpers for step ordering
-  const steps: Step[] = category === 'private'
-    ? ['date', 'guests', 'time', 'boat', 'extras']
-    : ['date', 'time', 'tickets', 'extras']
-
-  const currentStepIndex = steps.indexOf(state.step)
-  const isStepCompleted = (step: Step) => steps.indexOf(step) < currentStepIndex
-  const isStepActive = (step: Step) => state.step === step
-
-  // Dynamic step numbering (accounts for guests step in private mode)
-  const stepNumber = (step: Step) => steps.indexOf(step) + 1
-
-  // Format date for summary
-  const dateSummary = state.date
-    ? new Date(state.date + 'T12:00:00').toLocaleDateString('en-US', {
-        weekday: 'short', month: 'short', day: 'numeric'
-      })
-    : undefined
-
-  const guestsSummary = state.guests > 0 && isStepCompleted('guests')
-    ? `${state.guests} ${state.guests === 1 ? 'guest' : 'guests'}`
-    : undefined
-
-  const timeSummary = state.selectedSlot?.startTime
-
-  const boatSummary = state.selectedBoat && state.selectedCustomerType
-    ? `${state.selectedBoat === 'diana' ? 'Diana' : 'Curaçao'} · ${formatDuration(state.selectedCustomerType.durationMinutes)}`
-    : undefined
-
-  const ticketSummary = state.totalTickets > 0
-    ? `${state.totalTickets} ${state.totalTickets === 1 ? 'ticket' : 'tickets'}`
-    : undefined
-
-  // Calculate base price for PriceSummary
-  let basePriceCents = 0
-  if (category === 'private' && state.selectedCustomerType) {
-    basePriceCents = state.selectedCustomerType.priceCents
-  } else if (category === 'shared' && state.selectedSlot) {
-    basePriceCents = state.selectedSlot.customerTypes.reduce(
-      (sum, ct) => sum + (state.ticketCounts[ct.customerTypePk] || 0) * ct.priceCents,
-      0
-    )
-  }
-
-  const guestCount = category === 'private' ? state.guests : state.totalTickets
-
-  // City tax: €2.60/person, shared cruises only
-  const cityTaxCents = category === 'shared' ? state.totalTickets * 260 : 0
-
-  // Ticket breakdown for PriceSummary
-  const ticketBreakdown = category === 'shared' && state.selectedSlot
-    ? state.selectedSlot.customerTypes
-        .filter(ct => (state.ticketCounts[ct.customerTypePk] || 0) > 0)
-        .map((ct, i) => ({
-          label: i === 0 ? 'Adult' : 'Child',
-          count: state.ticketCounts[ct.customerTypePk] || 0,
-          priceCents: ct.priceCents,
-        }))
-    : undefined
-
-  // Inline layout: date card selection (auto-fetches slots)
-  const handleInlineDateSelect = useCallback(async (date: string) => {
-    dispatch({ type: 'SET_DATE', date, guests: category === 'shared' ? 1 : state.guests, category })
-    if (category === 'shared') {
-      await fetchSlots(date, 1)
-    } else {
-      await fetchSlots(date, state.guests)
-    }
-    // Scroll time slots into view after they load
-    setTimeout(() => timeSlotsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100)
-  }, [category, state.guests, fetchSlots])
-
-  // Inline layout: guest count change (private only, re-fetches slots)
-  const handleInlineGuestChange = useCallback(async (guests: number) => {
-    dispatch({ type: 'CONFIRM_GUESTS', guests })
-    if (state.date) {
-      await fetchSlots(state.date, guests)
-    }
-  }, [state.date, fetchSlots])
-
-  // Handle proceed to checkout
-  function handleProceedToCheckout() {
-    // Serialize booking state to sessionStorage for checkout page
-    const bookingData = {
-      listingId,
-      listingSlug,
-      listingTitle,
-      listingHeroImageUrl,
-      category,
-      date: state.date,
-      guests: guestCount,
-      selectedSlot: state.selectedSlot,
-      selectedBoat: state.selectedBoat,
-      selectedCustomerType: state.selectedCustomerType,
-      ticketCounts: state.ticketCounts,
-      totalTickets: state.totalTickets,
-      selectedExtraIds: state.selectedExtraIds,
-      extrasCalculation: state.extrasCalculation,
-      basePriceCents,
-      cityTaxCents,
-    }
-    sessionStorage.setItem('offcourse_booking', JSON.stringify(bookingData))
-
-    // Navigate to checkout
-    const params = new URLSearchParams({
-      slug: listingSlug,
-      date: state.date || '',
-      guests: String(guestCount),
-    })
-    window.location.href = `/book/${listingSlug}/checkout?${params}`
-  }
-
-  // ── Inline layout (Booking.com style) ────────────────────────────────────
-  if (layout === 'inline') {
-    const hasDate = !!state.date
-    const hasTime = !!state.selectedSlot
-    const hasBoatOrTickets = category === 'private' ? !!state.selectedCustomerType : state.totalTickets > 0
-    const showExtras = state.step === 'extras'
-
-    return (
-      <div className="space-y-6">
-        {/* Date card picker */}
-        <DateCardPicker
-          selectedDate={state.date}
-          onSelectDate={handleInlineDateSelect}
-        />
-
-        {/* Time slots — shown after date selection */}
-        {hasDate && (
-          <div ref={timeSlotsRef}>
-            <p className="font-avenir font-semibold text-[15px] text-[var(--color-ink)] mb-3">
-              Select time
-            </p>
-            <TimeSlotStep
-              slots={state.slots}
-              loading={state.loadingSlots}
-              mode={category}
-              selectedSlotPk={state.selectedSlot?.pk ?? null}
-              onSelect={(slot) => {
-                dispatch({ type: 'SELECT_SLOT', slot, category })
-                setTimeout(() => bookingCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100)
-              }}
-            />
-          </div>
-        )}
-
-        {/* Booking card — shown after time selection */}
-        {hasTime && (
-          <div ref={bookingCardRef} className="border-2 border-[var(--color-primary)] rounded-2xl p-5 bg-white">
-            <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-1">
-              {category === 'private' ? 'Cruise details' : 'Ticket'}
-            </h3>
-
-            {/* Cancellation info */}
-            {cancellationPolicy && (
-              <div className="flex items-center gap-2 text-[var(--color-muted)] text-sm mb-4">
-                <svg viewBox="0 0 24 24" className="w-4 h-4 flex-shrink-0" fill="currentColor">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" />
-                </svg>
-                <span>{cancellationPolicy.length > 40 ? 'Free cancellation' : cancellationPolicy}</span>
-              </div>
-            )}
-
-            {/* Private: boat + duration */}
-            {category === 'private' && state.selectedSlot && (
-              <div className="space-y-5">
-                <BoatDurationStep
-                  customerTypes={state.selectedSlot.customerTypes}
-                  guests={state.guests}
-                  selectedCustomerTypePk={state.selectedCustomerType?.pk ?? null}
-                  onSelect={(ct, boatId) => dispatch({ type: 'SELECT_BOAT_DURATION', customerType: ct, boatId })}
-                />
-
-                {/* Guest counter */}
-                <div>
-                  <p className="font-avenir font-semibold text-sm text-[var(--color-ink)] mb-2">How many guests?</p>
-                  <div className="flex items-center justify-between bg-zinc-50 rounded-xl px-4 py-3">
-                    <span className="text-sm font-medium text-zinc-800">Guests</span>
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => handleInlineGuestChange(Math.max(1, state.guests - 1))}
-                        disabled={state.guests <= 1}
-                        className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center text-zinc-600 hover:border-zinc-500 disabled:opacity-30 transition-colors"
-                      >
-                        <span className="text-lg leading-none">−</span>
-                      </button>
-                      <span className="w-6 text-center font-semibold text-zinc-800 tabular-nums">{state.guests}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleInlineGuestChange(Math.min(12, state.guests + 1))}
-                        disabled={state.guests >= 12}
-                        className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center text-zinc-600 hover:border-zinc-500 disabled:opacity-30 transition-colors"
-                      >
-                        <span className="text-lg leading-none">+</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Shared: ticket counters */}
-            {category === 'shared' && state.selectedSlot && (
-              <TicketStep
-                customerTypes={state.selectedSlot.customerTypes}
-                ticketCounts={state.ticketCounts}
-                maxCapacity={state.selectedSlot.capacity}
-                onUpdateCount={(pk, count) => dispatch({ type: 'UPDATE_TICKET_COUNT', customerTypePk: pk, count })}
-                onConfirm={() => dispatch({ type: 'CONFIRM_TICKETS' })}
-              />
-            )}
-
-            {/* Total + Next */}
-            {basePriceCents > 0 && (
-              <div className="mt-4 pt-4 border-t border-zinc-100">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-avenir font-bold text-base text-[var(--color-ink)]">Total</span>
-                  <span className="font-avenir font-bold text-base text-[var(--color-ink)]">{fmtEuros(basePriceCents + cityTaxCents)}</span>
-                </div>
-                <p className="text-xs text-[var(--color-muted)] mb-4">Includes taxes and charges</p>
-
-                {!showExtras && (
-                  <div className="flex justify-end">
-                    <Button
-                      variant="primary"
-                      size="md"
-                      className="rounded-xl font-bold px-10"
-                      onClick={() => {
-                        if (category === 'private' && state.selectedCustomerType) {
-                          dispatch({ type: 'REOPEN_STEP', step: 'extras' })
-                        } else if (category === 'shared' && state.totalTickets > 0) {
-                          dispatch({ type: 'CONFIRM_TICKETS' })
-                        }
-                        setTimeout(() => extrasRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100)
-                      }}
-                      disabled={!hasBoatOrTickets}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Extras step */}
-        {showExtras && (
-          <div ref={extrasRef} className="border border-zinc-200 rounded-2xl p-5 bg-white">
-            <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-3">
-              Add food, drinks & extras
-            </h3>
-            <ExtrasStep
-              listingId={listingId}
-              guestCount={guestCount}
-              baseAmountCents={basePriceCents}
-              durationMinutes={state.selectedCustomerType?.durationMinutes ?? state.selectedSlot?.customerTypes[0]?.durationMinutes}
-              onExtrasChange={handleExtrasChange}
-            />
-          </div>
-        )}
-
-        {/* Price Summary + Proceed */}
-        {showExtras && basePriceCents > 0 && (
-          <div className="space-y-4">
-            <PriceSummary
-              basePriceCents={basePriceCents}
-              extrasCalculation={state.extrasCalculation}
-              mode={category}
-              cruiseLabel={boatSummary}
-              ticketBreakdown={ticketBreakdown}
-              cityTaxCents={cityTaxCents}
-            />
-            <Button
-              variant="primary"
-              size="lg"
-              className="w-full rounded-xl text-base font-bold"
-              onClick={handleProceedToCheckout}
-            >
-              Proceed to booking
-            </Button>
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  // ── Sidebar layout (default, accordion-based) ────────────────────────────
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-zinc-100 p-4">
       {/* Info pills */}
@@ -547,141 +53,47 @@ export function BookingPanel({
         </div>
       )}
 
-      {/* Step 1: Date */}
-      <StepAccordion
-        title="Pick a date"
-        summary={dateSummary}
-        stepNumber={stepNumber('date')}
-        isActive={isStepActive('date')}
-        isCompleted={isStepCompleted('date')}
-        onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'date' })}
-      >
-        <DateStep
-          mode={category}
-          initialDate={state.date || undefined}
-          initialGuests={state.guests}
-          onConfirm={handleDateConfirm}
-        />
+      <StepAccordion title="Pick a date" summary={dateSummary} stepNumber={stepNumber('date')} isActive={isStepActive('date')} isCompleted={isStepCompleted('date')} onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'date' })}>
+        <DateStep mode={category} initialDate={state.date || undefined} initialGuests={state.guests} onConfirm={handleDateConfirm} />
       </StepAccordion>
 
-      {/* Step 2: Guests (Private only) */}
       {category === 'private' && (
-        <StepAccordion
-          title="How many guests?"
-          summary={guestsSummary}
-          stepNumber={stepNumber('guests')}
-          isActive={isStepActive('guests')}
-          isCompleted={isStepCompleted('guests')}
-          onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'guests' })}
-        >
-          <GuestStep
-            initialGuests={state.guests}
-            maxGuests={12}
-            onConfirm={handleGuestsConfirm}
-          />
+        <StepAccordion title="How many guests?" summary={guestsSummary} stepNumber={stepNumber('guests')} isActive={isStepActive('guests')} isCompleted={isStepCompleted('guests')} onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'guests' })}>
+          <GuestStep initialGuests={state.guests} maxGuests={12} onConfirm={handleGuestsConfirm} />
         </StepAccordion>
       )}
 
-      {/* Pick a time */}
-      <StepAccordion
-        title="Pick a time"
-        summary={timeSummary}
-        stepNumber={stepNumber('time')}
-        isActive={isStepActive('time')}
-        isCompleted={isStepCompleted('time')}
-        onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'time' })}
-      >
-        <TimeSlotStep
-          slots={state.slots}
-          loading={state.loadingSlots}
-          mode={category}
-          selectedSlotPk={state.selectedSlot?.pk ?? null}
-          onSelect={(slot) => dispatch({ type: 'SELECT_SLOT', slot, category })}
-        />
+      <StepAccordion title="Pick a time" summary={timeSummary} stepNumber={stepNumber('time')} isActive={isStepActive('time')} isCompleted={isStepCompleted('time')} onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'time' })}>
+        <TimeSlotStep slots={state.slots} loading={state.loadingSlots} mode={category} selectedSlotPk={state.selectedSlot?.pk ?? null} onSelect={(slot) => dispatch({ type: 'SELECT_SLOT', slot, category })} />
       </StepAccordion>
 
-      {/* Boat + Duration (Private) */}
       {category === 'private' && (
-        <StepAccordion
-          title="Choose your boat"
-          summary={boatSummary}
-          stepNumber={stepNumber('boat')}
-          isActive={isStepActive('boat')}
-          isCompleted={isStepCompleted('boat')}
-          onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'boat' })}
-        >
+        <StepAccordion title="Choose your boat" summary={boatSummary} stepNumber={stepNumber('boat')} isActive={isStepActive('boat')} isCompleted={isStepCompleted('boat')} onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'boat' })}>
           {state.selectedSlot && (
-            <BoatDurationStep
-              customerTypes={state.selectedSlot.customerTypes}
-              guests={state.guests}
-              selectedCustomerTypePk={state.selectedCustomerType?.pk ?? null}
-              onSelect={(ct, boatId) => dispatch({ type: 'SELECT_BOAT_DURATION', customerType: ct, boatId })}
-            />
+            <BoatDurationStep customerTypes={state.selectedSlot.customerTypes} guests={state.guests} selectedCustomerTypePk={state.selectedCustomerType?.pk ?? null} onSelect={(ct, boatId) => dispatch({ type: 'SELECT_BOAT_DURATION', customerType: ct, boatId })} />
           )}
         </StepAccordion>
       )}
 
-      {/* Tickets (Shared) */}
       {category === 'shared' && (
-        <StepAccordion
-          title="Select tickets"
-          summary={ticketSummary}
-          stepNumber={stepNumber('tickets')}
-          isActive={isStepActive('tickets')}
-          isCompleted={isStepCompleted('tickets')}
-          onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'tickets' })}
-        >
+        <StepAccordion title="Select tickets" summary={ticketSummary} stepNumber={stepNumber('tickets')} isActive={isStepActive('tickets')} isCompleted={isStepCompleted('tickets')} onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'tickets' })}>
           {state.selectedSlot && (
-            <TicketStep
-              customerTypes={state.selectedSlot.customerTypes}
-              ticketCounts={state.ticketCounts}
-              maxCapacity={state.selectedSlot.capacity}
-              onUpdateCount={(pk, count) => dispatch({ type: 'UPDATE_TICKET_COUNT', customerTypePk: pk, count })}
-              onConfirm={() => dispatch({ type: 'CONFIRM_TICKETS' })}
-            />
+            <TicketStep customerTypes={state.selectedSlot.customerTypes} ticketCounts={state.ticketCounts} maxCapacity={state.selectedSlot.capacity} onUpdateCount={(pk, count) => dispatch({ type: 'UPDATE_TICKET_COUNT', customerTypePk: pk, count })} onConfirm={() => dispatch({ type: 'CONFIRM_TICKETS' })} />
           )}
         </StepAccordion>
       )}
 
-      {/* Extras */}
-      <StepAccordion
-        title="Add food, drinks & extras"
-        summary={state.selectedExtraIds.length > 0 ? `${state.selectedExtraIds.length} extras selected` : undefined}
-        stepNumber={stepNumber('extras')}
-        isActive={isStepActive('extras')}
-        isCompleted={isStepCompleted('extras')}
-        onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'extras' })}
-      >
-        <ExtrasStep
-          listingId={listingId}
-          guestCount={guestCount}
-          baseAmountCents={basePriceCents}
-          durationMinutes={state.selectedCustomerType?.durationMinutes ?? state.selectedSlot?.customerTypes[0]?.durationMinutes}
-          onExtrasChange={handleExtrasChange}
-        />
+      <StepAccordion title="Add food, drinks & extras" summary={state.selectedExtraIds.length > 0 ? `${state.selectedExtraIds.length} extras selected` : undefined} stepNumber={stepNumber('extras')} isActive={isStepActive('extras')} isCompleted={isStepCompleted('extras')} onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'extras' })}>
+        <ExtrasStep listingId={listingId} guestCount={guestCount} baseAmountCents={basePriceCents} durationMinutes={state.selectedCustomerType?.durationMinutes ?? state.selectedSlot?.customerTypes[0]?.durationMinutes} onExtrasChange={handleExtrasChange} />
       </StepAccordion>
 
-      {/* Price Summary — always visible when we have a price */}
       {basePriceCents > 0 && (
-        <PriceSummary
-          basePriceCents={basePriceCents}
-          extrasCalculation={state.extrasCalculation}
-          mode={category}
-          cruiseLabel={boatSummary}
-          ticketBreakdown={ticketBreakdown}
-          cityTaxCents={cityTaxCents}
-        />
+        <PriceSummary basePriceCents={basePriceCents} extrasCalculation={state.extrasCalculation} mode={category} cruiseLabel={boatSummary} ticketBreakdown={ticketBreakdown} cityTaxCents={cityTaxCents} />
       )}
 
-      {/* Proceed to booking CTA — visible once extras step is reached */}
       {state.step === 'extras' && (
         <div className="mt-5">
-          <Button
-            variant="primary"
-            size="lg"
-            className="w-full rounded-xl text-base font-bold"
-            onClick={handleProceedToCheckout}
-          >
+          <Button variant="primary" size="lg" className="w-full rounded-xl text-base font-bold" onClick={handleProceedToCheckout}>
             Proceed to booking
           </Button>
         </div>
