@@ -27,8 +27,6 @@ export interface ExtraCardProps {
   quantity?: number
   /** Called when +/- buttons change the quantity */
   onQuantityChange?: (id: string, qty: number) => void
-  /** Compact mode for grid layout (food category) */
-  compact?: boolean
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -67,7 +65,6 @@ export function ExtraCard({
   durationMinutes = DEFAULT_DURATION_MINUTES,
   quantity = 0,
   onQuantityChange,
-  compact = false,
 }: ExtraCardProps) {
   const isCounter = extra.quantity_mode === 'counter'
   const minQty = extra.min_quantity ?? 1
@@ -106,26 +103,12 @@ export function ExtraCard({
   return (
     <button
       onClick={handleCardClick}
-      className={`w-full text-left rounded-lg border transition-all ${
-        compact ? 'flex flex-col p-2.5 gap-1' : 'flex items-center gap-3 px-4 py-3'
-      } ${
+      className={`w-full text-left rounded-lg border transition-all flex items-center gap-3 px-4 py-3 ${
         selected
           ? 'border-zinc-900 bg-zinc-900 text-white'
           : 'border-zinc-200 bg-white hover:border-zinc-400'
       }`}
     >
-      {compact ? (
-        <>
-          {/* Compact: stacked layout for grid */}
-          <p className={`text-xs font-medium truncate ${selected ? 'text-white' : 'text-zinc-900'}`}>
-            {extra.name}
-          </p>
-          <p className={`text-[11px] font-semibold ${selected ? 'text-white/80' : 'text-zinc-500'}`}>
-            {formatPriceLabel(extra, guestCount, baseAmountCents, durationMinutes)}
-          </p>
-        </>
-      ) : (
-        <>
           {/* Checkbox indicator (toggle mode only) */}
           {!isCounter && (
             <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
@@ -196,8 +179,6 @@ export function ExtraCard({
               {formatPriceLabel(extra, guestCount, baseAmountCents, durationMinutes)}
             </p>
           </div>
-        </>
-      )}
     </button>
   )
 }
