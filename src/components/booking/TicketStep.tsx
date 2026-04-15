@@ -14,7 +14,6 @@ interface TicketStepProps {
 
 // Try to derive a human label from customer type data
 function getCustomerTypeLabel(ct: AvailabilityCustomerType, index: number): string {
-  if (ct.name) return ct.name
   if (ct.minimumParty >= 18 || index === 0) return 'Adult'
   return 'Child'
 }
