@@ -89,47 +89,46 @@ export function BookingPanelSlider(props: BookingPanelProps) {
     }
   }, [category, dispatch, goToPanel])
 
-  // ── Extras section (kept mounted once visited) ────────────────────────────
+  // ── Shared extras JSX (inlined, NOT a function component) ─────────────────
 
-  function ExtrasSection({ visible }: { visible: boolean }) {
-    return (
-      <div ref={extrasRef} className={`space-y-4 ${visible ? '' : 'hidden'}`}>
-        <div className="border border-zinc-200 rounded-2xl p-5 bg-white">
-          <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-3">
-            Add food, drinks & extras
-          </h3>
-          <ExtrasStep
-            listingId={listingId}
-            guestCount={guestCount}
-            baseAmountCents={basePriceCents}
-            durationMinutes={state.selectedCustomerType?.durationMinutes ?? state.selectedSlot?.customerTypes[0]?.durationMinutes}
-            onExtrasChange={handleExtrasChange}
-          />
-        </div>
-
-        {basePriceCents > 0 && (
-          <div className="space-y-4">
-            <PriceSummary
-              basePriceCents={basePriceCents}
-              extrasCalculation={state.extrasCalculation}
-              mode={category}
-              cruiseLabel={boatSummary}
-              ticketBreakdown={ticketBreakdown}
-              cityTaxCents={cityTaxCents}
-            />
-            <Button
-              variant="primary"
-              size="lg"
-              className="w-full rounded-xl text-base font-bold"
-              onClick={handleProceedToCheckout}
-            >
-              Proceed to booking
-            </Button>
-          </div>
-        )}
+  const extrasVisible = panelIndex === extrasPanelIndex
+  const extrasBlock = hasVisitedExtras.current && (
+    <div ref={extrasRef} className={`space-y-4 ${extrasVisible ? '' : 'hidden'}`}>
+      <div className="border border-zinc-200 rounded-2xl p-5 bg-white">
+        <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-3">
+          Add food, drinks & extras
+        </h3>
+        <ExtrasStep
+          listingId={listingId}
+          guestCount={guestCount}
+          baseAmountCents={basePriceCents}
+          durationMinutes={state.selectedCustomerType?.durationMinutes ?? state.selectedSlot?.customerTypes[0]?.durationMinutes}
+          onExtrasChange={handleExtrasChange}
+        />
       </div>
-    )
-  }
+
+      {basePriceCents > 0 && (
+        <div className="space-y-4">
+          <PriceSummary
+            basePriceCents={basePriceCents}
+            extrasCalculation={state.extrasCalculation}
+            mode={category}
+            cruiseLabel={boatSummary}
+            ticketBreakdown={ticketBreakdown}
+            cityTaxCents={cityTaxCents}
+          />
+          <Button
+            variant="primary"
+            size="lg"
+            className="w-full rounded-xl text-base font-bold"
+            onClick={handleProceedToCheckout}
+          >
+            Proceed to booking
+          </Button>
+        </div>
+      )}
+    </div>
+  )
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -285,8 +284,8 @@ export function BookingPanelSlider(props: BookingPanelProps) {
           )}
         </AnimatePresence>
 
-        {/* Extras — kept mounted once visited, hidden when not active */}
-        {hasVisitedExtras.current && <ExtrasSection visible={panelIndex === 3} />}
+        {/* Extras — kept mounted once visited, hidden when not on panel 3 */}
+        {extrasBlock}
       </div>
     )
   }
@@ -390,8 +389,8 @@ export function BookingPanelSlider(props: BookingPanelProps) {
           )}
         </AnimatePresence>
 
-        {/* Extras — kept mounted once visited, hidden when not active */}
-        {hasVisitedExtras.current && <ExtrasSection visible={panelIndex === 1} />}
+        {/* Extras — kept mounted once visited, hidden when not on panel 1 */}
+        {extrasBlock}
       </div>
     )
   }
