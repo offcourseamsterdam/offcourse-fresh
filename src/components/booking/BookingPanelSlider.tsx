@@ -132,10 +132,15 @@ export function BookingPanelSlider(props: BookingPanelProps) {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  // NOTE: Called as functions, NOT as JSX components (<PrivateSlider />).
+  // Using JSX would create a component boundary — since these functions are
+  // redefined every render, React would see a "new" component type each time
+  // and unmount/remount the entire subtree, destroying all child state
+  // (causing infinite "Loading extras..." and "Select time" reloading).
   if (category === 'private') {
-    return <PrivateSlider />
+    return PrivateSlider()
   }
-  return <SharedSlider />
+  return SharedSlider()
 
   // ── PRIVATE FLOW ──────────────────────────────────────────────────────────
 
