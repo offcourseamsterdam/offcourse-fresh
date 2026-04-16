@@ -57,12 +57,11 @@ async function fetchBookings(
   supabase: SupabaseClient,
   sessionIds: string[],
   category: BookingCategory,
-  fields = 'id, stripe_amount, session_id, category',
 ) {
-  if (sessionIds.length === 0) return []
+  if (sessionIds.length === 0) return [] as { id: string; stripe_amount: number | null; session_id: string | null; category: string | null }[]
   let query = supabase
     .from('bookings')
-    .select(fields)
+    .select('id, stripe_amount, session_id, category')
     .in('session_id', sessionIds)
     .eq('status', 'confirmed')
   if (category !== 'all') query = query.eq('category', category)
@@ -162,7 +161,7 @@ export async function getTrafficByDay(
   if (!sessions?.length) return []
 
   const sessionIds = sessions.map((s) => s.id)
-  const bookings = await fetchBookings(supabase, sessionIds, category, 'id, session_id, created_at, category')
+  const bookings = await fetchBookings(supabase, sessionIds, category)
   const bookingSessionIds = new Set(bookings.map((b) => b.session_id))
 
   const byDay = new Map<string, { sessions: number; bookings: number }>()
