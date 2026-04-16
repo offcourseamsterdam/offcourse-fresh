@@ -70,6 +70,40 @@ export function initSession() {
   })
 }
 
+/**
+ * Record an anonymous visit server-side WITHOUT setting any cookies.
+ * Used when consent hasn't been given yet — we still count the visit,
+ * we just can't connect it to future visits.
+ */
+export function initAnonymousSession() {
+  pageViewCount++
+
+  // Parse UTM from URL (no cookie needed — URL is public)
+  const utm = parseUTMFromURL(window.location.href)
+
+  // Generate throwaway IDs (not stored in cookies)
+  const anonVisitorId = `anon_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  const anonSessionId = `anon_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+
+  fetch('/api/tracking/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      visitor_id: anonVisitorId,
+      session_id: anonSessionId,
+      entry_page: window.location.pathname,
+      referrer: document.referrer || undefined,
+      page_count: pageViewCount,
+      utm_source: utm.utm_source,
+      utm_medium: utm.utm_medium,
+      utm_campaign: utm.utm_campaign,
+      utm_term: utm.utm_term,
+      utm_content: utm.utm_content,
+    }),
+    keepalive: true,
+  }).catch(() => {})
+}
+
 /** Track a funnel event. Fire-and-forget via sendBeacon. */
 export function trackEvent(name: TrackingEventName, metadata?: Record<string, unknown>) {
   const visitorId = getCookie(COOKIE_VISITOR_ID)
