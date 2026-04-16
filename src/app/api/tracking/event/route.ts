@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { TRACKING_EVENTS } from '@/lib/tracking/constants'
+import { checkRateLimit } from '@/lib/tracking/rate-limit'
 
 /**
  * POST /api/tracking/event
@@ -9,6 +10,12 @@ import { TRACKING_EVENTS } from '@/lib/tracking/constants'
  * Always returns 200 — tracking must never break the user experience.
  */
 export async function POST(request: NextRequest) {
+  // Rate limit: 120 requests per minute per IP
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
+  if (!checkRateLimit(ip, 120, 60_000)) {
+    return NextResponse.json({ ok: true }) // Silent — don't reveal rate limiting to client
+  }
+
   try {
     // sendBeacon sends as text/plain or application/json
     let body: Record<string, unknown>

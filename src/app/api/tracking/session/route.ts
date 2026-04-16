@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { resolveChannelSlug } from '@/lib/tracking/attribution'
+import { checkRateLimit } from '@/lib/tracking/rate-limit'
 
 /**
  * POST /api/tracking/session
@@ -11,6 +12,12 @@ import { resolveChannelSlug } from '@/lib/tracking/attribution'
  * Uses service role client because anonymous visitors need to write sessions.
  */
 export async function POST(request: NextRequest) {
+  // Rate limit: 60 requests per minute per IP
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
+  if (!checkRateLimit(ip, 60, 60_000)) {
+    return NextResponse.json({ ok: false }, { status: 429 })
+  }
+
   try {
     // sendBeacon sends as text/plain, regular fetch sends as application/json
     let body: Record<string, unknown>

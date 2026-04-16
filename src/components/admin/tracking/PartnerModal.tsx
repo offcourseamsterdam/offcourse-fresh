@@ -9,13 +9,25 @@ interface Channel {
   color: string | null
 }
 
+interface EditingPartner {
+  id: string
+  name: string
+  email?: string | null
+  contact_name?: string | null
+  phone?: string | null
+  website?: string | null
+  notes?: string | null
+  channel_id?: string | null
+}
+
 interface PartnerModalProps {
   open: boolean
   onClose: () => void
   onSaved: () => void
+  editing?: EditingPartner | null
 }
 
-export function PartnerModal({ open, onClose, onSaved }: PartnerModalProps) {
+export function PartnerModal({ open, onClose, onSaved, editing }: PartnerModalProps) {
   const [channels, setChannels] = useState<Channel[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -40,19 +52,19 @@ export function PartnerModal({ open, onClose, onSaved }: PartnerModalProps) {
       .catch(() => {})
   }, [open])
 
-  // Reset form when opening
+  // Reset/prefill form when opening
   useEffect(() => {
     if (open) {
-      setName('')
-      setChannelId('')
-      setEmail('')
-      setContactName('')
-      setPhone('')
-      setWebsite('')
-      setNotes('')
+      setName(editing?.name ?? '')
+      setChannelId(editing?.channel_id ?? '')
+      setEmail(editing?.email ?? '')
+      setContactName(editing?.contact_name ?? '')
+      setPhone(editing?.phone ?? '')
+      setWebsite(editing?.website ?? '')
+      setNotes(editing?.notes ?? '')
       setError(null)
     }
-  }, [open])
+  }, [open, editing])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -63,8 +75,11 @@ export function PartnerModal({ open, onClose, onSaved }: PartnerModalProps) {
     setError(null)
 
     try {
-      const res = await fetch('/api/admin/tracking/affiliates', {
-        method: 'POST',
+      const url = editing
+        ? `/api/admin/tracking/affiliates/${editing.id}`
+        : '/api/admin/tracking/affiliates'
+      const res = await fetch(url, {
+        method: editing ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name.trim(),
@@ -77,7 +92,7 @@ export function PartnerModal({ open, onClose, onSaved }: PartnerModalProps) {
         }),
       })
       const json = await res.json()
-      if (!json.ok) throw new Error(json.error || 'Failed to create partner')
+      if (!json.ok) throw new Error(json.error || 'Failed to save partner')
       onSaved()
       onClose()
     } catch (err) {
@@ -98,7 +113,7 @@ export function PartnerModal({ open, onClose, onSaved }: PartnerModalProps) {
       <div className="relative bg-white rounded-xl border border-zinc-200 shadow-xl w-full max-w-md mx-4 animate-modal-in">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100">
-          <h2 className="text-sm font-semibold text-zinc-900">New Partner</h2>
+          <h2 className="text-sm font-semibold text-zinc-900">{editing ? 'Edit Partner' : 'New Partner'}</h2>
           <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600">
             <X className="w-4 h-4" />
           </button>
@@ -204,7 +219,7 @@ export function PartnerModal({ open, onClose, onSaved }: PartnerModalProps) {
               Cancel
             </button>
             <button type="submit" disabled={saving} className="px-4 py-2 rounded-lg text-xs font-medium bg-zinc-900 text-white hover:bg-zinc-800 disabled:opacity-50 transition-colors">
-              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Create Partner'}
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : editing ? 'Save Changes' : 'Create Partner'}
             </button>
           </div>
         </form>

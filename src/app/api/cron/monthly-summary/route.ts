@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { periodicSummaryHtml } from '@/emails/PeriodicSummary'
+import { getNotificationSettings, buildSummaryForRecipient } from '@/lib/tracking/cron-queries'
 import { Resend } from 'resend'
 
 /**
@@ -17,16 +18,10 @@ export async function GET(request: NextRequest) {
     const supabase = createAdminClient()
     const resend = new Resend(process.env.RESEND_API_KEY!)
 
-    const { data: settings } = await supabase
-      .from('notification_settings')
-      .select('*, channels(*), partners(*)')
-      .eq('notify_monthly', true)
+    const settings = await getNotificationSettings(supabase, 'notify_monthly')
+    if (!settings.length) return NextResponse.json({ ok: true, sent: 0 })
 
-    if (!settings?.length) {
-      return NextResponse.json({ ok: true, sent: 0 })
-    }
-
-    // Previous month range
+    // Previous calendar month
     const now = new Date()
     const from = new Date(now.getFullYear(), now.getMonth() - 1, 1)
     const to = new Date(now.getFullYear(), now.getMonth(), 1)
@@ -35,21 +30,13 @@ export async function GET(request: NextRequest) {
     let sent = 0
 
     for (const setting of settings) {
-      const recipients = setting.email_recipients ?? []
-      if (recipients.length === 0) continue
+      const recipients = setting.email_recipients
+      if (!recipients.length) continue
 
-      const name = (setting as Record<string, unknown>).channels
-        ? ((setting as Record<string, unknown>).channels as { name: string }).name
-        : ((setting as Record<string, unknown>).partners as { name: string })?.name ?? 'Partner'
+      const summary = await buildSummaryForRecipient(supabase, setting, from, to, monthName)
+      if (!summary) continue
 
-      const html = periodicSummaryHtml({
-        recipientName: name,
-        periodLabel: monthName,
-        totalBookings: 0,
-        totalRevenueCents: 0,
-        totalCommissionCents: 0,
-        campaigns: [],
-      })
+      const html = periodicSummaryHtml(summary)
 
       await resend.emails.send({
         from: 'Off Course Amsterdam <cruise@offcourseamsterdam.com>',

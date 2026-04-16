@@ -2,10 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'next/navigation'
-import { Loader2, ArrowLeft, Copy, Check } from 'lucide-react'
+import { Loader2, ArrowLeft, Copy, Check, Pencil, Ban, Plus } from 'lucide-react'
 import { KPICard } from '@/components/admin/tracking/KPICard'
 import { PeriodSelector, getDateRange, type PeriodKey } from '@/components/admin/tracking/PeriodSelector'
 import { FunnelChart } from '@/components/admin/tracking/FunnelChart'
+import { CampaignModal } from '@/components/admin/tracking/CampaignModal'
+import { TrackingLinkModal } from '@/components/admin/tracking/TrackingLinkModal'
 
 interface Campaign {
   id: string
@@ -48,6 +50,8 @@ export default function CampaignDetailPage() {
   const [funnel, setFunnel] = useState<FunnelStep[]>([])
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState<string | null>(null)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [showLinkModal, setShowLinkModal] = useState(false)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -106,7 +110,26 @@ export default function CampaignDetailPage() {
             <h1 className="text-xl font-bold text-zinc-900">{campaign.name}</h1>
             <p className="text-xs text-zinc-400">/{campaign.slug} &middot; {campaign.category}</p>
           </div>
-          <PeriodSelector value={period} onChange={(key, from, to) => { setPeriod(key); setDateRange({ from, to }) }} />
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowEditModal(true)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-500 hover:bg-zinc-100 transition-colors">
+              <Pencil className="w-3 h-3" /> Edit
+            </button>
+            <button
+              onClick={async () => {
+                if (!confirm('Deactivate this campaign?')) return
+                await fetch(`/api/admin/tracking/campaigns/${id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ is_active: false }),
+                })
+                fetchData()
+              }}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-500 hover:bg-red-50 transition-colors"
+            >
+              <Ban className="w-3 h-3" /> Deactivate
+            </button>
+            <PeriodSelector value={period} onChange={(key, from, to) => { setPeriod(key); setDateRange({ from, to }) }} />
+          </div>
         </div>
       </div>
 
@@ -118,7 +141,12 @@ export default function CampaignDetailPage() {
 
       {/* Tracking Links */}
       <div className="bg-white rounded-xl border border-zinc-200 p-5">
-        <h2 className="text-sm font-semibold text-zinc-900 mb-4">Tracking Links</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-zinc-900">Tracking Links</h2>
+          <button onClick={() => setShowLinkModal(true)} className="flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-700 transition-colors">
+            <Plus className="w-3.5 h-3.5" /> New Link
+          </button>
+        </div>
         {links.length === 0 ? (
           <p className="text-xs text-zinc-400">No tracking links yet.</p>
         ) : (
@@ -158,6 +186,21 @@ export default function CampaignDetailPage() {
           </table>
         )}
       </div>
+
+      <CampaignModal
+        open={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        onSaved={() => fetchData()}
+        editing={campaign}
+      />
+
+      <TrackingLinkModal
+        open={showLinkModal}
+        onClose={() => setShowLinkModal(false)}
+        onSaved={() => fetchData()}
+        campaignId={id}
+        partnerId={campaign.partner_id ?? undefined}
+      />
     </div>
   )
 }

@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'next/navigation'
-import { Loader2, ArrowLeft, Copy, Check, ExternalLink, Plus } from 'lucide-react'
+import { Loader2, ArrowLeft, Copy, Check, ExternalLink, Plus, Pencil, Ban } from 'lucide-react'
 import { KPICard } from '@/components/admin/tracking/KPICard'
 import { CampaignModal } from '@/components/admin/tracking/CampaignModal'
+import { PartnerModal } from '@/components/admin/tracking/PartnerModal'
 
 interface Partner {
   id: string
@@ -55,6 +56,7 @@ export default function PartnerDetailPage() {
   const [copied, setCopied] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [showCampaignModal, setShowCampaignModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -126,7 +128,28 @@ export default function PartnerDetailPage() {
 
       {/* Partner info */}
       <div className="bg-white rounded-xl border border-zinc-200 p-5">
-        <h1 className="text-xl font-bold text-zinc-900 mb-1">{partner.name}</h1>
+        <div className="flex items-start justify-between mb-1">
+          <h1 className="text-xl font-bold text-zinc-900">{partner.name}</h1>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowEditModal(true)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-500 hover:bg-zinc-100 transition-colors">
+              <Pencil className="w-3 h-3" /> Edit
+            </button>
+            <button
+              onClick={async () => {
+                if (!confirm('Deactivate this partner? They will no longer appear in active lists.')) return
+                await fetch(`/api/admin/tracking/affiliates/${id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ is_active: false }),
+                })
+                fetchData()
+              }}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-500 hover:bg-red-50 transition-colors"
+            >
+              <Ban className="w-3 h-3" /> Deactivate
+            </button>
+          </div>
+        </div>
         <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-zinc-400">
           {partner.email && <span>{partner.email}</span>}
           {partner.contact_name && <span>Contact: {partner.contact_name}</span>}
@@ -228,6 +251,13 @@ export default function PartnerDetailPage() {
         onClose={() => setShowCampaignModal(false)}
         onSaved={() => fetchData()}
         defaultChannelId={partner.channel_id ?? undefined}
+      />
+
+      <PartnerModal
+        open={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        onSaved={() => fetchData()}
+        editing={partner}
       />
     </div>
   )

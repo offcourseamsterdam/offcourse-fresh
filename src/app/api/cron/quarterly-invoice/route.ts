@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { periodicSummaryHtml } from '@/emails/PeriodicSummary'
+import { getNotificationSettings, buildSummaryForRecipient } from '@/lib/tracking/cron-queries'
 import { Resend } from 'resend'
 
 /**
  * GET /api/cron/quarterly-invoice
  * Vercel Cron: runs on 1st of Jan, Apr, Jul, Oct at 6:00 UTC
- * Sends per-partner quarterly invoice summaries.
  */
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
@@ -18,17 +18,10 @@ export async function GET(request: NextRequest) {
     const supabase = createAdminClient()
     const resend = new Resend(process.env.RESEND_API_KEY!)
 
-    const { data: settings } = await supabase
-      .from('notification_settings')
-      .select('*, partners(*)')
-      .eq('notify_quarterly', true)
-      .not('partner_id', 'is', null)
+    const settings = await getNotificationSettings(supabase, 'notify_quarterly')
+    if (!settings.length) return NextResponse.json({ ok: true, sent: 0 })
 
-    if (!settings?.length) {
-      return NextResponse.json({ ok: true, sent: 0 })
-    }
-
-    // Previous quarter range
+    // Previous quarter
     const now = new Date()
     const currentQuarter = Math.floor(now.getMonth() / 3)
     const prevQuarter = currentQuarter === 0 ? 3 : currentQuarter - 1
@@ -40,24 +33,22 @@ export async function GET(request: NextRequest) {
     let sent = 0
 
     for (const setting of settings) {
-      const partner = (setting as Record<string, unknown>).partners as { name: string; email?: string } | null
-      if (!partner) continue
-
-      const recipients = setting.email_recipients ?? []
-      if (recipients.length === 0 && partner.email) {
-        recipients.push(partner.email)
+      // For quarterly invoices, also check partner email as fallback
+      let recipients = [...setting.email_recipients]
+      if (recipients.length === 0 && setting.partner_id) {
+        const { data: partner } = await supabase
+          .from('partners')
+          .select('email')
+          .eq('id', setting.partner_id)
+          .single()
+        if (partner?.email) recipients.push(partner.email)
       }
-      if (recipients.length === 0) continue
+      if (!recipients.length) continue
 
-      const html = periodicSummaryHtml({
-        recipientName: partner.name,
-        periodLabel: quarterLabel,
-        totalBookings: 0,
-        totalRevenueCents: 0,
-        totalCommissionCents: 0,
-        campaigns: [],
-        isInvoice: true,
-      })
+      const summary = await buildSummaryForRecipient(supabase, setting, from, to, quarterLabel, true)
+      if (!summary) continue
+
+      const html = periodicSummaryHtml(summary)
 
       await resend.emails.send({
         from: 'Off Course Amsterdam <cruise@offcourseamsterdam.com>',

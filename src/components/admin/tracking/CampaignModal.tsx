@@ -14,12 +14,25 @@ interface Partner {
   channel_id: string | null
 }
 
+interface EditingCampaign {
+  id: string
+  name: string
+  channel_id?: string | null
+  partner_id?: string | null
+  category: string
+  investment_type?: string | null
+  percentage_value?: number | null
+  investment_amount?: number | null
+  notes?: string | null
+}
+
 interface CampaignModalProps {
   open: boolean
   onClose: () => void
   onSaved: () => void
   /** Pre-select a channel when opening from within a channel */
   defaultChannelId?: string
+  editing?: EditingCampaign | null
 }
 
 const CATEGORIES = [
@@ -32,7 +45,7 @@ const CATEGORIES = [
   { value: 'other', label: 'Other' },
 ]
 
-export function CampaignModal({ open, onClose, onSaved, defaultChannelId }: CampaignModalProps) {
+export function CampaignModal({ open, onClose, onSaved, defaultChannelId, editing }: CampaignModalProps) {
   const [channels, setChannels] = useState<Channel[]>([])
   const [allPartners, setAllPartners] = useState<Partner[]>([])
   const [saving, setSaving] = useState(false)
@@ -60,20 +73,20 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId }: Camp
     }).catch(() => {})
   }, [open])
 
-  // Reset form when opening
+  // Reset/prefill form when opening
   useEffect(() => {
     if (open) {
-      setName('')
-      setChannelId(defaultChannelId ?? '')
-      setPartnerId('')
-      setCategory('')
-      setCommissionType('percentage')
-      setCommissionValue('')
-      setInvestmentAmount('')
-      setNotes('')
+      setName(editing?.name ?? '')
+      setChannelId(editing?.channel_id ?? defaultChannelId ?? '')
+      setPartnerId(editing?.partner_id ?? '')
+      setCategory(editing?.category ?? '')
+      setCommissionType((editing?.investment_type as 'percentage' | 'fixed_amount') ?? 'percentage')
+      setCommissionValue(editing?.percentage_value?.toString() ?? '')
+      setInvestmentAmount(editing?.investment_amount ? (editing.investment_amount / 100).toString() : '')
+      setNotes(editing?.notes ?? '')
       setError(null)
     }
-  }, [open, defaultChannelId])
+  }, [open, defaultChannelId, editing])
 
   // Partners filtered by selected channel
   const filteredPartners = channelId
@@ -90,8 +103,11 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId }: Camp
     setError(null)
 
     try {
-      const res = await fetch('/api/admin/tracking/campaigns', {
-        method: 'POST',
+      const url = editing
+        ? `/api/admin/tracking/campaigns/${editing.id}`
+        : '/api/admin/tracking/campaigns'
+      const res = await fetch(url, {
+        method: editing ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name.trim(),
@@ -105,7 +121,7 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId }: Camp
         }),
       })
       const json = await res.json()
-      if (!json.ok) throw new Error(json.error || 'Failed to create campaign')
+      if (!json.ok) throw new Error(json.error || 'Failed to save campaign')
       onSaved()
       onClose()
     } catch (err) {
@@ -123,7 +139,7 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId }: Camp
 
       <div className="relative bg-white rounded-xl border border-zinc-200 shadow-xl w-full max-w-md mx-4 animate-modal-in">
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100">
-          <h2 className="text-sm font-semibold text-zinc-900">New Campaign</h2>
+          <h2 className="text-sm font-semibold text-zinc-900">{editing ? 'Edit Campaign' : 'New Campaign'}</h2>
           <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600">
             <X className="w-4 h-4" />
           </button>
@@ -260,7 +276,7 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId }: Camp
               Cancel
             </button>
             <button type="submit" disabled={saving} className="px-4 py-2 rounded-lg text-xs font-medium bg-zinc-900 text-white hover:bg-zinc-800 disabled:opacity-50 transition-colors">
-              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Create Campaign'}
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : editing ? 'Save Changes' : 'Create Campaign'}
             </button>
           </div>
         </form>
