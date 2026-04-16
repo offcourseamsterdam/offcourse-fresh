@@ -109,6 +109,7 @@ export default function StatisticsPage() {
             <KPICard
               label="Unique Visitors"
               value={data.kpis.unique_visitors.toLocaleString()}
+              subtitle={data.kpis.anonymous_sessions > 0 ? `+${data.kpis.anonymous_sessions} anonymous` : undefined}
             />
             <KPICard
               label="Bookings"

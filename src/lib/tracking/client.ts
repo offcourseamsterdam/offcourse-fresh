@@ -14,11 +14,26 @@ import {
 } from './attribution'
 
 let pageViewCount = 0
+let lastInitTime = 0
+
+/**
+ * Events that have already fired in this session.
+ * Prevents duplicate funnel events when users go back and forth.
+ * page_view is exempt — each navigation counts.
+ * Reset when a new session starts.
+ */
+const firedEvents = new Set<string>()
 
 /** Initialize tracking on page load. Call once in TrackingScript. */
 export function initSession() {
+  // Debounce: skip if called within 2 seconds (fast SPA navigation)
+  const now = Date.now()
+  if (now - lastInitTime < 2000) return
+  lastInitTime = now
+
   const visitorId = getOrCreateVisitorId()
   const sessionId = getOrCreateSessionId()
+  firedEvents.clear() // New session init = reset dedup
   pageViewCount++
 
   // Parse UTM params and set first-touch attribution
@@ -109,6 +124,13 @@ export function trackEvent(name: TrackingEventName, metadata?: Record<string, un
   const visitorId = getCookie(COOKIE_VISITOR_ID)
   const sessionId = getCookie(COOKIE_SESSION_ID)
   if (!visitorId || !sessionId) return
+
+  // Dedup: skip if this funnel event already fired in this session.
+  // page_view is exempt (each navigation counts).
+  if (name !== 'page_view') {
+    if (firedEvents.has(name)) return
+    firedEvents.add(name)
+  }
 
   const blob = new Blob(
     [JSON.stringify({

@@ -158,14 +158,11 @@ export function useBookingPanel({
         }))
     : undefined
 
-  // ── Track booking panel mount ────────────────────────────────────────────
-  useEffect(() => {
-    trackEvent('view_booking_panel', { listing: listingSlug, category })
-  }, [listingSlug, category])
-
   // ── Track step transitions ─────────────────────────────────────────────
   useEffect(() => {
     if (state.step === 'extras') trackEvent('view_extras', { listing: listingSlug })
+    if (state.step === 'boat') trackEvent('view_boat', { listing: listingSlug })
+    if (state.step === 'tickets') trackEvent('view_tickets', { listing: listingSlug })
   }, [state.step, listingSlug])
 
   // Track time slot selection
@@ -180,7 +177,6 @@ export function useBookingPanel({
   // ── Checkout ────────────────────────────────────────────────────────────
 
   function handleProceedToCheckout() {
-    trackEvent('view_checkout', { listing: listingSlug, category })
     const bookingData = {
       listingId, listingSlug, listingTitle, listingHeroImageUrl, category,
       date: state.date, guests: guestCount,

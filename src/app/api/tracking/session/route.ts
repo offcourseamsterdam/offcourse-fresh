@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { resolveChannelSlug } from '@/lib/tracking/attribution'
 import { checkRateLimit } from '@/lib/tracking/rate-limit'
+import { isBot } from '@/lib/tracking/bot-filter'
+import { sanitizeUTMParams } from '@/lib/tracking/sanitize'
 
 /**
  * POST /api/tracking/session
@@ -12,6 +14,12 @@ import { checkRateLimit } from '@/lib/tracking/rate-limit'
  * Uses service role client because anonymous visitors need to write sessions.
  */
 export async function POST(request: NextRequest) {
+  // Bot filter: don't record sessions from crawlers
+  const ua = request.headers.get('user-agent') ?? ''
+  if (isBot(ua)) {
+    return NextResponse.json({ ok: true })
+  }
+
   // Rate limit: 60 requests per minute per IP
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
   if (!checkRateLimit(ip, 60, 60_000)) {
@@ -48,10 +56,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false }, { status: 400 })
     }
 
+    // Sanitize UTM parameters
+    const sanitized = sanitizeUTMParams({
+      utm_source: utm_source as string | undefined,
+      utm_medium: utm_medium as string | undefined,
+      utm_campaign: utm_campaign as string | undefined,
+      utm_term: utm_term as string | undefined,
+      utm_content: utm_content as string | undefined,
+    })
+
     const supabase = createAdminClient()
 
-    // Parse browser info from User-Agent
-    const ua = request.headers.get('user-agent') ?? ''
+    // Parse browser info from User-Agent (reuse ua from bot check)
     const deviceType = /mobile|android|iphone|ipad/i.test(ua) ? 'mobile' : 'desktop'
     const browserName = parseBrowserName(ua)
 
@@ -117,11 +133,11 @@ export async function POST(request: NextRequest) {
             entry_page: entry_page as string | undefined,
             referrer: referrer as string | undefined,
             page_count: (page_count as number) ?? 1,
-            utm_source: utm_source as string | undefined,
-            utm_medium: utm_medium as string | undefined,
-            utm_campaign: utm_campaign as string | undefined,
-            utm_term: utm_term as string | undefined,
-            utm_content: utm_content as string | undefined,
+            utm_source: sanitized.utm_source,
+            utm_medium: sanitized.utm_medium,
+            utm_campaign: sanitized.utm_campaign,
+            utm_term: sanitized.utm_term,
+            utm_content: sanitized.utm_content,
             campaign_slug: campaign_slug as string | undefined,
             channel_id: channelId,
             browser_name: browserName,

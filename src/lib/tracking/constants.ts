@@ -4,11 +4,13 @@ export const TRACKING_EVENTS = [
   'page_view',
   'view_homepage',
   'view_cruise_detail',
-  'view_booking_panel',
+  'view_booking_panel', // legacy, kept for backward compat
   'select_date',
   'select_time',
+  'view_boat',          // private flow: choose boat + duration
+  'view_tickets',       // shared flow: choose ticket types
   'no_availability',
-  'view_checkout',
+  'view_checkout',      // legacy, kept for backward compat
   'view_payment',
   'view_extras',
   'view_details',
@@ -18,13 +20,16 @@ export const TRACKING_EVENTS = [
 export type TrackingEventName = (typeof TRACKING_EVENTS)[number]
 
 // Funnel steps in display order (for the admin funnel chart)
+// Clean funnel: homepage → cruise → date → time → extras → details → payment → booked
+// no_availability is tracked but NOT a funnel step (it's a side branch)
+// view_booking_panel removed (redundant — always fires with cruise detail)
+// view_checkout removed (same as view_details)
 export const FUNNEL_STEPS: { event: TrackingEventName; label: string }[] = [
   { event: 'view_homepage', label: 'Homepage' },
   { event: 'view_cruise_detail', label: 'Cruise Detail' },
-  { event: 'view_booking_panel', label: 'Booking Panel' },
   { event: 'select_date', label: 'Date Selected' },
   { event: 'select_time', label: 'Time Selected' },
-  { event: 'view_checkout', label: 'Checkout' },
+  { event: 'view_boat', label: 'Boat / Tickets' },  // view_boat (private) or view_tickets (shared)
   { event: 'view_extras', label: 'Extras' },
   { event: 'view_details', label: 'Details' },
   { event: 'view_payment', label: 'Payment' },
@@ -62,3 +67,22 @@ export type UTMParams = {
   utm_term?: string
   utm_content?: string
 }
+
+// ── Known UTM sources (auto-validated) ──
+// Sources not on this list are still recorded but flagged as unverified.
+// Campaign link slugs are also auto-validated server-side.
+
+export const KNOWN_UTM_SOURCES = [
+  // Search engines
+  'google', 'bing', 'duckduckgo', 'yahoo', 'ecosia', 'baidu',
+  // Social platforms
+  'facebook', 'instagram', 'tiktok', 'linkedin', 'pinterest',
+  'youtube', 'twitter', 'threads',
+  // Email
+  'email', 'newsletter', 'mailchimp', 'resend',
+  // Partners / platforms
+  'partner', 'withlocals', 'clickandboat', 'tripadvisor',
+  'getyourguide', 'viator', 'airbnb',
+  // Internal
+  'direct', 'qr', 'print', 'flyer', 'merch',
+]

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { TRACKING_EVENTS } from '@/lib/tracking/constants'
 import { checkRateLimit } from '@/lib/tracking/rate-limit'
+import { isBot } from '@/lib/tracking/bot-filter'
 
 /**
  * POST /api/tracking/event
@@ -10,6 +11,11 @@ import { checkRateLimit } from '@/lib/tracking/rate-limit'
  * Always returns 200 — tracking must never break the user experience.
  */
 export async function POST(request: NextRequest) {
+  // Bot filter
+  if (isBot(request.headers.get('user-agent'))) {
+    return NextResponse.json({ ok: true })
+  }
+
   // Rate limit: 120 requests per minute per IP
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
   if (!checkRateLimit(ip, 120, 60_000)) {

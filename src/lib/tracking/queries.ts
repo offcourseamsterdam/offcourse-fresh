@@ -17,6 +17,7 @@ export type BookingCategory = 'all' | 'private' | 'shared'
 export interface OverviewKPIs {
   sessions: number
   unique_visitors: number
+  anonymous_sessions: number
   bookings: number
   revenue_cents: number
   conversion_rate: number
@@ -101,7 +102,9 @@ export async function getOverviewKPIs(
     .lte('started_at', range.to)
 
   const sessionCount = sessions?.length ?? 0
-  const uniqueVisitors = new Set(sessions?.map((s) => s.visitor_id) ?? []).size
+  const allVisitorIds = sessions?.map((s) => s.visitor_id) ?? []
+  const uniqueVisitors = new Set(allVisitorIds.filter((id) => !id.startsWith('anon_'))).size
+  const anonymousSessions = allVisitorIds.filter((id) => id.startsWith('anon_')).length
 
   // Current period bookings (linked to sessions)
   const sessionIds = sessions?.map((s) => s.id) ?? []
@@ -135,6 +138,7 @@ export async function getOverviewKPIs(
   return {
     sessions: sessionCount,
     unique_visitors: uniqueVisitors,
+    anonymous_sessions: anonymousSessions,
     bookings: bookingCount,
     revenue_cents: revenueCents,
     conversion_rate: sessionCount > 0 ? bookingCount / sessionCount : 0,
@@ -283,8 +287,25 @@ export async function getFunnelData(
   }
 
   return FUNNEL_STEPS.map((step, i) => {
-    const count = sessionsByEvent.get(step.event)?.size ?? 0
-    const prevCount = i > 0 ? (sessionsByEvent.get(FUNNEL_STEPS[i - 1].event)?.size ?? 0) : count
+    let count: number
+    // view_boat step merges view_boat + view_tickets (private vs shared flow)
+    if (step.event === 'view_boat') {
+      const boatSessions = sessionsByEvent.get('view_boat') ?? new Set()
+      const ticketSessions = sessionsByEvent.get('view_tickets') ?? new Set()
+      const merged = new Set([...boatSessions, ...ticketSessions])
+      count = merged.size
+    } else {
+      count = sessionsByEvent.get(step.event)?.size ?? 0
+    }
+    const prevCount = i > 0 ? (() => {
+      const prevStep = FUNNEL_STEPS[i - 1]
+      if (prevStep.event === 'view_boat') {
+        const b = sessionsByEvent.get('view_boat') ?? new Set()
+        const t = sessionsByEvent.get('view_tickets') ?? new Set()
+        return new Set([...b, ...t]).size
+      }
+      return sessionsByEvent.get(prevStep.event)?.size ?? 0
+    })() : count
     return {
       event: step.event,
       label: step.label,
