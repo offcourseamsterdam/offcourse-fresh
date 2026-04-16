@@ -195,10 +195,25 @@ interface BookingPayload {
   sessionId: string | null
 }
 
+// Platform booking sources that auto-attribute to the Platforms channel
+const PLATFORM_SOURCES = ['withlocals', 'clickandboat'] as const
+
+async function resolveCampaignId(supabase: ReturnType<typeof createAdminClient>, bookingSource: string): Promise<string | null> {
+  if (!PLATFORM_SOURCES.includes(bookingSource as typeof PLATFORM_SOURCES[number])) return null
+  const { data } = await supabase
+    .from('campaigns')
+    .select('id')
+    .eq('slug', bookingSource)
+    .single()
+  return data?.id ?? null
+}
+
 async function saveToSupabase(p: BookingPayload) {
   try {
     const supabase = createAdminClient()
     const isInternal = p.bookingSource !== 'website'
+    // Auto-attribute platform bookings to their campaign
+    const campaignId = await resolveCampaignId(supabase, p.bookingSource)
     // booking_id: use Stripe PI for website bookings, FH UUID for internal
     const bookingId = isInternal ? (p.fhBookingUuid ?? `internal_${Date.now()}`) : (p.stripePaymentIntentId ?? '')
     await supabase.from('bookings').insert({
@@ -232,6 +247,7 @@ async function saveToSupabase(p: BookingPayload) {
       booking_source: p.bookingSource,
       deposit_amount_cents: p.depositAmountCents,
       session_id: p.sessionId,
+      campaign_id: campaignId,
     })
   } catch (err) {
     console.error('[book] saveToSupabase error:', err)
