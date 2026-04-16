@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Loader2, Megaphone, ChevronDown, ChevronUp, Plus, ExternalLink } from 'lucide-react'
 import { PeriodSelector, getDateRange, type PeriodKey } from '@/components/admin/tracking/PeriodSelector'
+import { CampaignModal } from '@/components/admin/tracking/CampaignModal'
 
 interface Channel {
   id: string
@@ -40,6 +41,8 @@ export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Record<string, Campaign[]>>({})
   const [loading, setLoading] = useState(true)
   const [loadingCampaigns, setLoadingCampaigns] = useState<string | null>(null)
+  const [showCampaignModal, setShowCampaignModal] = useState(false)
+  const [campaignModalChannelId, setCampaignModalChannelId] = useState<string | undefined>()
 
   const fetchChannels = useCallback(async (from: string, to: string) => {
     setLoading(true)
@@ -184,7 +187,10 @@ export default function CampaignsPage() {
                         </tbody>
                       </table>
                     )}
-                    <button className="mt-3 flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-700 transition-colors">
+                    <button
+                      onClick={() => { setCampaignModalChannelId(ch.id); setShowCampaignModal(true) }}
+                      className="mt-3 flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-700 transition-colors"
+                    >
                       <Plus className="w-3.5 h-3.5" /> New Campaign
                     </button>
                   </div>
@@ -194,6 +200,16 @@ export default function CampaignsPage() {
           })}
         </div>
       )}
+
+      <CampaignModal
+        open={showCampaignModal}
+        onClose={() => setShowCampaignModal(false)}
+        onSaved={() => {
+          setCampaigns({}) // Clear cache so it refetches
+          fetchChannels(dateRange.from, dateRange.to)
+        }}
+        defaultChannelId={campaignModalChannelId}
+      />
     </div>
   )
 }

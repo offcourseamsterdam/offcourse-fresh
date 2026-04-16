@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Loader2, Handshake, ExternalLink, Plus } from 'lucide-react'
 import { PeriodSelector, getDateRange, type PeriodKey } from '@/components/admin/tracking/PeriodSelector'
+import { PartnerModal } from '@/components/admin/tracking/PartnerModal'
 
-interface Affiliate {
+interface Partner {
   id: string
   name: string
   email: string | null
@@ -16,21 +17,22 @@ interface Affiliate {
   commission_eur?: number
 }
 
-export default function AffiliatesPage() {
+export default function PartnersPage() {
   const [period, setPeriod] = useState<PeriodKey>('30d')
   const [dateRange, setDateRange] = useState(getDateRange('30d'))
-  const [affiliates, setAffiliates] = useState<Affiliate[]>([])
+  const [partners, setPartners] = useState<Partner[]>([])
   const [loading, setLoading] = useState(true)
+  const [showModal, setShowModal] = useState(false)
 
   const fetchData = useCallback(async (from: string, to: string) => {
     setLoading(true)
     try {
       const params = new URLSearchParams({ from, to })
-      const res = await fetch(`/api/admin/tracking/affiliates?${params}`)
+      const res = await fetch(`/api/admin/tracking/partners?${params}`)
       const json = await res.json()
-      if (json.ok) setAffiliates(json.data)
+      if (json.ok) setPartners(json.data)
     } catch (err) {
-      console.error('Failed to load affiliates:', err)
+      console.error('Failed to load partners:', err)
     } finally {
       setLoading(false)
     }
@@ -49,14 +51,14 @@ export default function AffiliatesPage() {
             <Handshake className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-zinc-900">Affiliates</h1>
+            <h1 className="text-xl font-bold text-zinc-900">Partners</h1>
             <p className="text-xs text-zinc-400">Partners, commissions & reporting</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           <PeriodSelector value={period} onChange={(key, from, to) => { setPeriod(key); setDateRange({ from, to }) }} />
-          <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-900 text-white hover:bg-zinc-800 transition-colors">
-            <Plus className="w-3.5 h-3.5" /> New Affiliate
+          <button onClick={() => setShowModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-900 text-white hover:bg-zinc-800 transition-colors">
+            <Plus className="w-3.5 h-3.5" /> New Partner
           </button>
         </div>
       </div>
@@ -65,9 +67,9 @@ export default function AffiliatesPage() {
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
         </div>
-      ) : affiliates.length === 0 ? (
+      ) : partners.length === 0 ? (
         <div className="text-center py-20 text-sm text-zinc-400">
-          No affiliates yet. Add a partner to start tracking referrals.
+          No partners yet. Add a partner to start tracking referrals.
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
@@ -85,7 +87,7 @@ export default function AffiliatesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {affiliates.map((a) => (
+              {partners.map((a) => (
                 <tr key={a.id} className="group hover:bg-zinc-50 transition-colors">
                   <td className="px-5 py-3">
                     <span className="font-medium text-zinc-700">{a.name}</span>
@@ -100,7 +102,7 @@ export default function AffiliatesPage() {
                   <td className="px-5 py-3 text-right tabular-nums text-zinc-500">€{(a.revenue_eur ?? 0).toLocaleString('nl-NL', { minimumFractionDigits: 0 })}</td>
                   <td className="px-5 py-3 text-right tabular-nums font-medium text-emerald-600">€{(a.commission_eur ?? 0).toLocaleString('nl-NL', { minimumFractionDigits: 2 })}</td>
                   <td className="px-5 py-3 text-right">
-                    <a href={`affiliates/${a.id}`} className="opacity-0 group-hover:opacity-100 transition-opacity">
+                    <a href={`partners/${a.id}`} className="opacity-0 group-hover:opacity-100 transition-opacity">
                       <ExternalLink className="w-3.5 h-3.5 text-zinc-400" />
                     </a>
                   </td>
@@ -110,6 +112,12 @@ export default function AffiliatesPage() {
           </table>
         </div>
       )}
+
+      <PartnerModal
+        open={showModal}
+        onClose={() => setShowModal(false)}
+        onSaved={() => fetchData(dateRange.from, dateRange.to)}
+      />
     </div>
   )
 }

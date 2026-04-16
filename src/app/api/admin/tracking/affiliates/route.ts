@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, email, contact_name, phone, website, notes } = body
+    const { name, email, contact_name, phone, website, notes, channel_id } = body
 
     if (!name) return apiError('Name is required', 400)
 
@@ -99,6 +99,7 @@ export async function POST(request: NextRequest) {
         phone: phone ?? null,
         website: website ?? null,
         notes: notes ?? null,
+        channel_id: channel_id ?? null,
       })
       .select()
       .single()

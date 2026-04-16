@@ -30,7 +30,7 @@ const navSections: NavSection[] = [
     label: 'Marketing',
     items: [
       { href: '/admin/campaigns',  label: 'Campaigns',  icon: 'campaigns' },
-      { href: '/admin/affiliates', label: 'Affiliates', icon: 'affiliates' },
+      { href: '/admin/affiliates', label: 'Partners',   icon: 'affiliates' },
       { href: '/admin/blog',      label: 'Blog',        icon: 'blog',      comingSoon: true },
     ],
   },

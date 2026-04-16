@@ -1549,6 +1549,7 @@ export type Database = {
       }
       partners: {
         Row: {
+          channel_id: string | null
           contact_name: string | null
           created_at: string | null
           email: string | null
@@ -1561,6 +1562,7 @@ export type Database = {
           website: string | null
         }
         Insert: {
+          channel_id?: string | null
           contact_name?: string | null
           created_at?: string | null
           email?: string | null
@@ -1573,6 +1575,7 @@ export type Database = {
           website?: string | null
         }
         Update: {
+          channel_id?: string | null
           contact_name?: string | null
           created_at?: string | null
           email?: string | null
@@ -1584,7 +1587,15 @@ export type Database = {
           report_token?: string
           website?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "partners_channel_id_fkey"
+            columns: ["channel_id"]
+            isOneToOne: false
+            referencedRelation: "channels"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       people: {
         Row: {

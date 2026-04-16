@@ -7,13 +7,19 @@ import { slugify } from '@/lib/utils'
  * GET /api/admin/tracking/campaigns
  * POST /api/admin/tracking/campaigns
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = request.nextUrl
+    const partnerId = searchParams.get('partner_id')
+
     const supabase = createAdminClient()
-    const { data, error } = await supabase
-      .from('campaigns')
-      .select('*')
-      .order('created_at', { ascending: false })
+    let query = supabase.from('campaigns').select('*').order('created_at', { ascending: false })
+
+    if (partnerId) {
+      query = query.eq('partner_id', partnerId)
+    }
+
+    const { data, error } = await query
 
     if (error) return apiError(error.message)
     return apiOk(data ?? [])

@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'next/navigation'
-import { Loader2, ArrowLeft, Copy, Check } from 'lucide-react'
+import { Loader2, ArrowLeft, Copy, Check, ExternalLink, Plus } from 'lucide-react'
 import { KPICard } from '@/components/admin/tracking/KPICard'
+import { CampaignModal } from '@/components/admin/tracking/CampaignModal'
 
 interface Partner {
   id: string
@@ -14,6 +15,7 @@ interface Partner {
   website: string | null
   notes: string | null
   is_active: boolean
+  channel_id: string | null
 }
 
 interface TrackingLink {
@@ -27,6 +29,14 @@ interface TrackingLink {
   is_active: boolean | null
 }
 
+interface Campaign {
+  id: string
+  name: string
+  slug: string
+  category: string
+  is_active: boolean | null
+}
+
 interface NotificationSettings {
   notify_per_booking: boolean
   notify_weekly: boolean
@@ -35,28 +45,33 @@ interface NotificationSettings {
   email_recipients: string[]
 }
 
-export default function AffiliateDetailPage() {
+export default function PartnerDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [partner, setPartner] = useState<Partner | null>(null)
   const [links, setLinks] = useState<TrackingLink[]>([])
   const [notifications, setNotifications] = useState<NotificationSettings | null>(null)
+  const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [showCampaignModal, setShowCampaignModal] = useState(false)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const [partnerRes, notifRes] = await Promise.all([
+      const [partnerRes, notifRes, campaignsRes] = await Promise.all([
         fetch(`/api/admin/tracking/affiliates/${id}`),
         fetch(`/api/admin/tracking/notifications?partner_id=${id}`),
+        fetch(`/api/admin/tracking/campaigns?partner_id=${id}`),
       ])
-      const [partnerJson, notifJson] = await Promise.all([
+      const [partnerJson, notifJson, campaignsJson] = await Promise.all([
         partnerRes.json(),
         notifRes.json(),
+        campaignsRes.json(),
       ])
       if (partnerJson.ok) setPartner(partnerJson.data)
       if (notifJson.ok && notifJson.data) setNotifications(notifJson.data)
+      if (campaignsJson.ok) setCampaigns(campaignsJson.data)
     } catch (err) {
       console.error('Failed to load partner:', err)
     } finally {
@@ -106,7 +121,7 @@ export default function AffiliateDetailPage() {
     <div className="p-6 sm:p-8 max-w-5xl space-y-6">
       {/* Breadcrumb */}
       <a href="../affiliates" className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-600">
-        <ArrowLeft className="w-3 h-3" /> Back to Affiliates
+        <ArrowLeft className="w-3 h-3" /> Back to Partners
       </a>
 
       {/* Partner info */}
@@ -119,6 +134,47 @@ export default function AffiliateDetailPage() {
           {partner.website && <span>{partner.website}</span>}
         </div>
         {partner.notes && <p className="text-xs text-zinc-500 mt-2">{partner.notes}</p>}
+      </div>
+
+      {/* Campaigns */}
+      <div className="bg-white rounded-xl border border-zinc-200 p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-zinc-900">Campaigns</h2>
+          <button
+            onClick={() => setShowCampaignModal(true)}
+            className="flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-700 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" /> New Campaign
+          </button>
+        </div>
+        {campaigns.length === 0 ? (
+          <p className="text-xs text-zinc-400 py-2">No campaigns yet. Create one to start tracking.</p>
+        ) : (
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-zinc-400 uppercase tracking-wider border-b border-zinc-100">
+                <th className="text-left py-2 font-medium">Name</th>
+                <th className="text-left py-2 font-medium">Category</th>
+                <th className="text-left py-2 font-medium">Slug</th>
+                <th className="w-8"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-50">
+              {campaigns.map((c) => (
+                <tr key={c.id} className="group">
+                  <td className="py-2.5 font-medium text-zinc-700">{c.name}</td>
+                  <td className="py-2.5 text-zinc-400">{c.category}</td>
+                  <td className="py-2.5 text-zinc-400">/{c.slug}</td>
+                  <td className="py-2.5 text-right">
+                    <a href={`/en/admin/campaigns/${c.id}`} className="opacity-0 group-hover:opacity-100 transition-opacity">
+                      <ExternalLink className="w-3.5 h-3.5 text-zinc-400" />
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {/* Notification settings */}
@@ -166,6 +222,13 @@ export default function AffiliateDetailPage() {
           </div>
         </div>
       )}
+
+      <CampaignModal
+        open={showCampaignModal}
+        onClose={() => setShowCampaignModal(false)}
+        onSaved={() => fetchData()}
+        defaultChannelId={partner.channel_id ?? undefined}
+      />
     </div>
   )
 }
