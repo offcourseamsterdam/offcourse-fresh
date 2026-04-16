@@ -7,6 +7,7 @@ import { PeriodSelector, getDateRange, type PeriodKey } from '@/components/admin
 import { TrafficChart } from '@/components/admin/tracking/TrafficChart'
 import { ChannelBarChart } from '@/components/admin/tracking/ChannelBarChart'
 import { FunnelChart } from '@/components/admin/tracking/FunnelChart'
+import { CategoryTabs, type CategoryFilter } from '@/components/admin/tracking/CategoryTabs'
 
 interface OverviewData {
   kpis: {
@@ -40,12 +41,13 @@ export default function StatisticsPage() {
   const [dateRange, setDateRange] = useState(getDateRange('30d'))
   const [data, setData] = useState<OverviewData | null>(null)
   const [funnel, setFunnel] = useState<FunnelStep[]>([])
+  const [category, setCategory] = useState<CategoryFilter>('all')
   const [loading, setLoading] = useState(true)
 
-  const fetchData = useCallback(async (from: string, to: string) => {
+  const fetchData = useCallback(async (from: string, to: string, cat: CategoryFilter = 'all') => {
     setLoading(true)
     try {
-      const params = new URLSearchParams({ from, to })
+      const params = new URLSearchParams({ from, to, category: cat })
       const [overviewRes, funnelRes] = await Promise.all([
         fetch(`/api/admin/tracking/overview?${params}`),
         fetch(`/api/admin/tracking/funnel?${params}`),
@@ -63,8 +65,8 @@ export default function StatisticsPage() {
   }, [])
 
   useEffect(() => {
-    fetchData(dateRange.from, dateRange.to)
-  }, [dateRange, fetchData])
+    fetchData(dateRange.from, dateRange.to, category)
+  }, [dateRange, category, fetchData])
 
   function handlePeriodChange(key: PeriodKey, from: string, to: string) {
     setPeriod(key)
@@ -84,7 +86,10 @@ export default function StatisticsPage() {
             <p className="text-xs text-zinc-400">Traffic, conversions & funnel analytics</p>
           </div>
         </div>
-        <PeriodSelector value={period} onChange={handlePeriodChange} />
+        <div className="flex items-center gap-3">
+          <CategoryTabs value={category} onChange={setCategory} />
+          <PeriodSelector value={period} onChange={handlePeriodChange} />
+        </div>
       </div>
 
       {loading ? (

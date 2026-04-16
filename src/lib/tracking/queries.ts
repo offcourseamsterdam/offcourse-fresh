@@ -12,6 +12,8 @@ export interface DateRange {
   to: string   // ISO date string
 }
 
+export type BookingCategory = 'all' | 'private' | 'shared'
+
 export interface OverviewKPIs {
   sessions: number
   unique_visitors: number
@@ -49,11 +51,48 @@ export interface FunnelStep {
   drop_off_rate: number
 }
 
+// ── Helper: fetch bookings with optional category filter ──
+
+async function fetchBookings(
+  supabase: SupabaseClient,
+  sessionIds: string[],
+  category: BookingCategory,
+  fields = 'id, stripe_amount, session_id, category',
+) {
+  if (sessionIds.length === 0) return []
+  let query = supabase
+    .from('bookings')
+    .select(fields)
+    .in('session_id', sessionIds)
+    .eq('status', 'confirmed')
+  if (category !== 'all') query = query.eq('category', category)
+  const { data } = await query
+  return data ?? []
+}
+
+async function fetchDirectBookings(
+  supabase: SupabaseClient,
+  range: DateRange,
+  category: BookingCategory,
+) {
+  let query = supabase
+    .from('bookings')
+    .select('id, stripe_amount, category')
+    .is('session_id', null)
+    .gte('created_at', range.from)
+    .lte('created_at', range.to)
+    .eq('status', 'confirmed')
+  if (category !== 'all') query = query.eq('category', category)
+  const { data } = await query
+  return data ?? []
+}
+
 // ── Overview KPIs ──
 
 export async function getOverviewKPIs(
   supabase: SupabaseClient,
   range: DateRange,
+  category: BookingCategory = 'all',
 ): Promise<OverviewKPIs> {
   // Current period sessions
   const { data: sessions } = await supabase
@@ -65,34 +104,18 @@ export async function getOverviewKPIs(
   const sessionCount = sessions?.length ?? 0
   const uniqueVisitors = new Set(sessions?.map((s) => s.visitor_id) ?? []).size
 
-  // Current period bookings (linked to sessions in this range)
+  // Current period bookings (linked to sessions)
   const sessionIds = sessions?.map((s) => s.id) ?? []
-  let bookingCount = 0
-  let revenueCents = 0
-  if (sessionIds.length > 0) {
-    const { data: bookings } = await supabase
-      .from('bookings')
-      .select('id, stripe_amount')
-      .in('session_id', sessionIds)
-      .eq('status', 'confirmed')
+  const linkedBookings = await fetchBookings(supabase, sessionIds, category)
+  let bookingCount = linkedBookings.length
+  let revenueCents = linkedBookings.reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0)
 
-    bookingCount = bookings?.length ?? 0
-    revenueCents = bookings?.reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0) ?? 0
-  }
+  // Also count bookings without session_id
+  const directBookings = await fetchDirectBookings(supabase, range, category)
+  bookingCount += directBookings.length
+  revenueCents += directBookings.reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0)
 
-  // Also count bookings without session_id but within date range
-  const { data: directBookings } = await supabase
-    .from('bookings')
-    .select('id, stripe_amount')
-    .is('session_id', null)
-    .gte('created_at', range.from)
-    .lte('created_at', range.to)
-    .eq('status', 'confirmed')
-
-  bookingCount += directBookings?.length ?? 0
-  revenueCents += directBookings?.reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0) ?? 0
-
-  // Previous period (same duration, offset backward)
+  // Previous period
   const fromDate = new Date(range.from)
   const toDate = new Date(range.to)
   const duration = toDate.getTime() - fromDate.getTime()
@@ -106,18 +129,9 @@ export async function getOverviewKPIs(
     .lte('started_at', prevTo)
 
   const prevSessionIds = prevSessions?.map((s) => s.id) ?? []
-  let prevBookingCount = 0
-  let prevRevenueCents = 0
-  if (prevSessionIds.length > 0) {
-    const { data: prevBookings } = await supabase
-      .from('bookings')
-      .select('id, stripe_amount')
-      .in('session_id', prevSessionIds)
-      .eq('status', 'confirmed')
-
-    prevBookingCount = prevBookings?.length ?? 0
-    prevRevenueCents = prevBookings?.reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0) ?? 0
-  }
+  const prevLinkedBookings = await fetchBookings(supabase, prevSessionIds, category)
+  const prevBookingCount = prevLinkedBookings.length
+  const prevRevenueCents = prevLinkedBookings.reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0)
 
   return {
     sessions: sessionCount,
@@ -136,6 +150,7 @@ export async function getOverviewKPIs(
 export async function getTrafficByDay(
   supabase: SupabaseClient,
   range: DateRange,
+  category: BookingCategory = 'all',
 ): Promise<TrafficByDay[]> {
   const { data: sessions } = await supabase
     .from('analytics_sessions')
@@ -147,22 +162,16 @@ export async function getTrafficByDay(
   if (!sessions?.length) return []
 
   const sessionIds = sessions.map((s) => s.id)
-  const { data: bookings } = await supabase
-    .from('bookings')
-    .select('id, session_id, created_at')
-    .in('session_id', sessionIds)
-    .eq('status', 'confirmed')
+  const bookings = await fetchBookings(supabase, sessionIds, category, 'id, session_id, created_at, category')
+  const bookingSessionIds = new Set(bookings.map((b) => b.session_id))
 
-  const bookingsBySessionId = new Set(bookings?.map((b) => b.session_id) ?? [])
-
-  // Group by date
   const byDay = new Map<string, { sessions: number; bookings: number }>()
   for (const s of sessions) {
     const day = s.started_at?.slice(0, 10) ?? ''
     if (!day) continue
     const entry = byDay.get(day) ?? { sessions: 0, bookings: 0 }
     entry.sessions++
-    if (bookingsBySessionId.has(s.id)) entry.bookings++
+    if (bookingSessionIds.has(s.id)) entry.bookings++
     byDay.set(day, entry)
   }
 
@@ -176,6 +185,7 @@ export async function getTrafficByDay(
 export async function getChannelMetrics(
   supabase: SupabaseClient,
   range: DateRange,
+  category: BookingCategory = 'all',
 ): Promise<ChannelMetrics[]> {
   const { data: channels } = await supabase
     .from('channels')
@@ -192,16 +202,9 @@ export async function getChannelMetrics(
     .lte('started_at', range.to)
 
   const sessionIds = sessions?.map((s) => s.id) ?? []
-  const { data: bookings } = sessionIds.length > 0
-    ? await supabase
-        .from('bookings')
-        .select('id, session_id, stripe_amount')
-        .in('session_id', sessionIds)
-        .eq('status', 'confirmed')
-    : { data: [] as { id: string; session_id: string; stripe_amount: number | null }[] }
-
+  const bookings = await fetchBookings(supabase, sessionIds, category)
   const bookingsBySession = new Map<string, number>()
-  for (const b of bookings ?? []) {
+  for (const b of bookings) {
     if (b.session_id) bookingsBySession.set(b.session_id, b.stripe_amount ?? 0)
   }
 
@@ -244,9 +247,7 @@ export async function getFunnelData(
     .gte('created_at', range.from)
     .lte('created_at', range.to)
 
-  // If filtering by channel/campaign, we need to join through sessions
   if (filters?.channel_id || filters?.campaign_id) {
-    // Get matching session IDs first
     let sessionQuery = supabase
       .from('analytics_sessions')
       .select('id')
@@ -275,8 +276,6 @@ export async function getFunnelData(
 
   const { data: events } = await query
 
-  // Count unique sessions per event (not raw event count — a user hitting
-  // "select_date" 3 times still counts as 1 for funnel purposes)
   const sessionsByEvent = new Map<string, Set<string>>()
   for (const e of events ?? []) {
     const set = sessionsByEvent.get(e.event_name) ?? new Set()

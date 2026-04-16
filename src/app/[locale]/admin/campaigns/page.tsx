@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Loader2, Megaphone, ChevronDown, ChevronUp, Plus, ExternalLink } from 'lucide-react'
 import { PeriodSelector, getDateRange, type PeriodKey } from '@/components/admin/tracking/PeriodSelector'
 import { CampaignModal } from '@/components/admin/tracking/CampaignModal'
+import { CategoryTabs, type CategoryFilter } from '@/components/admin/tracking/CategoryTabs'
 
 interface Channel {
   id: string
@@ -36,6 +37,7 @@ interface Campaign {
 export default function CampaignsPage() {
   const [period, setPeriod] = useState<PeriodKey>('30d')
   const [dateRange, setDateRange] = useState(getDateRange('30d'))
+  const [category, setCategory] = useState<CategoryFilter>('all')
   const [channels, setChannels] = useState<ChannelWithMetrics[]>([])
   const [expandedChannel, setExpandedChannel] = useState<string | null>(null)
   const [campaigns, setCampaigns] = useState<Record<string, Campaign[]>>({})
@@ -44,10 +46,10 @@ export default function CampaignsPage() {
   const [showCampaignModal, setShowCampaignModal] = useState(false)
   const [campaignModalChannelId, setCampaignModalChannelId] = useState<string | undefined>()
 
-  const fetchChannels = useCallback(async (from: string, to: string) => {
+  const fetchChannels = useCallback(async (from: string, to: string, cat: CategoryFilter = 'all') => {
     setLoading(true)
     try {
-      const params = new URLSearchParams({ from, to })
+      const params = new URLSearchParams({ from, to, category: cat })
       const res = await fetch(`/api/admin/tracking/overview?${params}`)
       const json = await res.json()
       if (json.ok) {
@@ -61,8 +63,8 @@ export default function CampaignsPage() {
   }, [])
 
   useEffect(() => {
-    fetchChannels(dateRange.from, dateRange.to)
-  }, [dateRange, fetchChannels])
+    fetchChannels(dateRange.from, dateRange.to, category)
+  }, [dateRange, category, fetchChannels])
 
   async function toggleChannel(channelId: string) {
     if (expandedChannel === channelId) {
@@ -108,7 +110,10 @@ export default function CampaignsPage() {
             <p className="text-xs text-zinc-400">Channels, campaigns & tracking links</p>
           </div>
         </div>
-        <PeriodSelector value={period} onChange={handlePeriodChange} />
+        <div className="flex items-center gap-3">
+          <CategoryTabs value={category} onChange={(cat) => { setCategory(cat); setCampaigns({}); setExpandedChannel(null) }} />
+          <PeriodSelector value={period} onChange={handlePeriodChange} />
+        </div>
       </div>
 
       {loading ? (

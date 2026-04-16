@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getOverviewKPIs, getTrafficByDay, getChannelMetrics } from '@/lib/tracking/queries'
+import { getOverviewKPIs, getTrafficByDay, getChannelMetrics, type BookingCategory } from '@/lib/tracking/queries'
 
 /**
  * GET /api/admin/tracking/overview?from=2024-01-01&to=2024-01-31
@@ -18,13 +18,14 @@ export async function GET(request: NextRequest) {
       return apiError('Missing from/to date parameters', 400)
     }
 
+    const category = (searchParams.get('category') ?? 'all') as BookingCategory
     const supabase = createAdminClient()
     const range = { from, to }
 
     const [kpis, trafficByDay, channels] = await Promise.all([
-      getOverviewKPIs(supabase, range),
-      getTrafficByDay(supabase, range),
-      getChannelMetrics(supabase, range),
+      getOverviewKPIs(supabase, range, category),
+      getTrafficByDay(supabase, range, category),
+      getChannelMetrics(supabase, range, category),
     ])
 
     return apiOk({ kpis, trafficByDay, channels })
