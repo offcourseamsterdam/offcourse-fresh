@@ -6,6 +6,7 @@ import { PrioritiesSection } from '@/components/sections/PrioritiesSection'
 import { FleetSection } from '@/components/sections/FleetSection'
 import { LocationSection } from '@/components/sections/LocationSection'
 import { ReviewsSection } from '@/components/sections/ReviewsSection'
+import { TrackPageView } from '@/components/tracking/TrackPageView'
 import type { Locale } from '@/lib/i18n/config'
 
 export const revalidate = 60
@@ -61,6 +62,7 @@ export default async function HomePage({ params }: Props) {
 
   return (
     <>
+      <TrackPageView event="view_homepage" />
       <HeroSection slides={slides.length > 0 ? slides : undefined} />
       <FeaturedCruises listings={listings ?? []} />
       <ReviewsSection reviews={reviews ?? []} locale={locale as Locale} />

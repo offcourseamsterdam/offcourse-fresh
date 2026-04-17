@@ -4,6 +4,7 @@ import { useReducer, useCallback, useEffect, useRef } from 'react'
 import type { AvailabilitySlot } from '@/types'
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
 import { formatDuration, fmtEuros } from '@/lib/utils'
+import { trackEvent } from '@/lib/tracking/client'
 import { reducer, initialState, type BookingPanelProps, type Step } from './booking-state'
 
 export function useBookingPanel({
@@ -36,6 +37,9 @@ export function useBookingPanel({
       const json = await res.json()
       const slots = json.data?.slots ?? []
       dispatch({ type: 'SLOTS_LOADED', slots })
+      if (slots.length === 0) {
+        trackEvent('no_availability', { date, listing: listingSlug })
+      }
       return slots
     } catch {
       dispatch({ type: 'SLOTS_LOADED', slots: [] })
@@ -62,6 +66,7 @@ export function useBookingPanel({
   // ── Handlers ────────────────────────────────────────────────────────────
 
   const handleDateConfirm = useCallback(async (date: string, guests: number) => {
+    trackEvent('select_date', { date, guests: String(guests), category })
     dispatch({ type: 'SET_DATE', date, guests, category })
     if (category === 'shared') {
       await fetchSlots(date, guests)
@@ -152,6 +157,22 @@ export function useBookingPanel({
           priceCents: ct.priceCents,
         }))
     : undefined
+
+  // ── Track step transitions ─────────────────────────────────────────────
+  useEffect(() => {
+    if (state.step === 'extras') trackEvent('view_extras', { listing: listingSlug })
+    if (state.step === 'boat') trackEvent('view_boat', { listing: listingSlug })
+    if (state.step === 'tickets') trackEvent('view_tickets', { listing: listingSlug })
+  }, [state.step, listingSlug])
+
+  // Track time slot selection
+  const prevSlotRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (state.selectedSlot && state.selectedSlot.pk !== prevSlotRef.current) {
+      prevSlotRef.current = state.selectedSlot.pk
+      trackEvent('select_time', { listing: listingSlug, time: state.selectedSlot.startTime })
+    }
+  }, [state.selectedSlot, listingSlug])
 
   // ── Checkout ────────────────────────────────────────────────────────────
 

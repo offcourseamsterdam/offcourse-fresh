@@ -7,6 +7,7 @@ import { Loader2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { GuestInfoForm } from './GuestInfoForm'
 import { BookingSummary } from './BookingSummary'
+import { trackEvent, getSessionId } from '@/lib/tracking/client'
 import { BOATS } from '@/lib/fareharbor/config'
 import { SESSION_BOOKING_KEY, SESSION_CONTACT_KEY } from '@/lib/constants'
 import { getErrorMessage } from '@/lib/utils'
@@ -197,9 +198,15 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Track checkout view on mount
+  useEffect(() => {
+    if (bookingData) trackEvent('view_details', { listing: bookingData.listingSlug })
+  }, [bookingData])
+
   // Create PaymentIntent after guest info is submitted
   async function handleGuestInfoSubmit(details: CustomerDetails) {
     if (!bookingData) return
+    trackEvent('view_payment', { listing: bookingData.listingSlug })
     setContact(details)
     // Persist contact for iDEAL redirect recovery (component re-mounts after bank redirect)
     sessionStorage.setItem(SESSION_CONTACT_KEY, JSON.stringify(details))
@@ -290,6 +297,7 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
           selectedExtraIds: data.selectedExtraIds,
           extrasSelected: data.extrasCalculation?.line_items ?? [],
           extrasAmountCents: extrasTotalCents,
+          sessionId: getSessionId(),
         }),
       })
 
@@ -299,6 +307,7 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
         return
       }
 
+      trackEvent('booking_completed', { listing: data.listingSlug, payment_intent: paymentIntentId })
       sessionStorage.removeItem(SESSION_BOOKING_KEY)
       sessionStorage.removeItem(SESSION_CONTACT_KEY)
       window.location.href = `/book/${data.listingSlug}/confirmation?payment_intent=${paymentIntentId}`

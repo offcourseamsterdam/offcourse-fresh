@@ -29,14 +29,15 @@ const navSections: NavSection[] = [
   {
     label: 'Marketing',
     items: [
-      { href: '/admin/blog',      label: 'Blog',                 icon: 'blog',      comingSoon: true },
-      { href: '/admin/campaigns', label: 'Campaigns & Partners', icon: 'campaigns', comingSoon: true },
+      { href: '/admin/campaigns',  label: 'Campaigns',  icon: 'campaigns' },
+      { href: '/admin/affiliates', label: 'Partners',   icon: 'affiliates' },
+      { href: '/admin/blog',      label: 'Blog',        icon: 'blog',      comingSoon: true },
     ],
   },
   {
     label: 'Performance',
     items: [
-      { href: '/admin/statistics', label: 'Statistics', icon: 'statistics', comingSoon: true },
+      { href: '/admin/statistics', label: 'Statistics', icon: 'statistics' },
     ],
   },
   {
