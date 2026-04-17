@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     if (from && to && partners?.length) {
       const { data: links } = await supabase
         .from('campaign_links')
-        .select('id, partner_id, commission_type, commission_percentage, fixed_commission_amount')
+        .select('id, partner_id, commission_type, commission_percentage, fixed_commission_amount, is_active')
 
       const { data: clicks } = await supabase
         .from('campaign_clicks')
