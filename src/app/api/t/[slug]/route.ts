@@ -51,7 +51,7 @@ export async function GET(
   })
 
   // Don't wait for DB writes to complete before redirecting
-  Promise.allSettled([clickPromise, sessionPromise]).catch(() => {})
+  Promise.allSettled([clickPromise, sessionPromise])
 
   // Build attribution data for the cookie
   const attribution = {

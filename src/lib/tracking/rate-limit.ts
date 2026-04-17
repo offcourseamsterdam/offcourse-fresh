@@ -34,13 +34,14 @@ function cleanup() {
  */
 export function checkRateLimit(
   ip: string,
+  namespace: string,
   maxRequests: number,
   windowMs: number,
 ): boolean {
   cleanup()
 
   const now = Date.now()
-  const key = `${ip}:${maxRequests}`
+  const key = `${namespace}:${ip}`
   const entry = windows.get(key)
 
   if (!entry || entry.resetAt < now) {
@@ -60,8 +61,8 @@ export function checkRateLimit(
 /**
  * Get rate limit headers for the response.
  */
-export function getRateLimitHeaders(ip: string, maxRequests: number): Record<string, string> {
-  const key = `${ip}:${maxRequests}`
+export function getRateLimitHeaders(ip: string, namespace: string, maxRequests: number): Record<string, string> {
+  const key = `${namespace}:${ip}`
   const entry = windows.get(key)
   const remaining = entry ? Math.max(0, maxRequests - entry.count) : maxRequests
 

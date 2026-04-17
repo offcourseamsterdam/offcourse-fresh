@@ -1,3 +1,7 @@
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 /**
  * Periodic summary email (weekly/monthly/quarterly).
  * Reused for all intervals with different headings.
@@ -24,7 +28,7 @@ export function periodicSummaryHtml(data: SummaryData) {
 
   const campaignRows = data.campaigns.map((c) => `
     <tr>
-      <td style="padding:6px 0;font-size:12px;color:#3f3f46;">${c.name}</td>
+      <td style="padding:6px 0;font-size:12px;color:#3f3f46;">${escapeHtml(c.name)}</td>
       <td style="padding:6px 0;font-size:12px;text-align:right;color:#3f3f46;">${c.bookings}</td>
       <td style="padding:6px 0;font-size:12px;text-align:right;color:#3f3f46;">€${(c.revenueCents / 100).toFixed(2)}</td>
       <td style="padding:6px 0;font-size:12px;text-align:right;font-weight:600;color:#059669;">€${(c.commissionCents / 100).toFixed(2)}</td>
@@ -42,8 +46,8 @@ export function periodicSummaryHtml(data: SummaryData) {
       <span style="color:#71717a;font-size:12px;margin-left:8px;">${heading}</span>
     </td></tr>
     <tr><td style="background:#fff;padding:24px;border:1px solid #e4e4e7;border-top:0;">
-      <p style="margin:0 0 4px;font-size:13px;color:#71717a;">Hi ${data.recipientName},</p>
-      <p style="margin:0 0 20px;font-size:14px;font-weight:600;color:#18181b;">${data.periodLabel}</p>
+      <p style="margin:0 0 4px;font-size:13px;color:#71717a;">Hi ${escapeHtml(data.recipientName)},</p>
+      <p style="margin:0 0 20px;font-size:14px;font-weight:600;color:#18181b;">${escapeHtml(data.periodLabel)}</p>
 
       <!-- KPIs -->
       <table width="100%" style="margin-bottom:20px;border-collapse:collapse;">

@@ -189,7 +189,7 @@ export default function PartnerDetailPage() {
                   <td className="py-2.5 text-zinc-400">{c.category}</td>
                   <td className="py-2.5 text-zinc-400">/{c.slug}</td>
                   <td className="py-2.5 text-right">
-                    <a href={`/en/admin/campaigns/${c.id}`} className="opacity-0 group-hover:opacity-100 transition-opacity">
+                    <a href={`../../campaigns/${c.id}`} className="opacity-0 group-hover:opacity-100 transition-opacity">
                       <ExternalLink className="w-3.5 h-3.5 text-zinc-400" />
                     </a>
                   </td>

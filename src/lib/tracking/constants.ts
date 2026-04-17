@@ -86,3 +86,16 @@ export const KNOWN_UTM_SOURCES = [
   // Internal
   'direct', 'qr', 'print', 'flyer', 'merch',
 ]
+
+// ── Social sources (used by attribution channel resolution) ──
+
+export const SOCIAL_SOURCES = ['facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'pinterest', 'youtube', 'threads']
+
+// ── Rate limiting & debounce ──
+
+export const DEBOUNCE_MS = 2000
+export const RATE_LIMIT_SESSION = 60
+export const RATE_LIMIT_EVENT = 120
+export const RATE_LIMIT_WINDOW_MS = 60_000
+export const UTM_MAX_LENGTH = 100
+export const USER_AGENT_MAX_LENGTH = 500

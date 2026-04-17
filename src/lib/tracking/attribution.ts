@@ -6,17 +6,20 @@ import {
   ATTRIBUTION_COOKIE_DAYS,
   SESSION_TIMEOUT_MINUTES,
   UTM_PARAMS,
+  SOCIAL_SOURCES,
   type UTMParams,
 } from './constants'
 
 // ── Cookie helpers (browser-only) ──
 
 export function setCookie(name: string, value: string, days: number) {
+  if (typeof document === 'undefined') return
   const expires = new Date(Date.now() + days * 86_400_000).toUTCString()
   document.cookie = `${name}=${encodeURIComponent(value)};expires=${expires};path=/;SameSite=Lax`
 }
 
 export function getCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null
   const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
   return match ? decodeURIComponent(match[1]) : null
 }
@@ -54,11 +57,11 @@ export function getOrCreateSessionId(): string {
   const existing = getCookie(COOKIE_SESSION_ID)
   if (existing) {
     // Refresh the sliding window
-    setCookie(COOKIE_SESSION_ID, existing, SESSION_TIMEOUT_MINUTES / 1440)
+    setCookie(COOKIE_SESSION_ID, existing, SESSION_TIMEOUT_MINUTES / (24 * 60))
     return existing
   }
   const id = generateId()
-  setCookie(COOKIE_SESSION_ID, id, SESSION_TIMEOUT_MINUTES / 1440)
+  setCookie(COOKIE_SESSION_ID, id, SESSION_TIMEOUT_MINUTES / (24 * 60))
   return id
 }
 
@@ -130,7 +133,6 @@ export function setFirstTouchAttribution(utm: UTMParams, extras?: Partial<Attrib
 
 // ── Channel resolution (server-side, maps UTM to channel slug) ──
 
-const SOCIAL_SOURCES = ['facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'pinterest', 'youtube', 'threads']
 const SEARCH_ENGINES = ['google', 'bing', 'duckduckgo', 'yahoo', 'baidu', 'ecosia']
 
 export function resolveChannelSlug(

@@ -21,7 +21,7 @@ const BOT_PATTERNS = [
   // Headless browsers (usually bots)
   'headlesschrome', 'phantomjs', 'puppeteer',
   // Generic bot indicators
-  'bot/', 'spider/', 'crawl/', 'scraper',
+  'scraper',
 ]
 
 /**

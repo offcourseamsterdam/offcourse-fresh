@@ -15,6 +15,7 @@ import {
 
 let pageViewCount = 0
 let lastInitTime = 0
+let visibilityListenerAdded = false
 
 /**
  * Events that have already fired in this session.
@@ -70,19 +71,22 @@ export function initSession() {
   })
 
   // On page hide, send session close with final page count
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-      const blob = new Blob(
-        [JSON.stringify({
-          session_id: sessionId,
-          exit_page: window.location.pathname,
-          page_count: pageViewCount,
-        })],
-        { type: 'application/json' },
-      )
-      navigator.sendBeacon('/api/tracking/session', blob)
-    }
-  })
+  if (!visibilityListenerAdded) {
+    visibilityListenerAdded = true
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        const blob = new Blob(
+          [JSON.stringify({
+            session_id: sessionId,
+            exit_page: window.location.pathname,
+            page_count: pageViewCount,
+          })],
+          { type: 'application/json' },
+        )
+        navigator.sendBeacon('/api/tracking/session', blob)
+      }
+    })
+  }
 }
 
 /**

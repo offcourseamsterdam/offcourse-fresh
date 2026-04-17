@@ -140,7 +140,7 @@ export default function CampaignsPage() {
                   <div className="hidden sm:flex items-center gap-6 text-xs tabular-nums">
                     <span className="text-zinc-500">{ch.sessions?.toLocaleString() ?? 0} <span className="text-zinc-300">sessions</span></span>
                     <span className="text-zinc-500">{ch.bookings?.toLocaleString() ?? 0} <span className="text-zinc-300">bookings</span></span>
-                    <span className="text-zinc-500">€{((ch.revenue_cents ?? 0) / 100).toLocaleString('nl-NL', { minimumFractionDigits: 0 })} <span className="text-zinc-300">revenue</span></span>
+                    <span className="text-zinc-500">€{((ch.revenue_cents ?? 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 0 })} <span className="text-zinc-300">revenue</span></span>
                     <span className="font-medium text-zinc-700">{((ch.conversion_rate ?? 0) * 100).toFixed(1)}%</span>
                   </div>
                   {isExpanded ? (
@@ -180,7 +180,7 @@ export default function CampaignsPage() {
                               </td>
                               <td className="text-right py-2.5 tabular-nums text-zinc-500 hidden sm:table-cell">{c.sessions?.toLocaleString() ?? '—'}</td>
                               <td className="text-right py-2.5 tabular-nums text-zinc-500 hidden sm:table-cell">{c.bookings?.toLocaleString() ?? '—'}</td>
-                              <td className="text-right py-2.5 tabular-nums text-zinc-500 hidden sm:table-cell">€{((c.revenue_cents ?? 0) / 100).toLocaleString('nl-NL', { minimumFractionDigits: 0 })}</td>
+                              <td className="text-right py-2.5 tabular-nums text-zinc-500 hidden sm:table-cell">€{((c.revenue_cents ?? 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 0 })}</td>
                               <td className="text-right py-2.5 tabular-nums font-medium text-zinc-700">{((c.conversion_rate ?? 0) * 100).toFixed(1)}%</td>
                               <td className="text-right py-2.5">
                                 <a href={`campaigns/${c.id}`} className="opacity-0 group-hover:opacity-100 transition-opacity">

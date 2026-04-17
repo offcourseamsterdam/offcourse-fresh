@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
 
   // Rate limit: 60 requests per minute per IP
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
-  if (!checkRateLimit(ip, 60, 60_000)) {
+  if (!checkRateLimit(ip, 'session', 60, 60_000)) {
     return NextResponse.json({ ok: false }, { status: 429 })
   }
 
@@ -119,6 +119,7 @@ export async function POST(request: NextRequest) {
           page_count: (page_count as number) ?? undefined,
           ended_at: new Date().toISOString(),
           session_duration: undefined, // computed later if needed
+          is_bounce: ((page_count as number) ?? 1) <= 1,
           updated_at: new Date().toISOString(),
         })
         .eq('id', session_id as string)

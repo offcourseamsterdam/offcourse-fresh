@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
 
         return {
           ...p,
-          active_links: partnerLinks.filter((l) => true).length,
+          active_links: partnerLinks.filter((l) => l.is_active !== false).length,
           total_clicks: totalClicks,
           total_sessions: partnerSessions.length,
           total_bookings: bookings.length,

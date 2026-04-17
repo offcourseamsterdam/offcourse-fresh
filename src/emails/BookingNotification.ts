@@ -1,3 +1,7 @@
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 /**
  * Per-booking notification email for partners/affiliates.
  * Sent immediately when a booking is attributed to their channel.
@@ -27,11 +31,11 @@ export function bookingNotificationHtml(data: {
     </td></tr>
     <tr><td style="background:#fff;padding:24px;border:1px solid #e4e4e7;border-top:0;">
       <p style="margin:0 0 16px;font-size:14px;color:#18181b;">
-        New booking via <strong>${data.channelName}</strong>${data.campaignName ? ` / ${data.campaignName}` : ''}
+        New booking via <strong>${escapeHtml(data.channelName)}</strong>${data.campaignName ? ` / ${escapeHtml(data.campaignName)}` : ''}
       </p>
       <table width="100%" style="font-size:13px;color:#3f3f46;border-collapse:collapse;">
-        <tr><td style="padding:6px 0;color:#71717a;">Cruise</td><td style="padding:6px 0;font-weight:600;">${data.listingTitle}</td></tr>
-        <tr><td style="padding:6px 0;color:#71717a;">Date</td><td style="padding:6px 0;">${data.bookingDate}</td></tr>
+        <tr><td style="padding:6px 0;color:#71717a;">Cruise</td><td style="padding:6px 0;font-weight:600;">${escapeHtml(data.listingTitle)}</td></tr>
+        <tr><td style="padding:6px 0;color:#71717a;">Date</td><td style="padding:6px 0;">${escapeHtml(data.bookingDate)}</td></tr>
         <tr><td style="padding:6px 0;color:#71717a;">Guests</td><td style="padding:6px 0;">${data.guestCount}</td></tr>
         <tr><td style="padding:6px 0;color:#71717a;">Amount</td><td style="padding:6px 0;">${amount}</td></tr>
         <tr><td style="padding:6px 0;color:#71717a;border-top:1px solid #f4f4f5;">Commission</td><td style="padding:6px 0;font-weight:700;color:#059669;border-top:1px solid #f4f4f5;">${commission}</td></tr>
@@ -39,7 +43,7 @@ export function bookingNotificationHtml(data: {
     </td></tr>
     <tr><td style="padding:16px 24px;border:1px solid #e4e4e7;border-top:0;border-radius:0 0 12px 12px;background:#fafafa;">
       <p style="margin:0;font-size:11px;color:#a1a1aa;">
-        This notification was sent because ${data.partnerName} has per-booking alerts enabled.
+        This notification was sent because ${escapeHtml(data.partnerName)} has per-booking alerts enabled.
       </p>
     </td></tr>
   </table>

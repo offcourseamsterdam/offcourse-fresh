@@ -13,6 +13,7 @@ interface OverviewData {
   kpis: {
     sessions: number
     unique_visitors: number
+    anonymous_sessions: number
     bookings: number
     revenue_cents: number
     conversion_rate: number
@@ -119,7 +120,7 @@ export default function StatisticsPage() {
             />
             <KPICard
               label="Revenue"
-              value={`€${(data.kpis.revenue_cents / 100).toLocaleString('nl-NL', { minimumFractionDigits: 0 })}`}
+              value={`€${(data.kpis.revenue_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 0 })}`}
               delta={pctDelta(data.kpis.revenue_cents, data.kpis.prev_revenue_cents)}
               subtitle={`${(data.kpis.conversion_rate * 100).toFixed(1)}% CR`}
             />

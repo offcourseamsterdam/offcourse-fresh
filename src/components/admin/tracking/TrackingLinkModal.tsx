@@ -45,7 +45,7 @@ export function TrackingLinkModal({ open, onClose, onSaved, campaignId, partnerI
         body: JSON.stringify({
           name: name.trim(),
           destination_url: destinationUrl.trim(),
-          partner_id: partnerId || campaignId, // campaign_links requires partner_id
+          partner_id: partnerId || null,
           commission_type: commissionType,
           commission_percentage: commissionType === 'percentage' && commissionValue ? Number(commissionValue) : null,
           fixed_commission_amount: commissionType === 'fixed_amount' && commissionValue ? Math.round(Number(commissionValue) * 100) : null,
