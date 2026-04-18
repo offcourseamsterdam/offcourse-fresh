@@ -174,9 +174,21 @@ export default function HomepageAdminPage() {
 
   async function updatePriorityCard(id: string, field: string, value: string) {
     setSavingPriority(id)
-    await supabase.from('priorities_cards').update({ [field]: value, updated_at: new Date().toISOString() }).eq('id', id)
-    setPriorityCards(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c))
-    setSavingPriority(null)
+    try {
+      const res = await fetch(`/api/admin/priorities-cards/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value }),
+      })
+      const json = await res.json()
+      if (!json.ok) {
+        alert('Save failed: ' + json.error)
+        return
+      }
+      setPriorityCards(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c))
+    } finally {
+      setSavingPriority(null)
+    }
   }
 
   // ── Render ──────────────────────────────────────────────────────────────
