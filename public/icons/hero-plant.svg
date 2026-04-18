@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 180" fill="none">
+  <!-- Leaves -->
+  <path d="M70 90 Q40 70 30 30 Q32 18 44 22 Q62 34 70 90 Z" fill="#2f9e86"/>
+  <path d="M70 90 Q90 60 128 50 Q138 52 132 64 Q112 80 70 90 Z" fill="#2f9e86"/>
+  <path d="M70 95 Q58 52 68 6 Q72 -2 78 6 Q82 52 70 95 Z" fill="#2f9e86"/>
+  <path d="M70 95 Q100 80 120 92 Q122 102 110 104 Q90 104 70 95 Z" fill="#2f9e86"/>
+  <!-- Rim -->
+  <rect x="18" y="100" width="104" height="18" fill="#2f9e86"/>
+  <!-- Pot body -->
+  <path d="M28 124 L112 124 L100 176 L40 176 Z" fill="#2f9e86"/>
+</svg>

@@ -89,6 +89,35 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
     >
       {/* ── Logo + search ─── */}
       <div className="flex flex-col items-center text-center px-4 sm:px-6 pt-28 pb-10 relative z-20">
+        {/* Decorative icons, scattered organically around the logo + search */}
+        <Image
+          src="/icons/hero-waves.svg"
+          alt=""
+          aria-hidden="true"
+          width={200}
+          height={80}
+          className="hidden sm:block absolute left-6 md:left-14 lg:left-24 top-24 md:top-28 w-28 md:w-36 lg:w-44 h-auto pointer-events-none select-none"
+          style={{ transform: 'rotate(-6deg)' }}
+        />
+        <Image
+          src="/icons/hero-plant.svg"
+          alt=""
+          aria-hidden="true"
+          width={140}
+          height={180}
+          className="hidden sm:block absolute left-4 md:left-12 lg:left-20 bottom-6 md:bottom-10 w-20 md:w-24 lg:w-28 h-auto pointer-events-none select-none"
+          style={{ transform: 'rotate(-4deg)' }}
+        />
+        <Image
+          src="/icons/hero-socks.svg"
+          alt=""
+          aria-hidden="true"
+          width={160}
+          height={130}
+          className="hidden sm:block absolute right-6 md:right-14 lg:right-24 top-36 md:top-44 w-24 md:w-32 lg:w-40 h-auto pointer-events-none select-none"
+          style={{ transform: 'rotate(8deg)' }}
+        />
+
         <div className="mb-8">
           <Image
             src="/logos/logo-vertical.svg"
