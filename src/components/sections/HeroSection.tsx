@@ -2,8 +2,8 @@
 
 import { useRef, useEffect, useCallback } from 'react'
 import Image from 'next/image'
+import { SafeImage } from '@/components/ui/SafeImage'
 import { SearchBar } from '@/components/search/SearchBar'
-import { hideOnError } from '@/lib/utils/image'
 import { useSearch } from '@/lib/search/SearchContext'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -162,11 +162,13 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
                     style={{ aspectRatio: '5/4' }}
                     className="overflow-hidden bg-[#d1d5db] relative"
                   >
-                    <img
+                    <SafeImage
                       src={slide.src}
                       alt={slide.alt}
-                      className="w-full h-full object-cover"
-                      onError={hideOnError}
+                      fill
+                      sizes="(max-width: 640px) 220px, (max-width: 1024px) 280px, 300px"
+                      className="object-cover"
+                      priority={i < 3}
                     />
                   </div>
 

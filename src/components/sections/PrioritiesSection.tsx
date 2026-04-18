@@ -1,4 +1,4 @@
-import { hideOnError } from '@/lib/utils/image'
+import { SafeImage } from '@/components/ui/SafeImage'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -66,13 +66,14 @@ function PolaroidCard({ card }: { card: Card }) {
       className={`bg-white rounded-[2px] shadow-polaroid w-56 overflow-hidden ${card.rotate} transition-transform hover:rotate-0 duration-300`}
     >
       {/* Photo */}
-      <div className="aspect-[4/3] overflow-hidden bg-[#e5e7eb]">
+      <div className="relative aspect-[4/3] overflow-hidden bg-[#e5e7eb]">
         {card.img ? (
-          <img
+          <SafeImage
             src={card.img}
             alt={card.alt}
-            className="w-full h-full object-cover"
-            onError={hideOnError}
+            fill
+            sizes="224px"
+            className="object-cover"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-zinc-300 text-xs">

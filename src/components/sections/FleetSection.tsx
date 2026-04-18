@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Users, Zap } from 'lucide-react'
-import { hideOnError } from '@/lib/utils/image'
+import { SafeImage } from '@/components/ui/SafeImage'
 
 type BoatState = 'open' | 'covered' | 'interior'
 
@@ -98,13 +98,14 @@ function BoatCard({ boat }: { boat: BoatData }) {
               transition: 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
             }}
           >
-            <div className="w-full h-[75%] overflow-hidden bg-[#e5e7eb]">
+            <div className="relative w-full h-[75%] overflow-hidden bg-[#e5e7eb]">
               {photoForState(prevState) ? (
-                <img
+                <SafeImage
                   src={photoForState(prevState)!}
                   alt={`${boat.name} ${prevState}`}
-                  className="w-full h-full object-cover"
-                  onError={hideOnError}
+                  fill
+                  sizes="(max-width: 640px) 90vw, (max-width: 1024px) 45vw, 500px"
+                  className="object-cover"
                 />
               ) : (
                 <div className="w-full h-full bg-[#e5e7eb]" />
@@ -124,13 +125,14 @@ function BoatCard({ boat }: { boat: BoatData }) {
           }}
         >
           {/* Photo */}
-          <div className="flex-1 overflow-hidden bg-[#e5e7eb]">
+          <div className="relative flex-1 overflow-hidden bg-[#e5e7eb]">
             {currentImage ? (
-              <img
+              <SafeImage
                 src={currentImage}
                 alt={`${boat.name} ${activeState}`}
-                className="w-full h-full object-cover"
-                onError={hideOnError}
+                fill
+                sizes="(max-width: 640px) 90vw, (max-width: 1024px) 45vw, 500px"
+                className="object-cover"
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-[#e5e7eb]">
