@@ -1,17 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createServerClient } from '@supabase/ssr'
 
-const LOCALES = ['en', 'nl', 'de', 'fr', 'es', 'pt', 'zh']
 const DEFAULT_LOCALE = 'en'
 const LOCALE_RE = /^\/(en|nl|de|fr|es|pt|zh)(\/|$)/
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Skip internal, API, and auth routes
+  // Skip internal, API, and auth routes — no session refresh needed
   if (pathname.startsWith('/_next/') || pathname.startsWith('/api/') || pathname.startsWith('/auth/')) {
     return NextResponse.next()
   }
 
+  // ── Tracking link shortcut ──────────────────────────────────────────────
+  // /t/<slug> → rewrite to /api/t/<slug> (the tracking redirect handler)
+  // Must be before locale redirect, otherwise it becomes /en/t/<slug> → 404
+  if (pathname.startsWith('/t/')) {
+    const url = request.nextUrl.clone()
+    url.pathname = `/api${pathname}`
+    return NextResponse.rewrite(url)
+  }
+
+  // ── Locale redirect ─────────────────────────────────────────────────────
   // If no locale prefix → redirect to /en
   const match = pathname.match(LOCALE_RE)
   if (!match) {
@@ -20,10 +30,57 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Set x-pathname for layout detection (admin sidebar, etc.)
+  // ── x-pathname header ───────────────────────────────────────────────────
+  // Set x-pathname on the REQUEST headers (not response!) so server
+  // components can read it via headers().get('x-pathname').
+  // Used by [locale]/layout.tsx to hide Navbar/Footer on admin/partner routes.
   const pathWithoutLocale = pathname.slice(match[1].length + 1) || '/'
-  const response = NextResponse.next()
-  response.headers.set('x-pathname', pathWithoutLocale)
+  const requestHeaders = new Headers(request.headers)
+  requestHeaders.set('x-pathname', pathWithoutLocale)
+
+  // Start with a response that forwards the updated request headers
+  let response = NextResponse.next({
+    request: { headers: requestHeaders },
+  })
+
+  // ── Session refresh ─────────────────────────────────────────────────────
+  // @supabase/ssr requires calling getUser() in middleware so it can
+  // silently refresh the access token with the refresh-token cookie.
+  // Without this, the session expires after ~1 hour and the user is logged out.
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll(cookiesToSet) {
+          // Rebuild response (preserving x-pathname on requestHeaders)
+          // then write the refreshed auth cookies onto it for the browser.
+          response = NextResponse.next({ request: { headers: requestHeaders } })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options)
+          )
+        },
+      },
+    }
+  )
+  await supabase.auth.getUser()
+
+  // ── Campaign attribution ────────────────────────────────────────────────
+  // Partner links include ?cid=<campaign_slug>. We persist it as a 30-day
+  // cookie so the checkout flow can attribute the booking to the right partner.
+  const cid = request.nextUrl.searchParams.get('cid')
+  if (cid) {
+    response.cookies.set('oc_campaign', cid, {
+      maxAge: 60 * 60 * 24 * 30, // 30 days
+      path: '/',
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+    })
+  }
+
   return response
 }
 

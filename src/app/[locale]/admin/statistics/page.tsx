@@ -45,8 +45,10 @@ export default function StatisticsPage() {
   const [category, setCategory] = useState<CategoryFilter>('all')
   const [loading, setLoading] = useState(true)
 
+  const [initialLoad, setInitialLoad] = useState(true)
+
   const fetchData = useCallback(async (from: string, to: string, cat: CategoryFilter = 'all') => {
-    setLoading(true)
+    if (initialLoad) setLoading(true) // Only show spinner on first load
     try {
       const params = new URLSearchParams({ from, to, category: cat })
       const [overviewRes, funnelRes] = await Promise.all([
@@ -62,11 +64,18 @@ export default function StatisticsPage() {
       console.error('Failed to load tracking data:', err)
     } finally {
       setLoading(false)
+      setInitialLoad(false)
     }
-  }, [])
+  }, [initialLoad])
 
   useEffect(() => {
     fetchData(dateRange.from, dateRange.to, category)
+
+    // Auto-refresh every 30 seconds for live visitor updates
+    const interval = setInterval(() => {
+      fetchData(dateRange.from, dateRange.to, category)
+    }, 30_000)
+    return () => clearInterval(interval)
   }, [dateRange, category, fetchData])
 
   function handlePeriodChange(key: PeriodKey, from: string, to: string) {
@@ -83,8 +92,14 @@ export default function StatisticsPage() {
             <Activity className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-zinc-900">Performance</h1>
-            <p className="text-xs text-zinc-400">Traffic, conversions & funnel analytics</p>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-zinc-900">Performance</h1>
+              <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-medium bg-emerald-50 px-2 py-0.5 rounded-full">
+                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                Live
+              </span>
+            </div>
+            <p className="text-xs text-zinc-400">Auto-updates every 30s</p>
           </div>
         </div>
         <div className="flex items-center gap-3">

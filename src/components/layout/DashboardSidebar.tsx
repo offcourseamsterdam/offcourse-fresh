@@ -24,6 +24,7 @@ import {
   Clock,
   Tag,
   Handshake,
+  Settings,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -62,6 +63,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   images: ImageIcon,
   extras: Tag,
   affiliates: Handshake,
+  settings: Settings,
 }
 
 export default function DashboardSidebar({

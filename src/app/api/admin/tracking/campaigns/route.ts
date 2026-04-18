@@ -31,27 +31,35 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, channel_id, partner_id, category, investment_type, investment_amount, percentage_value, notes } = body
+    const { name, channel_id, partner_id, category, investment_type, investment_amount, percentage_value, notes, listing_id } = body
 
-    if (!name || !category) {
-      return apiError('Name and category are required', 400)
+    if (!name) {
+      return apiError('Name is required', 400)
     }
 
     const supabase = createAdminClient()
     const slug = slugify(name)
+
+    // Derive category from channel slug if not explicitly provided
+    let resolvedCategory = category
+    if (!resolvedCategory && channel_id) {
+      const { data: ch } = await supabase.from('channels').select('slug').eq('id', channel_id).maybeSingle()
+      resolvedCategory = ch?.slug ?? 'other'
+    }
 
     const { data, error } = await supabase
       .from('campaigns')
       .insert({
         name,
         slug,
-        category,
+        category: resolvedCategory || 'other',
         channel_id: channel_id ?? null,
         partner_id: partner_id ?? null,
         investment_type: investment_type ?? null,
         investment_amount: investment_amount ?? null,
         percentage_value: percentage_value ?? null,
         notes: notes ?? null,
+        listing_id: listing_id ?? null,
       })
       .select()
       .single()

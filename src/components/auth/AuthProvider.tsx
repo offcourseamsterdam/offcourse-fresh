@@ -23,7 +23,13 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     try {
       const res = await fetch('/api/auth/profile')
       const json = await res.json()
-      setProfile(json.data?.profile ?? null)
+      const p = json.data?.profile ?? null
+      setProfile(p)
+
+      // Set oc_internal cookie for admin/support users so TrackingScript skips them
+      if (p?.role === 'admin' || p?.role === 'support') {
+        document.cookie = 'oc_internal=1;path=/;max-age=7776000;SameSite=Lax'
+      }
     } catch {
       setProfile(null)
     }

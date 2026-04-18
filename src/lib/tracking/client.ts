@@ -37,11 +37,14 @@ export function initSession() {
   firedEvents.clear() // New session init = reset dedup
   pageViewCount++
 
-  // Parse UTM params and set first-touch attribution
+  // Parse UTM params and ?ref= param, set first-touch attribution
   const utm = parseUTMFromURL(window.location.href)
-  setFirstTouchAttribution(utm)
 
-  // Get attribution data (may have been set by /api/t/[slug] redirect)
+  // Check for ?ref= param (campaign slug from tracking links or shared URLs)
+  const refParam = new URLSearchParams(window.location.search).get('ref')
+  setFirstTouchAttribution(utm, refParam ? { campaign_slug: refParam } : undefined)
+
+  // Get attribution data (may have been set by /api/t/[slug] redirect OR by ?ref= above)
   const attr = getAttribution()
 
   // Send session start/update to our API

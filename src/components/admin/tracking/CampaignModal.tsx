@@ -6,12 +6,18 @@ import { X, Loader2 } from 'lucide-react'
 interface Channel {
   id: string
   name: string
+  slug: string
 }
 
 interface Partner {
   id: string
   name: string
-  channel_id: string | null
+}
+
+interface Listing {
+  id: string
+  title: string
+  slug: string
 }
 
 interface EditingCampaign {
@@ -23,6 +29,7 @@ interface EditingCampaign {
   investment_type?: string | null
   percentage_value?: number | null
   investment_amount?: number | null
+  listing_id?: string | null
   notes?: string | null
 }
 
@@ -35,19 +42,10 @@ interface CampaignModalProps {
   editing?: EditingCampaign | null
 }
 
-const CATEGORIES = [
-  { value: 'social', label: 'Social Media' },
-  { value: 'paid', label: 'Paid Ads' },
-  { value: 'partner', label: 'Partner' },
-  { value: 'email', label: 'Email' },
-  { value: 'organic', label: 'Organic' },
-  { value: 'direct', label: 'Direct' },
-  { value: 'other', label: 'Other' },
-]
-
 export function CampaignModal({ open, onClose, onSaved, defaultChannelId, editing }: CampaignModalProps) {
   const [channels, setChannels] = useState<Channel[]>([])
   const [allPartners, setAllPartners] = useState<Partner[]>([])
+  const [listings, setListings] = useState<Listing[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -55,21 +53,23 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId, editin
   const [name, setName] = useState('')
   const [channelId, setChannelId] = useState(defaultChannelId ?? '')
   const [partnerId, setPartnerId] = useState('')
-  const [category, setCategory] = useState('')
+  const [listingId, setListingId] = useState('')
   const [commissionType, setCommissionType] = useState<'percentage' | 'fixed_amount'>('percentage')
   const [commissionValue, setCommissionValue] = useState('')
   const [investmentAmount, setInvestmentAmount] = useState('')
   const [notes, setNotes] = useState('')
 
-  // Load channels and partners on mount
+  // Load channels, partners, and listings on mount
   useEffect(() => {
     if (!open) return
     Promise.all([
       fetch('/api/admin/tracking/channels').then((r) => r.json()),
-      fetch('/api/admin/tracking/affiliates').then((r) => r.json()),
-    ]).then(([chJson, pJson]) => {
+      fetch('/api/admin/partners').then((r) => r.json()),
+      fetch('/api/admin/cruise-listings').then((r) => r.json()),
+    ]).then(([chJson, pJson, lJson]) => {
       if (chJson.ok) setChannels(chJson.data)
-      if (pJson.ok) setAllPartners(pJson.data)
+      if (pJson.ok) setAllPartners(pJson.data?.partners ?? pJson.data ?? [])
+      if (lJson.ok) setListings(lJson.data?.listings ?? lJson.data ?? [])
     }).catch(() => {})
   }, [open])
 
@@ -79,7 +79,7 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId, editin
       setName(editing?.name ?? '')
       setChannelId(editing?.channel_id ?? defaultChannelId ?? '')
       setPartnerId(editing?.partner_id ?? '')
-      setCategory(editing?.category ?? '')
+      setListingId(editing?.listing_id ?? '')
       setCommissionType((editing?.investment_type as 'percentage' | 'fixed_amount') ?? 'percentage')
       setCommissionValue(editing?.percentage_value?.toString() ?? '')
       setInvestmentAmount(editing?.investment_amount ? (editing.investment_amount / 100).toString() : '')
@@ -88,21 +88,18 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId, editin
     }
   }, [open, defaultChannelId, editing])
 
-  // Partners filtered by selected channel
-  const filteredPartners = channelId
-    ? allPartners.filter((p) => p.channel_id === channelId)
-    : allPartners
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim()) { setError('Name is required'); return }
     if (!channelId) { setError('Please select a channel'); return }
-    if (!category) { setError('Please select a category'); return }
 
     setSaving(true)
     setError(null)
 
     try {
+      // Auto-derive category from channel slug
+      const channel = channels.find(c => c.id === channelId)
+
       const url = editing
         ? `/api/admin/tracking/campaigns/${editing.id}`
         : '/api/admin/tracking/campaigns'
@@ -113,10 +110,11 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId, editin
           name: name.trim(),
           channel_id: channelId,
           partner_id: partnerId || null,
-          category,
+          category: channel?.slug ?? 'other',
+          listing_id: listingId || null,
           investment_type: commissionType,
           percentage_value: commissionType === 'percentage' && commissionValue ? Number(commissionValue) : null,
-          investment_amount: investmentAmount ? Number(investmentAmount) * 100 : null, // Store in cents
+          investment_amount: investmentAmount ? Number(investmentAmount) * 100 : null,
           notes: notes.trim() || null,
         }),
       })
@@ -153,43 +151,28 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId, editin
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Summer Instagram Reels"
+              placeholder="e.g. Summer Sunset Deal"
               className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent"
               autoFocus
             />
           </div>
 
-          {/* Channel + Category row */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-zinc-600 mb-1">Channel *</label>
-              <select
-                value={channelId}
-                onChange={(e) => { setChannelId(e.target.value); setPartnerId('') }}
-                className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent"
-              >
-                <option value="">Select...</option>
-                {channels.map((ch) => (
-                  <option key={ch.id} value={ch.id}>{ch.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-zinc-600 mb-1">Category *</label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent"
-              >
-                <option value="">Select...</option>
-                {CATEGORIES.map((c) => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
-              </select>
-            </div>
+          {/* Channel */}
+          <div>
+            <label className="block text-xs font-medium text-zinc-600 mb-1">Channel *</label>
+            <select
+              value={channelId}
+              onChange={(e) => setChannelId(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent"
+            >
+              <option value="">Select channel...</option>
+              {channels.map((ch) => (
+                <option key={ch.id} value={ch.id}>{ch.name}</option>
+              ))}
+            </select>
           </div>
 
-          {/* Partner (optional, filtered by channel) */}
+          {/* Partner (optional — show ALL partners, not filtered by channel) */}
           <div>
             <label className="block text-xs font-medium text-zinc-600 mb-1">Partner (optional)</label>
             <select
@@ -198,18 +181,31 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId, editin
               className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent"
             >
               <option value="">No partner (internal campaign)</option>
-              {filteredPartners.map((p) => (
+              {allPartners.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
-            {channelId && filteredPartners.length === 0 && (
-              <p className="text-[10px] text-zinc-400 mt-1">No partners in this channel yet.</p>
-            )}
           </div>
 
-          {/* Commission */}
+          {/* Destination listing */}
           <div>
-            <label className="block text-xs font-medium text-zinc-600 mb-1">Commission</label>
+            <label className="block text-xs font-medium text-zinc-600 mb-1">Destination</label>
+            <select
+              value={listingId}
+              onChange={(e) => setListingId(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent"
+            >
+              <option value="">Homepage</option>
+              {listings.map((l) => (
+                <option key={l.id} value={l.id}>{l.title}</option>
+              ))}
+            </select>
+            <p className="text-[10px] text-zinc-400 mt-1">Where the tracking link sends visitors.</p>
+          </div>
+
+          {/* Commission (optional) */}
+          <div>
+            <label className="block text-xs font-medium text-zinc-600 mb-1">Commission (optional)</label>
             <div className="flex gap-2">
               <div className="flex rounded-lg border border-zinc-200 overflow-hidden">
                 <button
@@ -224,25 +220,28 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId, editin
                   onClick={() => setCommissionType('fixed_amount')}
                   className={`px-3 py-2 text-xs font-medium transition-colors ${commissionType === 'fixed_amount' ? 'bg-zinc-900 text-white' : 'bg-white text-zinc-500 hover:bg-zinc-50'}`}
                 >
-                  €
+                  &euro;
                 </button>
               </div>
               <input
                 type="number"
                 value={commissionValue}
                 onChange={(e) => setCommissionValue(e.target.value)}
-                placeholder={commissionType === 'percentage' ? 'e.g. 10' : 'e.g. 15.00'}
+                placeholder={commissionType === 'percentage' ? 'e.g. 15' : 'e.g. 25.00'}
                 step={commissionType === 'percentage' ? '1' : '0.01'}
                 className="flex-1 px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent"
               />
             </div>
+            <p className="text-[10px] text-zinc-400 mt-1">
+              {commissionType === 'percentage' ? '% of the base cruise price (excl. extras)' : 'Fixed amount per booking'}
+            </p>
           </div>
 
-          {/* Investment amount */}
+          {/* Pre-paid investment */}
           <div>
             <label className="block text-xs font-medium text-zinc-600 mb-1">Pre-paid investment (optional)</label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-zinc-400">€</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-zinc-400">&euro;</span>
               <input
                 type="number"
                 value={investmentAmount}

@@ -183,6 +183,7 @@ export type Database = {
           booking_uuid: string | null
           campaign_id: string | null
           category: string | null
+          commission_amount_cents: number | null
           created_at: string | null
           currency: string | null
           customer_email: string
@@ -201,6 +202,7 @@ export type Database = {
           id: string
           listing_id: string | null
           listing_title: string | null
+          partner_id: string | null
           payment_status: string | null
           raw_payload: Json | null
           receipt_total: number | null
@@ -226,6 +228,7 @@ export type Database = {
           booking_uuid?: string | null
           campaign_id?: string | null
           category?: string | null
+          commission_amount_cents?: number | null
           created_at?: string | null
           currency?: string | null
           customer_email: string
@@ -244,6 +247,7 @@ export type Database = {
           id?: string
           listing_id?: string | null
           listing_title?: string | null
+          partner_id?: string | null
           payment_status?: string | null
           raw_payload?: Json | null
           receipt_total?: number | null
@@ -269,6 +273,7 @@ export type Database = {
           booking_uuid?: string | null
           campaign_id?: string | null
           category?: string | null
+          commission_amount_cents?: number | null
           created_at?: string | null
           currency?: string | null
           customer_email?: string
@@ -287,6 +292,7 @@ export type Database = {
           id?: string
           listing_id?: string | null
           listing_title?: string | null
+          partner_id?: string | null
           payment_status?: string | null
           raw_payload?: Json | null
           receipt_total?: number | null
@@ -308,6 +314,13 @@ export type Database = {
             columns: ["campaign_id"]
             isOneToOne: false
             referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
             referencedColumns: ["id"]
           },
           {
@@ -467,6 +480,7 @@ export type Database = {
           investment_amount: number | null
           investment_type: string | null
           is_active: boolean | null
+          listing_id: string | null
           name: string
           notes: string | null
           partner_id: string | null
@@ -482,6 +496,7 @@ export type Database = {
           investment_amount?: number | null
           investment_type?: string | null
           is_active?: boolean | null
+          listing_id?: string | null
           name: string
           notes?: string | null
           partner_id?: string | null
@@ -497,6 +512,7 @@ export type Database = {
           investment_amount?: number | null
           investment_type?: string | null
           is_active?: boolean | null
+          listing_id?: string | null
           name?: string
           notes?: string | null
           partner_id?: string | null
@@ -510,6 +526,13 @@ export type Database = {
             columns: ["channel_id"]
             isOneToOne: false
             referencedRelation: "channels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaigns_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "cruise_listings"
             referencedColumns: ["id"]
           },
           {
@@ -1550,6 +1573,7 @@ export type Database = {
       partners: {
         Row: {
           channel_id: string | null
+          commission_rate: number
           contact_name: string | null
           created_at: string | null
           email: string | null
@@ -1563,6 +1587,7 @@ export type Database = {
         }
         Insert: {
           channel_id?: string | null
+          commission_rate?: number
           contact_name?: string | null
           created_at?: string | null
           email?: string | null
@@ -1576,6 +1601,7 @@ export type Database = {
         }
         Update: {
           channel_id?: string | null
+          commission_rate?: number
           contact_name?: string | null
           created_at?: string | null
           email?: string | null
@@ -1855,6 +1881,7 @@ export type Database = {
           email: string
           id: string
           is_active: boolean
+          partner_id: string | null
           role: Database["public"]["Enums"]["user_role"]
           updated_at: string
         }
@@ -1864,6 +1891,7 @@ export type Database = {
           email: string
           id: string
           is_active?: boolean
+          partner_id?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           updated_at?: string
         }
@@ -1873,10 +1901,19 @@ export type Database = {
           email?: string
           id?: string
           is_active?: boolean
+          partner_id?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "user_profiles_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       webhook_logs: {
         Row: {

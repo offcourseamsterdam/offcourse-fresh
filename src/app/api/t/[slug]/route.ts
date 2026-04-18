@@ -6,11 +6,10 @@ import { ATTRIBUTION_COOKIE_DAYS } from '@/lib/tracking/constants'
  * GET /api/t/[slug]
  *
  * Tracking link redirect. When a partner/campaign link is clicked:
- * 1. Look up the campaign_link by slug
+ * 1. Look up by slug — first in campaign_links, then in campaigns
  * 2. Log a click in campaign_clicks
- * 3. Upsert a campaign_session
- * 4. Set the oc_attr attribution cookie
- * 5. Redirect to the destination URL
+ * 3. Set the oc_attr attribution cookie
+ * 4. Redirect to the destination (listing page or homepage)
  */
 export async function GET(
   request: NextRequest,
@@ -18,54 +17,102 @@ export async function GET(
 ) {
   const { slug } = await params
   const supabase = createAdminClient()
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://offcourseamsterdam.com'
 
-  // Look up the campaign link
+  // ── 1. Try campaign_links table first (legacy partner links) ────────
   const { data: link } = await supabase
     .from('campaign_links')
     .select('id, slug, destination_url, is_active, partner_id, campaign_id')
     .eq('slug', slug)
-    .single()
+    .maybeSingle()
 
-  if (!link || !link.is_active) {
-    // Unknown or inactive link — redirect to homepage
-    return NextResponse.redirect(new URL('/', request.url))
+  if (link && link.is_active) {
+    // Campaign link found — use its destination_url directly
+    return handleRedirect(request, supabase, {
+      destinationUrl: link.destination_url,
+      attribution: {
+        campaign_slug: link.slug,
+        partner_id: link.partner_id,
+        campaign_link_id: link.id,
+        campaign_id: link.campaign_id,
+      },
+    })
   }
 
-  // Generate tokens for click/session tracking
+  // ── 2. Try campaigns table (new campaign system) ────────────────────
+  const { data: campaign } = await supabase
+    .from('campaigns')
+    .select('id, slug, partner_id, listing_id, is_active')
+    .eq('slug', slug)
+    .maybeSingle()
+
+  if (campaign && campaign.is_active !== false) {
+    // Build destination URL from listing or default to homepage
+    let destinationUrl = siteUrl
+
+    if (campaign.listing_id) {
+      // Look up the cruise listing slug
+      const { data: listing } = await supabase
+        .from('cruise_listings')
+        .select('slug')
+        .eq('id', campaign.listing_id)
+        .maybeSingle()
+
+      if (listing?.slug) {
+        destinationUrl = `${siteUrl}/en/cruises/${listing.slug}`
+      }
+    }
+
+    return handleRedirect(request, supabase, {
+      destinationUrl,
+      attribution: {
+        campaign_slug: campaign.slug,
+        partner_id: campaign.partner_id,
+        campaign_link_id: null,
+        campaign_id: campaign.id,
+      },
+    })
+  }
+
+  // ── 3. Unknown slug — redirect to homepage ──────────────────────────
+  return NextResponse.redirect(new URL('/', request.url))
+}
+
+// ── Shared redirect helper ────────────────────────────────────────────────
+
+interface RedirectOptions {
+  destinationUrl: string
+  attribution: {
+    campaign_slug: string
+    partner_id: string | null
+    campaign_link_id: string | null
+    campaign_id: string | null
+  }
+}
+
+async function handleRedirect(
+  request: NextRequest,
+  supabase: ReturnType<typeof createAdminClient>,
+  { destinationUrl, attribution }: RedirectOptions,
+) {
+  // Log the click (fire-and-forget)
   const sessionToken = crypto.randomUUID()
-  const visitorToken = crypto.randomUUID()
-
-  // Log the click (fire-and-forget — don't block the redirect)
-  const clickPromise = supabase.from('campaign_clicks').insert({
-    campaign_id: link.id,
-    session_token: sessionToken,
-    referrer: request.headers.get('referer') ?? null,
-    user_agent: request.headers.get('user-agent')?.slice(0, 500) ?? null,
-  })
-
-  // Upsert campaign session
-  const sessionPromise = supabase.from('campaign_sessions').insert({
-    campaign_id: link.id,
-    visitor_token: visitorToken,
-    session_token: sessionToken,
-  })
-
-  // Don't wait for DB writes to complete before redirecting
-  Promise.allSettled([clickPromise, sessionPromise])
-
-  // Build attribution data for the cookie
-  const attribution = {
-    campaign_slug: link.slug,
-    partner_id: link.partner_id,
-    campaign_link_id: link.id,
-    campaign_id: link.campaign_id,
+  const clickCampaignId = attribution.campaign_link_id ?? attribution.campaign_id
+  if (clickCampaignId) {
+    Promise.allSettled([
+      supabase.from('campaign_clicks').insert({
+        campaign_id: clickCampaignId,
+        session_token: sessionToken,
+        referrer: request.headers.get('referer') ?? null,
+        user_agent: request.headers.get('user-agent')?.slice(0, 500) ?? null,
+      }),
+    ])
   }
 
-  // Build redirect response with attribution cookie
-  const destination = new URL(link.destination_url)
-  // Add campaign_slug as UTM param so the tracking script picks it up
+  // Build redirect URL with ?ref param
+  const destination = new URL(destinationUrl)
   if (!destination.searchParams.has('ref')) {
-    destination.searchParams.set('ref', link.slug)
+    destination.searchParams.set('ref', attribution.campaign_slug)
   }
 
   const response = NextResponse.redirect(destination.toString(), 302)
@@ -75,7 +122,7 @@ export async function GET(
     path: '/',
     maxAge: ATTRIBUTION_COOKIE_DAYS * 86400,
     sameSite: 'lax',
-    httpOnly: false, // Needs to be readable by client-side JS
+    httpOnly: false,
   })
 
   return response

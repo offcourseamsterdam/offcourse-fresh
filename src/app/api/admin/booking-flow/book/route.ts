@@ -60,6 +60,78 @@ export async function POST(request: NextRequest) {
 
     const isInternal = bookingSource !== 'website'
 
+    // ── Campaign attribution & commission ──────────────────────────────────
+    // Two cookie formats:
+    //   1. oc_attr (JSON, set by /api/t/[slug] tracking redirect): { campaign_slug, partner_id, campaign_link_id, campaign_id }
+    //   2. oc_campaign (simple string, set by proxy.ts ?cid=slug): campaign_links slug
+    // Commission = percentage_value (from campaigns table) × base_amount_cents
+    let cookieCampaignId: string | null = null
+    let partnerId: string | null = null
+    let commissionAmountCents: number | null = null
+
+    try {
+      const supabaseAttrib = createAdminClient()
+      const attrCookie = request.cookies.get('oc_attr')?.value
+      const cidCookie = request.cookies.get('oc_campaign')?.value
+
+      if (attrCookie) {
+        // JSON cookie from /api/t/[slug] tracking link OR client-side ?ref= attribution
+        const attr = JSON.parse(attrCookie)
+        let campaignId = attr.campaign_id ?? null
+        partnerId = attr.partner_id ?? null
+
+        // If we have campaign_slug but no campaign_id (set by client-side ?ref=),
+        // look up the campaign by slug to get the full attribution data.
+        if (!campaignId && attr.campaign_slug) {
+          const { data: campaign } = await supabaseAttrib
+            .from('campaigns')
+            .select('id, partner_id, percentage_value, investment_type')
+            .eq('slug', attr.campaign_slug)
+            .maybeSingle()
+
+          if (campaign) {
+            campaignId = campaign.id
+            partnerId = campaign.partner_id
+          }
+        }
+
+        if (campaignId) {
+          cookieCampaignId = campaignId
+
+          // Get commission from the campaign (if not already fetched above)
+          const { data: campaign } = await supabaseAttrib
+            .from('campaigns')
+            .select('percentage_value, investment_type')
+            .eq('id', campaignId)
+            .maybeSingle()
+
+          if (campaign?.percentage_value && campaign.investment_type === 'percentage') {
+            commissionAmountCents = Math.round(Number(baseAmountCents ?? 0) * campaign.percentage_value / 100)
+          } else if (campaign?.percentage_value && campaign.investment_type === 'fixed_amount') {
+            commissionAmountCents = Math.round(campaign.percentage_value)
+          }
+        }
+      } else if (cidCookie) {
+        // Simple slug cookie from proxy.ts ?cid=slug (legacy / campaign_links)
+        const { data: link } = await supabaseAttrib
+          .from('campaign_links')
+          .select('id, partner_id, commission_percentage')
+          .eq('slug', cidCookie)
+          .eq('is_active', true)
+          .maybeSingle()
+
+        if (link) {
+          cookieCampaignId = link.id
+          partnerId = link.partner_id
+          if (link.commission_percentage && link.commission_percentage > 0) {
+            commissionAmountCents = Math.round(Number(baseAmountCents ?? 0) * link.commission_percentage / 100)
+          }
+        }
+      }
+    } catch {
+      // Attribution errors are non-fatal — booking still proceeds
+    }
+
     // Idempotency: if a booking already exists for this payment intent, return it (website only)
     if (stripePaymentIntentId) {
       const supabase = createAdminClient()
@@ -129,6 +201,9 @@ export async function POST(request: NextRequest) {
         bookingSource: String(bookingSource) as BookingSource,
         depositAmountCents: isInternal ? Number(depositAmountCents ?? 0) : null,
         sessionId: sessionId ?? null,
+        cookieCampaignId,
+        partnerId,
+        commissionAmountCents,
       }),
       sendSlackNotification({
         listingTitle: String(listingTitle ?? ''),
@@ -193,6 +268,10 @@ interface BookingPayload {
   bookingSource: BookingSource
   depositAmountCents: number | null
   sessionId: string | null
+  // Partner commission attribution (from oc_campaign cookie)
+  cookieCampaignId: string | null
+  partnerId: string | null
+  commissionAmountCents: number | null
 }
 
 // Platform booking sources that auto-attribute to the Platforms channel
@@ -212,8 +291,9 @@ async function saveToSupabase(p: BookingPayload) {
   try {
     const supabase = createAdminClient()
     const isInternal = p.bookingSource !== 'website'
-    // Auto-attribute platform bookings to their campaign
-    const campaignId = await resolveCampaignId(supabase, p.bookingSource)
+    // Campaign attribution: cookie-based partner tracking takes priority,
+    // then fall back to auto-attribution for platform booking sources.
+    const campaignId = p.cookieCampaignId ?? await resolveCampaignId(supabase, p.bookingSource)
     // booking_id: use Stripe PI for website bookings, FH UUID for internal
     const bookingId = isInternal ? (p.fhBookingUuid ?? `internal_${Date.now()}`) : (p.stripePaymentIntentId ?? '')
     await supabase.from('bookings').insert({
@@ -248,6 +328,8 @@ async function saveToSupabase(p: BookingPayload) {
       deposit_amount_cents: p.depositAmountCents,
       session_id: p.sessionId,
       campaign_id: campaignId,
+      partner_id: p.partnerId,
+      commission_amount_cents: p.commissionAmountCents,
     })
   } catch (err) {
     console.error('[book] saveToSupabase error:', err)

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Loader2, Megaphone, ChevronDown, ChevronUp, Plus, ExternalLink } from 'lucide-react'
+import { Loader2, Megaphone, ChevronDown, ChevronUp, Plus, ExternalLink, Copy, Check, Link2 } from 'lucide-react'
 import { PeriodSelector, getDateRange, type PeriodKey } from '@/components/admin/tracking/PeriodSelector'
 import { CampaignModal } from '@/components/admin/tracking/CampaignModal'
 import { CategoryTabs, type CategoryFilter } from '@/components/admin/tracking/CategoryTabs'
@@ -27,12 +27,88 @@ interface Campaign {
   name: string
   slug: string
   category: string
+  partner_id: string | null
+  listing_id: string | null
+  percentage_value: number | null
+  investment_type: string | null
   is_active: boolean | null
   sessions?: number
   bookings?: number
   revenue_cents?: number
   conversion_rate?: number
 }
+
+// ── Copy URL helper ──────────────────────────────────────────────────────
+
+function CopyUrlButton({ slug }: { slug: string }) {
+  const [copied, setCopied] = useState(false)
+  const url = `https://offcourseamsterdam.com/t/${slug}`
+
+  function handleCopy() {
+    navigator.clipboard.writeText(url)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); handleCopy() }}
+      title={url}
+      className="p-1 rounded text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors"
+    >
+      {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+    </button>
+  )
+}
+
+// ── Partner tabs (for Partners channel) ──────────────────────────────────
+
+function PartnerTabs({
+  campaigns,
+  partners,
+  activePartner,
+  onSelect,
+}: {
+  campaigns: Campaign[]
+  partners: Map<string, string>
+  activePartner: string | null
+  onSelect: (id: string | null) => void
+}) {
+  // Group campaigns by partner
+  const partnerIds = [...new Set(campaigns.map(c => c.partner_id).filter(Boolean))] as string[]
+
+  if (partnerIds.length === 0) return null
+
+  return (
+    <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1">
+      <button
+        onClick={() => onSelect(null)}
+        className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+          activePartner === null
+            ? 'bg-zinc-900 text-white'
+            : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+        }`}
+      >
+        All
+      </button>
+      {partnerIds.map(pid => (
+        <button
+          key={pid}
+          onClick={() => onSelect(pid)}
+          className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+            activePartner === pid
+              ? 'bg-zinc-900 text-white'
+              : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+          }`}
+        >
+          {partners.get(pid) ?? 'Unknown'}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ── Main page ────────────────────────────────────────────────────────────
 
 export default function CampaignsPage() {
   const [period, setPeriod] = useState<PeriodKey>('30d')
@@ -45,6 +121,30 @@ export default function CampaignsPage() {
   const [loadingCampaigns, setLoadingCampaigns] = useState<string | null>(null)
   const [showCampaignModal, setShowCampaignModal] = useState(false)
   const [campaignModalChannelId, setCampaignModalChannelId] = useState<string | undefined>()
+
+  // Partner + listing name lookups
+  const [partnerNames, setPartnerNames] = useState<Map<string, string>>(new Map())
+  const [listingNames, setListingNames] = useState<Map<string, string>>(new Map())
+  const [activePartner, setActivePartner] = useState<string | null>(null)
+
+  // Fetch partners + listings for name lookup
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/admin/partners').then(r => r.json()),
+      fetch('/api/admin/cruise-listings').then(r => r.json()),
+    ]).then(([pJson, lJson]) => {
+      if (pJson.ok) {
+        const map = new Map<string, string>()
+        for (const p of pJson.data?.partners ?? pJson.data ?? []) map.set(p.id, p.name)
+        setPartnerNames(map)
+      }
+      if (lJson.ok) {
+        const map = new Map<string, string>()
+        for (const l of lJson.data?.listings ?? lJson.data ?? []) map.set(l.id, l.title)
+        setListingNames(map)
+      }
+    }).catch(() => {})
+  }, [])
 
   const fetchChannels = useCallback(async (from: string, to: string, cat: CategoryFilter = 'all') => {
     setLoading(true)
@@ -69,9 +169,11 @@ export default function CampaignsPage() {
   async function toggleChannel(channelId: string) {
     if (expandedChannel === channelId) {
       setExpandedChannel(null)
+      setActivePartner(null)
       return
     }
     setExpandedChannel(channelId)
+    setActivePartner(null)
 
     if (!campaigns[channelId]) {
       setLoadingCampaigns(channelId)
@@ -93,8 +195,14 @@ export default function CampaignsPage() {
   function handlePeriodChange(key: PeriodKey, from: string, to: string) {
     setPeriod(key)
     setDateRange({ from, to })
-    setCampaigns({}) // Reset cached campaigns on period change
+    setCampaigns({})
     setExpandedChannel(null)
+  }
+
+  // Check if a channel is the "Partners" channel (has partner-linked campaigns)
+  function isPartnersChannel(channelId: string) {
+    const ch = channels.find(c => c.id === channelId)
+    return ch?.slug === 'partners'
   }
 
   return (
@@ -128,6 +236,14 @@ export default function CampaignsPage() {
         <div className="space-y-2">
           {channels.map((ch) => {
             const isExpanded = expandedChannel === ch.id
+            const channelCampaigns = campaigns[ch.id] ?? []
+            const isPartners = isPartnersChannel(ch.id)
+
+            // Filter by partner if sub-tab is active
+            const visibleCampaigns = activePartner
+              ? channelCampaigns.filter(c => c.partner_id === activePartner)
+              : channelCampaigns
+
             return (
               <div key={ch.id} className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
                 {/* Channel header row */}
@@ -157,40 +273,72 @@ export default function CampaignsPage() {
                       <div className="flex items-center justify-center py-6">
                         <Loader2 className="w-4 h-4 animate-spin text-zinc-400" />
                       </div>
-                    ) : (campaigns[ch.id]?.length ?? 0) === 0 ? (
+                    ) : channelCampaigns.length === 0 ? (
                       <p className="text-xs text-zinc-400 py-4 text-center">No campaigns in this channel yet.</p>
                     ) : (
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="text-zinc-400 uppercase tracking-wider">
-                            <th className="text-left py-2 font-medium">Campaign</th>
-                            <th className="text-right py-2 font-medium hidden sm:table-cell">Sessions</th>
-                            <th className="text-right py-2 font-medium hidden sm:table-cell">Bookings</th>
-                            <th className="text-right py-2 font-medium hidden sm:table-cell">Revenue</th>
-                            <th className="text-right py-2 font-medium">CR%</th>
-                            <th className="text-right py-2 font-medium w-8"></th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-zinc-100">
-                          {campaigns[ch.id].map((c) => (
-                            <tr key={c.id} className="group">
-                              <td className="py-2.5">
-                                <span className="font-medium text-zinc-700">{c.name}</span>
-                                <span className="text-zinc-300 ml-1.5">/{c.slug}</span>
-                              </td>
-                              <td className="text-right py-2.5 tabular-nums text-zinc-500 hidden sm:table-cell">{c.sessions?.toLocaleString() ?? '—'}</td>
-                              <td className="text-right py-2.5 tabular-nums text-zinc-500 hidden sm:table-cell">{c.bookings?.toLocaleString() ?? '—'}</td>
-                              <td className="text-right py-2.5 tabular-nums text-zinc-500 hidden sm:table-cell">€{((c.revenue_cents ?? 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 0 })}</td>
-                              <td className="text-right py-2.5 tabular-nums font-medium text-zinc-700">{((c.conversion_rate ?? 0) * 100).toFixed(1)}%</td>
-                              <td className="text-right py-2.5">
-                                <a href={`campaigns/${c.id}`} className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <ExternalLink className="w-3.5 h-3.5 text-zinc-400" />
-                                </a>
-                              </td>
+                      <>
+                        {/* Partner sub-tabs (only for Partners channel) */}
+                        {isPartners && (
+                          <PartnerTabs
+                            campaigns={channelCampaigns}
+                            partners={partnerNames}
+                            activePartner={activePartner}
+                            onSelect={setActivePartner}
+                          />
+                        )}
+
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-zinc-400 uppercase tracking-wider">
+                              <th className="text-left py-2 font-medium">Campaign</th>
+                              {isPartners && !activePartner && (
+                                <th className="text-left py-2 font-medium hidden sm:table-cell">Partner</th>
+                              )}
+                              <th className="text-right py-2 font-medium hidden sm:table-cell">Sessions</th>
+                              <th className="text-right py-2 font-medium hidden sm:table-cell">Bookings</th>
+                              <th className="text-right py-2 font-medium hidden sm:table-cell">Revenue</th>
+                              <th className="text-right py-2 font-medium">CR%</th>
+                              <th className="text-right py-2 font-medium w-20">Link</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-100">
+                            {visibleCampaigns.map((c) => (
+                              <tr key={c.id} className="group">
+                                <td className="py-2.5">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-medium text-zinc-700">{c.name}</span>
+                                    {c.percentage_value && c.investment_type === 'percentage' && (
+                                      <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-full font-medium">
+                                        {c.percentage_value}%
+                                      </span>
+                                    )}
+                                    <span className="text-[10px] text-zinc-400">
+                                      → {c.listing_id ? listingNames.get(c.listing_id) ?? 'Cruise' : 'Homepage'}
+                                    </span>
+                                  </div>
+                                </td>
+                                {isPartners && !activePartner && (
+                                  <td className="py-2.5 text-zinc-400 hidden sm:table-cell">
+                                    {c.partner_id ? partnerNames.get(c.partner_id) ?? '—' : '—'}
+                                  </td>
+                                )}
+                                <td className="text-right py-2.5 tabular-nums text-zinc-500 hidden sm:table-cell">{c.sessions?.toLocaleString() ?? '—'}</td>
+                                <td className="text-right py-2.5 tabular-nums text-zinc-500 hidden sm:table-cell">{c.bookings?.toLocaleString() ?? '—'}</td>
+                                <td className="text-right py-2.5 tabular-nums text-zinc-500 hidden sm:table-cell">€{((c.revenue_cents ?? 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 0 })}</td>
+                                <td className="text-right py-2.5 tabular-nums font-medium text-zinc-700">{((c.conversion_rate ?? 0) * 100).toFixed(1)}%</td>
+                                <td className="text-right py-2.5">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <CopyUrlButton slug={c.slug} />
+                                    <a href={`campaigns/${c.id}`} className="p-1 rounded text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors">
+                                      <ExternalLink className="w-3.5 h-3.5" />
+                                    </a>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </>
                     )}
                     <button
                       onClick={() => { setCampaignModalChannelId(ch.id); setShowCampaignModal(true) }}
@@ -210,8 +358,16 @@ export default function CampaignsPage() {
         open={showCampaignModal}
         onClose={() => setShowCampaignModal(false)}
         onSaved={() => {
-          setCampaigns({}) // Clear cache so it refetches
+          setCampaigns({})
           fetchChannels(dateRange.from, dateRange.to)
+          // Re-fetch campaigns for the currently expanded channel
+          if (expandedChannel) {
+            const params = new URLSearchParams({ from: dateRange.from, to: dateRange.to })
+            fetch(`/api/admin/tracking/channels/${expandedChannel}/campaigns?${params}`)
+              .then(r => r.json())
+              .then(json => { if (json.ok) setCampaigns(prev => ({ ...prev, [expandedChannel]: json.data })) })
+              .catch(() => {})
+          }
         }}
         defaultChannelId={campaignModalChannelId}
       />

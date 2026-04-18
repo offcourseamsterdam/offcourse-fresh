@@ -20,6 +20,9 @@ export function TrackingScript() {
 
   // Initialize on first mount
   useEffect(() => {
+    // Skip tracking entirely for admin/support users
+    if (getCookie('oc_internal')) return
+
     const consent = getCookie(COOKIE_CONSENT)
 
     if (consent === 'yes') {
@@ -34,8 +37,9 @@ export function TrackingScript() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Track page views on route changes — only with consent
+  // Track page views on route changes — only with consent, never for admins
   useEffect(() => {
+    if (getCookie('oc_internal')) return
     const consent = getCookie(COOKIE_CONSENT)
     if (consent !== 'yes') return
     trackEvent('page_view', { path: pathname })

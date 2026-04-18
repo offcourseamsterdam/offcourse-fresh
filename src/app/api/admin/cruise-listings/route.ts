@@ -5,6 +5,23 @@ import type { Database } from '@/lib/supabase/types'
 
 type ListingInsert = Database['public']['Tables']['cruise_listings']['Insert']
 
+// GET /api/admin/cruise-listings — list all published cruise listings (for dropdowns)
+export async function GET() {
+  try {
+    const supabase = createAdminClient()
+    const { data, error } = await supabase
+      .from('cruise_listings')
+      .select('id, title, slug, category, is_published')
+      .eq('is_published', true)
+      .order('display_order', { ascending: true })
+
+    if (error) return apiError(error.message)
+    return apiOk({ listings: data ?? [] })
+  } catch (err) {
+    return apiError(err instanceof Error ? err.message : 'Unknown error')
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()

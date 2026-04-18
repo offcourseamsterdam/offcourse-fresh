@@ -56,7 +56,10 @@ export default async function LocaleLayout({ children, params }: Props) {
 
   const headersList = await headers()
   const pathname = headersList.get('x-pathname') ?? ''
-  const isAdminRoute = pathname === '/admin' || pathname.startsWith('/admin/')
+  const isAdminRoute = (
+    pathname === '/admin' || pathname.startsWith('/admin/') ||
+    pathname === '/partner' || pathname.startsWith('/partner/')
+  )
 
   const messages = await getMessages()
 
