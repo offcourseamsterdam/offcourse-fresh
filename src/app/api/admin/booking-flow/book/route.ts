@@ -175,36 +175,48 @@ export async function POST(request: NextRequest) {
     // Step 2: Create FareHarbor booking
     const booking = await fh.createBooking(Number(availPk), bookingData)
 
-    // Step 3: Side effects — run concurrently, don't fail the response if they error
+    // Step 3a: Save to Supabase — BLOCKING.
+    // This is the money-path: customer paid, FareHarbor booked, we MUST record it.
+    // If it fails, we alert loudly but still return success (the cruise is reserved).
+    const bookingPayload: BookingPayload = {
+      fhBookingUuid: booking?.uuid,
+      availPk: Number(availPk),
+      customerTypeRatePk: Number(customerTypeRatePk),
+      guestCount: Number(guestCount),
+      category: String(category ?? 'private'),
+      contact,
+      note,
+      listingId: listingId ?? null,
+      listingTitle: String(listingTitle ?? ''),
+      date: String(date ?? ''),
+      startAt: startAt ?? null,
+      endAt: endAt ?? null,
+      amountCents: Number(amountCents ?? 0),
+      baseAmountCents: Number(baseAmountCents ?? 0),
+      extrasSelected: extrasSelected ?? [],
+      extrasAmountCents: Number(extrasAmountCents ?? 0),
+      extrasVatAmountCents: Number(extrasVatAmountCents ?? 0),
+      baseVatAmountCents: Number(baseVatAmountCents ?? 0),
+      totalVatAmountCents: Number(totalVatAmountCents ?? 0),
+      stripePaymentIntentId: isInternal ? null : String(stripePaymentIntentId ?? ''),
+      bookingSource: String(bookingSource) as BookingSource,
+      depositAmountCents: isInternal ? Number(depositAmountCents ?? 0) : null,
+      sessionId: sessionId ?? null,
+      cookieCampaignId,
+      partnerId,
+      commissionAmountCents,
+    }
+
+    const saveResult = await saveToSupabase(bookingPayload)
+    if (!saveResult.ok) {
+      // URGENT: customer paid, boat is reserved, but we have no DB record.
+      // Alert so an admin can manually recover within minutes.
+      await alertBookingSaveFailure(bookingPayload, saveResult.error)
+      // Still return success to customer — they got what they paid for.
+    }
+
+    // Step 3b: Non-critical notifications — run concurrently, fail quietly
     await Promise.allSettled([
-      saveToSupabase({
-        fhBookingUuid: booking?.uuid,
-        availPk: Number(availPk),
-        customerTypeRatePk: Number(customerTypeRatePk),
-        guestCount: Number(guestCount),
-        category: String(category ?? 'private'),
-        contact,
-        note,
-        listingId: listingId ?? null,
-        listingTitle: String(listingTitle ?? ''),
-        date: String(date ?? ''),
-        startAt: startAt ?? null,
-        endAt: endAt ?? null,
-        amountCents: Number(amountCents ?? 0),
-        baseAmountCents: Number(baseAmountCents ?? 0),
-        extrasSelected: extrasSelected ?? [],
-        extrasAmountCents: Number(extrasAmountCents ?? 0),
-        extrasVatAmountCents: Number(extrasVatAmountCents ?? 0),
-        baseVatAmountCents: Number(baseVatAmountCents ?? 0),
-        totalVatAmountCents: Number(totalVatAmountCents ?? 0),
-        stripePaymentIntentId: isInternal ? null : String(stripePaymentIntentId ?? ''),
-        bookingSource: String(bookingSource) as BookingSource,
-        depositAmountCents: isInternal ? Number(depositAmountCents ?? 0) : null,
-        sessionId: sessionId ?? null,
-        cookieCampaignId,
-        partnerId,
-        commissionAmountCents,
-      }),
       sendSlackNotification({
         listingTitle: String(listingTitle ?? ''),
         date: String(date ?? ''),
@@ -287,7 +299,12 @@ async function resolveCampaignId(supabase: ReturnType<typeof createAdminClient>,
   return data?.id ?? null
 }
 
-async function saveToSupabase(p: BookingPayload) {
+/**
+ * Save booking to Supabase. Returns success flag + error details.
+ * Caller is responsible for alerting on failure — this is the money-path,
+ * we MUST know when it breaks.
+ */
+async function saveToSupabase(p: BookingPayload): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const supabase = createAdminClient()
     const isInternal = p.bookingSource !== 'website'
@@ -296,7 +313,7 @@ async function saveToSupabase(p: BookingPayload) {
     const campaignId = p.cookieCampaignId ?? await resolveCampaignId(supabase, p.bookingSource)
     // booking_id: use Stripe PI for website bookings, FH UUID for internal
     const bookingId = isInternal ? (p.fhBookingUuid ?? `internal_${Date.now()}`) : (p.stripePaymentIntentId ?? '')
-    await supabase.from('bookings').insert({
+    const { error } = await supabase.from('bookings').insert({
       booking_id: bookingId,
       booking_uuid: p.fhBookingUuid ?? null,
       fareharbor_availability_pk: p.availPk,
@@ -331,8 +348,62 @@ async function saveToSupabase(p: BookingPayload) {
       partner_id: p.partnerId,
       commission_amount_cents: p.commissionAmountCents,
     })
+
+    if (error) {
+      console.error('[book] saveToSupabase Supabase error:', error)
+      return { ok: false, error: error.message ?? 'Unknown Supabase error' }
+    }
+    return { ok: true }
   } catch (err) {
-    console.error('[book] saveToSupabase error:', err)
+    const msg = err instanceof Error ? err.message : 'Unknown error'
+    console.error('[book] saveToSupabase exception:', err)
+    return { ok: false, error: msg }
+  }
+}
+
+/**
+ * URGENT alert when Supabase save fails but Stripe already charged + FareHarbor booked.
+ * The customer got their cruise but WE don't have the record.
+ * This posts to Slack with ALL booking details so the admin can manually recover.
+ */
+async function alertBookingSaveFailure(p: BookingPayload, dbError: string) {
+  const webhookUrl = process.env.SLACK_WEBHOOK_URL
+  if (!webhookUrl) {
+    console.error('[book] CRITICAL: Booking save failed AND no Slack webhook configured!', { dbError, payload: p })
+    return
+  }
+
+  const text = [
+    '🚨 *CRITICAL: BOOKING SAVE FAILED* 🚨',
+    '_Customer paid + FareHarbor booked, but NOT in Supabase._',
+    '',
+    `*Error:* \`${dbError}\``,
+    '',
+    '*Manually recover this booking:*',
+    `• FareHarbor UUID: \`${p.fhBookingUuid ?? 'unknown'}\``,
+    `• Stripe Payment Intent: \`${p.stripePaymentIntentId ?? 'internal'}\``,
+    `• Customer: ${p.contact.name} · ${p.contact.email} · ${p.contact.phone}`,
+    `• Cruise: ${p.listingTitle}`,
+    `• Date: ${p.date} ${p.startAt ? '· ' + new Date(p.startAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' }) : ''}`,
+    `• Guests: ${p.guestCount} · Category: ${p.category}`,
+    `• Base: €${(p.baseAmountCents / 100).toFixed(2)} · Extras: €${(p.extrasAmountCents / 100).toFixed(2)}`,
+    p.note ? `• Note: ${p.note}` : '',
+    '',
+    '_Full payload below:_',
+    '```',
+    JSON.stringify(p, null, 2),
+    '```',
+  ].filter(Boolean).join('\n')
+
+  try {
+    await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    })
+  } catch (err) {
+    // If even Slack fails, at least we logged it above
+    console.error('[book] CRITICAL: Failed to alert Slack about save failure:', err)
   }
 }
 
