@@ -1,13 +1,21 @@
 import { getTranslations } from 'next-intl/server'
+import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/server'
 import { HeroSection } from '@/components/sections/HeroSection'
 import { FeaturedCruises } from '@/components/sections/FeaturedCruises'
-import { PrioritiesSection } from '@/components/sections/PrioritiesSection'
-import { FleetSection } from '@/components/sections/FleetSection'
-import { LocationSection } from '@/components/sections/LocationSection'
 import { ReviewsSection } from '@/components/sections/ReviewsSection'
 import { TrackPageView } from '@/components/tracking/TrackPageView'
 import type { Locale } from '@/lib/i18n/config'
+
+const PrioritiesSection = dynamic(
+  () => import('@/components/sections/PrioritiesSection').then(m => ({ default: m.PrioritiesSection }))
+)
+const FleetSection = dynamic(
+  () => import('@/components/sections/FleetSection').then(m => ({ default: m.FleetSection }))
+)
+const LocationSection = dynamic(
+  () => import('@/components/sections/LocationSection').then(m => ({ default: m.LocationSection }))
+)
 
 export const revalidate = 60
 
@@ -28,10 +36,10 @@ export default async function HomePage({ params }: Props) {
   const { locale } = await params
   const supabase = await createClient()
 
-  const [listingsResult, reviewsResult, slidesResult, boatsResult] = await Promise.all([
+  const [listingsResult, reviewsResult, slidesResult, boatsResult, prioritiesResult] = await Promise.all([
     supabase
       .from('cruise_listings')
-      .select('*')
+      .select('id, slug, category, hero_image_url, title, tagline, price_display, duration_display')
       .eq('is_published', true)
       .eq('is_featured', true)
       .order('display_order', { ascending: true })
@@ -52,6 +60,10 @@ export default async function HomePage({ params }: Props) {
       .select('id, name, built_year, max_capacity, description, photo_url, photo_covered_url, photo_interior_url')
       .eq('is_active', true)
       .order('display_order', { ascending: true }),
+    supabase
+      .from('priorities_cards')
+      .select('image_url, alt_text, title, body, rotate')
+      .order('sort_order', { ascending: true }),
   ])
 
   const listings = listingsResult.data
@@ -59,6 +71,7 @@ export default async function HomePage({ params }: Props) {
   const rawSlides = (slidesResult.data ?? []) as { image_url: string; alt_text: string | null; caption: string | null }[]
   const slides = rawSlides.map(s => ({ src: s.image_url, alt: s.alt_text ?? '', caption: s.caption ?? '' }))
   const boats = boatsResult.data ?? []
+  const priorities = prioritiesResult.data ?? []
 
   return (
     <>
@@ -66,7 +79,7 @@ export default async function HomePage({ params }: Props) {
       <HeroSection slides={slides.length > 0 ? slides : undefined} />
       <FeaturedCruises listings={listings ?? []} />
       <ReviewsSection reviews={reviews ?? []} locale={locale as Locale} />
-      <PrioritiesSection />
+      <PrioritiesSection cards={priorities} />
       <FleetSection boats={boats.length > 0 ? boats : undefined} />
       <LocationSection />
     </>

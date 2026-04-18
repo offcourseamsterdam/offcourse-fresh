@@ -1,7 +1,3 @@
-'use client'
-
-import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { hideOnError } from '@/lib/utils/image'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -9,6 +5,14 @@ import { hideOnError } from '@/lib/utils/image'
 interface Card {
   img: string
   alt: string
+  title: string
+  body: string
+  rotate: string
+}
+
+export interface PrioritiesCardRow {
+  image_url: string
+  alt_text: string | null
   title: string
   body: string
   rotate: string
@@ -94,32 +98,20 @@ function PolaroidCard({ card }: { card: Card }) {
 
 // ── Main section ─────────────────────────────────────────────────────────────
 
-export function PrioritiesSection() {
-  const [cards, setCards] = useState<Card[]>(FALLBACK_CARDS)
+interface PrioritiesSectionProps {
+  cards?: PrioritiesCardRow[]
+}
 
-  useEffect(() => {
-    async function fetchCards() {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('priorities_cards')
-        .select('image_url, alt_text, title, body, rotate')
-        .order('sort_order')
-
-      if (data && data.length > 0) {
-        setCards(
-          data.map(row => ({
-            img: row.image_url,
-            alt: row.alt_text ?? '',
-            title: row.title,
-            body: row.body,
-            rotate: row.rotate,
-          }))
-        )
-      }
-    }
-
-    fetchCards()
-  }, [])
+export function PrioritiesSection({ cards: rows = [] }: PrioritiesSectionProps) {
+  const cards: Card[] = rows.length > 0
+    ? rows.map(row => ({
+        img: row.image_url,
+        alt: row.alt_text ?? '',
+        title: row.title,
+        body: row.body,
+        rotate: row.rotate,
+      }))
+    : FALLBACK_CARDS
 
   return (
     <section className="bg-texture-sand py-20">

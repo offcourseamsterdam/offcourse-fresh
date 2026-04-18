@@ -7,7 +7,12 @@ import { useSearch } from '@/lib/search/SearchContext'
 import type { Database } from '@/lib/supabase/types'
 import type { AvailabilitySlot } from '@/types'
 
-type CruiseListing = Database['public']['Tables']['cruise_listings']['Row']
+type CruiseListingRow = Database['public']['Tables']['cruise_listings']['Row']
+
+export type FeaturedCruiseListing = Pick<
+  CruiseListingRow,
+  'id' | 'slug' | 'category' | 'hero_image_url' | 'title' | 'tagline' | 'price_display' | 'duration_display'
+>
 
 // ── Date formatting ──────────────────────────────────────────────────────────
 
@@ -80,7 +85,7 @@ function TimeSlotPills({ slots, slug, date, guests }: {
 // ── Polaroid cruise card ─────────────────────────────────────────────────────
 
 function CruiseCard({ listing, rotation, slots, loading, date, guests }: {
-  listing: CruiseListing
+  listing: FeaturedCruiseListing
   rotation: string
   slots?: AvailabilitySlot[]
   loading: boolean
@@ -167,7 +172,7 @@ function CruiseCard({ listing, rotation, slots, loading, date, guests }: {
 // ── Main section ─────────────────────────────────────────────────────────────
 
 interface FeaturedCruisesProps {
-  listings: CruiseListing[]
+  listings: FeaturedCruiseListing[]
 }
 
 export function FeaturedCruises({ listings }: FeaturedCruisesProps) {
@@ -178,7 +183,7 @@ export function FeaturedCruises({ listings }: FeaturedCruisesProps) {
   const sharedListings = listings.filter(l => l.category === 'shared')
   const first = privateListings[0] ?? listings[0]
   const second = sharedListings[0] ?? listings.find(l => l.id !== first?.id)
-  const displayListings = [first, second].filter(Boolean) as CruiseListing[]
+  const displayListings = [first, second].filter(Boolean) as FeaturedCruiseListing[]
 
   const rotations = ['-rotate-2', 'rotate-2']
 
