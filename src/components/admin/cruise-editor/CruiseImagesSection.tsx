@@ -19,6 +19,7 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { SafeImage } from '@/components/ui/SafeImage'
 import { CruiseTabProps, patchListing } from './shared'
 
 type ImageItem = { url: string; alt_text?: string }
@@ -57,8 +58,13 @@ function SortableImageCard({
       style={style}
       className="relative group rounded-xl overflow-hidden aspect-video bg-zinc-100"
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={img.url} alt={img.alt_text ?? ''} className="w-full h-full object-cover" />
+      <SafeImage
+        src={img.url}
+        alt={img.alt_text ?? ''}
+        fill
+        sizes="(max-width: 768px) 50vw, 300px"
+        className="object-cover"
+      />
 
       {/* Hover overlay with actions */}
       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-2">
@@ -102,9 +108,14 @@ function SortableImageCard({
 
 function ImageOverlayCard({ img }: { img: ImageItem }) {
   return (
-    <div className="rounded-xl overflow-hidden aspect-video bg-zinc-100 shadow-2xl ring-2 ring-zinc-900/20">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={img.url} alt={img.alt_text ?? ''} className="w-full h-full object-cover" />
+    <div className="relative rounded-xl overflow-hidden aspect-video bg-zinc-100 shadow-2xl ring-2 ring-zinc-900/20">
+      <SafeImage
+        src={img.url}
+        alt={img.alt_text ?? ''}
+        fill
+        sizes="(max-width: 768px) 50vw, 300px"
+        className="object-cover"
+      />
     </div>
   )
 }

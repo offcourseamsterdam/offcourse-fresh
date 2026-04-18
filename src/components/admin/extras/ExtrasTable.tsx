@@ -2,6 +2,7 @@
 
 import { Pencil, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { SafeImage } from '@/components/ui/SafeImage'
 import {
   CATEGORY_EMOJI,
   formatExtraPrice as formatPrice,
@@ -63,10 +64,11 @@ export function ExtrasTable({ extras, onEdit, onToggleActive, onDelete }: Extras
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           {extra.image_url ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
+                            <SafeImage
                               src={extra.image_url}
                               alt={extra.name}
+                              width={32}
+                              height={32}
                               className="w-8 h-8 rounded object-cover flex-shrink-0"
                             />
                           ) : (

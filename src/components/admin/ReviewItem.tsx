@@ -4,6 +4,7 @@ import { Loader2, Trash2, ExternalLink, MessageSquare, Pencil, Sparkles, RotateC
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { StarRating } from '@/components/ui/StarRating'
+import { SafeImage } from '@/components/ui/SafeImage'
 import type { Review } from '@/app/[locale]/admin/reviews/types'
 
 export interface ReviewItemProps {
@@ -45,12 +46,14 @@ export function ReviewItem({
     <li className="px-6 py-4 space-y-3">
       <div className="flex items-start gap-4">
         {/* Author photo */}
-        <div className="w-10 h-10 rounded-full overflow-hidden bg-zinc-100 flex-shrink-0">
+        <div className="relative w-10 h-10 rounded-full overflow-hidden bg-zinc-100 flex-shrink-0">
           {review.author_photo_url ? (
-            <img
+            <SafeImage
               src={review.author_photo_url}
               alt={review.reviewer_name}
-              className="w-full h-full object-cover"
+              fill
+              sizes="40px"
+              className="object-cover"
               referrerPolicy="no-referrer"
             />
           ) : (

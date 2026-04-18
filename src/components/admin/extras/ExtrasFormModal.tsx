@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { SafeImage } from '@/components/ui/SafeImage'
 import { Loader2, Trash2, X } from 'lucide-react'
 import {
   CATEGORY_EMOJI,
@@ -350,10 +351,11 @@ export function ExtrasFormModal({
             <label className="text-xs font-medium text-zinc-600">Image <span className="text-zinc-400 font-normal">(optional thumbnail)</span></label>
             {editingExtra.image_url && (
               <div className="flex items-center gap-3">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <SafeImage
                   src={editingExtra.image_url}
                   alt={editingExtra.name}
+                  width={64}
+                  height={64}
                   className="w-16 h-16 rounded-lg object-cover border border-zinc-200"
                 />
                 <span className="text-xs text-zinc-400">Current image</span>

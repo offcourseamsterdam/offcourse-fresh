@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Plus, Trash2, GripVertical, Image as ImageIcon, Upload, Loader2 } from 'lucide-react'
+import { SafeImage } from '@/components/ui/SafeImage'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -231,13 +232,18 @@ export default function HomepageAdminPage() {
                 <GripVertical size={16} className="text-zinc-300 mt-1 flex-shrink-0" />
 
                 {/* Preview */}
-                <div className="w-20 h-16 rounded-md overflow-hidden bg-zinc-100 flex-shrink-0">
+                <div className="relative w-20 h-16 rounded-md overflow-hidden bg-zinc-100 flex-shrink-0">
                   {slide.image_url ? (
                     slide.media_type === 'video' ? (
                       <video src={slide.image_url} className="w-full h-full object-cover" muted />
                     ) : (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={slide.image_url} alt={slide.alt_text ?? ''} className="w-full h-full object-cover" />
+                      <SafeImage
+                        src={slide.image_url}
+                        alt={slide.alt_text ?? ''}
+                        fill
+                        sizes="80px"
+                        className="object-cover"
+                      />
                     )
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
@@ -353,12 +359,17 @@ export default function HomepageAdminPage() {
               </div>
               {/* Preview if URL set */}
               {newSlide.image_url && (
-                <div className="w-24 h-16 rounded-md overflow-hidden bg-zinc-100">
+                <div className="relative w-24 h-16 rounded-md overflow-hidden bg-zinc-100">
                   {newSlide.media_type === 'video' ? (
                     <video src={newSlide.image_url} className="w-full h-full object-cover" muted />
                   ) : (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={newSlide.image_url} alt="" className="w-full h-full object-cover" />
+                    <SafeImage
+                      src={newSlide.image_url}
+                      alt=""
+                      fill
+                      sizes="96px"
+                      className="object-cover"
+                    />
                   )}
                 </div>
               )}
@@ -423,10 +434,15 @@ export default function HomepageAdminPage() {
                 </div>
 
                 {/* Image preview */}
-                <div className="w-24 h-20 rounded-md overflow-hidden bg-zinc-100 flex-shrink-0">
+                <div className="relative w-24 h-20 rounded-md overflow-hidden bg-zinc-100 flex-shrink-0">
                   {card.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={card.image_url} alt={card.alt_text ?? ''} className="w-full h-full object-cover" />
+                    <SafeImage
+                      src={card.image_url}
+                      alt={card.alt_text ?? ''}
+                      fill
+                      sizes="96px"
+                      className="object-cover"
+                    />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       <ImageIcon size={20} className="text-zinc-300" />

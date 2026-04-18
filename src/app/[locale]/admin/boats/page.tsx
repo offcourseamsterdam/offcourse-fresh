@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { ChevronDown, ChevronUp } from 'lucide-react'
+import { SafeImage } from '@/components/ui/SafeImage'
 
 type Boat = {
   id: string
@@ -136,8 +137,16 @@ export default function BoatsAdminPage() {
                       const url = boat[field as keyof Boat] as string | null
                       return (
                         <div key={field} className="flex items-center gap-3">
-                          <div className="w-16 h-12 rounded-md overflow-hidden bg-zinc-100 flex-shrink-0">
-                            {url && <img src={url} alt={label} className="w-full h-full object-cover" />}
+                          <div className="relative w-16 h-12 rounded-md overflow-hidden bg-zinc-100 flex-shrink-0">
+                            {url && (
+                              <SafeImage
+                                src={url}
+                                alt={label}
+                                fill
+                                sizes="64px"
+                                className="object-cover"
+                              />
+                            )}
                           </div>
                           <div className="flex-1">
                             <label className="text-xs text-zinc-400 block mb-1">{label}</label>
