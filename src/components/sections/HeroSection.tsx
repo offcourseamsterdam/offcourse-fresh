@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useRef, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import { SearchBar } from '@/components/search/SearchBar'
 import { hideOnError } from '@/lib/utils/image'
@@ -56,29 +56,8 @@ const DEFAULT_SLIDES: HeroSlide[] = [
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] }) {
-  const N = slides.length
-  const [active, setActive] = useState(0)
   const heroSearchRef = useRef<HTMLDivElement>(null)
   const { setHeroSearchVisible, registerSearchHandler } = useSearch()
-
-  // Visible range: 2 on md+ (5 cards total), 1 on mobile (3 cards)
-  // With N=7 and range=2: buffer at dist=±3 is always invisible → seamless wraps
-  const [visibleRange, setVisibleRange] = useState(1)
-  useEffect(() => {
-    function update() { setVisibleRange(window.innerWidth >= 768 ? 2 : 1) }
-    update()
-    window.addEventListener('resize', update)
-    return () => window.removeEventListener('resize', update)
-  }, [])
-
-  // Card spacing — tighter on desktop so 5 cards sit close together
-  const [cardSpacing, setCardSpacing] = useState(50)
-  useEffect(() => {
-    function update() { setCardSpacing(window.innerWidth >= 768 ? 22 : 50) }
-    update()
-    window.addEventListener('resize', update)
-    return () => window.removeEventListener('resize', update)
-  }, [])
 
   // Tell the navbar when hero search bar crosses the navbar edge
   useEffect(() => {
@@ -90,12 +69,6 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
     return () => observer.disconnect()
   }, [setHeroSearchVisible])
 
-  // Auto-advance — always forward so every card moves right → left
-  useEffect(() => {
-    const timer = setInterval(() => setActive(i => (i + 1) % N), 3500)
-    return () => clearInterval(timer)
-  }, [N])
-
   // Search handler — triggers inline results on homepage instead of navigating
   const { triggerHomepageSearch } = useSearch()
   const handleSearch = useCallback((date: string, guests: number) => {
@@ -106,10 +79,13 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
     return registerSearchHandler(handleSearch)
   }, [registerSearchHandler, handleSearch])
 
+  // Duplicate slides for seamless marquee loop — 2 copies so translate-50% wraps perfectly
+  const loopedSlides = [...slides, ...slides]
+
   return (
     <section
       className="bg-texture-sand min-h-screen flex flex-col relative z-10"
-      style={{ marginBottom: '-80px' }}
+      style={{ marginBottom: '-140px' }}
     >
       {/* ── Logo + search ─── */}
       <div className="flex flex-col items-center text-center px-4 sm:px-6 pt-28 pb-10 relative z-20">
@@ -128,79 +104,57 @@ export function HeroSection({ slides = DEFAULT_SLIDES }: { slides?: HeroSlide[] 
         </div>
       </div>
 
-      {/* ── Polaroid carousel — sits below search, hovers over next section ─── */}
+      {/* ── Polaroid marquee — endless left-to-right scroll, overlaps next section ─── */}
       <div
         className="relative w-full flex-1 overflow-hidden"
-        style={{ minHeight: 'clamp(200px, 24vh, 280px)' }}
+        style={{ minHeight: 'clamp(260px, 30vh, 360px)' }}
       >
-        {slides.map((slide, i) => {
-          let dist = i - active
-          // Shortest-path wrap → dist always in [-(N/2), N/2]
-          if (dist > N / 2) dist -= N
-          if (dist < -N / 2) dist += N
-
-          const isCenter = dist === 0
-          const isVisible = Math.abs(dist) <= visibleRange
-
-          // Subtle tilt — less on center, gentle lean on sides
-          const rotation = isCenter ? 0.5 : dist > 0 ? 1.5 : -1.5
-
-          // Side cards darken slightly
-          const overlayOpacity = isCenter ? 0 : Math.min(0.5, Math.abs(dist) * 0.25)
-
-          return (
-            <div
-              key={i}
-              className="absolute bottom-0"
-              style={{
-                left: '50%',
-                width: 'clamp(130px, 17vw, 220px)',
-                transform: `translateX(calc(-50% + ${dist * cardSpacing}vw)) rotate(${rotation}deg)`,
-                transformOrigin: 'bottom center',
-                zIndex: isCenter ? 20 : Math.max(1, 15 - Math.abs(dist) * 5),
-                opacity: isVisible ? 1 : 0,
-                pointerEvents: 'none',
-                // Slow, smooth slide — all cards drift the same direction
-                transition: 'transform 1200ms cubic-bezier(0.4, 0, 0.2, 1), opacity 600ms ease',
-                willChange: 'transform',
-              }}
-            >
-              {/* Polaroid frame */}
+        <div className="absolute bottom-0 left-0 flex items-end gap-6 sm:gap-8 animate-marquee-ltr will-change-transform">
+          {loopedSlides.map((slide, i) => {
+            // Alternate gentle tilts so each polaroid leans slightly different
+            const rotation = ((i % 3) - 1) * 1.2
+            return (
               <div
-                className="bg-white shadow-polaroid relative overflow-hidden"
-                style={{ padding: '8px 8px 0 8px' }}
+                key={i}
+                className="flex-shrink-0"
+                style={{
+                  width: 'clamp(200px, 22vw, 300px)',
+                  transform: `rotate(${rotation}deg)`,
+                  transformOrigin: 'bottom center',
+                }}
               >
-                {/* Photo */}
+                {/* Polaroid frame */}
                 <div
-                  style={{ aspectRatio: '5/4' }}
-                  className="overflow-hidden bg-[#d1d5db] relative"
+                  className="bg-white shadow-polaroid relative overflow-hidden"
+                  style={{ padding: '10px 10px 0 10px' }}
                 >
-                  <img
-                    src={slide.src}
-                    alt={slide.alt}
-                    className="w-full h-full object-cover"
-                    onError={hideOnError}
-                  />
-                  {/* Overlay for non-center cards */}
+                  {/* Photo */}
                   <div
-                    className="absolute inset-0 pointer-events-none transition-opacity duration-700"
-                    style={{ background: `rgba(0,0,0,${overlayOpacity})` }}
-                  />
-                </div>
-
-                {/* Caption */}
-                <div className="flex items-center justify-center" style={{ height: '38px' }}>
-                  <p
-                    className="font-palmore text-primary text-center leading-tight"
-                    style={{ fontSize: 'clamp(12px, 1.3vw, 17px)' }}
+                    style={{ aspectRatio: '5/4' }}
+                    className="overflow-hidden bg-[#d1d5db] relative"
                   >
-                    {slide.caption}
-                  </p>
+                    <img
+                      src={slide.src}
+                      alt={slide.alt}
+                      className="w-full h-full object-cover"
+                      onError={hideOnError}
+                    />
+                  </div>
+
+                  {/* Caption */}
+                  <div className="flex items-center justify-center" style={{ height: '44px' }}>
+                    <p
+                      className="font-palmore text-primary text-center leading-tight"
+                      style={{ fontSize: 'clamp(13px, 1.4vw, 18px)' }}
+                    >
+                      {slide.caption}
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-          )
-        })}
+            )
+          })}
+        </div>
       </div>
     </section>
   )

@@ -123,6 +123,32 @@
   50% { transform: translateY(-14px); }
 }
 
+/* Endless horizontal marquee — content moves from right to left (new items appear on the right) */
+@keyframes marquee-rtl {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* Endless horizontal marquee — content moves from left to right (new items appear on the left) */
+@keyframes marquee-ltr {
+  from { transform: translateX(-50%); }
+  to   { transform: translateX(0); }
+}
+
+.animate-marquee-ltr {
+  animation: marquee-ltr 60s linear infinite;
+}
+
+.animate-marquee-rtl {
+  animation: marquee-rtl 60s linear infinite;
+}
+
+/* Pause on hover */
+.animate-marquee-ltr:hover,
+.animate-marquee-rtl:hover {
+  animation-play-state: paused;
+}
+
 @keyframes slide-in-right {
   0% { transform: translateX(30px); opacity: 0; }
   100% { transform: translateX(0); opacity: 1; }
