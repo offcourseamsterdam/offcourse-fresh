@@ -70,7 +70,7 @@ function BookingPanelSidebar(props: BookingPanelProps) {
       {category === 'private' && (
         <StepAccordion title="Choose your boat" summary={boatSummary} stepNumber={stepNumber('boat')} isActive={isStepActive('boat')} isCompleted={isStepCompleted('boat')} onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'boat' })}>
           {state.selectedSlot && (
-            <BoatDurationStep customerTypes={state.selectedSlot.customerTypes} guests={state.guests} selectedCustomerTypePk={state.selectedCustomerType?.pk ?? null} onSelect={(ct, boatId) => dispatch({ type: 'SELECT_BOAT_DURATION', customerType: ct, boatId })} />
+            <BoatDurationStep customerTypes={state.selectedSlot.customerTypes} guests={state.guests} selectedCustomerTypePk={state.selectedCustomerType?.pk ?? null} onSelect={(ct, boatId) => dispatch({ type: 'SELECT_BOAT_DURATION', customerType: ct, boatId })} allSlots={state.slots} selectedSlot={state.selectedSlot} onSelectSlot={(slot) => dispatch({ type: 'SELECT_SLOT', slot, category: 'private' })} />
           )}
         </StepAccordion>
       )}

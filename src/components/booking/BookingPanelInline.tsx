@@ -77,6 +77,9 @@ export function BookingPanelInline(props: BookingPanelProps) {
                 guests={state.guests}
                 selectedCustomerTypePk={state.selectedCustomerType?.pk ?? null}
                 onSelect={(ct, boatId) => dispatch({ type: 'SELECT_BOAT_DURATION', customerType: ct, boatId })}
+                allSlots={state.slots}
+                selectedSlot={state.selectedSlot}
+                onSelectSlot={(slot) => dispatch({ type: 'SELECT_SLOT', slot, category: 'private' })}
               />
 
               {/* Guest counter */}

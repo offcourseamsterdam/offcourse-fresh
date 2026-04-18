@@ -295,6 +295,9 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                     dispatch({ type: 'SELECT_BOAT_DURATION', customerType: ct, boatId })
                     goToPanel(3)
                   }}
+                  allSlots={state.slots}
+                  selectedSlot={state.selectedSlot}
+                  onSelectSlot={(slot) => dispatch({ type: 'SELECT_SLOT', slot, category: 'private' })}
                 />
               )}
 

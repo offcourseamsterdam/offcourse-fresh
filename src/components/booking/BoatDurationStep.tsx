@@ -2,15 +2,19 @@
 
 import { useMemo } from 'react'
 import Image from 'next/image'
-import type { AvailabilityCustomerType } from '@/types'
+import type { AvailabilityCustomerType, AvailabilitySlot } from '@/types'
 import { BOATS } from '@/lib/fareharbor/config'
 import { fmtEurosRounded } from '@/lib/utils'
+import { findNearestSlotsForBoat } from './boat-availability'
 
 interface BoatDurationStepProps {
   customerTypes: AvailabilityCustomerType[]
   guests: number
   selectedCustomerTypePk: number | null
   onSelect: (customerType: AvailabilityCustomerType, boatId: string) => void
+  allSlots?: AvailabilitySlot[]
+  selectedSlot?: AvailabilitySlot | null
+  onSelectSlot?: (slot: AvailabilitySlot) => void
 }
 
 interface BoatOption {
@@ -40,6 +44,9 @@ export function BoatDurationStep({
   guests,
   selectedCustomerTypePk,
   onSelect,
+  allSlots,
+  selectedSlot,
+  onSelectSlot,
 }: BoatDurationStepProps) {
   const boats = useMemo<BoatOption[]>(() => {
     const boatMap = new Map<string, AvailabilityCustomerType[]>()
@@ -96,15 +103,13 @@ export function BoatDurationStep({
           <div
             key={boat.id}
             className={`rounded-xl overflow-hidden transition-all duration-200 ${
-              isSoldOut ? 'opacity-50' : ''
-            } ${
               hasSelection
                 ? 'ring-2 ring-[var(--color-primary)] ring-offset-2'
                 : ''
             }`}
           >
             <div className={`${bgClass} p-5`}>
-              <div className="flex gap-4">
+              <div className={`flex gap-4 ${isSoldOut ? 'opacity-60' : ''}`}>
                 {/* Text */}
                 <div className="flex-1 min-w-0">
                   <h3 className="font-briston text-[28px] text-[var(--color-primary)] uppercase leading-none">
@@ -127,12 +132,41 @@ export function BoatDurationStep({
                 </div>
               </div>
 
-              {/* Sold out badge */}
-              {isSoldOut && (
-                <p className="text-sm font-semibold text-[var(--color-muted)] mt-3">
-                  Sold out for this time
-                </p>
-              )}
+              {/* Sold out state: copy + optional earlier/later buttons */}
+              {isSoldOut && (() => {
+                const nearest = allSlots && selectedSlot
+                  ? findNearestSlotsForBoat(allSlots, selectedSlot, boat.id)
+                  : { earlier: null, later: null }
+                return (
+                  <div className="mt-3 space-y-2">
+                    <p className="text-sm font-semibold text-[var(--color-muted)]">
+                      Sold out for this time
+                    </p>
+                    {onSelectSlot && (nearest.earlier || nearest.later) && (
+                      <div className="flex flex-wrap gap-2">
+                        {nearest.earlier && (
+                          <button
+                            type="button"
+                            onClick={() => onSelectSlot(nearest.earlier!)}
+                            className="px-3 py-2 rounded-full text-xs font-bold bg-white/90 text-[var(--color-primary)] hover:bg-white shadow-sm"
+                          >
+                            ← Earlier: {nearest.earlier.startTime}
+                          </button>
+                        )}
+                        {nearest.later && (
+                          <button
+                            type="button"
+                            onClick={() => onSelectSlot(nearest.later!)}
+                            className="px-3 py-2 rounded-full text-xs font-bold bg-white/90 text-[var(--color-primary)] hover:bg-white shadow-sm"
+                          >
+                            Later: {nearest.later.startTime} →
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
 
               {/* Duration pills — 3 columns */}
               {!isSoldOut && (
