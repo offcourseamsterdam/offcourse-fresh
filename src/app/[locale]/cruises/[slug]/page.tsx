@@ -24,10 +24,14 @@ export async function generateMetadata({ params }: Props) {
   const loc = locale as Locale
   const title = getLocalizedField(meta, 'seo_title', loc) ?? meta.title
   const description = getLocalizedField(meta, 'seo_meta_description', loc) ?? meta.tagline ?? undefined
+  const isPartnerInvoice = meta.payment_mode === 'partner_invoice'
   return {
     title: `${title} — Off Course Amsterdam`,
     description,
     openGraph: { title, description: description ?? undefined },
+    // Partner-invoice listings are distributed only via physical QR codes.
+    // Keep them out of search engines so the URL can't be found by accident.
+    ...(isPartnerInvoice ? { robots: { index: false, follow: false } } : {}),
   }
 }
 

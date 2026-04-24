@@ -4,15 +4,25 @@ import { useState } from 'react'
 import type { CustomerDetails } from '@/types'
 
 interface GuestInfoFormProps {
-  onSubmit: (details: CustomerDetails) => void
+  onSubmit: (details: CustomerDetails & { partnerCode?: string }) => void
   loading?: boolean
+  requirePartnerCode?: boolean
+  partnerName?: string | null
+  submitLabel?: string
 }
 
-export function GuestInfoForm({ onSubmit, loading }: GuestInfoFormProps) {
+export function GuestInfoForm({
+  onSubmit,
+  loading,
+  requirePartnerCode = false,
+  partnerName,
+  submitLabel,
+}: GuestInfoFormProps) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [specialRequests, setSpecialRequests] = useState('')
+  const [partnerCode, setPartnerCode] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   function validate(): boolean {
@@ -21,6 +31,7 @@ export function GuestInfoForm({ onSubmit, loading }: GuestInfoFormProps) {
     if (!email.trim()) errs.email = 'Email is required'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = 'Please enter a valid email'
     if (!phone.trim()) errs.phone = 'Phone number is required'
+    if (requirePartnerCode && !partnerCode.trim()) errs.partnerCode = 'Please enter the code from your receipt'
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -28,7 +39,13 @@ export function GuestInfoForm({ onSubmit, loading }: GuestInfoFormProps) {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!validate()) return
-    onSubmit({ name: name.trim(), email: email.trim(), phone: phone.trim(), specialRequests: specialRequests.trim() || undefined })
+    onSubmit({
+      name: name.trim(),
+      email: email.trim(),
+      phone: phone.trim(),
+      specialRequests: specialRequests.trim() || undefined,
+      partnerCode: requirePartnerCode ? partnerCode.trim() : undefined,
+    })
   }
 
   return (
@@ -105,13 +122,40 @@ export function GuestInfoForm({ onSubmit, loading }: GuestInfoFormProps) {
         />
       </div>
 
+      {/* Partner code — only shown for partner-invoice listings */}
+      {requirePartnerCode && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <label htmlFor="partner-code" className="block text-sm font-semibold text-amber-900 mb-1">
+            Partner code {partnerName ? `from ${partnerName}` : ''}
+          </label>
+          <p className="text-xs text-amber-800 mb-2">
+            Type the code printed on your receipt from the partner desk.
+          </p>
+          <input
+            id="partner-code"
+            type="text"
+            value={partnerCode}
+            onChange={e => setPartnerCode(e.target.value)}
+            placeholder="WBKA-2X9F"
+            autoComplete="off"
+            spellCheck={false}
+            className={`w-full px-4 py-2.5 rounded-xl border bg-white text-sm uppercase tracking-widest font-mono transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400/20 focus:border-amber-400 ${
+              errors.partnerCode ? 'border-red-400' : 'border-amber-200'
+            }`}
+          />
+          {errors.partnerCode && <p className="text-xs text-red-600 mt-1">{errors.partnerCode}</p>}
+        </div>
+      )}
+
       {/* Submit */}
       <button
         type="submit"
         disabled={loading}
         className="w-full py-3 rounded-xl bg-[var(--color-primary)] text-white text-sm font-bold hover:bg-[var(--color-primary-dark)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {loading ? 'Setting up payment...' : 'Continue to payment'}
+        {loading
+          ? (requirePartnerCode ? 'Confirming booking…' : 'Setting up payment…')
+          : (submitLabel ?? 'Continue to payment')}
       </button>
     </form>
   )

@@ -4,6 +4,8 @@ import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { Resend } from 'resend'
 import type { BookingSource } from '@/lib/constants'
+import { normalizePartnerCode } from '@/lib/partner-codes/generate'
+import { validatePartnerCode, reasonMessage } from '@/lib/partner-codes/validate'
 
 let _resend: Resend | null = null
 function getResend(): Resend {
@@ -52,6 +54,7 @@ export async function POST(request: NextRequest) {
       bookingSource = 'website' as BookingSource,
       depositAmountCents,
       sessionId,
+      partnerCode,
     } = body
 
     if (!availPk || !customerTypeRatePk || !guestCount || !contact?.name || !contact?.email || !contact?.phone) {
@@ -59,6 +62,80 @@ export async function POST(request: NextRequest) {
     }
 
     const isInternal = bookingSource !== 'website'
+    const isPartnerInvoice = bookingSource === 'partner_invoice'
+
+    // ── Partner-invoice branch ─────────────────────────────────────────────
+    // Skip Stripe. Validate the listing is actually partner-invoice, validate
+    // the partner code, and pull the commission % from the campaign linking
+    // this listing + partner. (Webikeamsterdam pattern.)
+    let partnerInvoiceContext: {
+      partnerId: string
+      partnerName: string
+      campaignId: string
+      commissionPercent: number
+    } | null = null
+
+    if (isPartnerInvoice) {
+      if (!listingId) return apiError('listingId is required for partner-invoice bookings', 400)
+
+      const supabasePI = createAdminClient()
+      const { data: listing } = await supabasePI
+        .from('cruise_listings')
+        .select('id, payment_mode, required_partner_id')
+        .eq('id', listingId)
+        .single()
+
+      if (!listing) return apiError('Listing not found', 404)
+      if (listing.payment_mode !== 'partner_invoice' || !listing.required_partner_id) {
+        return apiError('This listing does not accept partner-invoice bookings', 400)
+      }
+
+      const normalizedCode = normalizePartnerCode(String(partnerCode ?? ''))
+      const { data: codeRow } = await supabasePI
+        .from('partner_codes')
+        .select('id, partner_id, code, is_active, expires_at, revoked_at')
+        .eq('code', normalizedCode)
+        .maybeSingle()
+
+      const result = validatePartnerCode(normalizedCode, listing.required_partner_id, codeRow)
+      if (!result.ok) return apiError(reasonMessage(result.reason), 400)
+
+      // Find the campaign linking this listing + partner to get the commission %.
+      // Admin must have set this up (see admin/campaigns).
+      const { data: campaign } = await supabasePI
+        .from('campaigns')
+        .select('id, percentage_value, investment_type, partner_id')
+        .eq('listing_id', listingId)
+        .eq('partner_id', listing.required_partner_id)
+        .eq('is_active', true)
+        .maybeSingle()
+
+      if (!campaign) {
+        return apiError(
+          'No active campaign found for this partner + listing. An admin must create a campaign first.',
+          422,
+        )
+      }
+      if (campaign.investment_type !== 'percentage' || !campaign.percentage_value) {
+        return apiError(
+          'Partner-invoice campaigns must use a percentage commission. Fix the campaign config.',
+          422,
+        )
+      }
+
+      const { data: partner } = await supabasePI
+        .from('partners')
+        .select('id, name')
+        .eq('id', listing.required_partner_id)
+        .single()
+
+      partnerInvoiceContext = {
+        partnerId: listing.required_partner_id,
+        partnerName: partner?.name ?? 'Partner',
+        campaignId: campaign.id,
+        commissionPercent: Number(campaign.percentage_value),
+      }
+    }
 
     // ── Campaign attribution & commission ──────────────────────────────────
     // Two cookie formats:
@@ -130,6 +207,17 @@ export async function POST(request: NextRequest) {
       }
     } catch {
       // Attribution errors are non-fatal — booking still proceeds
+    }
+
+    // Partner-invoice bookings override any cookie-based attribution:
+    // the listing + partner code *is* the attribution, and the commission %
+    // comes from the campaign we just resolved.
+    if (partnerInvoiceContext) {
+      cookieCampaignId = partnerInvoiceContext.campaignId
+      partnerId = partnerInvoiceContext.partnerId
+      commissionAmountCents = Math.round(
+        Number(baseAmountCents ?? 0) * partnerInvoiceContext.commissionPercent / 100,
+      )
     }
 
     // Idempotency: if a booking already exists for this payment intent, return it (website only)
@@ -232,6 +320,16 @@ export async function POST(request: NextRequest) {
         totalVatAmountCents: Number(totalVatAmountCents ?? 0),
         bookingSource: bookingSource as BookingSource,
         depositAmountCents: isInternal ? Number(depositAmountCents ?? 0) : null,
+        partnerInvoice: partnerInvoiceContext
+          ? {
+              partnerName: partnerInvoiceContext.partnerName,
+              baseAmountCents: Number(baseAmountCents ?? 0),
+              commissionAmountCents: Math.round(
+                Number(baseAmountCents ?? 0) * partnerInvoiceContext.commissionPercent / 100,
+              ),
+              commissionPercent: partnerInvoiceContext.commissionPercent,
+            }
+          : null,
       }),
       sendConfirmationEmail({
         contact,
@@ -339,7 +437,9 @@ async function saveToSupabase(p: BookingPayload): Promise<{ ok: true } | { ok: f
       customer_phone: p.contact.phone,
       guest_note: p.note || null,
       status: 'confirmed',
-      payment_status: isInternal ? 'comp' : 'paid',
+      payment_status: p.bookingSource === 'partner_invoice'
+        ? 'partner_invoice_pending'
+        : (isInternal ? 'comp' : 'paid'),
       currency: 'eur',
       booking_source: p.bookingSource,
       deposit_amount_cents: p.depositAmountCents,
@@ -432,6 +532,12 @@ interface SlackPayload {
   totalVatAmountCents: number
   bookingSource?: BookingSource
   depositAmountCents?: number | null
+  partnerInvoice?: {
+    partnerName: string
+    baseAmountCents: number
+    commissionAmountCents: number
+    commissionPercent: number
+  } | null
 }
 
 async function sendSlackNotification(p: SlackPayload) {
@@ -442,14 +548,25 @@ async function sendSlackNotification(p: SlackPayload) {
   const endTime = p.endAt ? new Date(p.endAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' }) : '—'
 
   const isInternal = p.bookingSource && p.bookingSource !== 'website'
+  const isPartnerInvoice = p.bookingSource === 'partner_invoice' && p.partnerInvoice
+  const pi = p.partnerInvoice
+
+  const invoiceable = pi ? pi.baseAmountCents - pi.commissionAmountCents : 0
+
   const text = [
-    isInternal ? `*New internal booking!* 📋 (${p.bookingSource})` : `*New booking confirmed!* 🎉`,
+    isPartnerInvoice
+      ? `*New partner-invoice booking!* 🤝 (${pi!.partnerName})`
+      : isInternal
+        ? `*New internal booking!* 📋 (${p.bookingSource})`
+        : `*New booking confirmed!* 🎉`,
     `*${p.listingTitle}*`,
     `📅 ${p.date} · ${startTime} – ${endTime}`,
     `👥 ${p.guestCount} guest${p.guestCount !== 1 ? 's' : ''} · ${p.category}`,
-    isInternal
-      ? (p.depositAmountCents != null ? `💰 Deposit: ${fmtAmountEur(p.depositAmountCents)}` : '')
-      : `💰 ${fmtAmountEur(p.amountCents)}`,
+    isPartnerInvoice
+      ? `💰 Ticket: ${fmtAmountEur(pi!.baseAmountCents)} · To invoice: ${fmtAmountEur(invoiceable)} · Partner cut: ${fmtAmountEur(pi!.commissionAmountCents)} (${pi!.commissionPercent}%)`
+      : isInternal
+        ? (p.depositAmountCents != null ? `💰 Deposit: ${fmtAmountEur(p.depositAmountCents)}` : '')
+        : `💰 ${fmtAmountEur(p.amountCents)}`,
     p.extrasSelected.length > 0
       ? `📦 Extras: ${(p.extrasSelected as Array<{name: string; amount_cents: number}>).map(e => `${e.name} €${(e.amount_cents / 100).toFixed(2)}`).join(' · ')}`
       : '',

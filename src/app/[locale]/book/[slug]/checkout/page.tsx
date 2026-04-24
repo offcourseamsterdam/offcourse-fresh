@@ -11,6 +11,7 @@ interface Props {
 
 export const metadata = {
   title: 'Checkout — Off Course Amsterdam',
+  robots: { index: false, follow: false },
 }
 
 export default async function CheckoutPage({ params }: Props) {
@@ -19,7 +20,7 @@ export default async function CheckoutPage({ params }: Props) {
 
   const { data: listingData } = await supabase
     .from('cruise_listings')
-    .select('slug, cancellation_policy')
+    .select('slug, cancellation_policy, payment_mode, required_partner_id')
     .eq('slug', slug)
     .eq('is_published', true)
     .single()
@@ -32,11 +33,25 @@ export default async function CheckoutPage({ params }: Props) {
       ? listing.cancellation_policy
       : (listing.cancellation_policy as { text?: string } | null)?.text ?? null
 
+  const paymentMode = (listing.payment_mode ?? 'stripe') as 'stripe' | 'partner_invoice'
+
+  let partnerName: string | null = null
+  if (paymentMode === 'partner_invoice' && listing.required_partner_id) {
+    const { data: partner } = await supabase
+      .from('partners')
+      .select('name')
+      .eq('id', listing.required_partner_id)
+      .single()
+    partnerName = partner?.name ?? null
+  }
+
   return (
     <div className="min-h-screen bg-texture-teal">
       <CheckoutFlow
         listingSlug={slug}
         cancellationPolicy={cancellationPolicy}
+        paymentMode={paymentMode}
+        partnerName={partnerName}
       />
     </div>
   )

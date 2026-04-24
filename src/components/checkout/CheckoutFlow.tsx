@@ -41,16 +41,23 @@ interface BookingData {
 interface CheckoutFlowProps {
   listingSlug: string
   cancellationPolicy?: string | null
+  paymentMode?: 'stripe' | 'partner_invoice'
+  partnerName?: string | null
 }
 
 // ── Progress indicator ───────────────────────────────────────────────────────
 
-function CheckoutProgress({ step }: { step: 'details' | 'payment' }) {
-  const steps = [
-    { key: 'cruise', label: 'Cruise' },
-    { key: 'details', label: 'Details' },
-    { key: 'payment', label: 'Payment' },
-  ] as const
+function CheckoutProgress({ step, hidePaymentStep = false }: { step: 'details' | 'payment'; hidePaymentStep?: boolean }) {
+  const steps = hidePaymentStep
+    ? ([
+        { key: 'cruise', label: 'Cruise' },
+        { key: 'details', label: 'Details' },
+      ] as const)
+    : ([
+        { key: 'cruise', label: 'Cruise' },
+        { key: 'details', label: 'Details' },
+        { key: 'payment', label: 'Payment' },
+      ] as const)
 
   const activeIndex = step === 'details' ? 1 : 2
 
@@ -162,11 +169,18 @@ function PaymentForm({
 
 // ── Main checkout flow ──────────────────────────────────────────────────────
 
-export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowProps) {
+export function CheckoutFlow({
+  listingSlug,
+  cancellationPolicy,
+  paymentMode = 'stripe',
+  partnerName,
+}: CheckoutFlowProps) {
+  const isPartnerInvoice = paymentMode === 'partner_invoice'
   const [bookingData, setBookingData] = useState<BookingData | null>(null)
   const [contact, setContact] = useState<CustomerDetails | null>(null)
   const [clientSecret, setClientSecret] = useState<string | null>(null)
   const [creatingIntent, setCreatingIntent] = useState(false)
+  const [submittingPartnerBooking, setSubmittingPartnerBooking] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // Load booking data from sessionStorage
@@ -203,8 +217,72 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
     if (bookingData) trackEvent('view_details', { listing: bookingData.listingSlug })
   }, [bookingData])
 
+  // Partner-invoice flow: skip Stripe, post straight to /book with bookingSource + partnerCode
+  async function handlePartnerInvoiceSubmit(details: CustomerDetails & { partnerCode?: string }) {
+    if (!bookingData) return
+    setContact(details)
+    setSubmittingPartnerBooking(true)
+    setError(null)
+
+    try {
+      const customerTypeRatePk = bookingData.category === 'private'
+        ? bookingData.selectedCustomerType?.pk
+        : bookingData.selectedSlot.customerTypes[0]?.pk
+
+      const extrasTotalCents = bookingData.extrasCalculation
+        ? bookingData.extrasCalculation.line_items.reduce((s, li) => s + li.amount_cents, 0)
+        : 0
+      const totalAmount = bookingData.basePriceCents + extrasTotalCents
+
+      const res = await fetch('/api/booking-flow/book', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          availPk: bookingData.selectedSlot.pk,
+          customerTypeRatePk,
+          guestCount: bookingData.guests,
+          category: bookingData.category,
+          contact: { name: details.name, email: details.email, phone: details.phone },
+          note: details.specialRequests || undefined,
+          listingId: bookingData.listingId,
+          listingTitle: bookingData.listingTitle,
+          date: bookingData.date,
+          startAt: bookingData.selectedSlot.startAt,
+          endAt: bookingData.selectedSlot.endAt,
+          amountCents: totalAmount,
+          baseAmountCents: bookingData.basePriceCents,
+          selectedExtraIds: bookingData.selectedExtraIds,
+          extrasSelected: bookingData.extrasCalculation?.line_items ?? [],
+          extrasAmountCents: extrasTotalCents,
+          sessionId: getSessionId(),
+          // Partner-invoice specific
+          bookingSource: 'partner_invoice',
+          partnerCode: details.partnerCode,
+          stripePaymentIntentId: null,
+        }),
+      })
+
+      const json = await res.json()
+      if (!json.ok) {
+        setError(json.error ?? 'Booking could not be completed. Please try again.')
+        return
+      }
+
+      trackEvent('booking_completed', { listing: bookingData.listingSlug, source: 'partner_invoice' })
+      sessionStorage.removeItem(SESSION_BOOKING_KEY)
+      sessionStorage.removeItem(SESSION_CONTACT_KEY)
+      const fhUuid = json?.data?.booking?.uuid ?? ''
+      window.location.href = `/book/${bookingData.listingSlug}/confirmation?fh=${encodeURIComponent(fhUuid)}`
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setSubmittingPartnerBooking(false)
+    }
+  }
+
   // Create PaymentIntent after guest info is submitted
-  async function handleGuestInfoSubmit(details: CustomerDetails) {
+  async function handleGuestInfoSubmit(details: CustomerDetails & { partnerCode?: string }) {
+    if (isPartnerInvoice) return handlePartnerInvoiceSubmit(details)
     if (!bookingData) return
     trackEvent('view_payment', { listing: bookingData.listingSlug })
     setContact(details)
@@ -367,7 +445,7 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
       {/* White card container */}
       <div className="bg-white rounded-2xl shadow-lg p-6 sm:p-8">
       {/* Progress indicator */}
-      <CheckoutProgress step={currentStep} />
+      <CheckoutProgress step={currentStep} hidePaymentStep={isPartnerInvoice} />
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 lg:gap-12">
         {/* Left column: form + payment */}
@@ -380,7 +458,24 @@ export function CheckoutFlow({ listingSlug, cancellationPolicy }: CheckoutFlowPr
                 exit={{ x: '-100%', opacity: 0 }}
                 transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
               >
-                <GuestInfoForm onSubmit={handleGuestInfoSubmit} loading={creatingIntent} />
+                {isPartnerInvoice && (
+                  <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                    <strong className="block">No payment today 🤝</strong>
+                    This booking is settled with {partnerName ?? 'the partner'} — you&apos;ve already paid them at the desk.
+                  </div>
+                )}
+                <GuestInfoForm
+                  onSubmit={handleGuestInfoSubmit}
+                  loading={creatingIntent || submittingPartnerBooking}
+                  requirePartnerCode={isPartnerInvoice}
+                  partnerName={partnerName}
+                  submitLabel={isPartnerInvoice ? 'Confirm booking' : undefined}
+                />
+                {error && isPartnerInvoice && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 mt-4">
+                    {error}
+                  </div>
+                )}
               </motion.div>
             ) : (
               <motion.div
