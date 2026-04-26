@@ -113,14 +113,20 @@ Beer's goal: become someone who can read their own codebase, understand architec
 
 ## Known Gotchas
 
-### Dev Server (CRITICAL)
-Next.js 16 Turbopack CANNOT run inside Claude Code's preview server or Bash environment (macOS sandbox limitation).
+### Dev Server
+Two ways to run the app — pick whichever fits the task:
 
-**How to develop:**
-1. Beer runs `npm run dev` from his own Terminal.app (NOT from Claude Code)
+**Option A — Beer's own Terminal (default for long sessions):**
+1. Beer runs `npm run dev` from his own Terminal.app
 2. Claude Code edits code and reads files as normal
 3. For visual verification, use Claude in Chrome MCP tools to browse `http://localhost:3000`
-4. Do NOT use `preview_start` or run the dev server from Bash — it will always crash
+
+**Option B — Claude Code preview server (try this first for verification):**
+- The previous Turbopack + macOS sandbox crash appears to be resolved.
+- `preview_start` is allowed again — use it when verifying UI changes via the `<verification_workflow>`.
+- If the dev server crashes mid-session, fall back to Option A and note it so we can re-disable preview.
+
+Do NOT spawn `next dev` directly from Bash — use `preview_start` if you want Claude Code to run the server.
 
 ### Turbopack Cache MUST Stay Disabled (CRITICAL)
 `next.config.ts` has `experimental: { turbopackFileSystemCacheForDev: false }`. **NEVER remove this.**
