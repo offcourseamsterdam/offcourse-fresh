@@ -55,6 +55,8 @@ export async function POST(request: NextRequest) {
       depositAmountCents,
       sessionId,
       partnerCode,
+      promoCodeId,
+      discountAmountCents,
     } = body
 
     if (!availPk || !customerTypeRatePk || !guestCount || !contact?.name || !contact?.email || !contact?.phone) {
@@ -293,6 +295,8 @@ export async function POST(request: NextRequest) {
       cookieCampaignId,
       partnerId,
       commissionAmountCents,
+      promoCodeId: promoCodeId ?? null,
+      discountAmountCents: Number(discountAmountCents ?? 0),
     }
 
     const saveResult = await saveToSupabase(bookingPayload)
@@ -382,6 +386,8 @@ interface BookingPayload {
   cookieCampaignId: string | null
   partnerId: string | null
   commissionAmountCents: number | null
+  promoCodeId: string | null
+  discountAmountCents: number
 }
 
 // Platform booking sources that auto-attribute to the Platforms channel
@@ -417,7 +423,7 @@ async function saveToSupabase(p: BookingPayload): Promise<{ ok: true } | { ok: f
       fareharbor_availability_pk: p.availPk,
       fareharbor_customer_type_rate_pk: p.customerTypeRatePk,
       stripe_payment_intent_id: p.stripePaymentIntentId,
-      stripe_amount: isInternal ? 0 : p.baseAmountCents + p.extrasAmountCents,
+      stripe_amount: isInternal ? 0 : p.baseAmountCents + p.extrasAmountCents - p.discountAmountCents,
       base_amount_cents: p.baseAmountCents,
       base_vat_rate: 9,
       base_vat_amount_cents: p.baseVatAmountCents,
@@ -447,12 +453,59 @@ async function saveToSupabase(p: BookingPayload): Promise<{ ok: true } | { ok: f
       campaign_id: campaignId,
       partner_id: p.partnerId,
       commission_amount_cents: p.commissionAmountCents,
+      promo_code_id: p.promoCodeId,
+      discount_amount_cents: p.discountAmountCents,
     })
 
     if (error) {
       console.error('[book] saveToSupabase Supabase error:', error)
       return { ok: false, error: error.message ?? 'Unknown Supabase error' }
     }
+
+    // Increment uses_count on the promo code (non-fatal)
+    if (p.promoCodeId) {
+      const { data: codeRow } = await supabase
+        .from('promo_codes')
+        .select('*')
+        .eq('id', p.promoCodeId)
+        .single()
+      if (codeRow) {
+        const newCount = codeRow.uses_count + 1
+        await supabase
+          .from('promo_codes')
+          .update({ uses_count: newCount })
+          .eq('id', p.promoCodeId)
+
+        // Auto-rotate: when max_uses is hit, deactivate old code and create a new one
+        if (codeRow.max_uses != null && newCount >= codeRow.max_uses) {
+          await supabase
+            .from('promo_codes')
+            .update({ is_active: false })
+            .eq('id', p.promoCodeId)
+
+          const newCode = generatePromoCode()
+          const { data: rotated } = await supabase
+            .from('promo_codes')
+            .insert({
+              code: newCode,
+              label: codeRow.label,
+              discount_type: codeRow.discount_type,
+              discount_value: codeRow.discount_value,
+              fixed_discount_cents: codeRow.fixed_discount_cents,
+              max_uses: codeRow.max_uses,
+              notes: codeRow.notes,
+              partner_id: codeRow.partner_id,
+            })
+            .select()
+            .single()
+
+          if (rotated) {
+            await notifyPromoRotation(codeRow.code, newCode, codeRow.label, codeRow.max_uses)
+          }
+        }
+      }
+    }
+
     return { ok: true }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error'
@@ -714,5 +767,37 @@ async function sendConfirmationEmail(p: EmailPayload) {
     })
   } catch (err) {
     console.error('[book] sendConfirmationEmail error:', err)
+  }
+}
+
+// ── Promo code rotation ────────────────────────────────────────────────────
+
+const PROMO_ALPHABET = 'ACDEFGHJKLMNPQRTUVWXY3469'
+
+function generatePromoCode(): string {
+  const chars = Array.from({ length: 8 }, () => PROMO_ALPHABET[Math.floor(Math.random() * PROMO_ALPHABET.length)])
+  return `${chars.slice(0, 4).join('')}-${chars.slice(4).join('')}`
+}
+
+async function notifyPromoRotation(oldCode: string, newCode: string, label: string, maxUses: number) {
+  const webhookUrl = process.env.SLACK_WEBHOOK_URL
+  if (!webhookUrl) return
+
+  const text = [
+    '🔄 *Promo code rotated*',
+    `*${label}* hit its ${maxUses}-use limit.`,
+    `Old code: \`${oldCode}\` → now deactivated`,
+    `New code: \`${newCode}\` → now active`,
+    '_Share the new code with your partners._',
+  ].join('\n')
+
+  try {
+    await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    })
+  } catch (err) {
+    console.error('[book] notifyPromoRotation error:', err)
   }
 }

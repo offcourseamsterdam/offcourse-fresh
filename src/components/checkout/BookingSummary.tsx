@@ -18,6 +18,7 @@ interface BookingSummaryProps {
   extrasCalculation: ExtrasCalculation | null
   cancellationPolicy?: string | null
   cruiseLabel?: string
+  discountAmountCents?: number
 }
 
 function fmtDuration(minutes: number): string {
@@ -40,9 +41,11 @@ export function BookingSummary({
   extrasCalculation,
   cancellationPolicy,
   cruiseLabel,
+  discountAmountCents,
 }: BookingSummaryProps) {
   const extrasTotalCents = extrasCalculation?.extras_amount_cents ?? 0
-  const grandTotalCents = basePriceCents + extrasTotalCents
+  const grossCents = basePriceCents + extrasTotalCents
+  const grandTotalCents = Math.max(0, grossCents - (discountAmountCents ?? 0))
 
   return (
     <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
@@ -108,10 +111,17 @@ export function BookingSummary({
             </div>
           ))}
 
+          {discountAmountCents && discountAmountCents > 0 && (
+            <div className="flex justify-between text-emerald-700 font-medium">
+              <span>Promo discount</span>
+              <span>−{fmtEuros(discountAmountCents)}</span>
+            </div>
+          )}
+
           <div className="border-t border-zinc-200 pt-2 mt-2">
             <div className="flex justify-between font-bold text-zinc-900">
               <span>Total</span>
-              <span>{fmtEuros(grandTotalCents)}</span>
+              <span>{discountAmountCents && discountAmountCents >= grossCents ? 'Included' : fmtEuros(grandTotalCents)}</span>
             </div>
             <div className="text-right text-[10px] text-zinc-400 mt-0.5">
               incl. {vatSummaryText(basePriceCents, extrasCalculation)}

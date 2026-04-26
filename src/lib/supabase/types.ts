@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_event_log: {
+        Row: {
+          context: Json | null
+          id: string
+          ip: string | null
+          kind: string
+          message: string
+          occurred_at: string
+          resolved_at: string | null
+          severity: string
+          url: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          context?: Json | null
+          id?: string
+          ip?: string | null
+          kind: string
+          message: string
+          occurred_at?: string
+          resolved_at?: string | null
+          severity: string
+          url?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          context?: Json | null
+          id?: string
+          ip?: string | null
+          kind?: string
+          message?: string
+          occurred_at?: string
+          resolved_at?: string | null
+          severity?: string
+          url?: string | null
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
       analytics_sessions: {
         Row: {
           browser_name: string | null
@@ -121,6 +160,7 @@ export type Database = {
           is_electric: boolean
           max_capacity: number | null
           name: string
+          photo_alt_text: Json | null
           photo_covered_url: string | null
           photo_interior_url: string | null
           photo_url: string | null
@@ -143,6 +183,7 @@ export type Database = {
           is_electric?: boolean
           max_capacity?: number | null
           name: string
+          photo_alt_text?: Json | null
           photo_covered_url?: string | null
           photo_interior_url?: string | null
           photo_url?: string | null
@@ -165,6 +206,7 @@ export type Database = {
           is_electric?: boolean
           max_capacity?: number | null
           name?: string
+          photo_alt_text?: Json | null
           photo_covered_url?: string | null
           photo_interior_url?: string | null
           photo_url?: string | null
@@ -190,6 +232,7 @@ export type Database = {
           customer_name: string
           customer_phone: string | null
           deposit_amount_cents: number | null
+          discount_amount_cents: number
           end_time: string | null
           external_id: string | null
           extras_amount_cents: number | null
@@ -204,6 +247,7 @@ export type Database = {
           listing_title: string | null
           partner_id: string | null
           payment_status: string | null
+          promo_code_id: string | null
           raw_payload: Json | null
           receipt_total: number | null
           receipt_total_display: string | null
@@ -235,6 +279,7 @@ export type Database = {
           customer_name: string
           customer_phone?: string | null
           deposit_amount_cents?: number | null
+          discount_amount_cents?: number
           end_time?: string | null
           external_id?: string | null
           extras_amount_cents?: number | null
@@ -249,6 +294,7 @@ export type Database = {
           listing_title?: string | null
           partner_id?: string | null
           payment_status?: string | null
+          promo_code_id?: string | null
           raw_payload?: Json | null
           receipt_total?: number | null
           receipt_total_display?: string | null
@@ -280,6 +326,7 @@ export type Database = {
           customer_name?: string
           customer_phone?: string | null
           deposit_amount_cents?: number | null
+          discount_amount_cents?: number
           end_time?: string | null
           external_id?: string | null
           extras_amount_cents?: number | null
@@ -294,6 +341,7 @@ export type Database = {
           listing_title?: string | null
           partner_id?: string | null
           payment_status?: string | null
+          promo_code_id?: string | null
           raw_payload?: Json | null
           receipt_total?: number | null
           receipt_total_display?: string | null
@@ -321,6 +369,13 @@ export type Database = {
             columns: ["partner_id"]
             isOneToOne: false
             referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_promo_code_id_fkey"
+            columns: ["promo_code_id"]
+            isOneToOne: false
+            referencedRelation: "promo_codes"
             referencedColumns: ["id"]
           },
           {
@@ -1079,6 +1134,13 @@ export type Database = {
       }
       extras: {
         Row: {
+          alt_text: string | null
+          alt_text_de: string | null
+          alt_text_es: string | null
+          alt_text_fr: string | null
+          alt_text_nl: string | null
+          alt_text_pt: string | null
+          alt_text_zh: string | null
           applicable_categories: string[] | null
           category: string
           created_at: string | null
@@ -1111,6 +1173,13 @@ export type Database = {
           vat_rate: number
         }
         Insert: {
+          alt_text?: string | null
+          alt_text_de?: string | null
+          alt_text_es?: string | null
+          alt_text_fr?: string | null
+          alt_text_nl?: string | null
+          alt_text_pt?: string | null
+          alt_text_zh?: string | null
           applicable_categories?: string[] | null
           category: string
           created_at?: string | null
@@ -1143,6 +1212,13 @@ export type Database = {
           vat_rate?: number
         }
         Update: {
+          alt_text?: string | null
+          alt_text_de?: string | null
+          alt_text_es?: string | null
+          alt_text_fr?: string | null
+          alt_text_nl?: string | null
+          alt_text_pt?: string | null
+          alt_text_zh?: string | null
           applicable_categories?: string[] | null
           category?: string
           created_at?: string | null
@@ -1266,7 +1342,19 @@ export type Database = {
       hero_carousel_items: {
         Row: {
           alt_text: string | null
+          alt_text_de: string | null
+          alt_text_es: string | null
+          alt_text_fr: string | null
+          alt_text_nl: string | null
+          alt_text_pt: string | null
+          alt_text_zh: string | null
           caption: string | null
+          caption_de: string | null
+          caption_es: string | null
+          caption_fr: string | null
+          caption_nl: string | null
+          caption_pt: string | null
+          caption_zh: string | null
           created_at: string
           id: string
           image_url: string
@@ -1277,7 +1365,19 @@ export type Database = {
         }
         Insert: {
           alt_text?: string | null
+          alt_text_de?: string | null
+          alt_text_es?: string | null
+          alt_text_fr?: string | null
+          alt_text_nl?: string | null
+          alt_text_pt?: string | null
+          alt_text_zh?: string | null
           caption?: string | null
+          caption_de?: string | null
+          caption_es?: string | null
+          caption_fr?: string | null
+          caption_nl?: string | null
+          caption_pt?: string | null
+          caption_zh?: string | null
           created_at?: string
           id?: string
           image_url: string
@@ -1288,7 +1388,19 @@ export type Database = {
         }
         Update: {
           alt_text?: string | null
+          alt_text_de?: string | null
+          alt_text_es?: string | null
+          alt_text_fr?: string | null
+          alt_text_nl?: string | null
+          alt_text_pt?: string | null
+          alt_text_zh?: string | null
           caption?: string | null
+          caption_de?: string | null
+          caption_es?: string | null
+          caption_fr?: string | null
+          caption_nl?: string | null
+          caption_pt?: string | null
+          caption_zh?: string | null
           created_at?: string
           id?: string
           image_url?: string
@@ -1378,6 +1490,45 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      image_seo_history: {
+        Row: {
+          applied_at: string
+          field_name: string
+          id: string
+          new_value: string | null
+          previous_value: string | null
+          reverted_at: string | null
+          row_id: string
+          session_id: string | null
+          source: string
+          table_name: string
+        }
+        Insert: {
+          applied_at?: string
+          field_name: string
+          id?: string
+          new_value?: string | null
+          previous_value?: string | null
+          reverted_at?: string | null
+          row_id: string
+          session_id?: string | null
+          source?: string
+          table_name: string
+        }
+        Update: {
+          applied_at?: string
+          field_name?: string
+          id?: string
+          new_value?: string | null
+          previous_value?: string | null
+          reverted_at?: string | null
+          row_id?: string
+          session_id?: string | null
+          source?: string
+          table_name?: string
+        }
+        Relationships: []
       }
       inclusion_templates: {
         Row: {
@@ -1722,6 +1873,12 @@ export type Database = {
       priorities_cards: {
         Row: {
           alt_text: string | null
+          alt_text_de: string | null
+          alt_text_es: string | null
+          alt_text_fr: string | null
+          alt_text_nl: string | null
+          alt_text_pt: string | null
+          alt_text_zh: string | null
           body: string
           created_at: string | null
           id: string
@@ -1733,6 +1890,12 @@ export type Database = {
         }
         Insert: {
           alt_text?: string | null
+          alt_text_de?: string | null
+          alt_text_es?: string | null
+          alt_text_fr?: string | null
+          alt_text_nl?: string | null
+          alt_text_pt?: string | null
+          alt_text_zh?: string | null
           body?: string
           created_at?: string | null
           id?: string
@@ -1744,6 +1907,12 @@ export type Database = {
         }
         Update: {
           alt_text?: string | null
+          alt_text_de?: string | null
+          alt_text_es?: string | null
+          alt_text_fr?: string | null
+          alt_text_nl?: string | null
+          alt_text_pt?: string | null
+          alt_text_zh?: string | null
           body?: string
           created_at?: string | null
           id?: string
@@ -1754,6 +1923,65 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      promo_codes: {
+        Row: {
+          code: string
+          created_at: string
+          discount_type: string
+          discount_value: number | null
+          fixed_discount_cents: number | null
+          id: string
+          is_active: boolean
+          label: string
+          max_uses: number | null
+          notes: string | null
+          partner_id: string | null
+          uses_count: number
+          valid_from: string | null
+          valid_until: string | null
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          discount_type: string
+          discount_value?: number | null
+          fixed_discount_cents?: number | null
+          id?: string
+          is_active?: boolean
+          label: string
+          max_uses?: number | null
+          notes?: string | null
+          partner_id?: string | null
+          uses_count?: number
+          valid_from?: string | null
+          valid_until?: string | null
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          discount_type?: string
+          discount_value?: number | null
+          fixed_discount_cents?: number | null
+          id?: string
+          is_active?: boolean
+          label?: string
+          max_uses?: number | null
+          notes?: string | null
+          partner_id?: string | null
+          uses_count?: number
+          valid_from?: string | null
+          valid_until?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "promo_codes_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       social_proof_reviews: {
         Row: {
@@ -1878,6 +2106,36 @@ export type Database = {
           label?: string
           order_index?: number
           updated_at?: string
+        }
+        Relationships: []
+      }
+      system_health_checks: {
+        Row: {
+          checked_at: string
+          context: Json | null
+          id: string
+          latency_ms: number | null
+          message: string | null
+          ok: boolean
+          service: string
+        }
+        Insert: {
+          checked_at?: string
+          context?: Json | null
+          id?: string
+          latency_ms?: number | null
+          message?: string | null
+          ok: boolean
+          service: string
+        }
+        Update: {
+          checked_at?: string
+          context?: Json | null
+          id?: string
+          latency_ms?: number | null
+          message?: string | null
+          ok?: boolean
+          service?: string
         }
         Relationships: []
       }

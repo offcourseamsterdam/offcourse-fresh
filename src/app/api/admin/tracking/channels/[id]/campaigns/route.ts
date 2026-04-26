@@ -28,12 +28,15 @@ export async function GET(
 
     // If date range provided, enrich with metrics
     if (from && to && campaigns?.length) {
-      const { data: sessions } = await supabase
-        .from('analytics_sessions')
-        .select('id, campaign_slug')
-        .gte('started_at', from)
-        .lte('started_at', to)
-        .eq('channel_id', id)
+      const campaignSlugs = campaigns.map((c) => c.slug).filter(Boolean)
+      const { data: sessions } = campaignSlugs.length > 0
+        ? await supabase
+            .from('analytics_sessions')
+            .select('id, campaign_slug')
+            .gte('started_at', from)
+            .lte('started_at', to)
+            .in('campaign_slug', campaignSlugs)
+        : { data: [] as { id: string; campaign_slug: string | null }[] }
 
       const sessionIds = sessions?.map((s) => s.id) ?? []
       const { data: bookings } = sessionIds.length > 0

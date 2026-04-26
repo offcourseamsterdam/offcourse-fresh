@@ -25,6 +25,7 @@ import {
   Tag,
   Handshake,
   Settings,
+  Ticket,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -64,6 +65,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   extras: Tag,
   affiliates: Handshake,
   settings: Settings,
+  promocodes: Ticket,
 }
 
 export default function DashboardSidebar({

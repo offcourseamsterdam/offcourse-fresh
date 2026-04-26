@@ -7,6 +7,7 @@ type CruiseListing = Database['public']['Tables']['cruise_listings']['Row']
 
 interface Props {
   params: Promise<{ locale: string; slug: string }>
+  searchParams: Promise<{ code?: string }>
 }
 
 export const metadata = {
@@ -14,8 +15,9 @@ export const metadata = {
   robots: { index: false, follow: false },
 }
 
-export default async function CheckoutPage({ params }: Props) {
+export default async function CheckoutPage({ params, searchParams }: Props) {
   const { slug } = await params
+  const { code } = await searchParams
   const supabase = await createClient()
 
   const { data: listingData } = await supabase
@@ -50,6 +52,7 @@ export default async function CheckoutPage({ params }: Props) {
       <CheckoutFlow
         listingSlug={slug}
         cancellationPolicy={cancellationPolicy}
+        initialCode={code}
         paymentMode={paymentMode}
         partnerName={partnerName}
       />
