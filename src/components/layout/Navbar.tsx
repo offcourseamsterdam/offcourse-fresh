@@ -4,6 +4,9 @@ import { useState, useEffect, type Dispatch, type SetStateAction } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { Link, usePathname, useRouter } from '@/i18n/navigation'
 import { locales, localeNames, localeFlags, type Locale } from '@/lib/i18n/config'
+
+// Language switcher hidden for now — flip to re-enable
+const SHOW_LANGUAGE_SWITCHER = false
 import { useAuth } from '@/lib/auth/hooks'
 import type { UserRole } from '@/lib/auth/types'
 import { Logo } from '@/components/ui/Logo'
@@ -211,30 +214,32 @@ export function Navbar({ navListings = [] }: NavbarProps) {
           )}
 
           {/* Language switcher */}
-          <div className="relative">
-            <button
-              onClick={() => setLangOpen(!langOpen)}
-              className="flex items-center gap-1.5 text-sm text-muted hover:text-primary transition-colors px-2 py-1 rounded"
-              aria-label={t('selectLanguage')}
-            >
-              <span>{localeFlags[locale as Locale]}</span>
-              <span className="font-avenir text-xs uppercase">{locale}</span>
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            {langOpen && (
-              <div className="absolute right-0 mt-1 w-44 bg-white rounded-lg shadow-lg border border-[#e5e7eb] py-1 z-50">
-                {locales.map((loc) => (
-                  <button key={loc} onClick={() => switchLocale(loc)}
-                    className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 hover:bg-sand transition-colors ${loc === locale ? 'font-bold text-primary' : 'text-ink'}`}>
-                    <span>{localeFlags[loc]}</span>
-                    <span className="font-avenir">{localeNames[loc]}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          {SHOW_LANGUAGE_SWITCHER && (
+            <div className="relative">
+              <button
+                onClick={() => setLangOpen(!langOpen)}
+                className="flex items-center gap-1.5 text-sm text-muted hover:text-primary transition-colors px-2 py-1 rounded"
+                aria-label={t('selectLanguage')}
+              >
+                <span>{localeFlags[locale as Locale]}</span>
+                <span className="font-avenir text-xs uppercase">{locale}</span>
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {langOpen && (
+                <div className="absolute right-0 mt-1 w-44 bg-white rounded-lg shadow-lg border border-[#e5e7eb] py-1 z-50">
+                  {locales.map((loc) => (
+                    <button key={loc} onClick={() => switchLocale(loc)}
+                      className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 hover:bg-sand transition-colors ${loc === locale ? 'font-bold text-primary' : 'text-ink'}`}>
+                      <span>{localeFlags[loc]}</span>
+                      <span className="font-avenir">{localeNames[loc]}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Hamburger — always visible */}
           <button
@@ -272,15 +277,17 @@ export function Navbar({ navListings = [] }: NavbarProps) {
             />
 
             {/* Language switcher in menu */}
-            <div className="pt-3 mt-1 border-t border-[#e5e7eb] flex flex-wrap gap-2">
-              {locales.map((loc) => (
-                <button key={loc} onClick={() => { switchLocale(loc); setMenuOpen(false) }}
-                  className={`text-sm px-2 py-1 rounded flex items-center gap-1 font-avenir ${loc === locale ? 'bg-primary text-white font-bold' : 'bg-sand text-primary'}`}>
-                  <span>{localeFlags[loc]}</span>
-                  <span className="uppercase">{loc}</span>
-                </button>
-              ))}
-            </div>
+            {SHOW_LANGUAGE_SWITCHER && (
+              <div className="pt-3 mt-1 border-t border-[#e5e7eb] flex flex-wrap gap-2">
+                {locales.map((loc) => (
+                  <button key={loc} onClick={() => { switchLocale(loc); setMenuOpen(false) }}
+                    className={`text-sm px-2 py-1 rounded flex items-center gap-1 font-avenir ${loc === locale ? 'bg-primary text-white font-bold' : 'bg-sand text-primary'}`}>
+                    <span>{localeFlags[loc]}</span>
+                    <span className="uppercase">{loc}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -1,3 +1,6 @@
+import { redirect } from 'next/navigation'
+import { getUserProfile } from '@/lib/auth/server'
+import { getDashboardPath } from '@/lib/auth/types'
 import type { UserRole, UserProfile } from '@/lib/auth/types'
 
 interface Props {
@@ -6,11 +9,6 @@ interface Props {
   children: (profile: UserProfile) => React.ReactNode
 }
 
-/**
- * Server component wrapper for protected route layouts.
- * Fetches the current user's profile, checks role, and either renders
- * children (passing profile) or redirects to login/error page.
- */
 const DEV_PROFILE: UserProfile = {
   id: 'dev',
   email: 'dev@offcourseamsterdam.com',
@@ -21,8 +19,31 @@ const DEV_PROFILE: UserProfile = {
   updated_at: new Date().toISOString(),
 }
 
-export default async function ProtectedLayout({ allowedRoles: _allowedRoles, locale: _locale, children }: Props) {
-  // Auth is currently disabled — /admin is accessible without login.
-  // Re-enable the profile fetch + redirect block below before going to production.
-  return <>{children(DEV_PROFILE)}</>
+export default async function ProtectedLayout({ allowedRoles, locale, children }: Props) {
+  // Skip auth in development — remove before going to production
+  if (process.env.NODE_ENV === 'development') {
+    return <>{children(DEV_PROFILE)}</>
+  }
+
+  let profile: UserProfile | null = null
+
+  try {
+    profile = await getUserProfile()
+  } catch (err) {
+    console.warn('[ProtectedLayout] Failed to fetch profile:', err)
+  }
+
+  if (!profile) {
+    redirect(`/${locale}/login`)
+  }
+
+  if (!profile.is_active) {
+    redirect(`/${locale}/login?error=deactivated`)
+  }
+
+  if (!allowedRoles.includes(profile.role)) {
+    redirect(getDashboardPath(profile.role, locale))
+  }
+
+  return <>{children(profile)}</>
 }
