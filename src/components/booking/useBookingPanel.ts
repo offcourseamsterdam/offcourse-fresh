@@ -148,6 +148,9 @@ export function useBookingPanel({
 
   const guestCount = category === 'private' ? state.guests : state.totalTickets
   const cityTaxCents = category === 'shared' ? state.totalTickets * 260 : 0
+  const durationMinutes =
+    state.selectedCustomerType?.durationMinutes
+    ?? state.selectedSlot?.customerTypes[0]?.durationMinutes
 
   const ticketBreakdown = category === 'shared' && state.selectedSlot
     ? state.selectedSlot.customerTypes
@@ -186,7 +189,7 @@ export function useBookingPanel({
       ticketCounts: state.ticketCounts, totalTickets: state.totalTickets,
       selectedExtraIds: state.selectedExtraIds, extrasCalculation: state.extrasCalculation,
       extraQuantities: state.extraQuantities,
-      basePriceCents, cityTaxCents,
+      basePriceCents, cityTaxCents, durationMinutes,
     }
     sessionStorage.setItem('offcourse_booking', JSON.stringify(bookingData))
 
