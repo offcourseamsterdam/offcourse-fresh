@@ -1,7 +1,6 @@
 import { notFound } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { quarterFromDate, currentQuarter } from '@/lib/quarters'
-import { fmtEuros } from '@/lib/utils'
 import { PortalHeader } from './components/PortalHeader'
 import { CampaignsSection } from './components/CampaignsSection'
 import { RecentBookingsSection } from './components/RecentBookingsSection'
@@ -32,34 +31,36 @@ export default async function PartnerPortalPage({ params }: Props) {
   const partnerId = partner.id
   const portalUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://offcourseamsterdam.com'}/partners/${token}`
 
-  // Pull data for this partner in parallel.
+  // Phase 1: campaigns (needed to filter sessions)
+  const { data: campaignsList } = await supabase
+    .from('campaigns')
+    .select('id, name, slug, is_active')
+    .eq('partner_id', partnerId)
+    .order('created_at', { ascending: false })
+
+  const campaigns = (campaignsList ?? []).filter(c => c.is_active !== false)
+  const campaignSlugs = campaigns.map(c => c.slug)
+
   const since = new Date()
   since.setUTCDate(since.getUTCDate() - 30)
   const sinceIso = since.toISOString()
+  const sinceDate = sinceIso.slice(0, 10)
 
-  const [
-    campaignsRes,
-    recentBookingsRes,
-    sessionsRes,
-    allBookingsRes,
-    settlementsRes,
-  ] = await Promise.all([
-    supabase
-      .from('campaigns')
-      .select('id, name, slug, listing_id, percentage_value, investment_type, is_active')
-      .eq('partner_id', partnerId)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false }),
+  // Phase 2: sessions (filtered by this partner's campaign slugs) + bookings + settlements
+  const [sessionsRes, recentBookingsRes, allBookingsRes, settlementsRes] = await Promise.all([
+    campaignSlugs.length > 0
+      ? supabase
+          .from('analytics_sessions')
+          .select('campaign_slug')
+          .in('campaign_slug', campaignSlugs)
+          .gte('started_at', sinceIso)
+      : Promise.resolve({ data: [] as Array<{ campaign_slug: string | null }> }),
     supabase
       .from('bookings')
       .select('id, listing_title, booking_date, start_time, guest_count, base_amount_cents, commission_amount_cents, customer_email, booking_source, campaign_id')
       .eq('partner_id', partnerId)
       .order('booking_date', { ascending: false })
       .limit(20),
-    supabase
-      .from('analytics_sessions')
-      .select('id, campaign_slug')
-      .gte('started_at', sinceIso),
     supabase
       .from('bookings')
       .select('booking_date, base_amount_cents, commission_amount_cents, booking_source, campaign_id')
@@ -70,33 +71,28 @@ export default async function PartnerPortalPage({ params }: Props) {
       .eq('partner_id', partnerId),
   ])
 
-  const campaigns = campaignsRes.data ?? []
-  const recentBookings = recentBookingsRes.data ?? []
   const sessions = sessionsRes.data ?? []
+  const recentBookings = recentBookingsRes.data ?? []
   const allBookings = allBookingsRes.data ?? []
   const settlements = settlementsRes.data ?? []
 
   // Per-campaign 30-day metrics
-  const campaignSlugs = new Set(campaigns.map(c => c.slug))
-  const sessionsByCampaign = new Map<string, number>()
+  const sessionsByCampaignSlug = new Map<string, number>()
   for (const s of sessions) {
-    if (s.campaign_slug && campaignSlugs.has(s.campaign_slug)) {
-      sessionsByCampaign.set(s.campaign_slug, (sessionsByCampaign.get(s.campaign_slug) ?? 0) + 1)
+    if (s.campaign_slug) {
+      sessionsByCampaignSlug.set(s.campaign_slug, (sessionsByCampaignSlug.get(s.campaign_slug) ?? 0) + 1)
     }
   }
 
-  const recentBookingsByCampaign = new Map<string, { count: number; revenue: number; commission: number }>()
-  const cutoff = sinceIso
+  const recentBookingsByCampaignId = new Map<string, { count: number; revenue: number; commission: number }>()
   for (const b of allBookings) {
-    if (!b.campaign_id) continue
-    if (!b.booking_date) continue
-    if (b.booking_date < cutoff.slice(0, 10)) continue
-    const key = b.campaign_id
-    const cur = recentBookingsByCampaign.get(key) ?? { count: 0, revenue: 0, commission: 0 }
+    if (!b.campaign_id || !b.booking_date) continue
+    if (b.booking_date < sinceDate) continue
+    const cur = recentBookingsByCampaignId.get(b.campaign_id) ?? { count: 0, revenue: 0, commission: 0 }
     cur.count += 1
     cur.revenue += Number(b.base_amount_cents ?? 0)
     cur.commission += Number(b.commission_amount_cents ?? 0)
-    recentBookingsByCampaign.set(key, cur)
+    recentBookingsByCampaignId.set(b.campaign_id, cur)
   }
 
   const campaignCards = campaigns.map(c => ({
@@ -104,10 +100,10 @@ export default async function PartnerPortalPage({ params }: Props) {
     name: c.name,
     slug: c.slug,
     trackingUrl: `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://offcourseamsterdam.com'}/t/${c.slug}`,
-    sessions: sessionsByCampaign.get(c.slug) ?? 0,
-    bookings: recentBookingsByCampaign.get(c.id)?.count ?? 0,
-    revenueCents: recentBookingsByCampaign.get(c.id)?.revenue ?? 0,
-    commissionCents: recentBookingsByCampaign.get(c.id)?.commission ?? 0,
+    sessions: sessionsByCampaignSlug.get(c.slug) ?? 0,
+    bookings: recentBookingsByCampaignId.get(c.id)?.count ?? 0,
+    revenueCents: recentBookingsByCampaignId.get(c.id)?.revenue ?? 0,
+    commissionCents: recentBookingsByCampaignId.get(c.id)?.commission ?? 0,
   }))
 
   // Quarterly settlement totals
@@ -170,6 +166,8 @@ export default async function PartnerPortalPage({ params }: Props) {
     isPartnerInvoice: b.booking_source === 'partner_invoice',
   }))
 
+  const hasData = campaignCards.length > 0 || recentBookingItems.length > 0 || partnerInvoiceRows.length > 0 || affiliateRows.length > 0
+
   return (
     <main className="min-h-screen bg-zinc-50 text-zinc-900">
       <div className="max-w-4xl mx-auto px-4 sm:px-8 py-10 space-y-8">
@@ -184,14 +182,17 @@ export default async function PartnerPortalPage({ params }: Props) {
           />
         )}
 
-        {campaignCards.length === 0 && recentBookingItems.length === 0 && partnerInvoiceRows.length === 0 && affiliateRows.length === 0 && (
+        {!hasData && (
           <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500">
             No bookings or campaigns yet — your data will appear here once activity starts.
           </div>
         )}
 
         <footer className="text-xs text-zinc-400 text-center pt-4">
-          Quarters settle within 14 days of quarter end. Questions? <a href="mailto:finance@offcourseamsterdam.com" className="underline hover:text-zinc-700">finance@offcourseamsterdam.com</a>
+          Quarters settle within 14 days of quarter end. Questions?{' '}
+          <a href="mailto:finance@offcourseamsterdam.com" className="underline hover:text-zinc-700">
+            finance@offcourseamsterdam.com
+          </a>
         </footer>
       </div>
     </main>
@@ -208,6 +209,3 @@ function maskEmail(email: string | null): string {
   const domainMasked = (domainName?.[0] ?? '') + '***' + (tld ? '.' + tld : '')
   return `${localMasked}@${domainMasked}`
 }
-
-// Re-export for child components
-export { fmtEuros }

@@ -302,35 +302,45 @@ export default function PartnerDetailPage() {
         this partner to a specific listing with the agreed commission % (e.g. 15 % = partner keeps €15 on a €100 ticket, we invoice €85).
       </p>
 
-      {/* Settlements section */}
-      {summary && (summary.partnerInvoice.length > 0 || summary.affiliate.length > 0) && (
-        <div className="mt-8 space-y-6">
-          {summary.partnerInvoice.length > 0 && (
-            <SettlementTable
-              title="Partner-invoice settlements"
-              subtitle="Partner collected ticket prices on the desk and owes Off Course the net (ticket – commission). Settle each quarter."
-              rows={summary.partnerInvoice}
-              type="partner_invoice"
-              owesLabel="Partner owes us"
-              onMarkSettled={markSettled}
-              onUndo={undoSettlement}
-              settlingKey={settlingKey}
-            />
-          )}
-          {summary.affiliate.length > 0 && (
-            <SettlementTable
-              title="Affiliate settlements"
-              subtitle="Off Course collected the ticket price online; we owe the partner their commission. Settle each quarter."
-              rows={summary.affiliate}
-              type="affiliate"
-              owesLabel="We owe partner"
-              onMarkSettled={markSettled}
-              onUndo={undoSettlement}
-              settlingKey={settlingKey}
-            />
-          )}
-        </div>
-      )}
+      {/* Settlements section — always visible once data is loaded */}
+      <div className="mt-8 space-y-6">
+        {!summary ? (
+          <div className="flex items-center gap-2 text-zinc-400 text-sm py-4">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading settlements…
+          </div>
+        ) : summary.partnerInvoice.length === 0 && summary.affiliate.length === 0 ? (
+          <div className="rounded-2xl border border-zinc-200 bg-white px-5 py-8 text-center text-sm text-zinc-400">
+            No bookings attributed to this partner yet. Settlements will appear here once bookings come in.
+          </div>
+        ) : (
+          <>
+            {summary.partnerInvoice.length > 0 && (
+              <SettlementTable
+                title="Partner-invoice settlements"
+                subtitle="Partner collected ticket prices on the desk and owes Off Course the net (ticket – commission). Settle each quarter."
+                rows={summary.partnerInvoice}
+                type="partner_invoice"
+                owesLabel="Partner owes us"
+                onMarkSettled={markSettled}
+                onUndo={undoSettlement}
+                settlingKey={settlingKey}
+              />
+            )}
+            {summary.affiliate.length > 0 && (
+              <SettlementTable
+                title="Affiliate settlements"
+                subtitle="Off Course collected the ticket price online; we owe the partner their commission. Settle each quarter."
+                rows={summary.affiliate}
+                type="affiliate"
+                owesLabel="We owe partner"
+                onMarkSettled={markSettled}
+                onUndo={undoSettlement}
+                settlingKey={settlingKey}
+              />
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }

@@ -15,7 +15,10 @@ export async function GET(
   { params }: { params: Promise<{ slug: string }> },
 ) {
   const { slug } = await params
-  const attr = await resolveCampaign(slug)
+  // Use the request origin so preview deployments stay on the preview domain,
+  // not redirect to production (offcourseamsterdam.com).
+  const origin = new URL(request.url).origin
+  const attr = await resolveCampaign(slug, { siteUrl: origin })
 
   if (!attr) {
     return NextResponse.redirect(new URL('/', request.url))
