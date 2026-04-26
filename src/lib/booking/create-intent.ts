@@ -41,13 +41,18 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
     promoCodeId, discountAmountCents: inputDiscount = 0,
   } = input
 
-  // Verify base price server-side from FareHarbor
+  // Verify base price server-side from FareHarbor.
+  // Use total_including_tax (gross) — this is the price we charge customers.
+  // FareHarbor's `total` field is NET (ex-VAT); using it would under-charge by 9%.
   const fh = getFareHarborClient()
   const availDetail = await fh.getAvailabilityDetail(availPk)
   const matchingRate = availDetail.customer_type_rates?.find(
     (r: { pk: number }) => r.pk === customerTypeRatePk
   )
-  const verifiedBaseCents = matchingRate?.customer_prototype?.total ?? input.baseAmountCents
+  const verifiedBaseCents =
+    matchingRate?.customer_prototype?.total_including_tax
+    ?? matchingRate?.customer_prototype?.total
+    ?? input.baseAmountCents
   const isPrivate = category === 'private'
   const serverBaseAmount = isPrivate ? verifiedBaseCents : verifiedBaseCents * guestCount
 

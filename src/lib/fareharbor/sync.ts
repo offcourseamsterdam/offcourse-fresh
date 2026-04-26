@@ -109,7 +109,10 @@ export async function syncFareHarborItems(): Promise<SyncResult> {
             boat_name: boat,
             duration_minutes: parseDurationMinutes(name),
             max_guests: getMaxGuests(boat),
-            price_cents: rate.customer_prototype?.total ?? null,
+            price_cents:
+              rate.customer_prototype?.total_including_tax
+              ?? rate.customer_prototype?.total
+              ?? null,
           }
         })
 

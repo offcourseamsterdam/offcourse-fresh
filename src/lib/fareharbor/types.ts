@@ -35,7 +35,9 @@ export interface FHCustomerTypeRate {
   customer_prototype?: {
     pk: number
     display_name: string
-    total: number  // price in cents
+    /** NET price in cents (excl. VAT). Do NOT use this to charge customers. */
+    total: number
+    /** GROSS price in cents (incl. VAT). Use this for any customer-facing charge or display. */
     total_including_tax?: number
   }
 }
