@@ -81,7 +81,8 @@ export function useBookingPanel({
   }, [state.date, fetchSlots])
 
   const handleExtrasChange = useCallback((ids: string[], calc: ExtrasCalculation) => {
-    dispatch({ type: 'UPDATE_EXTRAS', selectedExtraIds: ids, calculation: calc })
+    const extraQuantities = Object.fromEntries(calc.line_items.map(li => [li.extra_id, li.quantity]))
+    dispatch({ type: 'UPDATE_EXTRAS', selectedExtraIds: ids, calculation: calc, extraQuantities })
   }, [])
 
   const handleInlineDateSelect = useCallback(async (date: string) => {
@@ -184,6 +185,7 @@ export function useBookingPanel({
       selectedCustomerType: state.selectedCustomerType,
       ticketCounts: state.ticketCounts, totalTickets: state.totalTickets,
       selectedExtraIds: state.selectedExtraIds, extrasCalculation: state.extrasCalculation,
+      extraQuantities: state.extraQuantities,
       basePriceCents, cityTaxCents,
     }
     sessionStorage.setItem('offcourse_booking', JSON.stringify(bookingData))

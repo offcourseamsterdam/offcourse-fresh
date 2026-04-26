@@ -21,6 +21,7 @@ export interface BookingPanelState {
   // Extras
   selectedExtraIds: string[]
   extrasCalculation: ExtrasCalculation | null
+  extraQuantities: Record<string, number>
 }
 
 export type Action =
@@ -33,7 +34,7 @@ export type Action =
   | { type: 'SELECT_BOAT_DURATION'; customerType: AvailabilityCustomerType; boatId: string }
   | { type: 'UPDATE_TICKET_COUNT'; customerTypePk: number; count: number }
   | { type: 'CONFIRM_TICKETS' }
-  | { type: 'UPDATE_EXTRAS'; selectedExtraIds: string[]; calculation: ExtrasCalculation }
+  | { type: 'UPDATE_EXTRAS'; selectedExtraIds: string[]; calculation: ExtrasCalculation; extraQuantities: Record<string, number> }
   | { type: 'REOPEN_STEP'; step: Step }
 
 // ── Reducer ─────────────────────────────────────────────────────────────────
@@ -103,6 +104,7 @@ export function reducer(state: BookingPanelState, action: Action): BookingPanelS
         ...state,
         selectedExtraIds: action.selectedExtraIds,
         extrasCalculation: action.calculation,
+        extraQuantities: action.extraQuantities,
       }
     case 'REOPEN_STEP':
       return { ...state, step: action.step }
@@ -124,6 +126,7 @@ export const initialState: BookingPanelState = {
   totalTickets: 0,
   selectedExtraIds: [],
   extrasCalculation: null,
+  extraQuantities: {},
 }
 
 // ── Props ───────────────────────────────────────────────────────────────────

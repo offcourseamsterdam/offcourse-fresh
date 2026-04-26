@@ -108,7 +108,7 @@ export function BookingSummary({
 
           {extrasCalculation?.line_items.map(li => (
             <div key={li.extra_id} className="flex justify-between text-zinc-600">
-              <span>{li.name}</span>
+              <span>{li.quantity > 1 ? `${li.name} ×${li.quantity}` : li.name}</span>
               <span>{fmtEuros(li.amount_cents)}</span>
             </div>
           ))}

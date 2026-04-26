@@ -453,6 +453,7 @@ export function CheckoutFlow({
           date: bookingData.date,
           contact: { name: details.name, email: details.email, phone: details.phone },
           selectedExtraIds: bookingData.selectedExtraIds,
+          extraQuantities: bookingData.extraQuantities ?? {},
           durationMinutes: bookingData.selectedCustomerType?.durationMinutes ?? 90,
           promoCodeId: promoResult?.promoCodeId,
           discountAmountCents: promoResult?.discountAmountCents,

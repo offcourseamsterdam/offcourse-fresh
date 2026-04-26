@@ -110,6 +110,19 @@ export default async function ConfirmationPage({ params, searchParams }: Props) 
                         </span>
                       </div>
                     )}
+                    {Array.isArray(booking.extras_selected) && booking.extras_selected.length > 0 && (
+                      <>
+                        <div className="border-t border-zinc-200 pt-2 mt-1">
+                          <span className="text-zinc-500 text-xs font-medium uppercase tracking-wide">Extras</span>
+                        </div>
+                        {(booking.extras_selected as Array<{ name: string; quantity: number; amount_cents: number }>).map((li, i) => (
+                          <div key={i} className="flex justify-between">
+                            <span className="text-zinc-600">{li.quantity > 1 ? `${li.name} ×${li.quantity}` : li.name}</span>
+                            <span className="font-medium text-zinc-800">€{(li.amount_cents / 100).toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </>
+                    )}
                   </div>
                 </div>
 

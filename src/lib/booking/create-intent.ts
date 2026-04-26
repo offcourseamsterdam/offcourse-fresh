@@ -16,6 +16,7 @@ interface CreateIntentInput {
   date: string
   contact: { name: string; email: string; phone?: string }
   selectedExtraIds: string[]
+  extraQuantities?: Record<string, number>
   durationMinutes: number
   promoCodeId?: string
   discountAmountCents?: number
@@ -37,7 +38,7 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
   const {
     listingId, listingTitle, availPk, customerTypeRatePk,
     guestCount, category, date, contact,
-    selectedExtraIds, durationMinutes = DEFAULT_DURATION_MINUTES,
+    selectedExtraIds, extraQuantities = {}, durationMinutes = DEFAULT_DURATION_MINUTES,
     promoCodeId, discountAmountCents: inputDiscount = 0,
   } = input
 
@@ -53,13 +54,6 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
     matchingRate?.customer_prototype?.total_including_tax
     ?? matchingRate?.customer_prototype?.total
     ?? input.baseAmountCents
-  console.log('[create-intent] price resolution', {
-    matchingRateFound: !!matchingRate,
-    total: matchingRate?.customer_prototype?.total,
-    total_including_tax: matchingRate?.customer_prototype?.total_including_tax,
-    verifiedBaseCents,
-    inputBaseAmountCents: input.baseAmountCents,
-  })
   const isPrivate = category === 'private'
   const serverBaseAmount = isPrivate ? verifiedBaseCents : verifiedBaseCents * guestCount
 
@@ -72,13 +66,9 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
     console.error('[create-intent] extras query failed', extrasResult.error)
   }
   const extras = extrasResult.data
-  console.log('[create-intent] extras', {
-    selectedExtraIds,
-    extrasFromDB: extras?.length ?? 0,
-    extrasIds: extras?.map((e: any) => e.id),
-  })
 
-  const calc = calculateExtras(serverBaseAmount, guestCount, (extras ?? []) as any, durationMinutes)
+  const quantities = new Map(Object.entries(extraQuantities))
+  const calc = calculateExtras(serverBaseAmount, guestCount, (extras ?? []) as any, durationMinutes, quantities)
 
   // City tax: €2.60 per ticket on shared cruises (municipality levy, not in FareHarbor)
   const cityTaxCents = category === 'shared' ? guestCount * 260 : 0
@@ -95,14 +85,6 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
   const extrasSummary = calc.line_items
     .map(li => `${li.name} (${fmtEuros(li.amount_cents)})`)
     .join(', ')
-
-  console.log('[create-intent] charge', {
-    serverBaseAmount,
-    extrasAmount: calc.extras_amount_cents,
-    grandTotal: calc.grand_total_cents,
-    cityTaxCents,
-    chargedCents,
-  })
 
   const paymentIntent = await getStripe().paymentIntents.create({
     amount: chargedCents,
