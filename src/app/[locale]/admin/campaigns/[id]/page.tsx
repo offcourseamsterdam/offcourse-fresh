@@ -22,6 +22,15 @@ interface Campaign {
   is_active: boolean | null
 }
 
+interface Metrics {
+  sessions: number
+  unique_visitors: number
+  bookings: number
+  revenue_cents: number
+  conversion_rate: number
+  roi: number | null
+}
+
 interface TrackingLink {
   id: string
   name: string
@@ -48,6 +57,7 @@ export default function CampaignDetailPage() {
   const [campaign, setCampaign] = useState<Campaign | null>(null)
   const [links, setLinks] = useState<TrackingLink[]>([])
   const [funnel, setFunnel] = useState<FunnelStep[]>([])
+  const [metrics, setMetrics] = useState<Metrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState<string | null>(null)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -57,19 +67,22 @@ export default function CampaignDetailPage() {
     setLoading(true)
     try {
       const params = new URLSearchParams({ from: dateRange.from, to: dateRange.to })
-      const [campaignRes, linksRes, funnelRes] = await Promise.all([
+      const [campaignRes, linksRes, funnelRes, metricsRes] = await Promise.all([
         fetch(`/api/admin/tracking/campaigns/${id}`),
         fetch(`/api/admin/tracking/campaigns/${id}/links`),
         fetch(`/api/admin/tracking/funnel?${params}&campaign_id=${id}`),
+        fetch(`/api/admin/tracking/campaigns/${id}/metrics?${params}`),
       ])
-      const [campaignJson, linksJson, funnelJson] = await Promise.all([
+      const [campaignJson, linksJson, funnelJson, metricsJson] = await Promise.all([
         campaignRes.json(),
         linksRes.json(),
         funnelRes.json(),
+        metricsRes.json(),
       ])
       if (campaignJson.ok) setCampaign(campaignJson.data)
       if (linksJson.ok) setLinks(linksJson.data)
       if (funnelJson.ok) setFunnel(funnelJson.data)
+      if (metricsJson.ok) setMetrics(metricsJson.data)
     } catch (err) {
       console.error('Failed to load campaign:', err)
     } finally {
@@ -132,6 +145,32 @@ export default function CampaignDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* KPIs */}
+      {metrics && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <KPICard label="Sessions" value={metrics.sessions.toLocaleString()} />
+          <KPICard label="Unique Users" value={metrics.unique_visitors.toLocaleString()} />
+          <KPICard label="Bookings" value={metrics.bookings.toLocaleString()} />
+          <KPICard
+            label="Conversion"
+            value={`${(metrics.conversion_rate * 100).toFixed(1)}%`}
+          />
+          <KPICard
+            label="Revenue"
+            value={`€${(metrics.revenue_cents / 100).toLocaleString('nl-NL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+          />
+          {metrics.roi !== null ? (
+            <KPICard
+              label="ROI"
+              value={`${metrics.roi >= 0 ? '+' : ''}${(metrics.roi * 100).toFixed(0)}%`}
+              subtitle={metrics.roi >= 0 ? 'positive' : 'negative'}
+            />
+          ) : (
+            <KPICard label="ROI" value="—" subtitle="no investment set" />
+          )}
+        </div>
+      )}
 
       {/* Funnel */}
       <div className="bg-white rounded-xl border border-zinc-200 p-5">
