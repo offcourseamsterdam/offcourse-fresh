@@ -166,7 +166,7 @@ export function BookingPanelInline(props: BookingPanelProps) {
             listingId={listingId}
             guestCount={guestCount}
             baseAmountCents={basePriceCents}
-            durationMinutes={state.selectedCustomerType?.durationMinutes ?? state.selectedSlot?.customerTypes[0]?.durationMinutes}
+            durationMinutes={state.selectedCustomerType?.durationMinutes}
             onExtrasChange={handleExtrasChange}
           />
         </div>

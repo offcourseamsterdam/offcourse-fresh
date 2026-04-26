@@ -93,7 +93,7 @@ function BookingPanelSidebar(props: BookingPanelProps) {
       )}
 
       <StepAccordion title="Add food, drinks & extras" summary={state.selectedExtraIds.length > 0 ? `${state.selectedExtraIds.length} extras selected` : undefined} stepNumber={stepNumber('extras')} isActive={isStepActive('extras')} isCompleted={isStepCompleted('extras')} onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'extras' })}>
-        <ExtrasStep listingId={listingId} guestCount={guestCount} baseAmountCents={basePriceCents} durationMinutes={state.selectedCustomerType?.durationMinutes ?? state.selectedSlot?.customerTypes[0]?.durationMinutes} onExtrasChange={handleExtrasChange} />
+        <ExtrasStep listingId={listingId} guestCount={guestCount} baseAmountCents={basePriceCents} durationMinutes={state.selectedCustomerType?.durationMinutes} onExtrasChange={handleExtrasChange} />
       </StepAccordion>
 
       {basePriceCents > 0 && (
