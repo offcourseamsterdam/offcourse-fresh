@@ -232,7 +232,9 @@ export default function PartnersPage() {
                           autoFocus
                         />
                       ) : (
-                        <span className="font-medium text-zinc-900">{p.name}</span>
+                        <a href={`/en/admin/partners/${p.id}`} className="font-medium text-zinc-900 hover:text-[var(--color-primary)] hover:underline">
+                          {p.name}
+                        </a>
                       )}
                     </td>
 

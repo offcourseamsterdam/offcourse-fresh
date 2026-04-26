@@ -615,8 +615,10 @@ export type Database = {
           is_featured: boolean | null
           is_published: boolean | null
           max_guests: number | null
+          payment_mode: string
           price_display: string | null
           price_label: string | null
+          required_partner_id: string | null
           seo_meta_description: string | null
           seo_meta_description_de: string | null
           seo_meta_description_es: string | null
@@ -681,8 +683,10 @@ export type Database = {
           is_featured?: boolean | null
           is_published?: boolean | null
           max_guests?: number | null
+          payment_mode?: string
           price_display?: string | null
           price_label?: string | null
+          required_partner_id?: string | null
           seo_meta_description?: string | null
           seo_meta_description_de?: string | null
           seo_meta_description_es?: string | null
@@ -747,8 +751,10 @@ export type Database = {
           is_featured?: boolean | null
           is_published?: boolean | null
           max_guests?: number | null
+          payment_mode?: string
           price_display?: string | null
           price_label?: string | null
+          required_partner_id?: string | null
           seo_meta_description?: string | null
           seo_meta_description_de?: string | null
           seo_meta_description_es?: string | null
@@ -788,6 +794,13 @@ export type Database = {
             columns: ["boat_id"]
             isOneToOne: false
             referencedRelation: "boats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cruise_listings_required_partner_id_fkey"
+            columns: ["required_partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
             referencedColumns: ["id"]
           },
         ]
@@ -1563,6 +1576,50 @@ export type Database = {
           },
           {
             foreignKeyName: "notification_settings_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      partner_codes: {
+        Row: {
+          code: string
+          created_at: string
+          expires_at: string
+          id: string
+          is_active: boolean
+          issued_at: string
+          notes: string | null
+          partner_id: string
+          revoked_at: string | null
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          is_active?: boolean
+          issued_at?: string
+          notes?: string | null
+          partner_id: string
+          revoked_at?: string | null
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          is_active?: boolean
+          issued_at?: string
+          notes?: string | null
+          partner_id?: string
+          revoked_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "partner_codes_partner_id_fkey"
             columns: ["partner_id"]
             isOneToOne: false
             referencedRelation: "partners"

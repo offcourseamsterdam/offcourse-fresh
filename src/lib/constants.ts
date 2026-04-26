@@ -49,6 +49,7 @@ export const BOOKING_SOURCES = [
   { value: 'complimentary', label: 'Complimentary' },
   { value: 'withlocals', label: 'Withlocals' },
   { value: 'clickandboat', label: 'Click&Boat' },
+  { value: 'partner_invoice', label: 'Partner invoice' },
 ] as const
 
 export type BookingSource = typeof BOOKING_SOURCES[number]['value']

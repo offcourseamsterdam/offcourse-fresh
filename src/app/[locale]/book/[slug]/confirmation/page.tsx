@@ -4,16 +4,17 @@ import Link from 'next/link'
 
 interface Props {
   params: Promise<{ locale: string; slug: string }>
-  searchParams: Promise<{ payment_intent?: string }>
+  searchParams: Promise<{ payment_intent?: string; fh?: string }>
 }
 
 export const metadata = {
   title: 'Booking Confirmed — Off Course Amsterdam',
+  robots: { index: false, follow: false },
 }
 
 export default async function ConfirmationPage({ params, searchParams }: Props) {
   const { locale, slug } = await params
-  const { payment_intent } = await searchParams
+  const { payment_intent, fh } = await searchParams
 
   let booking = null
 
@@ -25,7 +26,18 @@ export default async function ConfirmationPage({ params, searchParams }: Props) 
       .eq('stripe_payment_intent_id', payment_intent)
       .single()
     booking = data
+  } else if (fh) {
+    // Partner-invoice bookings (no Stripe PI) are looked up by FareHarbor UUID
+    const supabase = await createServiceClient()
+    const { data } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('booking_uuid', fh)
+      .single()
+    booking = data
   }
+
+  const isPartnerInvoice = booking?.payment_status === 'partner_invoice_pending'
 
   // Format time for display
   const startTime = booking?.start_time
@@ -100,6 +112,18 @@ export default async function ConfirmationPage({ params, searchParams }: Props) 
                     )}
                   </div>
                 </div>
+
+                {isPartnerInvoice && (
+                  <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-100 rounded-xl p-4">
+                    <Check className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-emerald-900">No payment needed here</p>
+                      <p className="text-xs text-emerald-800 mt-0.5">
+                        You already paid at the partner desk — we&apos;ll settle it with them.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Email notice */}
                 <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-xl p-4">
