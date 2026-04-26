@@ -33,6 +33,7 @@ interface BookingData {
   totalTickets: number
   selectedExtraIds: string[]
   extrasCalculation: ExtrasCalculation | null
+  extraQuantities: Record<string, number>
   basePriceCents: number
   cityTaxCents: number
 }
