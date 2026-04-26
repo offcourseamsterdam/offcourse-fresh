@@ -69,7 +69,7 @@ export function PriceSummary({
 
       {/* Extras line items */}
       {extrasCalculation?.line_items.map(li => (
-        <Row key={li.extra_id} label={li.name} value={li.amount_cents} />
+        <Row key={li.extra_id} label={li.quantity > 1 ? `${li.name} ×${li.quantity}` : li.name} value={li.amount_cents} />
       ))}
 
       {/* Divider + total */}
