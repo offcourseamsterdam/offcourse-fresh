@@ -34,6 +34,7 @@ interface BookingData {
   selectedExtraIds: string[]
   extrasCalculation: ExtrasCalculation | null
   basePriceCents: number
+  cityTaxCents: number
 }
 
 interface PromoResult {
@@ -626,7 +627,8 @@ export function CheckoutFlow({
   const extrasTotalCents = bookingData.extrasCalculation
     ? bookingData.extrasCalculation.extras_amount_cents
     : 0
-  const grossTotalCents = bookingData.basePriceCents + extrasTotalCents
+  const cityTaxCents = bookingData.cityTaxCents ?? 0
+  const grossTotalCents = bookingData.basePriceCents + extrasTotalCents + cityTaxCents
   const discountAmountCents = promoResult?.discountAmountCents ?? 0
   const totalAmountCents = Math.max(0, grossTotalCents - discountAmountCents)
 
@@ -733,6 +735,7 @@ export function CheckoutFlow({
                 guestCount={bookingData.guests}
                 basePriceCents={bookingData.basePriceCents}
                 extrasCalculation={bookingData.extrasCalculation}
+                cityTaxCents={cityTaxCents > 0 ? cityTaxCents : undefined}
                 cancellationPolicy={cancellationPolicy}
                 cruiseLabel={cruiseLabel}
                 discountAmountCents={discountAmountCents > 0 ? discountAmountCents : undefined}

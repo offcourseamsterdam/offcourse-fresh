@@ -17,6 +17,7 @@ interface Channel {
 
 interface ChannelWithMetrics extends Channel {
   sessions: number
+  unique_visitors: number
   bookings: number
   revenue_cents: number
   conversion_rate: number
@@ -31,11 +32,14 @@ interface Campaign {
   listing_id: string | null
   percentage_value: number | null
   investment_type: string | null
+  investment_amount: number | null
   is_active: boolean | null
   sessions?: number
+  unique_visitors?: number
   bookings?: number
   revenue_cents?: number
   conversion_rate?: number
+  roi?: number | null
 }
 
 // ── Copy URL helper ──────────────────────────────────────────────────────
@@ -255,6 +259,7 @@ export default function CampaignsPage() {
                   <span className="text-sm font-semibold text-zinc-900 flex-1 text-left">{ch.name}</span>
                   <div className="hidden sm:flex items-center gap-6 text-xs tabular-nums">
                     <span className="text-zinc-500">{ch.sessions?.toLocaleString() ?? 0} <span className="text-zinc-300">sessions</span></span>
+                    <span className="text-zinc-500">{(ch.unique_visitors ?? 0).toLocaleString()} <span className="text-zinc-300">users</span></span>
                     <span className="text-zinc-500">{ch.bookings?.toLocaleString() ?? 0} <span className="text-zinc-300">bookings</span></span>
                     <span className="text-zinc-500">€{((ch.revenue_cents ?? 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 0 })} <span className="text-zinc-300">revenue</span></span>
                     <span className="font-medium text-zinc-700">{((ch.conversion_rate ?? 0) * 100).toFixed(1)}%</span>
@@ -295,9 +300,13 @@ export default function CampaignsPage() {
                                 <th className="text-left py-2 font-medium hidden sm:table-cell">Partner</th>
                               )}
                               <th className="text-right py-2 font-medium hidden sm:table-cell">Sessions</th>
+                              <th className="text-right py-2 font-medium hidden sm:table-cell">Users</th>
                               <th className="text-right py-2 font-medium hidden sm:table-cell">Bookings</th>
                               <th className="text-right py-2 font-medium hidden sm:table-cell">Revenue</th>
                               <th className="text-right py-2 font-medium">CR%</th>
+                              {visibleCampaigns.some((c) => c.investment_amount) && (
+                                <th className="text-right py-2 font-medium hidden sm:table-cell">ROI</th>
+                              )}
                               <th className="text-right py-2 font-medium w-20">Link</th>
                             </tr>
                           </thead>
@@ -323,9 +332,21 @@ export default function CampaignsPage() {
                                   </td>
                                 )}
                                 <td className="text-right py-2.5 tabular-nums text-zinc-500 hidden sm:table-cell">{c.sessions?.toLocaleString() ?? '—'}</td>
+                                <td className="text-right py-2.5 tabular-nums text-zinc-500 hidden sm:table-cell">{c.unique_visitors?.toLocaleString() ?? '—'}</td>
                                 <td className="text-right py-2.5 tabular-nums text-zinc-500 hidden sm:table-cell">{c.bookings?.toLocaleString() ?? '—'}</td>
                                 <td className="text-right py-2.5 tabular-nums text-zinc-500 hidden sm:table-cell">€{((c.revenue_cents ?? 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 0 })}</td>
                                 <td className="text-right py-2.5 tabular-nums font-medium text-zinc-700">{((c.conversion_rate ?? 0) * 100).toFixed(1)}%</td>
+                                {visibleCampaigns.some((c) => c.investment_amount) && (
+                                  <td className="text-right py-2.5 tabular-nums hidden sm:table-cell">
+                                    {c.roi != null ? (
+                                      <span className={`font-medium ${c.roi >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                                        {c.roi >= 0 ? '+' : ''}{(c.roi * 100).toFixed(0)}%
+                                      </span>
+                                    ) : (
+                                      <span className="text-zinc-300">—</span>
+                                    )}
+                                  </td>
+                                )}
                                 <td className="text-right py-2.5">
                                   <div className="flex items-center justify-end gap-1">
                                     <CopyUrlButton slug={c.slug} />

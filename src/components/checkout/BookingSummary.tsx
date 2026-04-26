@@ -16,6 +16,7 @@ interface BookingSummaryProps {
   guestCount: number
   basePriceCents: number
   extrasCalculation: ExtrasCalculation | null
+  cityTaxCents?: number
   cancellationPolicy?: string | null
   cruiseLabel?: string
   discountAmountCents?: number
@@ -39,12 +40,13 @@ export function BookingSummary({
   guestCount,
   basePriceCents,
   extrasCalculation,
+  cityTaxCents,
   cancellationPolicy,
   cruiseLabel,
   discountAmountCents,
 }: BookingSummaryProps) {
   const extrasTotalCents = extrasCalculation?.extras_amount_cents ?? 0
-  const grossCents = basePriceCents + extrasTotalCents
+  const grossCents = basePriceCents + extrasTotalCents + (cityTaxCents ?? 0)
   const grandTotalCents = Math.max(0, grossCents - (discountAmountCents ?? 0))
 
   return (
@@ -110,6 +112,13 @@ export function BookingSummary({
               <span>{fmtEuros(li.amount_cents)}</span>
             </div>
           ))}
+
+          {cityTaxCents && cityTaxCents > 0 && (
+            <div className="flex justify-between text-zinc-600">
+              <span>City tax</span>
+              <span>{fmtEuros(cityTaxCents)}</span>
+            </div>
+          )}
 
           {discountAmountCents && discountAmountCents > 0 && (
             <div className="flex justify-between text-emerald-700 font-medium">

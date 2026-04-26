@@ -32,11 +32,11 @@ export async function GET(
       const { data: sessions } = campaignSlugs.length > 0
         ? await supabase
             .from('analytics_sessions')
-            .select('id, campaign_slug')
+            .select('id, visitor_id, campaign_slug')
             .gte('started_at', from)
             .lte('started_at', to)
             .in('campaign_slug', campaignSlugs)
-        : { data: [] as { id: string; campaign_slug: string | null }[] }
+        : { data: [] as { id: string; visitor_id: string; campaign_slug: string | null }[] }
 
       const sessionIds = sessions?.map((s) => s.id) ?? []
       const { data: bookings } = sessionIds.length > 0
@@ -51,16 +51,25 @@ export async function GET(
 
       const enriched = campaigns.map((c) => {
         const campaignSessions = sessions?.filter((s) => s.campaign_slug === c.slug) ?? []
+        const uniqueUsers = new Set(
+          campaignSessions.map((s) => s.visitor_id).filter((id) => !id.startsWith('anon_'))
+        ).size
         const campaignBookings = campaignSessions.filter((s) => bookingsBySession.has(s.id))
         const revenue = bookings
           ?.filter((b) => campaignSessions.some((s) => s.id === b.session_id))
           .reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0) ?? 0
+        const investmentCents = c.investment_amount != null ? c.investment_amount * 100 : null
+        const roi = investmentCents && investmentCents > 0
+          ? (revenue - investmentCents) / investmentCents
+          : null
         return {
           ...c,
           sessions: campaignSessions.length,
+          unique_visitors: uniqueUsers,
           bookings: campaignBookings.length,
           revenue_cents: revenue,
           conversion_rate: campaignSessions.length > 0 ? campaignBookings.length / campaignSessions.length : 0,
+          roi,
         }
       })
 

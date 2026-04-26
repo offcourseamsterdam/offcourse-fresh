@@ -59,9 +59,13 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
 
   const calc = calculateExtras(serverBaseAmount, guestCount, (extras ?? []) as any, durationMinutes)
 
+  // City tax: €2.60 per ticket on shared cruises (municipality levy, not in FareHarbor)
+  const cityTaxCents = category === 'shared' ? guestCount * 260 : 0
+
   // Apply promo discount (server re-validates the amount passed from client)
-  const discountAmountCents = Math.min(inputDiscount, calc.grand_total_cents)
-  const chargedCents = Math.max(50, calc.grand_total_cents - discountAmountCents)
+  const totalBeforeDiscount = calc.grand_total_cents + cityTaxCents
+  const discountAmountCents = Math.min(inputDiscount, totalBeforeDiscount)
+  const chargedCents = Math.max(50, totalBeforeDiscount - discountAmountCents)
 
   if (calc.grand_total_cents < 50) {
     throw new Error('Amount must be at least €0.50')
