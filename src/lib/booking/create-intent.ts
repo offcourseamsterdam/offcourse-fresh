@@ -53,14 +53,30 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
     matchingRate?.customer_prototype?.total_including_tax
     ?? matchingRate?.customer_prototype?.total
     ?? input.baseAmountCents
+  console.log('[create-intent] price resolution', {
+    matchingRateFound: !!matchingRate,
+    total: matchingRate?.customer_prototype?.total,
+    total_including_tax: matchingRate?.customer_prototype?.total_including_tax,
+    verifiedBaseCents,
+    inputBaseAmountCents: input.baseAmountCents,
+  })
   const isPrivate = category === 'private'
   const serverBaseAmount = isPrivate ? verifiedBaseCents : verifiedBaseCents * guestCount
 
   // Fetch selected extras from DB
   const supabase = await createServiceClient()
-  const { data: extras } = selectedExtraIds.length > 0
+  const extrasResult = selectedExtraIds.length > 0
     ? await supabase.from('extras').select('*').in('id', selectedExtraIds).eq('is_active', true)
-    : { data: [] }
+    : { data: [] as any[], error: null }
+  if (extrasResult.error) {
+    console.error('[create-intent] extras query failed', extrasResult.error)
+  }
+  const extras = extrasResult.data
+  console.log('[create-intent] extras', {
+    selectedExtraIds,
+    extrasFromDB: extras?.length ?? 0,
+    extrasIds: extras?.map((e: any) => e.id),
+  })
 
   const calc = calculateExtras(serverBaseAmount, guestCount, (extras ?? []) as any, durationMinutes)
 
@@ -79,6 +95,14 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
   const extrasSummary = calc.line_items
     .map(li => `${li.name} (${fmtEuros(li.amount_cents)})`)
     .join(', ')
+
+  console.log('[create-intent] charge', {
+    serverBaseAmount,
+    extrasAmount: calc.extras_amount_cents,
+    grandTotal: calc.grand_total_cents,
+    cityTaxCents,
+    chargedCents,
+  })
 
   const paymentIntent = await getStripe().paymentIntents.create({
     amount: chargedCents,
