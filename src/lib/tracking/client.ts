@@ -90,12 +90,18 @@ export function initSession() {
  * Record an anonymous visit server-side WITHOUT setting any cookies.
  * Used when consent hasn't been given yet — we still count the visit,
  * we just can't connect it to future visits.
+ *
+ * We DO read the oc_attr attribution cookie (set by the server via /api/t/[slug])
+ * so that campaign_slug is captured even for first-time visitors who haven't
+ * accepted cookies yet. The cookie itself was set by the server, not by us.
  */
 export function initAnonymousSession() {
   pageViewCount++
 
   // Parse UTM from URL (no cookie needed — URL is public)
   const utm = parseUTMFromURL(window.location.href)
+  // Read server-set attribution cookie so campaign is captured even without consent
+  const attr = getAttribution()
 
   // Generate throwaway IDs (not stored in cookies)
   const anonVisitorId = `anon_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -115,6 +121,7 @@ export function initAnonymousSession() {
       utm_campaign: utm.utm_campaign,
       utm_term: utm.utm_term,
       utm_content: utm.utm_content,
+      campaign_slug: attr?.campaign_slug,
     }),
     keepalive: true,
   }).catch(() => {})

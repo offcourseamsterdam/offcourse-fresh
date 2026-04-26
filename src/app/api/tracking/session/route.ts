@@ -89,14 +89,18 @@ export async function POST(request: NextRequest) {
       channelId = channel?.id ?? null
     }
 
-    // If campaign_slug is provided, look up its channel from the campaigns table.
-    if (campaign_slug && !channelId) {
+    // If campaign_slug is provided, look up its campaign_id and channel.
+    let campaignId: string | null = null
+    if (campaign_slug) {
       const { data: directCampaign } = await supabase
         .from('campaigns')
-        .select('channel_id')
+        .select('id, channel_id')
         .eq('slug', campaign_slug as string)
         .maybeSingle()
-      if (directCampaign?.channel_id) channelId = directCampaign.channel_id
+      if (directCampaign) {
+        campaignId = directCampaign.id
+        if (!channelId && directCampaign.channel_id) channelId = directCampaign.channel_id
+      }
     }
 
     // Get country from Vercel header
@@ -133,6 +137,7 @@ export async function POST(request: NextRequest) {
             utm_term: sanitized.utm_term,
             utm_content: sanitized.utm_content,
             campaign_slug: campaign_slug as string | undefined,
+            campaign_id: campaignId,
             channel_id: channelId,
             browser_name: browserName,
             device_type: deviceType,
@@ -148,8 +153,8 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ ok: true })
-  } catch {
-    // Never fail — tracking errors are silent
+  } catch (err) {
+    console.error('[tracking/session] unhandled error:', err)
     return NextResponse.json({ ok: true })
   }
 }
