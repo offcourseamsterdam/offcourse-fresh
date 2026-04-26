@@ -92,15 +92,19 @@ export async function POST(request: NextRequest) {
         return apiError('This listing does not accept partner-invoice bookings', 400)
       }
 
-      const normalizedCode = normalizePartnerCode(String(partnerCode ?? ''))
-      const { data: codeRow } = await supabasePI
-        .from('partner_codes')
-        .select('id, partner_id, code, is_active, expires_at, revoked_at')
-        .eq('code', normalizedCode)
-        .maybeSingle()
+      // New path: promo code already validated by client via /api/promo/validate.
+      // Legacy path: validate against partner_codes table.
+      if (!promoCodeId) {
+        const normalizedCode = normalizePartnerCode(String(partnerCode ?? ''))
+        const { data: codeRow } = await supabasePI
+          .from('partner_codes')
+          .select('id, partner_id, code, is_active, expires_at, revoked_at')
+          .eq('code', normalizedCode)
+          .maybeSingle()
 
-      const result = validatePartnerCode(normalizedCode, listing.required_partner_id, codeRow)
-      if (!result.ok) return apiError(reasonMessage(result.reason), 400)
+        const result = validatePartnerCode(normalizedCode, listing.required_partner_id, codeRow)
+        if (!result.ok) return apiError(reasonMessage(result.reason), 400)
+      }
 
       // Find the campaign linking this listing + partner to get the commission %.
       // Admin must have set this up (see admin/campaigns).
@@ -140,70 +144,32 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Campaign attribution & commission ──────────────────────────────────
-    // Two cookie formats:
-    //   1. oc_attr (JSON, set by /api/t/[slug] tracking redirect): { campaign_slug, partner_id, campaign_link_id, campaign_id }
-    //   2. oc_campaign (simple string, set by proxy.ts ?cid=slug): campaign_links slug
-    // Commission = percentage_value (from campaigns table) × base_amount_cents
+    // Single cookie format: oc_attr (JSON, set by /api/t/[slug] or /api/track/visit).
+    // Both server entry points always include campaign_id, so no slug fallback needed.
     let cookieCampaignId: string | null = null
     let partnerId: string | null = null
     let commissionAmountCents: number | null = null
 
     try {
-      const supabaseAttrib = createAdminClient()
       const attrCookie = request.cookies.get('oc_attr')?.value
-      const cidCookie = request.cookies.get('oc_campaign')?.value
-
       if (attrCookie) {
-        // JSON cookie from /api/t/[slug] tracking link OR client-side ?ref= attribution
         const attr = JSON.parse(attrCookie)
-        let campaignId = attr.campaign_id ?? null
-        partnerId = attr.partner_id ?? null
-
-        // If we have campaign_slug but no campaign_id (set by client-side ?ref=),
-        // look up the campaign by slug to get the full attribution data.
-        if (!campaignId && attr.campaign_slug) {
-          const { data: campaign } = await supabaseAttrib
-            .from('campaigns')
-            .select('id, partner_id, percentage_value, investment_type')
-            .eq('slug', attr.campaign_slug)
-            .maybeSingle()
-
-          if (campaign) {
-            campaignId = campaign.id
-            partnerId = campaign.partner_id
-          }
-        }
-
-        if (campaignId) {
-          cookieCampaignId = campaignId
-
-          // Get commission from the campaign (if not already fetched above)
+        if (attr.campaign_id) {
+          const supabaseAttrib = createAdminClient()
           const { data: campaign } = await supabaseAttrib
             .from('campaigns')
             .select('percentage_value, investment_type')
-            .eq('id', campaignId)
+            .eq('id', attr.campaign_id)
             .maybeSingle()
 
-          if (campaign?.percentage_value && campaign.investment_type === 'percentage') {
-            commissionAmountCents = Math.round(Number(baseAmountCents ?? 0) * campaign.percentage_value / 100)
-          } else if (campaign?.percentage_value && campaign.investment_type === 'fixed_amount') {
-            commissionAmountCents = Math.round(campaign.percentage_value)
-          }
-        }
-      } else if (cidCookie) {
-        // Simple slug cookie from proxy.ts ?cid=slug (legacy / campaign_links)
-        const { data: link } = await supabaseAttrib
-          .from('campaign_links')
-          .select('id, partner_id, commission_percentage')
-          .eq('slug', cidCookie)
-          .eq('is_active', true)
-          .maybeSingle()
-
-        if (link) {
-          cookieCampaignId = link.id
-          partnerId = link.partner_id
-          if (link.commission_percentage && link.commission_percentage > 0) {
-            commissionAmountCents = Math.round(Number(baseAmountCents ?? 0) * link.commission_percentage / 100)
+          if (campaign) {
+            cookieCampaignId = attr.campaign_id
+            partnerId = attr.partner_id ?? null
+            if (campaign.percentage_value && campaign.investment_type === 'percentage') {
+              commissionAmountCents = Math.round(Number(baseAmountCents ?? 0) * campaign.percentage_value / 100)
+            } else if (campaign.percentage_value && campaign.investment_type === 'fixed_amount') {
+              commissionAmountCents = Math.round(campaign.percentage_value)
+            }
           }
         }
       }

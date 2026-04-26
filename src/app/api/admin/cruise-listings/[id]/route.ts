@@ -39,6 +39,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     'google_maps_url','video_url',
     'hero_image_url','benefits','highlights','inclusions','faqs','images',
     'cancellation_policy','duration_display','max_guests','slug',
+    'payment_mode','required_partner_id',
   ]
   const patch: Record<string, unknown> = {}
   for (const key of allowed) {
@@ -46,6 +47,19 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   }
   if (Object.keys(patch).length === 0) {
     return apiError('No valid fields to update', 400)
+  }
+
+  // Partner-invoice listings require a partner. The DB has a check constraint
+  // that enforces this, but failing fast here gives a friendlier error.
+  if (patch.payment_mode === 'partner_invoice' && !patch.required_partner_id) {
+    const { data: existing } = await createAdminClient()
+      .from('cruise_listings')
+      .select('required_partner_id')
+      .eq('id', id)
+      .single()
+    if (!existing?.required_partner_id) {
+      return apiError('Partner-invoice listings need a partner. Pick one before saving.', 400)
+    }
   }
 
   const supabase = createAdminClient()

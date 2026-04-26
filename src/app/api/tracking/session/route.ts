@@ -89,30 +89,14 @@ export async function POST(request: NextRequest) {
       channelId = channel?.id ?? null
     }
 
-    // If campaign_slug is provided, look up its channel
+    // If campaign_slug is provided, look up its channel from the campaigns table.
     if (campaign_slug && !channelId) {
-      // Try campaign_links first (legacy partner links)
-      const { data: link } = await supabase
-        .from('campaign_links')
-        .select('id, campaign_id')
+      const { data: directCampaign } = await supabase
+        .from('campaigns')
+        .select('channel_id')
         .eq('slug', campaign_slug as string)
         .maybeSingle()
-      if (link?.campaign_id) {
-        const { data: linkedCampaign } = await supabase
-          .from('campaigns')
-          .select('channel_id')
-          .eq('id', link.campaign_id)
-          .maybeSingle()
-        if (linkedCampaign?.channel_id) channelId = linkedCampaign.channel_id
-      } else {
-        // Try campaigns table directly (new campaign system — /t/[slug] uses this)
-        const { data: directCampaign } = await supabase
-          .from('campaigns')
-          .select('channel_id')
-          .eq('slug', campaign_slug as string)
-          .maybeSingle()
-        if (directCampaign?.channel_id) channelId = directCampaign.channel_id
-      }
+      if (directCampaign?.channel_id) channelId = directCampaign.channel_id
     }
 
     // Get country from Vercel header

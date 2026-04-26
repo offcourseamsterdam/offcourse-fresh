@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'next/navigation'
-import { Loader2, ArrowLeft, Plus, Ban, Copy, Check, AlertCircle } from 'lucide-react'
+import { Loader2, ArrowLeft, Plus, Ban, Copy, Check, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { quarterLabel } from '@/lib/quarters'
+import { fmtEuros } from '@/lib/utils'
 
 interface Partner {
   id: string
@@ -28,6 +30,23 @@ interface PartnerCode {
 
 type CodeStatus = 'active' | 'expired' | 'revoked' | 'expiring_soon'
 
+interface QuarterTotals {
+  quarter: string
+  bookingCount: number
+  baseAmountCents: number
+  commissionAmountCents: number
+  netAmountCents: number
+  settled: boolean
+  settledAt: string | null
+  paidAmountCents: number | null
+  settlementId: string | null
+}
+
+interface SettlementSummary {
+  partnerInvoice: QuarterTotals[]
+  affiliate: QuarterTotals[]
+}
+
 function codeStatus(c: PartnerCode, now: Date = new Date()): CodeStatus {
   if (!c.is_active || c.revoked_at) return 'revoked'
   const expires = new Date(c.expires_at).getTime()
@@ -45,27 +64,64 @@ export default function PartnerDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [partner, setPartner] = useState<Partner | null>(null)
   const [codes, setCodes] = useState<PartnerCode[]>([])
+  const [summary, setSummary] = useState<SettlementSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [settlingKey, setSettlingKey] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const [pRes, cRes] = await Promise.all([
+      const [pRes, cRes, sRes] = await Promise.all([
         fetch(`/api/admin/partners/${id}`),
         fetch(`/api/admin/partners/${id}/codes`),
+        fetch(`/api/admin/partners/${id}/settlement-summary`),
       ])
       const pJson = await pRes.json()
       const cJson = await cRes.json()
+      const sJson = await sRes.json()
       if (pJson.ok) setPartner(pJson.data.partner)
       if (cJson.ok) setCodes(cJson.data.codes)
+      if (sJson.ok) setSummary(sJson.data)
     } catch {
       // silently: will show empty state
     } finally {
       setLoading(false)
     }
   }, [id])
+
+  async function markSettled(quarter: string, type: 'partner_invoice' | 'affiliate', amountCents: number) {
+    const key = `${quarter}::${type}`
+    setSettlingKey(key)
+    try {
+      const res = await fetch(`/api/admin/partners/${id}/settlements`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quarter, settlementType: type, amountCents }),
+      })
+      const json = await res.json()
+      if (!json.ok) {
+        alert(json.error ?? 'Could not mark settled')
+      } else {
+        fetchData()
+      }
+    } finally {
+      setSettlingKey(null)
+    }
+  }
+
+  async function undoSettlement(settlementId: string) {
+    if (!confirm('Undo this settlement record? The bookings stay; only the settlement marker is removed.')) return
+    try {
+      const res = await fetch(`/api/admin/partners/${id}/settlements/${settlementId}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (json.ok) fetchData()
+      else alert(json.error ?? 'Could not undo settlement')
+    } catch {
+      alert('Network error')
+    }
+  }
 
   useEffect(() => { fetchData() }, [fetchData])
 
@@ -245,6 +301,115 @@ export default function PartnerDetailPage() {
         — customers type the code from a physical receipt at the partner desk. Make sure a <a href="/en/admin/campaigns" className="underline hover:text-zinc-700">campaign</a> exists linking
         this partner to a specific listing with the agreed commission % (e.g. 15 % = partner keeps €15 on a €100 ticket, we invoice €85).
       </p>
+
+      {/* Settlements section */}
+      {summary && (summary.partnerInvoice.length > 0 || summary.affiliate.length > 0) && (
+        <div className="mt-8 space-y-6">
+          {summary.partnerInvoice.length > 0 && (
+            <SettlementTable
+              title="Partner-invoice settlements"
+              subtitle="Partner collected ticket prices on the desk and owes Off Course the net (ticket – commission). Settle each quarter."
+              rows={summary.partnerInvoice}
+              type="partner_invoice"
+              owesLabel="Partner owes us"
+              onMarkSettled={markSettled}
+              onUndo={undoSettlement}
+              settlingKey={settlingKey}
+            />
+          )}
+          {summary.affiliate.length > 0 && (
+            <SettlementTable
+              title="Affiliate settlements"
+              subtitle="Off Course collected the ticket price online; we owe the partner their commission. Settle each quarter."
+              rows={summary.affiliate}
+              type="affiliate"
+              owesLabel="We owe partner"
+              onMarkSettled={markSettled}
+              onUndo={undoSettlement}
+              settlingKey={settlingKey}
+            />
+          )}
+        </div>
+      )}
     </div>
+  )
+}
+
+interface SettlementTableProps {
+  title: string
+  subtitle: string
+  rows: QuarterTotals[]
+  type: 'partner_invoice' | 'affiliate'
+  owesLabel: string
+  onMarkSettled: (quarter: string, type: 'partner_invoice' | 'affiliate', amountCents: number) => void
+  onUndo: (settlementId: string) => void
+  settlingKey: string | null
+}
+
+function SettlementTable({ title, subtitle, rows, type, owesLabel, onMarkSettled, onUndo, settlingKey }: SettlementTableProps) {
+  return (
+    <section className="bg-white border border-zinc-200 rounded-2xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-zinc-100">
+        <h2 className="font-semibold text-zinc-900">{title}</h2>
+        <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">{subtitle}</p>
+      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-zinc-50 border-b border-zinc-100">
+            <th className="text-left px-5 py-2 font-semibold text-zinc-500 text-[10px] uppercase tracking-wide">Quarter</th>
+            <th className="text-right px-5 py-2 font-semibold text-zinc-500 text-[10px] uppercase tracking-wide">Bookings</th>
+            <th className="text-right px-5 py-2 font-semibold text-zinc-500 text-[10px] uppercase tracking-wide">Tickets</th>
+            <th className="text-right px-5 py-2 font-semibold text-zinc-500 text-[10px] uppercase tracking-wide">{owesLabel}</th>
+            <th className="text-right px-5 py-2 font-semibold text-zinc-500 text-[10px] uppercase tracking-wide">Status</th>
+            <th className="px-5 py-2 w-32" />
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-zinc-100">
+          {rows.map(r => {
+            const key = `${r.quarter}::${type}`
+            const settling = settlingKey === key
+            return (
+              <tr key={key} className="hover:bg-zinc-50">
+                <td className="px-5 py-3 text-zinc-900">{quarterLabel(r.quarter)}</td>
+                <td className="px-5 py-3 text-right text-zinc-700">{r.bookingCount}</td>
+                <td className="px-5 py-3 text-right text-zinc-700">{fmtEuros(r.baseAmountCents)}</td>
+                <td className="px-5 py-3 text-right font-semibold text-zinc-900">{fmtEuros(r.netAmountCents)}</td>
+                <td className="px-5 py-3 text-right">
+                  {r.settled ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 bg-emerald-100 rounded-full">
+                      <CheckCircle2 className="w-3 h-3" />
+                      Settled {r.settledAt ? fmtDate(r.settledAt) : ''}
+                    </span>
+                  ) : r.bookingCount === 0 ? (
+                    <span className="inline-flex items-center px-2 py-0.5 text-[11px] font-semibold text-zinc-500 bg-zinc-100 rounded-full">In progress</span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 text-[11px] font-semibold text-amber-700 bg-amber-100 rounded-full">Outstanding</span>
+                  )}
+                </td>
+                <td className="px-5 py-3 text-right">
+                  {r.settled && r.settlementId ? (
+                    <button
+                      onClick={() => onUndo(r.settlementId!)}
+                      className="text-xs text-zinc-400 hover:text-red-600 underline"
+                    >
+                      Undo
+                    </button>
+                  ) : r.bookingCount > 0 ? (
+                    <button
+                      onClick={() => onMarkSettled(r.quarter, type, r.netAmountCents)}
+                      disabled={settling}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50 rounded-lg disabled:opacity-50"
+                    >
+                      {settling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                      Mark settled
+                    </button>
+                  ) : null}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </section>
   )
 }

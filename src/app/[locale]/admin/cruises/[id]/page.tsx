@@ -9,6 +9,7 @@ import {
   CruiseDetailsTab,
   CruiseImagesSection,
   CruisePricingTab,
+  CruisePaymentTab,
   CruiseBenefitsTab,
   CruiseHighlightsTab,
   CruiseInclusionsTab,
@@ -101,7 +102,7 @@ export default function CruiseEditPage() {
       {/* Tabs */}
       <Tabs defaultValue="content">
         <TabsList className="w-full justify-start border-b border-zinc-200 bg-transparent rounded-none pb-0 h-auto gap-0">
-          {['content', 'images', 'pricing', 'benefits', 'extras', 'filters', 'seo'].map(tab => (
+          {['content', 'images', 'pricing', 'payment', 'benefits', 'extras', 'filters', 'seo'].map(tab => (
             <TabsTrigger
               key={tab}
               value={tab}
@@ -124,6 +125,9 @@ export default function CruiseEditPage() {
         </TabsContent>
         <TabsContent value="pricing" className="pt-6">
           <CruisePricingTab listing={listing} onSave={setListing} />
+        </TabsContent>
+        <TabsContent value="payment" className="pt-6">
+          <CruisePaymentTab listing={listing} onSave={setListing} />
         </TabsContent>
         <TabsContent value="benefits" className="pt-6">
           <div className="space-y-8">

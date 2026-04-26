@@ -104,14 +104,16 @@ function PromoCodeInput({
   onApplied,
   onRemoved,
   applied,
+  required,
 }: {
   grandTotalCents: number
   initialCode?: string
   onApplied: (result: PromoResult) => void
   onRemoved: () => void
   applied: PromoResult | null
+  required?: boolean
 }) {
-  const [open, setOpen] = useState(!!initialCode)
+  const [open, setOpen] = useState(!!initialCode || !!required)
   const [value, setValue] = useState(initialCode ?? '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -176,7 +178,10 @@ function PromoCodeInput({
 
   return (
     <div>
-      {!open ? (
+      {required && !applied && (
+        <p className="text-sm font-medium text-zinc-700 mb-2">Enter your booking code to proceed</p>
+      )}
+      {!open && !required ? (
         <button
           type="button"
           onClick={() => setOpen(true)}
@@ -405,7 +410,14 @@ export function CheckoutFlow({
 
   // Create PaymentIntent after guest info is submitted
   async function handleGuestInfoSubmit(details: CustomerDetails & { partnerCode?: string }) {
-    if (isPartnerInvoice) return handlePartnerInvoiceSubmit(details)
+    if (isPartnerInvoice) {
+      if (!promoResult?.isFull) {
+        setError('Please enter your booking code above to proceed.')
+        return
+      }
+      await handleFullDiscountBooking(details, 'partner_invoice')
+      return
+    }
     if (!bookingData) return
     trackEvent('view_payment', { listing: bookingData.listingSlug })
     setContact(details)
@@ -457,7 +469,7 @@ export function CheckoutFlow({
   }
 
   // Full-discount: no Stripe, call book API directly
-  async function handleFullDiscountBooking(details: CustomerDetails) {
+  async function handleFullDiscountBooking(details: CustomerDetails, bookingSource: 'partner' | 'partner_invoice' = 'partner') {
     if (!bookingData || !promoResult) return
     setCreatingIntent(true)
     setError(null)
@@ -489,7 +501,7 @@ export function CheckoutFlow({
           baseAmountCents: bookingData.basePriceCents,
           extrasAmountCents: extrasTotalCents,
           extrasSelected: bookingData.extrasCalculation?.line_items ?? [],
-          bookingSource: 'partner',
+          bookingSource,
           promoCodeId: promoResult.promoCodeId,
           discountAmountCents: promoResult.discountAmountCents,
           sessionId: getSessionId(),
@@ -643,8 +655,8 @@ export function CheckoutFlow({
           {/* Left column: promo + form + payment */}
           <div className="lg:col-span-3 overflow-hidden">
 
-            {/* Promo code — only for standard Stripe flows */}
-            {!clientSecret && !isPartnerInvoice && (
+            {/* Promo / booking code input */}
+            {!clientSecret && (
               <div className="mb-6">
                 <PromoCodeInput
                   grandTotalCents={grossTotalCents}
@@ -652,6 +664,7 @@ export function CheckoutFlow({
                   applied={promoResult}
                   onApplied={setPromoResult}
                   onRemoved={() => setPromoResult(null)}
+                  required={isPartnerInvoice}
                 />
               </div>
             )}
@@ -673,8 +686,6 @@ export function CheckoutFlow({
                   <GuestInfoForm
                     onSubmit={handleGuestInfoSubmit}
                     loading={creatingIntent || submittingPartnerBooking}
-                    requirePartnerCode={isPartnerInvoice}
-                    partnerName={partnerName}
                     submitLabel={isPartnerInvoice ? 'Confirm booking' : undefined}
                   />
                   {error && isPartnerInvoice && (

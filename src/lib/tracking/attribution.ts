@@ -3,7 +3,6 @@ import {
   COOKIE_SESSION_ID,
   COOKIE_ATTRIBUTION,
   VISITOR_COOKIE_DAYS,
-  ATTRIBUTION_COOKIE_DAYS,
   SESSION_TIMEOUT_MINUTES,
   UTM_PARAMS,
   SOCIAL_SOURCES,
@@ -86,17 +85,26 @@ export function hasUTMParams(utm: UTMParams): boolean {
 }
 
 // ── Attribution cookie ──
+//
+// The attribution cookie (oc_attr) is written ONLY by the server (via /api/t/[slug]
+// or /api/track/visit) and read here. The shape mirrors what
+// `buildAttributionCookie` in src/lib/tracking/server.ts produces.
+//
+// UTM params, referrer, and landing_page are recorded per-session in
+// analytics_sessions, not in this cookie — keeps the cookie small and lets the
+// server be the single source of truth for campaign attribution.
 
 export interface AttributionData {
+  campaign_slug?: string
+  campaign_id?: string
+  partner_id?: string | null
+  campaign_link_id?: string | null
+  // Legacy fields kept optional so old cookies still parse without throwing.
   utm_source?: string
   utm_medium?: string
   utm_campaign?: string
   utm_term?: string
   utm_content?: string
-  campaign_slug?: string
-  referrer?: string
-  landing_page?: string
-  timestamp?: string
 }
 
 export function getAttribution(): AttributionData | null {
@@ -107,28 +115,6 @@ export function getAttribution(): AttributionData | null {
   } catch {
     return null
   }
-}
-
-export function setAttribution(data: AttributionData) {
-  setCookie(COOKIE_ATTRIBUTION, JSON.stringify(data), ATTRIBUTION_COOKIE_DAYS)
-}
-
-/**
- * Sets attribution only on first touch — if oc_attr already exists, do nothing.
- * Returns true if a new attribution was set.
- */
-export function setFirstTouchAttribution(utm: UTMParams, extras?: Partial<AttributionData>): boolean {
-  if (getAttribution()) return false
-  if (!hasUTMParams(utm) && !extras?.campaign_slug) return false
-
-  setAttribution({
-    ...utm,
-    ...extras,
-    landing_page: typeof window !== 'undefined' ? window.location.pathname : undefined,
-    referrer: typeof document !== 'undefined' ? document.referrer : undefined,
-    timestamp: new Date().toISOString(),
-  })
-  return true
 }
 
 // ── Channel resolution (server-side, maps UTM to channel slug) ──

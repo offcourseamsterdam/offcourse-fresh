@@ -1778,6 +1778,47 @@ export type Database = {
           },
         ]
       }
+      partner_settlements: {
+        Row: {
+          amount_cents: number
+          created_at: string
+          id: string
+          notes: string | null
+          paid_at: string
+          partner_id: string
+          quarter: string
+          settlement_type: string
+        }
+        Insert: {
+          amount_cents: number
+          created_at?: string
+          id?: string
+          notes?: string | null
+          paid_at?: string
+          partner_id: string
+          quarter: string
+          settlement_type: string
+        }
+        Update: {
+          amount_cents?: number
+          created_at?: string
+          id?: string
+          notes?: string | null
+          paid_at?: string
+          partner_id?: string
+          quarter?: string
+          settlement_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "partner_settlements_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       partners: {
         Row: {
           channel_id: string | null
