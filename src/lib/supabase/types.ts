@@ -56,6 +56,7 @@ export type Database = {
       analytics_sessions: {
         Row: {
           browser_name: string | null
+          campaign_id: string | null
           campaign_slug: string | null
           channel_id: string | null
           country_code: string | null
@@ -82,6 +83,7 @@ export type Database = {
         }
         Insert: {
           browser_name?: string | null
+          campaign_id?: string | null
           campaign_slug?: string | null
           channel_id?: string | null
           country_code?: string | null
@@ -108,6 +110,7 @@ export type Database = {
         }
         Update: {
           browser_name?: string | null
+          campaign_id?: string | null
           campaign_slug?: string | null
           channel_id?: string | null
           country_code?: string | null
@@ -133,6 +136,13 @@ export type Database = {
           visitor_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "analytics_sessions_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "analytics_sessions_channel_id_fkey"
             columns: ["channel_id"]

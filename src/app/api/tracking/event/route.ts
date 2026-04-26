@@ -59,7 +59,8 @@ export async function POST(request: NextRequest) {
     })
 
     return NextResponse.json({ ok: true })
-  } catch {
+  } catch (err) {
+    console.error('[tracking/event] unhandled error:', err)
     return NextResponse.json({ ok: true })
   }
 }
