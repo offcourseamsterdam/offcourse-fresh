@@ -1,6 +1,7 @@
 export { CruiseDetailsTab } from './CruiseDetailsTab'
 export { CruiseImagesSection } from './CruiseImagesSection'
 export { CruisePricingTab } from './CruisePricingTab'
+export { CruisePaymentTab } from './CruisePaymentTab'
 export { CruiseBenefitsTab } from './CruiseBenefitsTab'
 export { CruiseHighlightsTab } from './CruiseHighlightsTab'
 export { CruiseInclusionsTab } from './CruiseInclusionsTab'

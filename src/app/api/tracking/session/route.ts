@@ -89,21 +89,14 @@ export async function POST(request: NextRequest) {
       channelId = channel?.id ?? null
     }
 
-    // If campaign_slug is provided, try to look up the campaign link's channel
+    // If campaign_slug is provided, look up its channel from the campaigns table.
     if (campaign_slug && !channelId) {
-      const { data: link } = await supabase
-        .from('campaign_links')
-        .select('id, campaign_id')
+      const { data: directCampaign } = await supabase
+        .from('campaigns')
+        .select('channel_id')
         .eq('slug', campaign_slug as string)
-        .single()
-      if (link?.campaign_id) {
-        const { data: campaign } = await supabase
-          .from('campaigns')
-          .select('channel_id')
-          .eq('id', link.campaign_id)
-          .single()
-        channelId = campaign?.channel_id ?? channelId
-      }
+        .maybeSingle()
+      if (directCampaign?.channel_id) channelId = directCampaign.channel_id
     }
 
     // Get country from Vercel header

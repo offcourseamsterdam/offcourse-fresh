@@ -55,6 +55,8 @@ export async function POST(request: NextRequest) {
       depositAmountCents,
       sessionId,
       partnerCode,
+      promoCodeId,
+      discountAmountCents,
     } = body
 
     if (!availPk || !customerTypeRatePk || !guestCount || !contact?.name || !contact?.email || !contact?.phone) {
@@ -90,15 +92,19 @@ export async function POST(request: NextRequest) {
         return apiError('This listing does not accept partner-invoice bookings', 400)
       }
 
-      const normalizedCode = normalizePartnerCode(String(partnerCode ?? ''))
-      const { data: codeRow } = await supabasePI
-        .from('partner_codes')
-        .select('id, partner_id, code, is_active, expires_at, revoked_at')
-        .eq('code', normalizedCode)
-        .maybeSingle()
+      // New path: promo code already validated by client via /api/promo/validate.
+      // Legacy path: validate against partner_codes table.
+      if (!promoCodeId) {
+        const normalizedCode = normalizePartnerCode(String(partnerCode ?? ''))
+        const { data: codeRow } = await supabasePI
+          .from('partner_codes')
+          .select('id, partner_id, code, is_active, expires_at, revoked_at')
+          .eq('code', normalizedCode)
+          .maybeSingle()
 
-      const result = validatePartnerCode(normalizedCode, listing.required_partner_id, codeRow)
-      if (!result.ok) return apiError(reasonMessage(result.reason), 400)
+        const result = validatePartnerCode(normalizedCode, listing.required_partner_id, codeRow)
+        if (!result.ok) return apiError(reasonMessage(result.reason), 400)
+      }
 
       // Find the campaign linking this listing + partner to get the commission %.
       // Admin must have set this up (see admin/campaigns).
@@ -138,70 +144,32 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Campaign attribution & commission ──────────────────────────────────
-    // Two cookie formats:
-    //   1. oc_attr (JSON, set by /api/t/[slug] tracking redirect): { campaign_slug, partner_id, campaign_link_id, campaign_id }
-    //   2. oc_campaign (simple string, set by proxy.ts ?cid=slug): campaign_links slug
-    // Commission = percentage_value (from campaigns table) × base_amount_cents
+    // Single cookie format: oc_attr (JSON, set by /api/t/[slug] or /api/track/visit).
+    // Both server entry points always include campaign_id, so no slug fallback needed.
     let cookieCampaignId: string | null = null
     let partnerId: string | null = null
     let commissionAmountCents: number | null = null
 
     try {
-      const supabaseAttrib = createAdminClient()
       const attrCookie = request.cookies.get('oc_attr')?.value
-      const cidCookie = request.cookies.get('oc_campaign')?.value
-
       if (attrCookie) {
-        // JSON cookie from /api/t/[slug] tracking link OR client-side ?ref= attribution
         const attr = JSON.parse(attrCookie)
-        let campaignId = attr.campaign_id ?? null
-        partnerId = attr.partner_id ?? null
-
-        // If we have campaign_slug but no campaign_id (set by client-side ?ref=),
-        // look up the campaign by slug to get the full attribution data.
-        if (!campaignId && attr.campaign_slug) {
-          const { data: campaign } = await supabaseAttrib
-            .from('campaigns')
-            .select('id, partner_id, percentage_value, investment_type')
-            .eq('slug', attr.campaign_slug)
-            .maybeSingle()
-
-          if (campaign) {
-            campaignId = campaign.id
-            partnerId = campaign.partner_id
-          }
-        }
-
-        if (campaignId) {
-          cookieCampaignId = campaignId
-
-          // Get commission from the campaign (if not already fetched above)
+        if (attr.campaign_id) {
+          const supabaseAttrib = createAdminClient()
           const { data: campaign } = await supabaseAttrib
             .from('campaigns')
             .select('percentage_value, investment_type')
-            .eq('id', campaignId)
+            .eq('id', attr.campaign_id)
             .maybeSingle()
 
-          if (campaign?.percentage_value && campaign.investment_type === 'percentage') {
-            commissionAmountCents = Math.round(Number(baseAmountCents ?? 0) * campaign.percentage_value / 100)
-          } else if (campaign?.percentage_value && campaign.investment_type === 'fixed_amount') {
-            commissionAmountCents = Math.round(campaign.percentage_value)
-          }
-        }
-      } else if (cidCookie) {
-        // Simple slug cookie from proxy.ts ?cid=slug (legacy / campaign_links)
-        const { data: link } = await supabaseAttrib
-          .from('campaign_links')
-          .select('id, partner_id, commission_percentage')
-          .eq('slug', cidCookie)
-          .eq('is_active', true)
-          .maybeSingle()
-
-        if (link) {
-          cookieCampaignId = link.id
-          partnerId = link.partner_id
-          if (link.commission_percentage && link.commission_percentage > 0) {
-            commissionAmountCents = Math.round(Number(baseAmountCents ?? 0) * link.commission_percentage / 100)
+          if (campaign) {
+            cookieCampaignId = attr.campaign_id
+            partnerId = attr.partner_id ?? null
+            if (campaign.percentage_value && campaign.investment_type === 'percentage') {
+              commissionAmountCents = Math.round(Number(baseAmountCents ?? 0) * campaign.percentage_value / 100)
+            } else if (campaign.percentage_value && campaign.investment_type === 'fixed_amount') {
+              commissionAmountCents = Math.round(campaign.percentage_value)
+            }
           }
         }
       }
@@ -293,6 +261,8 @@ export async function POST(request: NextRequest) {
       cookieCampaignId,
       partnerId,
       commissionAmountCents,
+      promoCodeId: promoCodeId ?? null,
+      discountAmountCents: Number(discountAmountCents ?? 0),
     }
 
     const saveResult = await saveToSupabase(bookingPayload)
@@ -382,6 +352,8 @@ interface BookingPayload {
   cookieCampaignId: string | null
   partnerId: string | null
   commissionAmountCents: number | null
+  promoCodeId: string | null
+  discountAmountCents: number
 }
 
 // Platform booking sources that auto-attribute to the Platforms channel
@@ -417,7 +389,7 @@ async function saveToSupabase(p: BookingPayload): Promise<{ ok: true } | { ok: f
       fareharbor_availability_pk: p.availPk,
       fareharbor_customer_type_rate_pk: p.customerTypeRatePk,
       stripe_payment_intent_id: p.stripePaymentIntentId,
-      stripe_amount: isInternal ? 0 : p.baseAmountCents + p.extrasAmountCents,
+      stripe_amount: isInternal ? 0 : p.baseAmountCents + p.extrasAmountCents - p.discountAmountCents,
       base_amount_cents: p.baseAmountCents,
       base_vat_rate: 9,
       base_vat_amount_cents: p.baseVatAmountCents,
@@ -447,12 +419,59 @@ async function saveToSupabase(p: BookingPayload): Promise<{ ok: true } | { ok: f
       campaign_id: campaignId,
       partner_id: p.partnerId,
       commission_amount_cents: p.commissionAmountCents,
+      promo_code_id: p.promoCodeId,
+      discount_amount_cents: p.discountAmountCents,
     })
 
     if (error) {
       console.error('[book] saveToSupabase Supabase error:', error)
       return { ok: false, error: error.message ?? 'Unknown Supabase error' }
     }
+
+    // Increment uses_count on the promo code (non-fatal)
+    if (p.promoCodeId) {
+      const { data: codeRow } = await supabase
+        .from('promo_codes')
+        .select('*')
+        .eq('id', p.promoCodeId)
+        .single()
+      if (codeRow) {
+        const newCount = codeRow.uses_count + 1
+        await supabase
+          .from('promo_codes')
+          .update({ uses_count: newCount })
+          .eq('id', p.promoCodeId)
+
+        // Auto-rotate: when max_uses is hit, deactivate old code and create a new one
+        if (codeRow.max_uses != null && newCount >= codeRow.max_uses) {
+          await supabase
+            .from('promo_codes')
+            .update({ is_active: false })
+            .eq('id', p.promoCodeId)
+
+          const newCode = generatePromoCode()
+          const { data: rotated } = await supabase
+            .from('promo_codes')
+            .insert({
+              code: newCode,
+              label: codeRow.label,
+              discount_type: codeRow.discount_type,
+              discount_value: codeRow.discount_value,
+              fixed_discount_cents: codeRow.fixed_discount_cents,
+              max_uses: codeRow.max_uses,
+              notes: codeRow.notes,
+              partner_id: codeRow.partner_id,
+            })
+            .select()
+            .single()
+
+          if (rotated) {
+            await notifyPromoRotation(codeRow.code, newCode, codeRow.label, codeRow.max_uses)
+          }
+        }
+      }
+    }
+
     return { ok: true }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error'
@@ -714,5 +733,37 @@ async function sendConfirmationEmail(p: EmailPayload) {
     })
   } catch (err) {
     console.error('[book] sendConfirmationEmail error:', err)
+  }
+}
+
+// ── Promo code rotation ────────────────────────────────────────────────────
+
+const PROMO_ALPHABET = 'ACDEFGHJKLMNPQRTUVWXY3469'
+
+function generatePromoCode(): string {
+  const chars = Array.from({ length: 8 }, () => PROMO_ALPHABET[Math.floor(Math.random() * PROMO_ALPHABET.length)])
+  return `${chars.slice(0, 4).join('')}-${chars.slice(4).join('')}`
+}
+
+async function notifyPromoRotation(oldCode: string, newCode: string, label: string, maxUses: number) {
+  const webhookUrl = process.env.SLACK_WEBHOOK_URL
+  if (!webhookUrl) return
+
+  const text = [
+    '🔄 *Promo code rotated*',
+    `*${label}* hit its ${maxUses}-use limit.`,
+    `Old code: \`${oldCode}\` → now deactivated`,
+    `New code: \`${newCode}\` → now active`,
+    '_Share the new code with your partners._',
+  ].join('\n')
+
+  try {
+    await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    })
+  } catch (err) {
+    console.error('[book] notifyPromoRotation error:', err)
   }
 }

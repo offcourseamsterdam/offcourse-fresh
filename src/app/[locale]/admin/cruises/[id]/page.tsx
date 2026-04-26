@@ -4,11 +4,12 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { ArrowLeft, ExternalLink, Loader2 } from 'lucide-react'
+import { ArrowLeft, Copy, ExternalLink, Loader2 } from 'lucide-react'
 import {
   CruiseDetailsTab,
   CruiseImagesSection,
   CruisePricingTab,
+  CruisePaymentTab,
   CruiseBenefitsTab,
   CruiseHighlightsTab,
   CruiseInclusionsTab,
@@ -30,6 +31,7 @@ export default function CruiseEditPage() {
   const [listing, setListing] = useState<CruiseListing | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [duplicating, setDuplicating] = useState(false)
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/admin/cruise-listings/${id}`)
@@ -42,6 +44,21 @@ export default function CruiseEditPage() {
   useEffect(() => {
     load()
   }, [load])
+
+  async function duplicate() {
+    setDuplicating(true)
+    try {
+      const res = await fetch(`/api/admin/cruise-listings/${id}/duplicate`, { method: 'POST' })
+      const json = await res.json()
+      if (json.ok) {
+        router.push(`/${locale}/admin/cruises/${json.data.listing.id}`)
+      } else {
+        alert(json.error ?? 'Could not duplicate listing')
+      }
+    } finally {
+      setDuplicating(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -86,22 +103,33 @@ export default function CruiseEditPage() {
             <p className="text-xs text-zinc-400 mt-0.5 font-mono">/cruises/{listing.slug}</p>
           </div>
         </div>
-        {listing.is_published && (
-          <a
-            href={`/${locale}/cruises/${listing.slug}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-900 transition-colors"
+        <div className="flex items-center gap-3">
+          <button
+            onClick={duplicate}
+            disabled={duplicating}
+            className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-900 transition-colors disabled:opacity-50"
+            title="Duplicate listing"
           >
-            <ExternalLink className="w-3.5 h-3.5" /> View on site
-          </a>
-        )}
+            {duplicating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Copy className="w-3.5 h-3.5" />}
+            Duplicate
+          </button>
+          {listing.is_published && (
+            <a
+              href={`/${locale}/cruises/${listing.slug}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-900 transition-colors"
+            >
+              <ExternalLink className="w-3.5 h-3.5" /> View on site
+            </a>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
       <Tabs defaultValue="content">
         <TabsList className="w-full justify-start border-b border-zinc-200 bg-transparent rounded-none pb-0 h-auto gap-0">
-          {['content', 'images', 'pricing', 'benefits', 'extras', 'filters', 'seo'].map(tab => (
+          {['content', 'images', 'pricing', 'payment', 'benefits', 'extras', 'filters', 'seo'].map(tab => (
             <TabsTrigger
               key={tab}
               value={tab}
@@ -124,6 +152,9 @@ export default function CruiseEditPage() {
         </TabsContent>
         <TabsContent value="pricing" className="pt-6">
           <CruisePricingTab listing={listing} onSave={setListing} />
+        </TabsContent>
+        <TabsContent value="payment" className="pt-6">
+          <CruisePaymentTab listing={listing} onSave={setListing} />
         </TabsContent>
         <TabsContent value="benefits" className="pt-6">
           <div className="space-y-8">

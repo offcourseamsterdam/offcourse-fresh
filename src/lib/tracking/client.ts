@@ -9,7 +9,6 @@ import {
   getOrCreateVisitorId,
   getOrCreateSessionId,
   parseUTMFromURL,
-  setFirstTouchAttribution,
   getAttribution,
 } from './attribution'
 
@@ -37,14 +36,9 @@ export function initSession() {
   firedEvents.clear() // New session init = reset dedup
   pageViewCount++
 
-  // Parse UTM params and ?ref= param, set first-touch attribution
   const utm = parseUTMFromURL(window.location.href)
-
-  // Check for ?ref= param (campaign slug from tracking links or shared URLs)
-  const refParam = new URLSearchParams(window.location.search).get('ref')
-  setFirstTouchAttribution(utm, refParam ? { campaign_slug: refParam } : undefined)
-
-  // Get attribution data (may have been set by /api/t/[slug] redirect OR by ?ref= above)
+  // Attribution cookie is set ONLY by the server (/api/t/[slug] redirect).
+  // We just read it here.
   const attr = getAttribution()
 
   // Send session start/update to our API

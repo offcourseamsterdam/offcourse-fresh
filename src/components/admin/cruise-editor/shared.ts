@@ -32,6 +32,8 @@ export interface CruiseListing {
   seo_title: string | null
   seo_meta_description: string | null
   fareharbor_item_pk: number
+  payment_mode: 'stripe' | 'partner_invoice'
+  required_partner_id: string | null
 }
 
 export interface CruiseTabProps {

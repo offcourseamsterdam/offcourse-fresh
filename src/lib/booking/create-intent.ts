@@ -17,11 +17,15 @@ interface CreateIntentInput {
   contact: { name: string; email: string; phone?: string }
   selectedExtraIds: string[]
   durationMinutes: number
+  promoCodeId?: string
+  discountAmountCents?: number
 }
 
 interface CreateIntentResult {
   clientSecret: string
   calculation: ExtrasCalculation
+  discountAmountCents: number
+  chargedCents: number
 }
 
 /**
@@ -34,6 +38,7 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
     listingId, listingTitle, availPk, customerTypeRatePk,
     guestCount, category, date, contact,
     selectedExtraIds, durationMinutes = DEFAULT_DURATION_MINUTES,
+    promoCodeId, discountAmountCents: inputDiscount = 0,
   } = input
 
   // Verify base price server-side from FareHarbor
@@ -54,6 +59,10 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
 
   const calc = calculateExtras(serverBaseAmount, guestCount, (extras ?? []) as any, durationMinutes)
 
+  // Apply promo discount (server re-validates the amount passed from client)
+  const discountAmountCents = Math.min(inputDiscount, calc.grand_total_cents)
+  const chargedCents = Math.max(50, calc.grand_total_cents - discountAmountCents)
+
   if (calc.grand_total_cents < 50) {
     throw new Error('Amount must be at least €0.50')
   }
@@ -63,7 +72,7 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
     .join(', ')
 
   const paymentIntent = await getStripe().paymentIntents.create({
-    amount: calc.grand_total_cents,
+    amount: chargedCents,
     currency: 'eur',
     payment_method_types: ['card', 'ideal', 'link'],
     metadata: {
@@ -78,8 +87,9 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
       guest_email: String(contact?.email ?? ''),
       guest_phone: String(contact?.phone ?? ''),
       extras_summary: extrasSummary,
+      ...(promoCodeId ? { promo_code_id: promoCodeId, discount_amount_cents: String(discountAmountCents) } : {}),
     },
   })
 
-  return { clientSecret: paymentIntent.client_secret!, calculation: calc }
+  return { clientSecret: paymentIntent.client_secret!, calculation: calc, discountAmountCents, chargedCents }
 }

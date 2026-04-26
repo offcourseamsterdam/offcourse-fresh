@@ -21,6 +21,13 @@ export async function proxy(request: NextRequest) {
     return NextResponse.rewrite(url)
   }
 
+  // ── Public partner portal ───────────────────────────────────────────────
+  // /partners/<token> is a public, locale-less route. Bypass the locale
+  // redirect so it doesn't become /en/partners/... (which doesn't exist).
+  if (pathname.startsWith('/partners/')) {
+    return NextResponse.next()
+  }
+
   // ── Locale redirect ─────────────────────────────────────────────────────
   // If no locale prefix → redirect to /en
   const match = pathname.match(LOCALE_RE)
@@ -67,19 +74,6 @@ export async function proxy(request: NextRequest) {
     }
   )
   await supabase.auth.getUser()
-
-  // ── Campaign attribution ────────────────────────────────────────────────
-  // Partner links include ?cid=<campaign_slug>. We persist it as a 30-day
-  // cookie so the checkout flow can attribute the booking to the right partner.
-  const cid = request.nextUrl.searchParams.get('cid')
-  if (cid) {
-    response.cookies.set('oc_campaign', cid, {
-      maxAge: 60 * 60 * 24 * 30, // 30 days
-      path: '/',
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-    })
-  }
 
   return response
 }

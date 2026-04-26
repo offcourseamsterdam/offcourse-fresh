@@ -10,7 +10,7 @@ import { BookingSummary } from './BookingSummary'
 import { trackEvent, getSessionId } from '@/lib/tracking/client'
 import { BOATS } from '@/lib/fareharbor/config'
 import { SESSION_BOOKING_KEY, SESSION_CONTACT_KEY } from '@/lib/constants'
-import { getErrorMessage } from '@/lib/utils'
+import { getErrorMessage, fmtEuros } from '@/lib/utils'
 import type { CustomerDetails, AvailabilitySlot, AvailabilityCustomerType } from '@/types'
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
 
@@ -36,28 +36,31 @@ interface BookingData {
   basePriceCents: number
 }
 
+interface PromoResult {
+  promoCodeId: string
+  label: string
+  discountType: 'percentage' | 'fixed_amount' | 'full'
+  discountAmountCents: number
+  newTotalCents: number
+  isFull: boolean
+}
+
 // ── Props ────────────────────────────────────────────────────────────────────
 
 interface CheckoutFlowProps {
   listingSlug: string
   cancellationPolicy?: string | null
+  initialCode?: string
   paymentMode?: 'stripe' | 'partner_invoice'
   partnerName?: string | null
 }
 
 // ── Progress indicator ───────────────────────────────────────────────────────
 
-function CheckoutProgress({ step, hidePaymentStep = false }: { step: 'details' | 'payment'; hidePaymentStep?: boolean }) {
-  const steps = hidePaymentStep
-    ? ([
-        { key: 'cruise', label: 'Cruise' },
-        { key: 'details', label: 'Details' },
-      ] as const)
-    : ([
-        { key: 'cruise', label: 'Cruise' },
-        { key: 'details', label: 'Details' },
-        { key: 'payment', label: 'Payment' },
-      ] as const)
+function CheckoutProgress({ step, hidePayment = false }: { step: 'details' | 'payment'; hidePayment?: boolean }) {
+  const steps = hidePayment
+    ? [{ key: 'cruise', label: 'Cruise' }, { key: 'details', label: 'Details' }] as const
+    : [{ key: 'cruise', label: 'Cruise' }, { key: 'details', label: 'Details' }, { key: 'payment', label: 'Payment' }] as const
 
   const activeIndex = step === 'details' ? 1 : 2
 
@@ -89,6 +92,129 @@ function CheckoutProgress({ step, hidePaymentStep = false }: { step: 'details' |
           </div>
         )
       })}
+    </div>
+  )
+}
+
+// ── Promo code input ─────────────────────────────────────────────────────────
+
+function PromoCodeInput({
+  grandTotalCents,
+  initialCode,
+  onApplied,
+  onRemoved,
+  applied,
+  required,
+}: {
+  grandTotalCents: number
+  initialCode?: string
+  onApplied: (result: PromoResult) => void
+  onRemoved: () => void
+  applied: PromoResult | null
+  required?: boolean
+}) {
+  const [open, setOpen] = useState(!!initialCode || !!required)
+  const [value, setValue] = useState(initialCode ?? '')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Auto-validate URL-provided code on mount
+  useEffect(() => {
+    if (initialCode && !applied) {
+      handleApply(initialCode)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function handleApply(code?: string) {
+    const codeToApply = (code ?? value).trim()
+    if (!codeToApply) return
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/promo/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: codeToApply, amountCents: grandTotalCents }),
+      })
+      const json = await res.json()
+      if (!json.ok) {
+        setError(json.error ?? 'Invalid code.')
+      } else {
+        onApplied(json.data)
+        setError(null)
+      }
+    } catch {
+      setError('Could not validate code. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (applied) {
+    return (
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm text-emerald-800">
+          <svg className="w-4 h-4 shrink-0 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path d="M5 13l4 4L19 7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span>
+            <span className="font-semibold">{applied.label}</span>
+            {applied.isFull
+              ? ' — your cruise is included, no payment needed'
+              : ` — ${fmtEuros(applied.discountAmountCents)} off`}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onRemoved}
+          className="text-xs text-emerald-600 hover:text-emerald-800 underline shrink-0"
+        >
+          Remove
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      {required && !applied && (
+        <p className="text-sm font-medium text-zinc-700 mb-2">Enter your booking code to proceed</p>
+      )}
+      {!open && !required ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="text-sm text-zinc-400 hover:text-zinc-600 underline underline-offset-2 transition-colors"
+        >
+          Have a promo code?
+        </button>
+      ) : (
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleApply()}
+            placeholder="XXXX-XXXX"
+            autoFocus
+            spellCheck={false}
+            autoComplete="off"
+            className={`flex-1 px-4 py-2.5 rounded-xl border text-sm uppercase tracking-widest font-mono transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20 focus:border-[var(--color-primary)] ${
+              error ? 'border-red-400' : 'border-zinc-200'
+            }`}
+          />
+          <button
+            type="button"
+            onClick={() => handleApply()}
+            disabled={loading || !value.trim()}
+            className="px-4 py-2.5 rounded-xl bg-zinc-900 text-white text-sm font-medium hover:bg-zinc-700 transition-colors disabled:opacity-40"
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Apply'}
+          </button>
+        </div>
+      )}
+      {error && <p className="text-xs text-red-500 mt-1.5">{error}</p>}
     </div>
   )
 }
@@ -156,7 +282,7 @@ function PaymentForm({
             <Loader2 className="w-4 h-4 animate-spin" /> Processing...
           </span>
         ) : (
-          `Confirm & Pay €${(amountCents / 100).toFixed(2)}`
+          `Confirm & Pay ${fmtEuros(amountCents)}`
         )}
       </button>
 
@@ -172,6 +298,7 @@ function PaymentForm({
 export function CheckoutFlow({
   listingSlug,
   cancellationPolicy,
+  initialCode,
   paymentMode = 'stripe',
   partnerName,
 }: CheckoutFlowProps) {
@@ -182,6 +309,7 @@ export function CheckoutFlow({
   const [creatingIntent, setCreatingIntent] = useState(false)
   const [submittingPartnerBooking, setSubmittingPartnerBooking] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [promoResult, setPromoResult] = useState<PromoResult | null>(null)
 
   // Load booking data from sessionStorage
   useEffect(() => {
@@ -282,12 +410,26 @@ export function CheckoutFlow({
 
   // Create PaymentIntent after guest info is submitted
   async function handleGuestInfoSubmit(details: CustomerDetails & { partnerCode?: string }) {
-    if (isPartnerInvoice) return handlePartnerInvoiceSubmit(details)
+    if (isPartnerInvoice) {
+      if (!promoResult?.isFull) {
+        setError('Please enter your booking code above to proceed.')
+        return
+      }
+      await handleFullDiscountBooking(details, 'partner_invoice')
+      return
+    }
     if (!bookingData) return
     trackEvent('view_payment', { listing: bookingData.listingSlug })
     setContact(details)
     // Persist contact for iDEAL redirect recovery (component re-mounts after bank redirect)
     sessionStorage.setItem(SESSION_CONTACT_KEY, JSON.stringify(details))
+
+    // Full-discount path: skip Stripe and book directly
+    if (promoResult?.isFull) {
+      await handleFullDiscountBooking(details)
+      return
+    }
+
     setCreatingIntent(true)
     setError(null)
 
@@ -311,6 +453,8 @@ export function CheckoutFlow({
           contact: { name: details.name, email: details.email, phone: details.phone },
           selectedExtraIds: bookingData.selectedExtraIds,
           durationMinutes: bookingData.selectedCustomerType?.durationMinutes ?? 90,
+          promoCodeId: promoResult?.promoCodeId,
+          discountAmountCents: promoResult?.discountAmountCents,
         }),
       })
 
@@ -319,6 +463,61 @@ export function CheckoutFlow({
       setClientSecret(json.data.clientSecret)
     } catch (err) {
       setError(getErrorMessage(err))
+    } finally {
+      setCreatingIntent(false)
+    }
+  }
+
+  // Full-discount: no Stripe, call book API directly
+  async function handleFullDiscountBooking(details: CustomerDetails, bookingSource: 'partner' | 'partner_invoice' = 'partner') {
+    if (!bookingData || !promoResult) return
+    setCreatingIntent(true)
+    setError(null)
+    try {
+      const customerTypeRatePk = bookingData.category === 'private'
+        ? bookingData.selectedCustomerType?.pk
+        : bookingData.selectedSlot.customerTypes[0]?.pk
+
+      const extrasTotalCents = bookingData.extrasCalculation
+        ? bookingData.extrasCalculation.line_items.reduce((s, li) => s + li.amount_cents, 0)
+        : 0
+
+      const res = await fetch('/api/booking-flow/book', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          availPk: bookingData.selectedSlot.pk,
+          customerTypeRatePk,
+          guestCount: bookingData.guests,
+          category: bookingData.category,
+          contact: details,
+          note: details.specialRequests || undefined,
+          listingId: bookingData.listingId,
+          listingTitle: bookingData.listingTitle,
+          date: bookingData.date,
+          startAt: bookingData.selectedSlot.startAt,
+          endAt: bookingData.selectedSlot.endAt,
+          amountCents: 0,
+          baseAmountCents: bookingData.basePriceCents,
+          extrasAmountCents: extrasTotalCents,
+          extrasSelected: bookingData.extrasCalculation?.line_items ?? [],
+          bookingSource,
+          promoCodeId: promoResult.promoCodeId,
+          discountAmountCents: promoResult.discountAmountCents,
+          sessionId: getSessionId(),
+        }),
+      })
+      const result = await res.json()
+      if (!result.ok) {
+        setError('Booking could not be completed. Please contact us at info@offcourseamsterdam.com')
+        return
+      }
+      trackEvent('booking_completed', { listing: bookingData.listingSlug, promo: 'full' })
+      sessionStorage.removeItem(SESSION_BOOKING_KEY)
+      sessionStorage.removeItem(SESSION_CONTACT_KEY)
+      window.location.href = `/book/${bookingData.listingSlug}/confirmation?promo=full`
+    } catch {
+      setError('Something went wrong. Please contact us at info@offcourseamsterdam.com')
     } finally {
       setCreatingIntent(false)
     }
@@ -376,6 +575,8 @@ export function CheckoutFlow({
           extrasSelected: data.extrasCalculation?.line_items ?? [],
           extrasAmountCents: extrasTotalCents,
           sessionId: getSessionId(),
+          promoCodeId: promoResult?.promoCodeId,
+          discountAmountCents: promoResult?.discountAmountCents ?? 0,
         }),
       })
 
@@ -425,9 +626,12 @@ export function CheckoutFlow({
   const extrasTotalCents = bookingData.extrasCalculation
     ? bookingData.extrasCalculation.extras_amount_cents
     : 0
-  const totalAmountCents = bookingData.basePriceCents + extrasTotalCents
+  const grossTotalCents = bookingData.basePriceCents + extrasTotalCents
+  const discountAmountCents = promoResult?.discountAmountCents ?? 0
+  const totalAmountCents = Math.max(0, grossTotalCents - discountAmountCents)
 
   const currentStep = clientSecret ? 'payment' : 'details'
+  const isFull = promoResult?.isFull ?? false
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
@@ -444,84 +648,98 @@ export function CheckoutFlow({
 
       {/* White card container */}
       <div className="bg-white rounded-2xl shadow-lg p-6 sm:p-8">
-      {/* Progress indicator */}
-      <CheckoutProgress step={currentStep} hidePaymentStep={isPartnerInvoice} />
+        {/* Progress indicator */}
+        <CheckoutProgress step={currentStep} hidePayment={isPartnerInvoice || (promoResult?.isFull ?? false)} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 lg:gap-12">
-        {/* Left column: form + payment */}
-        <div className="lg:col-span-3 overflow-hidden">
-          <AnimatePresence mode="popLayout" initial={false}>
-            {!clientSecret ? (
-              <motion.div
-                key="details"
-                initial={{ x: 0, opacity: 1 }}
-                exit={{ x: '-100%', opacity: 0 }}
-                transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
-              >
-                {isPartnerInvoice && (
-                  <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                    <strong className="block">No payment today 🤝</strong>
-                    This booking is settled with {partnerName ?? 'the partner'} — you&apos;ve already paid them at the desk.
-                  </div>
-                )}
-                <GuestInfoForm
-                  onSubmit={handleGuestInfoSubmit}
-                  loading={creatingIntent || submittingPartnerBooking}
-                  requirePartnerCode={isPartnerInvoice}
-                  partnerName={partnerName}
-                  submitLabel={isPartnerInvoice ? 'Confirm booking' : undefined}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 lg:gap-12">
+          {/* Left column: promo + form + payment */}
+          <div className="lg:col-span-3 overflow-hidden">
+
+            {/* Promo / booking code input */}
+            {!clientSecret && (
+              <div className="mb-6">
+                <PromoCodeInput
+                  grandTotalCents={grossTotalCents}
+                  initialCode={initialCode}
+                  applied={promoResult}
+                  onApplied={setPromoResult}
+                  onRemoved={() => setPromoResult(null)}
+                  required={isPartnerInvoice}
                 />
-                {error && isPartnerInvoice && (
-                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 mt-4">
-                    {error}
-                  </div>
-                )}
-              </motion.div>
-            ) : (
-              <motion.div
-                key="payment"
-                initial={{ x: '100%', opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
-              >
-                <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'stripe' } }}>
-                  <PaymentForm
-                    amountCents={totalAmountCents}
-                    onSuccess={handlePaymentSuccess}
-                    bookingData={bookingData}
-                  />
-                </Elements>
-              </motion.div>
+              </div>
             )}
-          </AnimatePresence>
 
-          {error && clientSecret && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 mt-4">
-              {error}
+            <AnimatePresence mode="popLayout" initial={false}>
+              {!clientSecret ? (
+                <motion.div
+                  key="details"
+                  initial={{ x: 0, opacity: 1 }}
+                  exit={{ x: '-100%', opacity: 0 }}
+                  transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
+                >
+                  {isPartnerInvoice && (
+                    <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                      <strong className="block">No payment today 🤝</strong>
+                      This booking is settled with {partnerName ?? 'the partner'} — you&apos;ve already paid them at the desk.
+                    </div>
+                  )}
+                  <GuestInfoForm
+                    onSubmit={handleGuestInfoSubmit}
+                    loading={creatingIntent || submittingPartnerBooking}
+                    submitLabel={isPartnerInvoice ? 'Confirm booking' : undefined}
+                  />
+                  {error && isPartnerInvoice && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 mt-4">
+                      {error}
+                    </div>
+                  )}
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="payment"
+                  initial={{ x: '100%', opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
+                >
+                  <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'stripe' } }}>
+                    <PaymentForm
+                      amountCents={totalAmountCents}
+                      onSuccess={handlePaymentSuccess}
+                      bookingData={bookingData}
+                    />
+                  </Elements>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {error && !isPartnerInvoice && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 mt-4">
+                {error}
+              </div>
+            )}
+          </div>
+
+          {/* Right column: summary */}
+          <div className="lg:col-span-2">
+            <div className="sticky top-24">
+              <BookingSummary
+                listingTitle={bookingData.listingTitle}
+                imageUrl={boatImageUrl}
+                category={bookingData.category}
+                date={bookingData.date}
+                time={bookingData.selectedSlot.startTime}
+                boatName={boatName}
+                durationMinutes={bookingData.selectedCustomerType?.durationMinutes ?? null}
+                guestCount={bookingData.guests}
+                basePriceCents={bookingData.basePriceCents}
+                extrasCalculation={bookingData.extrasCalculation}
+                cancellationPolicy={cancellationPolicy}
+                cruiseLabel={cruiseLabel}
+                discountAmountCents={discountAmountCents > 0 ? discountAmountCents : undefined}
+              />
             </div>
-          )}
-        </div>
-
-        {/* Right column: summary */}
-        <div className="lg:col-span-2">
-          <div className="sticky top-24">
-            <BookingSummary
-              listingTitle={bookingData.listingTitle}
-              imageUrl={boatImageUrl}
-              category={bookingData.category}
-              date={bookingData.date}
-              time={bookingData.selectedSlot.startTime}
-              boatName={boatName}
-              durationMinutes={bookingData.selectedCustomerType?.durationMinutes ?? null}
-              guestCount={bookingData.guests}
-              basePriceCents={bookingData.basePriceCents}
-              extrasCalculation={bookingData.extrasCalculation}
-              cancellationPolicy={cancellationPolicy}
-              cruiseLabel={cruiseLabel}
-            />
           </div>
         </div>
-      </div>
       </div>
     </div>
   )
