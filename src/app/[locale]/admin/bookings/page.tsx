@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect, useCallback, Fragment } from 'react'
-import { useParams } from 'next/navigation'
+import { useState, Fragment } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Loader2, RefreshCw, ChevronDown, ChevronUp, Plus } from 'lucide-react'
 import { BookingDetailRow } from '@/components/admin/BookingDetailRow'
 import { BOOKING_SOURCES } from '@/lib/constants'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -92,31 +93,11 @@ function TypeBadge({ source }: { source: string | null }) {
 export default function BookingsPage() {
   const params = useParams()
   const locale = params.locale as string
-  const [bookings, setBookings] = useState<Booking[] | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const router = useRouter()
+  const { data: bookings, isLoading: loading, error, refresh: fetchBookings } =
+    useAdminFetch<Booking[]>('/api/admin/bookings/local')
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
-
-  const fetchBookings = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/admin/bookings/local')
-      const json = await res.json()
-      if (json.ok) {
-        setBookings(json.data)
-      } else {
-        setError(json.error ?? 'Failed to load bookings')
-      }
-    } catch {
-      setError('Network error — please try again')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => { fetchBookings() }, [fetchBookings])
 
   function toggleRow(id: string) {
     setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
@@ -147,7 +128,7 @@ export default function BookingsPage() {
             {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
             Refresh
           </Button>
-          <Button variant="primary" size="sm" onClick={() => window.location.href = `/${locale}/admin/fareharbor`}>
+          <Button variant="primary" size="sm" onClick={() => router.push(`/${locale}/admin/fareharbor`)}>
             <Plus className="w-3.5 h-3.5" />
             New booking
           </Button>

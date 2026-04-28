@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { Loader2, Plus, RefreshCw, Copy, Check, RotateCcw } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -66,9 +67,9 @@ function fmtDate(iso: string | null): string {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function PromoCodesPage() {
-  const [codes, setCodes] = useState<PromoCode[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { data: codesData, isLoading: loading, error, refresh: fetchCodes, mutate: mutateCodes } =
+    useAdminFetch<{ codes: PromoCode[] }>('/api/admin/promo-codes')
+  const codes = codesData?.codes ?? []
 
   const [showForm, setShowForm] = useState(false)
   const [editingCode, setEditingCode] = useState<PromoCode | null>(null)
@@ -77,25 +78,6 @@ export default function PromoCodesPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
 
   const [copiedId, setCopiedId] = useState<string | null>(null)
-
-  // ── Data ──────────────────────────────────────────────────────────────────
-
-  const fetchCodes = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/admin/promo-codes')
-      const json = await res.json()
-      if (json.ok) setCodes(json.data?.codes ?? [])
-      else setError(json.error ?? 'Failed to load promo codes')
-    } catch {
-      setError('Network error — please try again')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => { fetchCodes() }, [fetchCodes])
 
   // ── Form ──────────────────────────────────────────────────────────────────
 
@@ -177,7 +159,7 @@ export default function PromoCodesPage() {
   }
 
   async function toggleActive(c: PromoCode) {
-    setCodes(prev => prev.map(x => x.id === c.id ? { ...x, is_active: !x.is_active } : x))
+    mutateCodes(prev => prev ? { codes: prev.codes.map(x => x.id === c.id ? { ...x, is_active: !x.is_active } : x) } : prev, { revalidate: false })
     try {
       const res = await fetch(`/api/admin/promo-codes/${c.id}`, {
         method: 'PATCH',
@@ -185,9 +167,9 @@ export default function PromoCodesPage() {
         body: JSON.stringify({ is_active: !c.is_active }),
       })
       const json = await res.json()
-      if (!json.ok) setCodes(prev => prev.map(x => x.id === c.id ? { ...x, is_active: c.is_active } : x))
+      if (!json.ok) mutateCodes(prev => prev ? { codes: prev.codes.map(x => x.id === c.id ? { ...x, is_active: c.is_active } : x) } : prev, { revalidate: false })
     } catch {
-      setCodes(prev => prev.map(x => x.id === c.id ? { ...x, is_active: c.is_active } : x))
+      mutateCodes(prev => prev ? { codes: prev.codes.map(x => x.id === c.id ? { ...x, is_active: c.is_active } : x) } : prev, { revalidate: false })
     }
   }
 

@@ -5,9 +5,6 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    environmentMatchGlobs: [
-      ['src/hooks/**', 'jsdom'],
-    ],
   },
   resolve: {
     alias: {
