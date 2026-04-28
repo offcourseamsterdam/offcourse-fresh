@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
+import { fmtAdminDate } from '@/lib/admin/format'
 import { Loader2, Plus, RefreshCw, Copy, Check, RotateCcw } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -57,11 +58,6 @@ function fmtDiscount(code: PromoCode): string {
   if (code.discount_type === 'fixed_amount' && code.fixed_discount_cents != null)
     return `€${(code.fixed_discount_cents / 100).toFixed(2)} off`
   return '—'
-}
-
-function fmtDate(iso: string | null): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('nl-NL', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -406,7 +402,7 @@ function CodeRow({
       </td>
 
       {/* Expires */}
-      <td className="px-4 py-3 text-zinc-500 hidden lg:table-cell text-xs">{fmtDate(c.valid_until)}</td>
+      <td className="px-4 py-3 text-zinc-500 hidden lg:table-cell text-xs">{fmtAdminDate(c.valid_until)}</td>
 
       {/* Actions */}
       <td className="px-4 py-3">
