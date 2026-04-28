@@ -1,49 +1,29 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 import type { Review, GoogleConfig } from './types'
 
+interface ReviewsData {
+  reviews: Review[]
+  config: GoogleConfig | null
+}
+
 export function useReviews() {
-  const [reviews, setReviews] = useState<Review[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { data, isLoading: loading, error, refresh: fetchReviews, mutate } =
+    useAdminFetch<ReviewsData>('/api/admin/reviews')
+
+  const reviews = data?.reviews ?? []
+  const config = data?.config ?? null
 
   // Google sync state
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<string | null>(null)
-  const [config, setConfig] = useState<GoogleConfig | null>(null)
 
   // Place search
   const [searchQuery, setSearchQuery] = useState('')
   const [searching, setSearching] = useState(false)
   const [searchResult, setSearchResult] = useState<{ placeId: string; name: string } | null>(null)
-
-  // ── Data fetching ────────────────────────────────────────────────────────────
-
-  const fetchReviews = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/admin/reviews')
-      const json = await res.json()
-      if (json.ok) {
-        setReviews(json.data?.reviews ?? [])
-        if (json.data?.config) {
-          setConfig(json.data.config)
-        }
-      } else {
-        setError(json.error ?? 'Failed to load reviews')
-      }
-    } catch {
-      setError('Network error')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchReviews()
-  }, [fetchReviews])
 
   // Handle OAuth redirect query params
   useEffect(() => {
@@ -58,6 +38,12 @@ export function useReviews() {
       window.history.replaceState({}, '', window.location.pathname)
     }
   }, [])
+
+  // ── setConfig (used by child components) ─────────────────────────────────────
+
+  function setConfig(newConfig: GoogleConfig | null) {
+    mutate(prev => prev ? { ...prev, config: newConfig } : prev, { revalidate: false })
+  }
 
   // ── Google sync ──────────────────────────────────────────────────────────────
 
@@ -109,12 +95,10 @@ export function useReviews() {
     }
   }
 
-  // ── Toggle active ────────────────────────────────────────────────────────────
+  // ── Toggle active ─────────────────────────────────────────────────────────────
 
   async function toggleActive(review: Review) {
-    setReviews(prev =>
-      prev.map(r => (r.id === review.id ? { ...r, is_active: !r.is_active } : r))
-    )
+    mutate(prev => prev ? { ...prev, reviews: prev.reviews.map(r => r.id === review.id ? { ...r, is_active: !r.is_active } : r) } : prev, { revalidate: false })
     try {
       const res = await fetch(`/api/admin/reviews/${review.id}`, {
         method: 'PATCH',
@@ -123,18 +107,14 @@ export function useReviews() {
       })
       const json = await res.json()
       if (!json.ok) {
-        setReviews(prev =>
-          prev.map(r => (r.id === review.id ? { ...r, is_active: review.is_active } : r))
-        )
+        mutate(prev => prev ? { ...prev, reviews: prev.reviews.map(r => r.id === review.id ? { ...r, is_active: review.is_active } : r) } : prev, { revalidate: false })
       }
     } catch {
-      setReviews(prev =>
-        prev.map(r => (r.id === review.id ? { ...r, is_active: review.is_active } : r))
-      )
+      mutate(prev => prev ? { ...prev, reviews: prev.reviews.map(r => r.id === review.id ? { ...r, is_active: review.is_active } : r) } : prev, { revalidate: false })
     }
   }
 
-  // ── Delete ───────────────────────────────────────────────────────────────────
+  // ── Delete ────────────────────────────────────────────────────────────────────
 
   async function handleDelete(review: Review) {
     if (!confirm(`Delete review by "${review.reviewer_name}"? This cannot be undone.`)) return
@@ -142,24 +122,20 @@ export function useReviews() {
       const res = await fetch(`/api/admin/reviews/${review.id}`, { method: 'DELETE' })
       const json = await res.json()
       if (json.ok) {
-        setReviews(prev => prev.filter(r => r.id !== review.id))
+        mutate(prev => prev ? { ...prev, reviews: prev.reviews.filter(r => r.id !== review.id) } : prev, { revalidate: false })
       }
     } catch {
       // silent
     }
   }
 
-  // ── Helpers for child hooks ──────────────────────────────────────────────────
+  // ── Helper for child hooks ────────────────────────────────────────────────────
 
-  /** Update a single review's fields in state (used by useReplyEditor) */
-  const updateReview = useCallback(
-    (id: string, fields: Partial<Review>) => {
-      setReviews(prev => prev.map(r => (r.id === id ? { ...r, ...fields } : r)))
-    },
-    []
-  )
+  function updateReview(id: string, fields: Partial<Review>) {
+    mutate(prev => prev ? { ...prev, reviews: prev.reviews.map(r => r.id === id ? { ...r, ...fields } : r) } : prev, { revalidate: false })
+  }
 
-  // ── Computed values ──────────────────────────────────────────────────────────
+  // ── Computed values ───────────────────────────────────────────────────────────
 
   const googleReviews = reviews.filter(r => r.source === 'google')
   const activeReviews = reviews.filter(r => r.is_active)
