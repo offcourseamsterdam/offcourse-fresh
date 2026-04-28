@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { ArrowLeft, Copy, ExternalLink, Loader2 } from 'lucide-react'
@@ -28,22 +29,14 @@ export default function CruiseEditPage() {
   const id = params.id as string
   const locale = (params.locale as string) ?? 'en'
 
-  const [listing, setListing] = useState<CruiseListing | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [notFound, setNotFound] = useState(false)
+  const { data: listing, isLoading: loading, mutate } =
+    useAdminFetch<CruiseListing>(id ? `/api/admin/cruise-listings/${id}` : null)
+  const notFound = !loading && !listing
   const [duplicating, setDuplicating] = useState(false)
 
-  const load = useCallback(async () => {
-    const res = await fetch(`/api/admin/cruise-listings/${id}`)
-    const json = await res.json()
-    if (json.ok) setListing(json.data)
-    else setNotFound(true)
-    setLoading(false)
-  }, [id])
-
-  useEffect(() => {
-    load()
-  }, [load])
+  function setListing(updated: CruiseListing) {
+    mutate(() => updated, { revalidate: false })
+  }
 
   async function duplicate() {
     setDuplicating(true)

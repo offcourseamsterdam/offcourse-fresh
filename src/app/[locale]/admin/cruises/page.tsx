@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -59,13 +60,15 @@ export default function AdminCruisesPage() {
   const params = useParams()
   const locale = (params.locale as string) ?? 'en'
 
-  const [fhItems, setFhItems] = useState<FHItem[] | null>(null)
-  const [loadingItems, setLoadingItems] = useState(false)
+  const { data: itemsData, isLoading: loadingItems, refresh: refreshItems } =
+    useAdminFetch<{ data: FHItem[] }>('/api/admin/fareharbor-test?action=supabase-items')
+  const fhItems = itemsData?.data ?? null
+
+  const { data: listingsData, isLoading: loadingListings, mutate: mutateListings } =
+    useAdminFetch<{ data: CruiseListing[] }>('/api/admin/fareharbor-test?action=listings')
+  const listings = listingsData?.data ?? null
+
   const [syncing, setSyncing] = useState(false)
-
-  const [listings, setListings] = useState<CruiseListing[] | null>(null)
-  const [loadingListings, setLoadingListings] = useState(false)
-
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -79,43 +82,14 @@ export default function AdminCruisesPage() {
     availability_filters: '{}',
   })
 
-  useEffect(() => {
-    loadItems()
-    loadListings()
-  }, [])
-
-  async function loadItems() {
-    setLoadingItems(true)
-    try {
-      const res = await fetch('/api/admin/fareharbor-test?action=supabase-items')
-      const json = await res.json()
-      if (json.ok) setFhItems(json.data?.data ?? [])
-      else setFhItems([])
-    } finally {
-      setLoadingItems(false)
-    }
-  }
-
   async function syncItems() {
     setSyncing(true)
     try {
       const res = await fetch('/api/admin/fareharbor-test?action=sync-items')
       const json = await res.json()
-      if (json.ok) setFhItems(json.data?.data ?? [])
+      if (json.ok) refreshItems()
     } finally {
       setSyncing(false)
-    }
-  }
-
-  async function loadListings() {
-    setLoadingListings(true)
-    try {
-      const res = await fetch('/api/admin/fareharbor-test?action=listings')
-      const json = await res.json()
-      if (json.ok) setListings(json.data?.data ?? [])
-      else setListings([])
-    } finally {
-      setLoadingListings(false)
     }
   }
 
@@ -153,8 +127,7 @@ export default function AdminCruisesPage() {
   const selectedFhItem = fhItems?.find(i => i.fareharbor_pk === form.fareharbor_item_pk)
 
   async function toggleListingField(id: string, field: 'is_published' | 'is_featured', value: boolean) {
-    // Optimistic update
-    setListings(prev => prev?.map(l => l.id === id ? { ...l, [field]: value } : l) ?? prev)
+    mutateListings(prev => prev ? { data: prev.data.map(l => l.id === id ? { ...l, [field]: value } : l) } : prev, { revalidate: false })
     await fetch(`/api/admin/cruise-listings/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
