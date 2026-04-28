@@ -9,37 +9,7 @@ import { BookingDetailRow } from '@/components/admin/BookingDetailRow'
 import { BOOKING_SOURCES } from '@/lib/constants'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { fmtAdminDate, fmtAdminTime, fmtAdminAmountRounded } from '@/lib/admin/format'
-
-// ── Types ──────────────────────────────────────────────────────────────────
-
-interface Booking {
-  id: string
-  created_at: string
-  booking_uuid: string | null
-  listing_id: string | null
-  customer_name: string | null
-  customer_email: string | null
-  customer_phone: string | null
-  tour_item_name: string | null
-  listing_title: string | null
-  start_time: string | null
-  end_time: string | null
-  booking_date: string | null
-  guest_count: number | null
-  category: string | null
-  stripe_payment_intent_id: string | null
-  stripe_amount: number | null
-  status: string | null
-  guest_note: string | null
-  booking_source: string | null
-  deposit_amount_cents: number | null
-  extras_selected: Array<{ name: string; amount_cents: number; category?: string }> | null
-  base_amount_cents: number | null
-  extras_amount_cents: number | null
-  base_vat_amount_cents: number | null
-  extras_vat_amount_cents: number | null
-  total_vat_amount_cents: number | null
-}
+import type { AdminBooking } from '@/lib/admin/types'
 
 type SourceFilter = 'all' | 'website' | 'internal'
 
@@ -77,7 +47,7 @@ export default function BookingsPage() {
   const locale = params.locale as string
   const router = useRouter()
   const { data: bookings, isLoading: loading, error, refresh: fetchBookings } =
-    useAdminFetch<Booking[]>('/api/admin/bookings/local')
+    useAdminFetch<AdminBooking[]>('/api/admin/bookings/local')
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
 

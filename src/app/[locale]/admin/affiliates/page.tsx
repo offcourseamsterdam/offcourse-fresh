@@ -3,20 +3,10 @@
 import { useState } from 'react'
 import { Loader2, Handshake, ExternalLink, Plus } from 'lucide-react'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
+import type { AdminPartner } from '@/lib/admin/types'
 import { PeriodSelector, getDateRange, type PeriodKey } from '@/components/admin/tracking/PeriodSelector'
 import { PartnerModal } from '@/components/admin/tracking/PartnerModal'
 
-interface Partner {
-  id: string
-  name: string
-  email: string | null
-  is_active: boolean
-  active_links?: number
-  total_clicks?: number
-  total_bookings?: number
-  revenue_eur?: number
-  commission_eur?: number
-}
 
 export default function PartnersPage() {
   const [period, setPeriod] = useState<PeriodKey>('30d')
@@ -25,7 +15,7 @@ export default function PartnersPage() {
 
   const trackingParams = new URLSearchParams({ from: dateRange.from, to: dateRange.to })
   const { data: partnersData, isLoading: loading, refresh } =
-    useAdminFetch<Partner[]>(`/api/admin/tracking/partners?${trackingParams}`)
+    useAdminFetch<AdminPartner[]>(`/api/admin/tracking/partners?${trackingParams}`)
   const partners = partnersData ?? []
 
   return (

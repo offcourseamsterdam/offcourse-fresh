@@ -4,25 +4,9 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { fmtAdminDate } from '@/lib/admin/format'
+import type { AdminAdminPromoCode } from '@/lib/admin/types'
 import { Loader2, Plus, RefreshCw, Copy, Check, RotateCcw } from 'lucide-react'
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface PromoCode {
-  id: string
-  code: string
-  label: string
-  discount_type: 'percentage' | 'fixed_amount' | 'full'
-  discount_value: number | null
-  fixed_discount_cents: number | null
-  max_uses: number | null
-  uses_count: number
-  valid_from: string | null
-  valid_until: string | null
-  is_active: boolean
-  notes: string | null
-  created_at: string
-}
 
 interface FormState {
   label: string
@@ -52,7 +36,7 @@ function blankForm(): FormState {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function fmtDiscount(code: PromoCode): string {
+function fmtDiscount(code: AdminPromoCode): string {
   if (code.discount_type === 'full') return '100% off (free)'
   if (code.discount_type === 'percentage') return `${code.discount_value}% off`
   if (code.discount_type === 'fixed_amount' && code.fixed_discount_cents != null)
@@ -62,13 +46,13 @@ function fmtDiscount(code: PromoCode): string {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function PromoCodesPage() {
+export default function AdminPromoCodesPage() {
   const { data: codesData, isLoading: loading, error, refresh: fetchCodes, mutate: mutateCodes } =
-    useAdminFetch<{ codes: PromoCode[] }>('/api/admin/promo-codes')
+    useAdminFetch<{ codes: AdminPromoCode[] }>('/api/admin/promo-codes')
   const codes = codesData?.codes ?? []
 
   const [showForm, setShowForm] = useState(false)
-  const [editingCode, setEditingCode] = useState<PromoCode | null>(null)
+  const [editingCode, setEditingCode] = useState<AdminPromoCode | null>(null)
   const [form, setForm] = useState<FormState>(blankForm())
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -84,7 +68,7 @@ export default function PromoCodesPage() {
     setShowForm(true)
   }
 
-  function openEdit(c: PromoCode) {
+  function openEdit(c: AdminPromoCode) {
     setEditingCode(c)
     setForm({
       label: c.label,
@@ -154,7 +138,7 @@ export default function PromoCodesPage() {
     }
   }
 
-  async function toggleActive(c: PromoCode) {
+  async function toggleActive(c: AdminPromoCode) {
     mutateCodes(prev => prev ? { codes: prev.codes.map(x => x.id === c.id ? { ...x, is_active: !x.is_active } : x) } : prev, { revalidate: false })
     try {
       const res = await fetch(`/api/admin/promo-codes/${c.id}`, {
@@ -169,7 +153,7 @@ export default function PromoCodesPage() {
     }
   }
 
-  async function copyCode(c: PromoCode) {
+  async function copyCode(c: AdminPromoCode) {
     await navigator.clipboard.writeText(c.code)
     setCopiedId(c.id)
     setTimeout(() => setCopiedId(null), 2000)
@@ -290,11 +274,11 @@ function CodesTable({
   onEdit,
   onToggleActive,
 }: {
-  codes: PromoCode[]
+  codes: AdminPromoCode[]
   copiedId: string | null
-  onCopy: (c: PromoCode) => void
-  onEdit: (c: PromoCode) => void
-  onToggleActive: (c: PromoCode) => void
+  onCopy: (c: AdminPromoCode) => void
+  onEdit: (c: AdminPromoCode) => void
+  onToggleActive: (c: AdminPromoCode) => void
 }) {
   return (
     <div className="bg-white rounded-2xl border border-zinc-200 overflow-hidden">
@@ -335,11 +319,11 @@ function CodeRow({
   onEdit,
   onToggleActive,
 }: {
-  code: PromoCode
+  code: AdminPromoCode
   copiedId: string | null
-  onCopy: (c: PromoCode) => void
-  onEdit: (c: PromoCode) => void
-  onToggleActive: (c: PromoCode) => void
+  onCopy: (c: AdminPromoCode) => void
+  onEdit: (c: AdminPromoCode) => void
+  onToggleActive: (c: AdminPromoCode) => void
 }) {
   const usagePct = c.max_uses ? Math.min(100, Math.round((c.uses_count / c.max_uses) * 100)) : null
 
@@ -441,7 +425,7 @@ function PromoFormModal({
   saving,
   saveError,
 }: {
-  editingCode: PromoCode | null
+  editingCode: AdminPromoCode | null
   form: FormState
   onChange: (f: FormState) => void
   onSave: () => void
