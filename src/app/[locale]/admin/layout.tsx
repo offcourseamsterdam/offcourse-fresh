@@ -1,6 +1,7 @@
 import ProtectedLayout from '@/components/auth/ProtectedLayout'
 import DashboardSidebar from '@/components/layout/DashboardSidebar'
 import type { NavSection } from '@/components/layout/DashboardSidebar'
+import { AdminDataPreloader } from '@/components/admin/AdminDataPreloader'
 
 interface Props {
   children: React.ReactNode
@@ -65,6 +66,7 @@ export default async function AdminLayout({ children, params }: Props) {
     <ProtectedLayout allowedRoles={['admin']} locale={locale}>
       {(profile) => (
         <div data-admin className="flex min-h-screen bg-zinc-50 font-sans">
+          <AdminDataPreloader />
           <DashboardSidebar locale={locale} profile={profile} portalName="Admin Panel" navSections={navSections} />
           <main className="flex-1 overflow-auto">{children}</main>
         </div>
