@@ -71,6 +71,7 @@ export default function BookingsPage() {
           <div className="flex items-center gap-6 text-sm text-zinc-500">
             <span><span className="font-semibold text-zinc-900">{bookings.length}</span> total</span>
             <span><span className="font-semibold text-emerald-700">{confirmed}</span> confirmed</span>
+            {/* Rounded for at-a-glance; detail rows use 2-decimal fmtAdminAmount */}
             <span className="font-semibold text-zinc-900">{fmtAdminAmountRounded(totalRevenue)}</span>
           </div>
           <div className="flex items-center gap-1.5">

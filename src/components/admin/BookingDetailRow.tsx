@@ -165,6 +165,7 @@ export function BookingDetailRow({
                     <span className="text-zinc-500">{fmtAdminAmount(totalVatAmountCents)}</span>
                   </div>
                 )}
+                {/* 2-decimal precision intentional: financial breakdown must show exact cents */}
                 <div className="flex justify-between font-semibold border-t border-zinc-200 pt-1 mt-1">
                   <span className="text-zinc-900">Total charged</span>
                   <span className="text-zinc-900">{grandTotal != null ? fmtAdminAmount(grandTotal) : '—'}</span>
