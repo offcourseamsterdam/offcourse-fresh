@@ -8,6 +8,7 @@ import { TimeSlotStep } from '@/components/admin/fareharbor/TimeSlotStep'
 import { GuestInfoStep } from '@/components/admin/fareharbor/GuestInfoStep'
 import { ExtrasStepPanel } from '@/components/admin/fareharbor/ExtrasStepPanel'
 import { PaymentStep } from '@/components/admin/fareharbor/PaymentStep'
+import { PaymentLinkStep } from '@/components/admin/fareharbor/PaymentLinkStep'
 import { ConfirmationStep } from '@/components/admin/fareharbor/ConfirmationStep'
 import type { Listing, Slot, Rate, Contact, PendingBooking } from '@/components/admin/fareharbor/types'
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
@@ -63,6 +64,7 @@ export default function BookingFlowPage() {
   const [bookingError, setBookingError] = useState<string | null>(null)
   const [bookingLoading, setBookingLoading] = useState(false)
   const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null)
+  const [paymentLinkUrl, setPaymentLinkUrl] = useState<string | null>(null)
 
   const isInternal = bookingSource !== 'website'
 
@@ -130,6 +132,12 @@ export default function BookingFlowPage() {
   async function handleExtrasContinue(selectedExtraIds: string[], calculation: ExtrasCalculation) {
     if (!selectedSlot || !selectedRate || !selectedListing) return
     setExtrasStep({ selectedExtraIds, calculation })
+
+    if (bookingSource === 'payment_link') {
+      // Payment link booking: show price step, we'll create FH booking + Stripe session there
+      setStep(5)
+      return
+    }
 
     if (isInternal) {
       // Internal booking: skip Stripe, go straight to deposit step (or confirm for comp)
@@ -343,6 +351,7 @@ export default function BookingFlowPage() {
     setBooking(null)
     setBookingError(null)
     setPaymentIntentId(null)
+    setPaymentLinkUrl(null)
     setBookingSource('website')
     setDepositAmountCents(0)
     setDepositInput('0')
@@ -446,8 +455,27 @@ export default function BookingFlowPage() {
         />
       )}
 
+      {/* Step 5 — Payment link: set price + create FH booking + send link */}
+      {step === 5 && bookingSource === 'payment_link' && selectedListing && selectedSlot && selectedRate && (
+        <PaymentLinkStep
+          listing={selectedListing}
+          slot={selectedSlot}
+          rate={selectedRate}
+          guestCount={guestCount}
+          contact={contact}
+          date={date}
+          extrasCalculation={extrasStep?.calculation ?? null}
+          onBack={() => setStep(4)}
+          onSuccess={(bookingId, paymentUrl) => {
+            setPaymentLinkUrl(paymentUrl)
+            setBooking({ id: bookingId })
+            setStep(6)
+          }}
+        />
+      )}
+
       {/* Step 5 — Internal: deposit amount + confirm */}
-      {step === 5 && isInternal && (
+      {step === 5 && isInternal && bookingSource !== 'payment_link' && (
         <div className="space-y-6">
           <div className="rounded-lg border border-zinc-200 bg-white p-6 space-y-4">
             <h3 className="font-semibold text-zinc-900">Confirm internal booking</h3>
@@ -524,6 +552,7 @@ export default function BookingFlowPage() {
           bookingError={bookingError}
           booking={booking}
           paymentIntentId={paymentIntentId}
+          paymentLinkUrl={paymentLinkUrl}
           onReset={reset}
         />
       )}

@@ -9,6 +9,7 @@ interface ConfirmationStepProps {
   bookingError: string | null
   booking: unknown
   paymentIntentId: string | null
+  paymentLinkUrl?: string | null
   onReset: () => void
 }
 
@@ -17,6 +18,7 @@ export function ConfirmationStep({
   bookingError,
   booking,
   paymentIntentId,
+  paymentLinkUrl,
   onReset,
 }: ConfirmationStepProps) {
   return (
@@ -52,7 +54,9 @@ export function ConfirmationStep({
               <div className="w-6 h-6 rounded-full bg-emerald-600 flex items-center justify-center">
                 <Check className="w-3.5 h-3.5 text-white" />
               </div>
-              <CardTitle className="text-sm text-emerald-900">Booking confirmed!</CardTitle>
+              <CardTitle className="text-sm text-emerald-900">
+                {paymentLinkUrl ? 'Betaallink verstuurd!' : 'Booking confirmed!'}
+              </CardTitle>
             </div>
             {paymentIntentId && (
               <CardDescription className="text-xs text-emerald-700 mt-1">
@@ -60,11 +64,31 @@ export function ConfirmationStep({
               </CardDescription>
             )}
           </CardHeader>
-          <CardContent>
-            <pre className="text-xs bg-white border border-emerald-100 rounded-lg p-4 overflow-auto max-h-80 text-zinc-700 whitespace-pre-wrap">
-              {JSON.stringify(booking, null, 2)}
-            </pre>
-            <Button variant="outline" size="sm" onClick={onReset} className="mt-4">
+          <CardContent className="space-y-4">
+            {paymentLinkUrl && (
+              <div className="space-y-2">
+                <p className="text-xs text-emerald-700">Klant ontvangt betaallink per email. Link voor je eigen referentie:</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    readOnly
+                    value={paymentLinkUrl}
+                    className="flex-1 rounded border border-emerald-200 bg-white px-3 py-1.5 text-xs font-mono text-zinc-700 select-all min-w-0"
+                  />
+                  <button
+                    onClick={() => navigator.clipboard.writeText(paymentLinkUrl)}
+                    className="shrink-0 px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 transition-colors"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+            )}
+            {!paymentLinkUrl && (
+              <pre className="text-xs bg-white border border-emerald-100 rounded-lg p-4 overflow-auto max-h-80 text-zinc-700 whitespace-pre-wrap">
+                {JSON.stringify(booking, null, 2)}
+              </pre>
+            )}
+            <Button variant="outline" size="sm" onClick={onReset}>
               Start new booking
             </Button>
           </CardContent>
