@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Loader2, CalendarDays } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { fmtAdminTime } from '@/lib/admin/format'
 
 interface Slot {
   pk: number
@@ -21,12 +22,6 @@ export interface RescheduleBookingModalProps {
   cruiseTitle: string | null
   onClose: () => void
   onSuccess: () => void
-}
-
-function fmtTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('nl-NL', {
-    hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam',
-  })
 }
 
 export function RescheduleBookingModal({
@@ -89,7 +84,7 @@ export function RescheduleBookingModal({
           start_at: s.start_at,
           end_at: s.end_at,
           customer_type_rate_pk: s.customer_type_rates[0].pk,
-          label: `${fmtTime(s.start_at)} – ${fmtTime(s.end_at)}`,
+          label: `${fmtAdminTime(s.start_at)} – ${fmtAdminTime(s.end_at)}`,
         }))
 
       setSlots(parsed)
@@ -147,7 +142,7 @@ export function RescheduleBookingModal({
           <p className="text-zinc-500">{cruiseTitle ?? '—'}</p>
           <p className="text-zinc-400">
             Currently: {currentDate ?? '—'}
-            {currentStartAt ? ` at ${fmtTime(currentStartAt)}` : ''}
+            {currentStartAt ? ` at ${fmtAdminTime(currentStartAt)}` : ''}
           </p>
         </div>
 
