@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Pencil, Ban, CalendarDays } from 'lucide-react'
 import { BOOKING_SOURCES, EXTRAS_CATEGORIES } from '@/lib/constants'
+import { fmtAdminAmount } from '@/lib/admin/format'
 import type { BookingSource } from '@/lib/constants'
 import { CancelBookingModal } from '@/components/admin/booking-actions/CancelBookingModal'
 import { EditBookingModal } from '@/components/admin/booking-actions/EditBookingModal'
@@ -41,10 +42,6 @@ interface BookingDetailRowProps {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-
-function fmtEur(cents: number) {
-  return `€${(cents / 100).toFixed(2)}`
-}
 
 function sourceLabel(source: string | null) {
   if (!source) return 'Website'
@@ -149,7 +146,7 @@ export function BookingDetailRow({
                     <div key={i} className="flex justify-between text-sm">
                       <span className="text-zinc-700">{item.name}</span>
                       <span className={`font-medium ${isInternal ? 'text-zinc-400' : 'text-zinc-900'}`}>
-                        {isInternal ? <span className="line-through text-zinc-300">{fmtEur(item.amount_cents)}</span> : fmtEur(item.amount_cents)}
+                        {isInternal ? <span className="line-through text-zinc-300">{fmtAdminAmount(item.amount_cents)}</span> : fmtAdminAmount(item.amount_cents)}
                       </span>
                     </div>
                   ))}
@@ -158,7 +155,7 @@ export function BookingDetailRow({
               {uncategorized.length > 0 && uncategorized.map((item, i) => (
                 <div key={i} className="flex justify-between text-sm">
                   <span className="text-zinc-700">{item.name}</span>
-                  <span className="font-medium text-zinc-900">{fmtEur(item.amount_cents)}</span>
+                  <span className="font-medium text-zinc-900">{fmtAdminAmount(item.amount_cents)}</span>
                 </div>
               ))}
             </div>
@@ -176,24 +173,24 @@ export function BookingDetailRow({
                 {baseAmountCents != null && (
                   <div className="flex justify-between">
                     <span className="text-zinc-500">Base</span>
-                    <span className="text-zinc-900">{fmtEur(baseAmountCents)}</span>
+                    <span className="text-zinc-900">{fmtAdminAmount(baseAmountCents)}</span>
                   </div>
                 )}
                 {extrasAmountCents != null && extrasAmountCents > 0 && (
                   <div className="flex justify-between">
                     <span className="text-zinc-500">Extras</span>
-                    <span className="text-zinc-900">{fmtEur(extrasAmountCents)}</span>
+                    <span className="text-zinc-900">{fmtAdminAmount(extrasAmountCents)}</span>
                   </div>
                 )}
                 {totalVatAmountCents != null && totalVatAmountCents > 0 && (
                   <div className="flex justify-between">
                     <span className="text-zinc-500">VAT (incl.)</span>
-                    <span className="text-zinc-500">{fmtEur(totalVatAmountCents)}</span>
+                    <span className="text-zinc-500">{fmtAdminAmount(totalVatAmountCents)}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-semibold border-t border-zinc-200 pt-1 mt-1">
                   <span className="text-zinc-900">Total charged</span>
-                  <span className="text-zinc-900">{grandTotal != null ? fmtEur(grandTotal) : '—'}</span>
+                  <span className="text-zinc-900">{grandTotal != null ? fmtAdminAmount(grandTotal) : '—'}</span>
                 </div>
               </>
             )}
@@ -202,13 +199,13 @@ export function BookingDetailRow({
                 <div className="flex justify-between">
                   <span className="text-zinc-500">Platform deposit</span>
                   <span className="text-zinc-900 font-semibold">
-                    {depositAmountCents != null ? fmtEur(depositAmountCents) : '€0'}
+                    {depositAmountCents != null && depositAmountCents > 0 ? fmtAdminAmount(depositAmountCents) : '€0'}
                   </span>
                 </div>
                 {baseAmountCents != null && (
                   <div className="flex justify-between text-zinc-400">
                     <span>Cruise value</span>
-                    <span className="line-through">{fmtEur(baseAmountCents)}</span>
+                    <span className="line-through">{fmtAdminAmount(baseAmountCents)}</span>
                   </div>
                 )}
                 <p className="text-xs text-zinc-400 mt-2">No Stripe charge — internal booking</p>
