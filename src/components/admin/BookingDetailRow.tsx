@@ -1,7 +1,12 @@
 'use client'
 
+import { useState } from 'react'
+import { Pencil, Ban, CalendarDays } from 'lucide-react'
 import { BOOKING_SOURCES, EXTRAS_CATEGORIES } from '@/lib/constants'
 import type { BookingSource } from '@/lib/constants'
+import { CancelBookingModal } from '@/components/admin/booking-actions/CancelBookingModal'
+import { EditBookingModal } from '@/components/admin/booking-actions/EditBookingModal'
+import { RescheduleBookingModal } from '@/components/admin/booking-actions/RescheduleBookingModal'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -12,6 +17,15 @@ interface ExtraLineItem {
 }
 
 interface BookingDetailRowProps {
+  bookingId: string
+  bookingUuid: string | null
+  listingId: string | null
+  status: string | null
+  stripePaymentIntentId: string | null
+  bookingDate: string | null
+  startTime: string | null
+  listingTitle: string | null
+  onRefresh: () => void
   customerName: string | null
   customerEmail: string | null
   customerPhone: string | null
@@ -57,6 +71,15 @@ function SourceBadge({ source }: { source: string | null }) {
 // ── Component ──────────────────────────────────────────────────────────────
 
 export function BookingDetailRow({
+  bookingId,
+  bookingUuid,
+  listingId,
+  status,
+  stripePaymentIntentId: _stripePaymentIntentId,
+  bookingDate,
+  startTime,
+  listingTitle,
+  onRefresh,
   customerName,
   customerEmail,
   customerPhone,
@@ -70,7 +93,13 @@ export function BookingDetailRow({
   bookingSource,
   className = '',
 }: BookingDetailRowProps) {
+  const [showCancel, setShowCancel] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
+  const [showReschedule, setShowReschedule] = useState(false)
+
+  const isCancelled = status === 'cancelled'
   const isInternal = bookingSource && bookingSource !== 'website'
+  const isWebsiteBooking = !bookingSource || bookingSource === 'website'
   const extras = (extrasSelected ?? []) as ExtraLineItem[]
 
   // Group extras by category
@@ -189,6 +218,71 @@ export function BookingDetailRow({
         </div>
 
       </div>
+
+      {/* Action buttons — only for non-cancelled bookings */}
+      {!isCancelled && (
+        <div className="flex items-center gap-2 pt-3 border-t border-zinc-100 mt-4">
+          <button
+            onClick={() => setShowEdit(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-600 hover:bg-zinc-100 transition-colors"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+            Edit details
+          </button>
+          <button
+            onClick={() => setShowReschedule(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-blue-600 hover:bg-blue-50 transition-colors"
+          >
+            <CalendarDays className="w-3.5 h-3.5" />
+            Reschedule
+          </button>
+          <button
+            onClick={() => setShowCancel(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
+          >
+            <Ban className="w-3.5 h-3.5" />
+            Cancel booking
+          </button>
+        </div>
+      )}
+
+      {showCancel && (
+        <CancelBookingModal
+          bookingId={bookingId}
+          guestName={customerName}
+          cruiseTitle={listingTitle}
+          bookingDate={bookingDate}
+          isWebsiteBooking={isWebsiteBooking}
+          totalAmountCents={stripeAmount}
+          onClose={() => setShowCancel(false)}
+          onSuccess={() => { setShowCancel(false); onRefresh() }}
+        />
+      )}
+      {showEdit && (
+        <EditBookingModal
+          bookingId={bookingId}
+          initialName={customerName}
+          initialEmail={customerEmail}
+          initialPhone={customerPhone}
+          initialNote={guestNote}
+          isInternalBooking={!!isInternal}
+          initialDepositCents={depositAmountCents}
+          onClose={() => setShowEdit(false)}
+          onSuccess={() => { setShowEdit(false); onRefresh() }}
+        />
+      )}
+      {showReschedule && (
+        <RescheduleBookingModal
+          bookingId={bookingId}
+          listingId={listingId}
+          currentDate={bookingDate}
+          currentStartAt={startTime}
+          guestName={customerName}
+          cruiseTitle={listingTitle}
+          onClose={() => setShowReschedule(false)}
+          onSuccess={() => { setShowReschedule(false); onRefresh() }}
+        />
+      )}
     </div>
   )
 }
