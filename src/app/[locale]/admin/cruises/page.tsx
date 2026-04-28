@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
+import { fmtAdminDatetime } from '@/lib/admin/format'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -48,10 +49,6 @@ interface NewListing {
 }
 
 // ── Helpers ────────────────────────────────────────────
-
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleString('nl-NL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-}
 
 // ── Page ───────────────────────────────────────────────
 
@@ -503,7 +500,7 @@ function ItemRow({ item }: { item: FHItem }) {
             )}
           </div>
           {item.last_synced_at && (
-            <p className="col-span-2 text-xs text-zinc-400">Last synced: {fmtDate(item.last_synced_at)}</p>
+            <p className="col-span-2 text-xs text-zinc-400">Last synced: {fmtAdminDatetime(item.last_synced_at)}</p>
           )}
         </div>
       )}
