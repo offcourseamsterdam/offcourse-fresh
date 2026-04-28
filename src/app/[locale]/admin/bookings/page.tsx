@@ -2,10 +2,10 @@
 
 import { useState, Fragment } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Loader2, RefreshCw, ChevronDown, ChevronUp, Plus } from 'lucide-react'
 import { BookingDetailRow } from '@/components/admin/BookingDetailRow'
+import { BookingStatusBadge } from '@/components/admin/BookingStatusBadge'
 import { BOOKING_SOURCES } from '@/lib/constants'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { fmtAdminDate, fmtAdminTime, fmtAdminAmountRounded } from '@/lib/admin/format'
@@ -14,14 +14,6 @@ import type { AdminBooking } from '@/lib/admin/types'
 type SourceFilter = 'all' | 'website' | 'internal'
 
 
-function StatusBadge({ status }: { status: string | null }) {
-  const map: Record<string, 'success' | 'destructive' | 'secondary'> = {
-    confirmed: 'success',
-    cancelled: 'destructive',
-    booked: 'success',
-  }
-  return <Badge variant={map[status ?? ''] ?? 'secondary'}>{status ?? '—'}</Badge>
-}
 
 function TypeBadge({ source }: { source: string | null }) {
   const isInternal = source && source !== 'website'
@@ -186,7 +178,7 @@ export default function BookingsPage() {
                         }
                       </td>
                       <td className="px-4 py-3"><TypeBadge source={b.booking_source} /></td>
-                      <td className="px-4 py-3"><StatusBadge status={b.status} /></td>
+                      <td className="px-4 py-3"><BookingStatusBadge status={b.status} /></td>
                       <td className="px-4 py-3 text-zinc-400 text-xs font-mono">
                         {b.stripe_payment_intent_id
                           ? <span title={b.stripe_payment_intent_id}>{b.stripe_payment_intent_id.slice(0, 10)}…</span>
