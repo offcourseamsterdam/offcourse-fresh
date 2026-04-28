@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Loader2, RefreshCw, ChevronDown, ChevronUp, Plus } from 'lucide-react'
 import { BookingDetailRow } from '@/components/admin/BookingDetailRow'
 import { BookingStatusBadge } from '@/components/admin/BookingStatusBadge'
-import { BOOKING_SOURCES } from '@/lib/constants'
+import { BookingSourceBadge } from '@/components/admin/BookingSourceBadge'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { fmtAdminDate, fmtAdminTime, fmtAdminAmountRounded } from '@/lib/admin/format'
 import type { AdminBooking } from '@/lib/admin/types'
@@ -14,23 +14,6 @@ import type { AdminBooking } from '@/lib/admin/types'
 type SourceFilter = 'all' | 'website' | 'internal'
 
 
-
-function TypeBadge({ source }: { source: string | null }) {
-  const isInternal = source && source !== 'website'
-  if (!isInternal) return <span className="text-xs text-zinc-400">Regular</span>
-  const label = BOOKING_SOURCES.find(s => s.value === source)?.label ?? source
-  const colorMap: Record<string, string> = {
-    complimentary: 'bg-purple-100 text-purple-700',
-    withlocals: 'bg-blue-100 text-blue-700',
-    clickandboat: 'bg-sky-100 text-sky-700',
-  }
-  const color = colorMap[source] ?? 'bg-zinc-100 text-zinc-600'
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${color}`}>
-      {label}
-    </span>
-  )
-}
 
 // ── Page ───────────────────────────────────────────────────────────────────
 
@@ -177,7 +160,7 @@ export default function BookingsPage() {
                           : fmtAdminAmountRounded(b.stripe_amount)
                         }
                       </td>
-                      <td className="px-4 py-3"><TypeBadge source={b.booking_source} /></td>
+                      <td className="px-4 py-3"><BookingSourceBadge source={b.booking_source} /></td>
                       <td className="px-4 py-3"><BookingStatusBadge status={b.status} /></td>
                       <td className="px-4 py-3 text-zinc-400 text-xs font-mono">
                         {b.stripe_payment_intent_id

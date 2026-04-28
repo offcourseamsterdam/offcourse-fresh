@@ -2,8 +2,9 @@
 
 import { useState } from 'react'
 import { Pencil, Ban, CalendarDays } from 'lucide-react'
-import { BOOKING_SOURCES, EXTRAS_CATEGORIES } from '@/lib/constants'
+import { EXTRAS_CATEGORIES } from '@/lib/constants'
 import { fmtAdminAmount } from '@/lib/admin/format'
+import { BookingSourceBadge } from '@/components/admin/BookingSourceBadge'
 import type { BookingSource } from '@/lib/constants'
 import { CancelBookingModal } from '@/components/admin/booking-actions/CancelBookingModal'
 import { EditBookingModal } from '@/components/admin/booking-actions/EditBookingModal'
@@ -39,30 +40,6 @@ interface BookingDetailRowProps {
   extrasSelected: ExtraLineItem[] | null
   bookingSource: string | null
   className?: string
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-function sourceLabel(source: string | null) {
-  if (!source) return 'Website'
-  return BOOKING_SOURCES.find(s => s.value === source)?.label ?? source
-}
-
-function SourceBadge({ source }: { source: string | null }) {
-  const isInternal = source && source !== 'website'
-  if (!isInternal) return null
-  const label = sourceLabel(source)
-  const colorMap: Record<string, string> = {
-    complimentary: 'bg-purple-100 text-purple-700',
-    withlocals: 'bg-blue-100 text-blue-700',
-    clickandboat: 'bg-sky-100 text-sky-700',
-  }
-  const color = colorMap[source] ?? 'bg-zinc-100 text-zinc-600'
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${color}`}>
-      {label}
-    </span>
-  )
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -127,7 +104,7 @@ export function BookingDetailRow({
           )}
           {isInternal && (
             <div className="mt-2">
-              <SourceBadge source={bookingSource} />
+              <BookingSourceBadge source={bookingSource} hideIfWebsite />
             </div>
           )}
         </div>
