@@ -8,6 +8,7 @@ import { BookingDetailRow } from '@/components/admin/BookingDetailRow'
 import { BookingStatusBadge } from '@/components/admin/BookingStatusBadge'
 import { BookingSourceBadge } from '@/components/admin/BookingSourceBadge'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
+import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { fmtAdminDate, fmtAdminTime, fmtAdminAmountRounded } from '@/lib/admin/format'
 import type { AdminBooking } from '@/lib/admin/types'
 
@@ -62,12 +63,7 @@ export default function BookingsPage() {
         </div>
       </div>
 
-      {/* Error */}
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
+      <AdminErrorBanner error={error} />
 
       {/* Summary + filter */}
       {bookings && bookings.length > 0 && (

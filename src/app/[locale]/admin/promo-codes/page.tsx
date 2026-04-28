@@ -7,6 +7,7 @@ import { Loader2, Plus, RefreshCw } from 'lucide-react'
 import type { AdminPromoCode } from '@/lib/admin/types'
 import { CodesTable } from './CodesTable'
 import { PromoCodeFormModal, blankForm, type FormState } from './PromoCodeFormModal'
+import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 
 export default function AdminPromoCodesPage() {
   const { data: codesData, isLoading: loading, error, refresh: fetchCodes, mutate: mutateCodes } =
@@ -143,12 +144,7 @@ export default function AdminPromoCodesPage() {
         </div>
       </div>
 
-      {/* Error */}
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
+      <AdminErrorBanner error={error} />
 
       {/* Loading */}
       {loading && codes.length === 0 && (

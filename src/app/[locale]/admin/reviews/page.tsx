@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { ReviewItem } from '@/components/admin/ReviewItem'
 import { GoogleConfigBar } from '@/components/admin/GoogleConfigBar'
 import { PlaceSearch } from '@/components/admin/PlaceSearch'
+import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { useReviews } from './useReviews'
 import { useReplyEditor } from './useReplyEditor'
 
@@ -96,12 +97,7 @@ export default function AdminReviewsPage() {
         </div>
       )}
 
-      {/* Error */}
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
+      <AdminErrorBanner error={error} />
 
       {/* Quick stats */}
       <div className="flex gap-4 text-sm text-zinc-500">
