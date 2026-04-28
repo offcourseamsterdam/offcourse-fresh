@@ -8,6 +8,7 @@ import { Loader2, RefreshCw, ChevronDown, ChevronUp, Plus } from 'lucide-react'
 import { BookingDetailRow } from '@/components/admin/BookingDetailRow'
 import { BOOKING_SOURCES } from '@/lib/constants'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
+import { fmtAdminDate, fmtAdminTime, fmtAdminAmountRounded } from '@/lib/admin/format'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -42,26 +43,6 @@ interface Booking {
 
 type SourceFilter = 'all' | 'website' | 'internal'
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-function fmtDate(dateStr: string | null) {
-  if (!dateStr) return '—'
-  return new Date(dateStr + 'T00:00:00').toLocaleDateString('nl-NL', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  })
-}
-
-function fmtTime(iso: string | null) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleTimeString('nl-NL', {
-    hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam',
-  })
-}
-
-function fmtAmount(cents: number | null) {
-  if (cents == null || cents === 0) return '—'
-  return `€${(cents / 100).toFixed(0)}`
-}
 
 function StatusBadge({ status }: { status: string | null }) {
   const map: Record<string, 'success' | 'destructive' | 'secondary'> = {
@@ -149,7 +130,7 @@ export default function BookingsPage() {
           <div className="flex items-center gap-6 text-sm text-zinc-500">
             <span><span className="font-semibold text-zinc-900">{bookings.length}</span> total</span>
             <span><span className="font-semibold text-emerald-700">{confirmed}</span> confirmed</span>
-            <span className="font-semibold text-zinc-900">{fmtAmount(totalRevenue)}</span>
+            <span className="font-semibold text-zinc-900">{fmtAdminAmountRounded(totalRevenue)}</span>
           </div>
           <div className="flex items-center gap-1.5">
             {(['all', 'website', 'internal'] as SourceFilter[]).map(f => (
@@ -209,10 +190,10 @@ export default function BookingsPage() {
                       className="hover:bg-zinc-50 transition-colors cursor-pointer"
                       onClick={() => toggleRow(b.id)}
                     >
-                      <td className="px-4 py-3 text-zinc-900 whitespace-nowrap">{fmtDate(b.booking_date)}</td>
+                      <td className="px-4 py-3 text-zinc-900 whitespace-nowrap">{fmtAdminDate(b.booking_date)}</td>
                       <td className="px-4 py-3 text-zinc-600 whitespace-nowrap">
-                        {fmtTime(b.start_time)}
-                        {b.end_time ? ` – ${fmtTime(b.end_time)}` : ''}
+                        {fmtAdminTime(b.start_time)}
+                        {b.end_time ? ` – ${fmtAdminTime(b.end_time)}` : ''}
                       </td>
                       <td className="px-4 py-3 text-zinc-900">
                         <p>{b.listing_title ?? b.tour_item_name ?? '—'}</p>
@@ -231,7 +212,7 @@ export default function BookingsPage() {
                       <td className="px-4 py-3 text-zinc-900 font-medium whitespace-nowrap">
                         {b.booking_source && b.booking_source !== 'website'
                           ? (b.deposit_amount_cents != null ? `€${(b.deposit_amount_cents / 100).toFixed(0)}` : '—')
-                          : fmtAmount(b.stripe_amount)
+                          : fmtAdminAmountRounded(b.stripe_amount)
                         }
                       </td>
                       <td className="px-4 py-3"><TypeBadge source={b.booking_source} /></td>
