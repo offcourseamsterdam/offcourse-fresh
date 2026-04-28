@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { Loader2, Handshake, ExternalLink, Plus } from 'lucide-react'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { PeriodSelector, getDateRange, type PeriodKey } from '@/components/admin/tracking/PeriodSelector'
 import { PartnerModal } from '@/components/admin/tracking/PartnerModal'
 
@@ -20,27 +21,12 @@ interface Partner {
 export default function PartnersPage() {
   const [period, setPeriod] = useState<PeriodKey>('30d')
   const [dateRange, setDateRange] = useState(getDateRange('30d'))
-  const [partners, setPartners] = useState<Partner[]>([])
-  const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
 
-  const fetchData = useCallback(async (from: string, to: string) => {
-    setLoading(true)
-    try {
-      const params = new URLSearchParams({ from, to })
-      const res = await fetch(`/api/admin/tracking/partners?${params}`)
-      const json = await res.json()
-      if (json.ok) setPartners(json.data)
-    } catch (err) {
-      console.error('Failed to load partners:', err)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchData(dateRange.from, dateRange.to)
-  }, [dateRange, fetchData])
+  const trackingParams = new URLSearchParams({ from: dateRange.from, to: dateRange.to })
+  const { data: partnersData, isLoading: loading, refresh } =
+    useAdminFetch<Partner[]>(`/api/admin/tracking/partners?${trackingParams}`)
+  const partners = partnersData ?? []
 
   return (
     <div className="p-6 sm:p-8 max-w-7xl space-y-6">
@@ -116,7 +102,7 @@ export default function PartnersPage() {
       <PartnerModal
         open={showModal}
         onClose={() => setShowModal(false)}
-        onSaved={() => fetchData(dateRange.from, dateRange.to)}
+        onSaved={() => refresh()}
       />
     </div>
   )

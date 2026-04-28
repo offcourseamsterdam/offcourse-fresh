@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Loader2, Activity } from 'lucide-react'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { KPICard } from '@/components/admin/tracking/KPICard'
 import { PeriodSelector, getDateRange, type PeriodKey } from '@/components/admin/tracking/PeriodSelector'
 import { TrafficChart } from '@/components/admin/tracking/TrafficChart'
@@ -40,43 +41,29 @@ function pctDelta(current: number, previous: number): number {
 export default function StatisticsPage() {
   const [period, setPeriod] = useState<PeriodKey>('30d')
   const [dateRange, setDateRange] = useState(getDateRange('30d'))
-  const [data, setData] = useState<OverviewData | null>(null)
-  const [funnel, setFunnel] = useState<FunnelStep[]>([])
   const [category, setCategory] = useState<CategoryFilter>('all')
-  const [loading, setLoading] = useState(true)
 
-  const [initialLoad, setInitialLoad] = useState(true)
+  const statsParams = new URLSearchParams({ from: dateRange.from, to: dateRange.to, category })
+  const { data, isLoading: loadingOverview, refresh: refreshOverview } =
+    useAdminFetch<OverviewData>(`/api/admin/tracking/overview?${statsParams}`)
+  const { data: funnelData, isLoading: loadingFunnel, refresh: refreshFunnel } =
+    useAdminFetch<FunnelStep[]>(`/api/admin/tracking/funnel?${statsParams}`)
 
-  const fetchData = useCallback(async (from: string, to: string, cat: CategoryFilter = 'all') => {
-    if (initialLoad) setLoading(true) // Only show spinner on first load
-    try {
-      const params = new URLSearchParams({ from, to, category: cat })
-      const [overviewRes, funnelRes] = await Promise.all([
-        fetch(`/api/admin/tracking/overview?${params}`),
-        fetch(`/api/admin/tracking/funnel?${params}`),
-      ])
-      const overviewJson = await overviewRes.json()
-      const funnelJson = await funnelRes.json()
+  const funnel = funnelData ?? []
+  const loading = loadingOverview || loadingFunnel
 
-      if (overviewJson.ok) setData(overviewJson.data)
-      if (funnelJson.ok) setFunnel(funnelJson.data)
-    } catch (err) {
-      console.error('Failed to load tracking data:', err)
-    } finally {
-      setLoading(false)
-      setInitialLoad(false)
-    }
-  }, [initialLoad])
+  // Keep refs so the auto-refresh interval always calls the latest refresh functions
+  const refreshRef = useRef({ refreshOverview, refreshFunnel })
+  refreshRef.current = { refreshOverview, refreshFunnel }
 
+  // Auto-refresh every 30 seconds for live visitor updates
   useEffect(() => {
-    fetchData(dateRange.from, dateRange.to, category)
-
-    // Auto-refresh every 30 seconds for live visitor updates
     const interval = setInterval(() => {
-      fetchData(dateRange.from, dateRange.to, category)
+      refreshRef.current.refreshOverview()
+      refreshRef.current.refreshFunnel()
     }, 30_000)
     return () => clearInterval(interval)
-  }, [dateRange, category, fetchData])
+  }, [])
 
   function handlePeriodChange(key: PeriodKey, from: string, to: string) {
     setPeriod(key)

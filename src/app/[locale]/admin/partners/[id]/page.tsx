@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { useParams } from 'next/navigation'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { Loader2, ArrowLeft, Plus, Ban, Copy, Check, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { quarterLabel } from '@/lib/quarters'
 import { fmtEuros } from '@/lib/utils'
@@ -62,34 +63,27 @@ function fmtDate(iso: string | null): string {
 
 export default function PartnerDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const [partner, setPartner] = useState<Partner | null>(null)
-  const [codes, setCodes] = useState<PartnerCode[]>([])
-  const [summary, setSummary] = useState<SettlementSummary | null>(null)
-  const [loading, setLoading] = useState(true)
+
+  const { data: partnerData, isLoading: loadingPartner, refresh: refreshPartner } =
+    useAdminFetch<{ partner: Partner }>(id ? `/api/admin/partners/${id}` : null)
+  const { data: codesData, isLoading: loadingCodes, refresh: refreshCodes } =
+    useAdminFetch<{ codes: PartnerCode[] }>(id ? `/api/admin/partners/${id}/codes` : null)
+  const { data: summary, isLoading: loadingSummary, refresh: refreshSummary } =
+    useAdminFetch<SettlementSummary>(id ? `/api/admin/partners/${id}/settlement-summary` : null)
+
+  const partner = partnerData?.partner ?? null
+  const codes = codesData?.codes ?? []
+  const loading = loadingPartner || loadingCodes || loadingSummary
+
   const [generating, setGenerating] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [settlingKey, setSettlingKey] = useState<string | null>(null)
 
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [pRes, cRes, sRes] = await Promise.all([
-        fetch(`/api/admin/partners/${id}`),
-        fetch(`/api/admin/partners/${id}/codes`),
-        fetch(`/api/admin/partners/${id}/settlement-summary`),
-      ])
-      const pJson = await pRes.json()
-      const cJson = await cRes.json()
-      const sJson = await sRes.json()
-      if (pJson.ok) setPartner(pJson.data.partner)
-      if (cJson.ok) setCodes(cJson.data.codes)
-      if (sJson.ok) setSummary(sJson.data)
-    } catch {
-      // silently: will show empty state
-    } finally {
-      setLoading(false)
-    }
-  }, [id])
+  function fetchData() {
+    refreshPartner()
+    refreshCodes()
+    refreshSummary()
+  }
 
   async function markSettled(quarter: string, type: 'partner_invoice' | 'affiliate', amountCents: number) {
     const key = `${quarter}::${type}`
@@ -122,8 +116,6 @@ export default function PartnerDetailPage() {
       alert('Network error')
     }
   }
-
-  useEffect(() => { fetchData() }, [fetchData])
 
   async function generate() {
     setGenerating(true)

@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { useParams } from 'next/navigation'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { Loader2, ArrowLeft, Copy, Check, ExternalLink, Plus, Pencil, Ban } from 'lucide-react'
 import { KPICard } from '@/components/admin/tracking/KPICard'
 import { CampaignModal } from '@/components/admin/tracking/CampaignModal'
@@ -48,40 +49,28 @@ interface NotificationSettings {
 
 export default function PartnerDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const [partner, setPartner] = useState<Partner | null>(null)
-  const [links, setLinks] = useState<TrackingLink[]>([])
-  const [notifications, setNotifications] = useState<NotificationSettings | null>(null)
-  const [campaigns, setCampaigns] = useState<Campaign[]>([])
-  const [loading, setLoading] = useState(true)
+
+  const { data: partner, isLoading: loadingPartner, refresh: refreshPartner } =
+    useAdminFetch<Partner>(id ? `/api/admin/tracking/affiliates/${id}` : null)
+  const { data: notifications, isLoading: loadingNotif, refresh: refreshNotif, mutate: mutateNotif } =
+    useAdminFetch<NotificationSettings>(id ? `/api/admin/tracking/notifications?partner_id=${id}` : null)
+  const { data: campaignsData, isLoading: loadingCampaigns, refresh: refreshCampaigns } =
+    useAdminFetch<Campaign[]>(id ? `/api/admin/tracking/campaigns?partner_id=${id}` : null)
+
+  const campaigns = campaignsData ?? []
+  const loading = loadingPartner || loadingNotif || loadingCampaigns
+  const links: TrackingLink[] = [] // reserved for future use
+
   const [copied, setCopied] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [showCampaignModal, setShowCampaignModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
 
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [partnerRes, notifRes, campaignsRes] = await Promise.all([
-        fetch(`/api/admin/tracking/affiliates/${id}`),
-        fetch(`/api/admin/tracking/notifications?partner_id=${id}`),
-        fetch(`/api/admin/tracking/campaigns?partner_id=${id}`),
-      ])
-      const [partnerJson, notifJson, campaignsJson] = await Promise.all([
-        partnerRes.json(),
-        notifRes.json(),
-        campaignsRes.json(),
-      ])
-      if (partnerJson.ok) setPartner(partnerJson.data)
-      if (notifJson.ok && notifJson.data) setNotifications(notifJson.data)
-      if (campaignsJson.ok) setCampaigns(campaignsJson.data)
-    } catch (err) {
-      console.error('Failed to load partner:', err)
-    } finally {
-      setLoading(false)
-    }
-  }, [id])
-
-  useEffect(() => { fetchData() }, [fetchData])
+  function fetchData() {
+    refreshPartner()
+    refreshNotif()
+    refreshCampaigns()
+  }
 
   function copyLink(slug: string) {
     const url = `${window.location.origin}/api/t/${slug}`
@@ -99,7 +88,7 @@ export default function PartnerDetailPage() {
         body: JSON.stringify({ partner_id: id, ...notifications, ...updates }),
       })
       const json = await res.json()
-      if (json.ok) setNotifications(json.data)
+      if (json.ok) mutateNotif(() => json.data, { revalidate: false })
     } catch (err) {
       console.error('Failed to save notifications:', err)
     } finally {

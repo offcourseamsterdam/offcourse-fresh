@@ -1,6 +1,7 @@
 'use client'
 
-import { Fragment, useState, useEffect, useCallback } from 'react'
+import { Fragment, useState, useEffect } from 'react'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { Loader2, Megaphone, ChevronDown, ChevronUp, Plus, Copy, Check, Pencil, Ban } from 'lucide-react'
 import { PeriodSelector, getDateRange, type PeriodKey } from '@/components/admin/tracking/PeriodSelector'
 import { CampaignModal } from '@/components/admin/tracking/CampaignModal'
@@ -138,10 +139,14 @@ export default function CampaignsPage() {
   const [period, setPeriod] = useState<PeriodKey>('30d')
   const [dateRange, setDateRange] = useState(getDateRange('30d'))
   const [category, setCategory] = useState<CategoryFilter>('all')
-  const [channels, setChannels] = useState<ChannelWithMetrics[]>([])
+
+  const campaignParams = new URLSearchParams({ from: dateRange.from, to: dateRange.to, category })
+  const { data: overviewData, isLoading: loading, refresh: refreshChannels } =
+    useAdminFetch<{ channels: ChannelWithMetrics[] }>(`/api/admin/tracking/overview?${campaignParams}`)
+  const channels = overviewData?.channels ?? []
+
   const [expandedChannel, setExpandedChannel] = useState<string | null>(null)
   const [campaigns, setCampaigns] = useState<Record<string, Campaign[]>>({})
-  const [loading, setLoading] = useState(true)
   const [loadingCampaigns, setLoadingCampaigns] = useState<string | null>(null)
   const [showCampaignModal, setShowCampaignModal] = useState(false)
   const [campaignModalChannelId, setCampaignModalChannelId] = useState<string | undefined>()
@@ -177,25 +182,6 @@ export default function CampaignsPage() {
     }).catch(() => {})
   }, [])
 
-  const fetchChannels = useCallback(async (from: string, to: string, cat: CategoryFilter = 'all') => {
-    setLoading(true)
-    try {
-      const params = new URLSearchParams({ from, to, category: cat })
-      const res = await fetch(`/api/admin/tracking/overview?${params}`)
-      const json = await res.json()
-      if (json.ok) {
-        setChannels(json.data.channels ?? [])
-      }
-    } catch (err) {
-      console.error('Failed to load channels:', err)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchChannels(dateRange.from, dateRange.to, category)
-  }, [dateRange, category, fetchChannels])
 
   async function toggleChannel(channelId: string) {
     if (expandedChannel === channelId) {
@@ -531,7 +517,7 @@ export default function CampaignsPage() {
           setCampaigns({})
           setCampaignMetrics({})
           setCampaignFunnels({})
-          fetchChannels(dateRange.from, dateRange.to)
+          refreshChannels()
           // Re-fetch campaigns for the currently expanded channel
           if (expandedChannel) {
             const params = new URLSearchParams({ from: dateRange.from, to: dateRange.to })
