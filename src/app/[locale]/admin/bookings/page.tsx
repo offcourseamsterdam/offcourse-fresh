@@ -15,6 +15,7 @@ interface Booking {
   id: string
   created_at: string
   booking_uuid: string | null
+  listing_id: string | null
   customer_name: string | null
   customer_email: string | null
   customer_phone: string | null
@@ -254,6 +255,15 @@ export default function BookingsPage() {
                       <tr>
                         <td colSpan={10} className="p-0">
                           <BookingDetailRow
+                            bookingId={b.id}
+                            bookingUuid={b.booking_uuid}
+                            listingId={b.listing_id}
+                            status={b.status}
+                            stripePaymentIntentId={b.stripe_payment_intent_id}
+                            bookingDate={b.booking_date}
+                            startTime={b.start_time}
+                            listingTitle={b.listing_title}
+                            onRefresh={fetchBookings}
                             customerName={b.customer_name}
                             customerEmail={b.customer_email}
                             customerPhone={b.customer_phone}
