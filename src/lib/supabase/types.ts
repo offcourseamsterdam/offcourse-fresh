@@ -256,6 +256,8 @@ export type Database = {
           listing_id: string | null
           listing_title: string | null
           partner_id: string | null
+          payment_link_expires_at: string | null
+          payment_reminder_sent: boolean | null
           payment_status: string | null
           promo_code_id: string | null
           raw_payload: Json | null
@@ -303,6 +305,8 @@ export type Database = {
           listing_id?: string | null
           listing_title?: string | null
           partner_id?: string | null
+          payment_link_expires_at?: string | null
+          payment_reminder_sent?: boolean | null
           payment_status?: string | null
           promo_code_id?: string | null
           raw_payload?: Json | null
@@ -350,6 +354,8 @@ export type Database = {
           listing_id?: string | null
           listing_title?: string | null
           partner_id?: string | null
+          payment_link_expires_at?: string | null
+          payment_reminder_sent?: boolean | null
           payment_status?: string | null
           promo_code_id?: string | null
           raw_payload?: Json | null
@@ -2556,4 +2562,3 @@ export const Constants = {
     },
   },
 } as const
-
