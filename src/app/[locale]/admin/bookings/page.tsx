@@ -1,122 +1,31 @@
 'use client'
 
-import { useState, useEffect, useCallback, Fragment } from 'react'
-import { useParams } from 'next/navigation'
-import { Badge } from '@/components/ui/badge'
+import { useState, Fragment } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Loader2, RefreshCw, ChevronDown, ChevronUp, Plus } from 'lucide-react'
 import { BookingDetailRow } from '@/components/admin/BookingDetailRow'
-import { BOOKING_SOURCES } from '@/lib/constants'
-
-// ── Types ──────────────────────────────────────────────────────────────────
-
-interface Booking {
-  id: string
-  created_at: string
-  booking_uuid: string | null
-  customer_name: string | null
-  customer_email: string | null
-  customer_phone: string | null
-  tour_item_name: string | null
-  listing_title: string | null
-  start_time: string | null
-  end_time: string | null
-  booking_date: string | null
-  guest_count: number | null
-  category: string | null
-  stripe_payment_intent_id: string | null
-  stripe_amount: number | null
-  status: string | null
-  guest_note: string | null
-  booking_source: string | null
-  deposit_amount_cents: number | null
-  extras_selected: Array<{ name: string; amount_cents: number; category?: string }> | null
-  base_amount_cents: number | null
-  extras_amount_cents: number | null
-  base_vat_amount_cents: number | null
-  extras_vat_amount_cents: number | null
-  total_vat_amount_cents: number | null
-}
+import { BookingStatusBadge } from '@/components/admin/BookingStatusBadge'
+import { BookingSourceBadge } from '@/components/admin/BookingSourceBadge'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
+import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
+import { fmtAdminDate, fmtAdminTime, fmtAdminAmountRounded } from '@/lib/admin/format'
+import type { AdminBooking } from '@/lib/admin/types'
 
 type SourceFilter = 'all' | 'website' | 'internal'
 
-// ── Helpers ────────────────────────────────────────────────────────────────
 
-function fmtDate(dateStr: string | null) {
-  if (!dateStr) return '—'
-  return new Date(dateStr + 'T00:00:00').toLocaleDateString('nl-NL', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  })
-}
-
-function fmtTime(iso: string | null) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleTimeString('nl-NL', {
-    hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam',
-  })
-}
-
-function fmtAmount(cents: number | null) {
-  if (cents == null || cents === 0) return '—'
-  return `€${(cents / 100).toFixed(0)}`
-}
-
-function StatusBadge({ status }: { status: string | null }) {
-  const map: Record<string, 'success' | 'destructive' | 'secondary'> = {
-    confirmed: 'success',
-    cancelled: 'destructive',
-    booked: 'success',
-  }
-  return <Badge variant={map[status ?? ''] ?? 'secondary'}>{status ?? '—'}</Badge>
-}
-
-function TypeBadge({ source }: { source: string | null }) {
-  const isInternal = source && source !== 'website'
-  if (!isInternal) return <span className="text-xs text-zinc-400">Regular</span>
-  const label = BOOKING_SOURCES.find(s => s.value === source)?.label ?? source
-  const colorMap: Record<string, string> = {
-    complimentary: 'bg-purple-100 text-purple-700',
-    withlocals: 'bg-blue-100 text-blue-700',
-    clickandboat: 'bg-sky-100 text-sky-700',
-  }
-  const color = colorMap[source] ?? 'bg-zinc-100 text-zinc-600'
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${color}`}>
-      {label}
-    </span>
-  )
-}
 
 // ── Page ───────────────────────────────────────────────────────────────────
 
 export default function BookingsPage() {
   const params = useParams()
   const locale = params.locale as string
-  const [bookings, setBookings] = useState<Booking[] | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const router = useRouter()
+  const { data: bookings, isLoading: loading, error, refresh: fetchBookings } =
+    useAdminFetch<AdminBooking[]>('/api/admin/bookings/local')
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
-
-  const fetchBookings = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/admin/bookings/local')
-      const json = await res.json()
-      if (json.ok) {
-        setBookings(json.data)
-      } else {
-        setError(json.error ?? 'Failed to load bookings')
-      }
-    } catch {
-      setError('Network error — please try again')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => { fetchBookings() }, [fetchBookings])
 
   function toggleRow(id: string) {
     setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
@@ -147,19 +56,14 @@ export default function BookingsPage() {
             {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
             Refresh
           </Button>
-          <Button variant="primary" size="sm" onClick={() => window.location.href = `/${locale}/admin/fareharbor`}>
+          <Button variant="primary" size="sm" onClick={() => router.push(`/${locale}/admin/fareharbor`)}>
             <Plus className="w-3.5 h-3.5" />
             New booking
           </Button>
         </div>
       </div>
 
-      {/* Error */}
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
+      <AdminErrorBanner error={error} />
 
       {/* Summary + filter */}
       {bookings && bookings.length > 0 && (
@@ -167,7 +71,8 @@ export default function BookingsPage() {
           <div className="flex items-center gap-6 text-sm text-zinc-500">
             <span><span className="font-semibold text-zinc-900">{bookings.length}</span> total</span>
             <span><span className="font-semibold text-emerald-700">{confirmed}</span> confirmed</span>
-            <span className="font-semibold text-zinc-900">{fmtAmount(totalRevenue)}</span>
+            {/* Rounded for at-a-glance; detail rows use 2-decimal fmtAdminAmount */}
+            <span className="font-semibold text-zinc-900">{fmtAdminAmountRounded(totalRevenue)}</span>
           </div>
           <div className="flex items-center gap-1.5">
             {(['all', 'website', 'internal'] as SourceFilter[]).map(f => (
@@ -227,10 +132,10 @@ export default function BookingsPage() {
                       className="hover:bg-zinc-50 transition-colors cursor-pointer"
                       onClick={() => toggleRow(b.id)}
                     >
-                      <td className="px-4 py-3 text-zinc-900 whitespace-nowrap">{fmtDate(b.booking_date)}</td>
+                      <td className="px-4 py-3 text-zinc-900 whitespace-nowrap">{fmtAdminDate(b.booking_date)}</td>
                       <td className="px-4 py-3 text-zinc-600 whitespace-nowrap">
-                        {fmtTime(b.start_time)}
-                        {b.end_time ? ` – ${fmtTime(b.end_time)}` : ''}
+                        {fmtAdminTime(b.start_time)}
+                        {b.end_time ? ` – ${fmtAdminTime(b.end_time)}` : ''}
                       </td>
                       <td className="px-4 py-3 text-zinc-900">
                         <p>{b.listing_title ?? b.tour_item_name ?? '—'}</p>
@@ -249,11 +154,11 @@ export default function BookingsPage() {
                       <td className="px-4 py-3 text-zinc-900 font-medium whitespace-nowrap">
                         {b.booking_source && b.booking_source !== 'website'
                           ? (b.deposit_amount_cents != null ? `€${(b.deposit_amount_cents / 100).toFixed(0)}` : '—')
-                          : fmtAmount(b.stripe_amount)
+                          : fmtAdminAmountRounded(b.stripe_amount)
                         }
                       </td>
-                      <td className="px-4 py-3"><TypeBadge source={b.booking_source} /></td>
-                      <td className="px-4 py-3"><StatusBadge status={b.status} /></td>
+                      <td className="px-4 py-3"><BookingSourceBadge source={b.booking_source} /></td>
+                      <td className="px-4 py-3"><BookingStatusBadge status={b.status} /></td>
                       <td className="px-4 py-3 text-zinc-400 text-xs font-mono">
                         {b.stripe_payment_intent_id
                           ? <span title={b.stripe_payment_intent_id}>{b.stripe_payment_intent_id.slice(0, 10)}…</span>
@@ -273,6 +178,15 @@ export default function BookingsPage() {
                       <tr>
                         <td colSpan={10} className="p-0">
                           <BookingDetailRow
+                            bookingId={b.id}
+                            bookingUuid={b.booking_uuid}
+                            listingId={b.listing_id}
+                            status={b.status}
+                            stripePaymentIntentId={b.stripe_payment_intent_id}
+                            bookingDate={b.booking_date}
+                            startTime={b.start_time}
+                            listingTitle={b.listing_title}
+                            onRefresh={fetchBookings}
                             customerName={b.customer_name}
                             customerEmail={b.customer_email}
                             customerPhone={b.customer_phone}

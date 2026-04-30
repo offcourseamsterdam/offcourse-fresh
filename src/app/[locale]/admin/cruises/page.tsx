@@ -1,25 +1,17 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
+import { ItemRow, type FHItem } from './ItemRow'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Loader2, RefreshCw, Database, Plus, ChevronDown, ChevronUp, Check, Globe, Home, Pencil } from 'lucide-react'
+import { Loader2, RefreshCw, Database, Plus, Check, Globe, Home, Pencil } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────
-
-interface FHItem {
-  id: string
-  fareharbor_pk: number
-  name: string
-  item_type: 'private' | 'shared'
-  last_synced_at: string | null
-  resources: { id: string; fareharbor_pk: number; name: string; capacity: number }[]
-  customer_types: { id: string; fareharbor_pk: number; name: string; boat_name: string; duration_minutes: number; max_guests: number }[]
-}
 
 interface CruiseListing {
   id: string
@@ -48,10 +40,6 @@ interface NewListing {
 
 // ── Helpers ────────────────────────────────────────────
 
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleString('nl-NL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-}
-
 // ── Page ───────────────────────────────────────────────
 
 export default function AdminCruisesPage() {
@@ -59,13 +47,15 @@ export default function AdminCruisesPage() {
   const params = useParams()
   const locale = (params.locale as string) ?? 'en'
 
-  const [fhItems, setFhItems] = useState<FHItem[] | null>(null)
-  const [loadingItems, setLoadingItems] = useState(false)
+  const { data: itemsData, isLoading: loadingItems, refresh: refreshItems } =
+    useAdminFetch<{ data: FHItem[] }>('/api/admin/fareharbor-test?action=supabase-items')
+  const fhItems = itemsData?.data ?? null
+
+  const { data: listingsData, isLoading: loadingListings, mutate: mutateListings } =
+    useAdminFetch<{ data: CruiseListing[] }>('/api/admin/fareharbor-test?action=listings')
+  const listings = listingsData?.data ?? null
+
   const [syncing, setSyncing] = useState(false)
-
-  const [listings, setListings] = useState<CruiseListing[] | null>(null)
-  const [loadingListings, setLoadingListings] = useState(false)
-
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -79,43 +69,14 @@ export default function AdminCruisesPage() {
     availability_filters: '{}',
   })
 
-  useEffect(() => {
-    loadItems()
-    loadListings()
-  }, [])
-
-  async function loadItems() {
-    setLoadingItems(true)
-    try {
-      const res = await fetch('/api/admin/fareharbor-test?action=supabase-items')
-      const json = await res.json()
-      if (json.ok) setFhItems(json.data?.data ?? [])
-      else setFhItems([])
-    } finally {
-      setLoadingItems(false)
-    }
-  }
-
   async function syncItems() {
     setSyncing(true)
     try {
       const res = await fetch('/api/admin/fareharbor-test?action=sync-items')
       const json = await res.json()
-      if (json.ok) setFhItems(json.data?.data ?? [])
+      if (json.ok) refreshItems()
     } finally {
       setSyncing(false)
-    }
-  }
-
-  async function loadListings() {
-    setLoadingListings(true)
-    try {
-      const res = await fetch('/api/admin/fareharbor-test?action=listings')
-      const json = await res.json()
-      if (json.ok) setListings(json.data?.data ?? [])
-      else setListings([])
-    } finally {
-      setLoadingListings(false)
     }
   }
 
@@ -153,8 +114,7 @@ export default function AdminCruisesPage() {
   const selectedFhItem = fhItems?.find(i => i.fareharbor_pk === form.fareharbor_item_pk)
 
   async function toggleListingField(id: string, field: 'is_published' | 'is_featured', value: boolean) {
-    // Optimistic update
-    setListings(prev => prev?.map(l => l.id === id ? { ...l, [field]: value } : l) ?? prev)
+    mutateListings(prev => prev ? { data: prev.data.map(l => l.id === id ? { ...l, [field]: value } : l) } : prev, { revalidate: false })
     await fetch(`/api/admin/cruise-listings/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -464,76 +424,6 @@ export default function AdminCruisesPage() {
           ) : null}
         </CardContent>
       </Card>
-    </div>
-  )
-}
-
-// ── Item row with expandable detail ───────────────────
-
-function ItemRow({ item }: { item: FHItem }) {
-  const [open, setOpen] = useState(false)
-
-  return (
-    <div className="border border-zinc-200 rounded-lg bg-white overflow-hidden">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-zinc-50 transition-colors"
-      >
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-medium">{item.name}</span>
-          <span className="text-xs text-zinc-400 font-mono">PK {item.fareharbor_pk}</span>
-          <span className={`text-xs px-1.5 py-0.5 rounded capitalize ${item.item_type === 'private' ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-600'}`}>
-            {item.item_type}
-          </span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-zinc-400">
-            {item.resources.length} boat{item.resources.length !== 1 ? 's' : ''} · {item.customer_types.length} types
-          </span>
-          {open ? <ChevronUp className="w-4 h-4 text-zinc-400" /> : <ChevronDown className="w-4 h-4 text-zinc-400" />}
-        </div>
-      </button>
-
-      {open && (
-        <div className="border-t border-zinc-100 px-4 py-3 grid grid-cols-2 gap-4">
-          <div>
-            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">Boats (resources)</p>
-            {item.resources.length === 0 ? (
-              <p className="text-xs text-zinc-400 italic">No boats found yet — boats and types are extracted from availabilities. Re-sync when this item has future availability configured.</p>
-            ) : (
-              <div className="space-y-1">
-                {item.resources.map(r => (
-                  <div key={r.id} className="flex items-center justify-between text-sm">
-                    <span>{r.name}</span>
-                    <span className="font-mono text-xs text-zinc-400">PK {r.fareharbor_pk}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">Customer types (durations)</p>
-            {item.customer_types.length === 0 ? (
-              <p className="text-xs text-zinc-400 italic">No types found yet — re-sync when availabilities exist.</p>
-            ) : (
-              <div className="space-y-1">
-                {item.customer_types.map(ct => (
-                  <div key={ct.id} className="flex items-center justify-between text-sm">
-                    <span>{ct.name}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-zinc-400">{ct.duration_minutes}min</span>
-                      <span className="font-mono text-xs text-zinc-300">PK {ct.fareharbor_pk}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          {item.last_synced_at && (
-            <p className="col-span-2 text-xs text-zinc-400">Last synced: {fmtDate(item.last_synced_at)}</p>
-          )}
-        </div>
-      )}
     </div>
   )
 }

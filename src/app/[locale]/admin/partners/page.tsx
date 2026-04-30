@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { Loader2, Plus, Pencil, Check, X, Trash2, Mail, ExternalLink } from 'lucide-react'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { fmtEuros } from '@/lib/utils'
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -17,9 +18,9 @@ interface Partner {
 // ── Page ───────────────────────────────────────────────────────────────────
 
 export default function PartnersPage() {
-  const [partners, setPartners] = useState<Partner[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { data: partnersData, isLoading: loading, error, refresh: fetchPartners } =
+    useAdminFetch<{ partners: Partner[] }>('/api/admin/partners')
+  const partners = partnersData?.partners ?? []
 
   // New partner form
   const [showNew, setShowNew] = useState(false)
@@ -29,28 +30,6 @@ export default function PartnersPage() {
   // Inline edit state
   const [editing, setEditing] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState<string | null>(null)
-
-  // ── Fetch ──────────────────────────────────────────────────────────────
-
-  const fetchPartners = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/admin/partners')
-      const json = await res.json()
-      if (json.ok) {
-        setPartners(json.data?.partners ?? [])
-      } else {
-        setError(json.error ?? 'Failed to load partners')
-      }
-    } catch {
-      setError('Network error — please try again')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => { fetchPartners() }, [fetchPartners])
 
   // ── Create ─────────────────────────────────────────────────────────────
 

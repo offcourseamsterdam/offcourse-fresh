@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { preload } from 'swr'
+import { adminFetcher } from '@/hooks/useAdminFetch'
 import AdminSignOutButton from '@/components/auth/AdminSignOutButton'
 import { Separator } from '@/components/ui/separator'
 import type { UserProfile } from '@/lib/auth/types'
@@ -66,6 +68,15 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   affiliates: Handshake,
   settings: Settings,
   promocodes: Ticket,
+}
+
+const PREFETCH_URLS: Record<string, string> = {
+  '/admin/bookings':    '/api/admin/bookings/local',
+  '/admin/extras':      '/api/admin/extras',
+  '/admin/partners':    '/api/admin/partners',
+  '/admin/reviews':     '/api/admin/reviews',
+  '/admin/cruises':     '/api/admin/cruise-listings',
+  '/admin/promo-codes': '/api/admin/promo-codes',
 }
 
 export default function DashboardSidebar({
@@ -136,6 +147,10 @@ export default function DashboardSidebar({
                       <li key={item.href}>
                         <Link
                           href={`/${locale}${item.href}`}
+                          onMouseEnter={() => {
+                            const url = PREFETCH_URLS[item.href]
+                            if (url) preload(url, adminFetcher)
+                          }}
                           className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 transition-colors group"
                         >
                           <Icon className="w-4 h-4 text-zinc-400 group-hover:text-zinc-600 transition-colors flex-shrink-0" />

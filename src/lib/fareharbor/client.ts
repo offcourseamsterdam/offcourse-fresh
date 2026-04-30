@@ -206,6 +206,33 @@ export class FareHarborClient {
     await this.request(url, { method: 'DELETE' })
   }
 
+  /** Update the note on an existing FareHarbor booking */
+  async updateBookingNote(bookingUuid: string, note: string): Promise<void> {
+    const url = `/companies/${COMPANY}/bookings/${bookingUuid}/note`
+    await this.request(url, {
+      method: 'PUT',
+      body: JSON.stringify({ note }),
+    })
+  }
+
+  /**
+   * Create a new booking that replaces an existing one (rebook).
+   * Pass originalBookingUuid in the `rebooking` field to link the new booking to the old one.
+   * Caller must then call cancelBooking(originalBookingUuid) to release the old slot.
+   */
+  async rebookBooking(
+    newAvailPk: number,
+    data: FHBookingRequest,
+    originalBookingUuid: string
+  ): Promise<FHBookingResponse> {
+    const url = `/companies/${COMPANY}/availabilities/${newAvailPk}/bookings/`
+    const res = await this.request<FHBookingCreateResponse>(url, {
+      method: 'POST',
+      body: JSON.stringify({ ...data, rebooking: originalBookingUuid }),
+    })
+    return res.booking
+  }
+
   // ── Internal request handler ────────────────────────────────────────────
 
   private async request<T>(

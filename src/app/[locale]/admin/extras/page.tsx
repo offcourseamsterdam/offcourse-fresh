@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { Loader2, Plus, RefreshCw } from 'lucide-react'
 import { ExtrasTable } from '@/components/admin/extras/ExtrasTable'
 import { ExtrasFormModal } from '@/components/admin/extras/ExtrasFormModal'
@@ -11,9 +12,9 @@ import { blankForm, extraToForm, formToPayload } from '@/components/admin/extras
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function ExtrasPage() {
-  const [extras, setExtras] = useState<Extra[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { data: extrasData, isLoading: loading, error, refresh: fetchExtras, mutate: mutateExtras } =
+    useAdminFetch<{ extras: Extra[] }>('/api/admin/extras')
+  const extras = extrasData?.extras ?? []
 
   const [showForm, setShowForm] = useState(false)
   const [editingExtra, setEditingExtra] = useState<Extra | null>(null)
@@ -22,28 +23,6 @@ export default function ExtrasPage() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
-
-  // ── Data fetching ────────────────────────────────────────────────────────────
-
-  const fetchExtras = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/admin/extras')
-      const json = await res.json()
-      if (json.ok) {
-        setExtras(json.data?.extras ?? [])
-      } else {
-        setError(json.error ?? 'Failed to load extras')
-      }
-    } catch {
-      setError('Network error — please try again')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => { fetchExtras() }, [fetchExtras])
 
   // ── Form open/close ──────────────────────────────────────────────────────────
 
@@ -129,7 +108,7 @@ export default function ExtrasPage() {
       const res = await fetch(`/api/admin/extras/${extra.id}`, { method: 'DELETE' })
       const json = await res.json()
       if (json.ok) {
-        setExtras(prev => prev.filter(e => e.id !== extra.id))
+        fetchExtras()
       } else {
         alert(json.error ?? 'Failed to delete extra')
       }
@@ -143,8 +122,7 @@ export default function ExtrasPage() {
   // ── Active toggle ─────────────────────────────────────────────────────────────
 
   async function toggleActive(extra: Extra) {
-    // Optimistic update
-    setExtras(prev => prev.map(e => e.id === extra.id ? { ...e, is_active: !e.is_active } : e))
+    mutateExtras(prev => prev ? { extras: prev.extras.map(e => e.id === extra.id ? { ...e, is_active: !e.is_active } : e) } : prev, { revalidate: false })
     try {
       const res = await fetch(`/api/admin/extras/${extra.id}`, {
         method: 'PATCH',
@@ -153,19 +131,17 @@ export default function ExtrasPage() {
       })
       const json = await res.json()
       if (!json.ok) {
-        // Server rejected — revert
-        setExtras(prev => prev.map(e => e.id === extra.id ? { ...e, is_active: extra.is_active } : e))
+        mutateExtras(prev => prev ? { extras: prev.extras.map(e => e.id === extra.id ? { ...e, is_active: extra.is_active } : e) } : prev, { revalidate: false })
       }
     } catch {
-      // Network failure — revert
-      setExtras(prev => prev.map(e => e.id === extra.id ? { ...e, is_active: extra.is_active } : e))
+      mutateExtras(prev => prev ? { extras: prev.extras.map(e => e.id === extra.id ? { ...e, is_active: extra.is_active } : e) } : prev, { revalidate: false })
     }
   }
 
   // ── Image upload callback (used by form modal) ───────────────────────────────
 
   function handleExtrasImageUpdate(extraId: string, imageUrl: string) {
-    setExtras(prev => prev.map(e => e.id === extraId ? { ...e, image_url: imageUrl } : e))
+    mutateExtras(prev => prev ? { extras: prev.extras.map(e => e.id === extraId ? { ...e, image_url: imageUrl } : e) } : prev, { revalidate: false })
   }
 
   // ── Render ────────────────────────────────────────────────────────────────────
