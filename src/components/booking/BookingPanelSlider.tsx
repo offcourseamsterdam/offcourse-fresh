@@ -229,8 +229,8 @@ export function BookingPanelSlider(props: BookingPanelProps) {
       {/* Starting price — shown above the date/tab picker on mobile */}
       {startingPrice != null && (
         <div className="mb-4">
-          <span className="text-xs text-[var(--color-muted)]">starting from </span>
-          <span className="font-palmore text-2xl text-[var(--color-ink)] align-bottom">€{startingPrice}</span>
+          <p className="text-xs text-[var(--color-muted)] leading-none mb-1">starting from</p>
+          <p className="font-palmore text-3xl text-[var(--color-primary)] leading-none">€{startingPrice}</p>
         </div>
       )}
 

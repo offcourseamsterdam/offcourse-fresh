@@ -57,8 +57,8 @@ function BookingPanelSidebar(props: BookingPanelProps) {
       {/* Starting price */}
       {startingPrice != null && (
         <div className="mb-4 pb-3 border-b border-zinc-100">
-          <p className="text-xs text-[var(--color-muted)] leading-none mb-0.5">starting from</p>
-          <p className="font-palmore text-3xl text-[var(--color-ink)] leading-none">€{startingPrice}</p>
+          <p className="text-xs text-[var(--color-muted)] leading-none mb-1">starting from</p>
+          <p className="font-palmore text-3xl text-[var(--color-primary)] leading-none">€{startingPrice}</p>
         </div>
       )}
 
