@@ -33,6 +33,7 @@ function BookingPanelSidebar(props: BookingPanelProps) {
   } = useBookingPanel(props)
 
   const infoPills = props.infoPills ?? []
+  const startingPrice = props.startingPrice
 
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-zinc-100 p-4">
@@ -50,6 +51,14 @@ function BookingPanelSidebar(props: BookingPanelProps) {
               {pill.label}
             </span>
           ))}
+        </div>
+      )}
+
+      {/* Starting price */}
+      {startingPrice != null && (
+        <div className="mb-4 pb-3 border-b border-zinc-100">
+          <p className="text-xs text-[var(--color-muted)] leading-none mb-0.5">starting from</p>
+          <p className="font-palmore text-3xl text-[var(--color-ink)] leading-none">€{startingPrice}</p>
         </div>
       )}
 

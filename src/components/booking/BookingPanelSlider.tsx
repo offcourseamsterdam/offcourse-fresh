@@ -222,9 +222,18 @@ export function BookingPanelSlider(props: BookingPanelProps) {
 
   const isPrivate = category === 'private'
   const hasTickets = !isPrivate && state.totalTickets > 0
+  const startingPrice = props.startingPrice
 
   return (
     <div>
+      {/* Starting price — shown above the date/tab picker on mobile */}
+      {startingPrice != null && (
+        <div className="mb-4">
+          <span className="text-xs text-[var(--color-muted)]">starting from </span>
+          <span className="font-palmore text-2xl text-[var(--color-ink)] align-bottom">€{startingPrice}</span>
+        </div>
+      )}
+
       <BookingSummaryTabs tabs={summaryTabs} currentPanel={panelIndex} onTabClick={handleTabClick} />
 
       <AnimatePresence mode="wait" custom={direction}>
