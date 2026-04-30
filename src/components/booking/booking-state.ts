@@ -148,4 +148,6 @@ export interface BookingPanelProps {
   infoPills?: InfoPill[]
   layout?: 'sidebar' | 'inline'
   cancellationPolicy?: string | null
+  /** Starting price in whole euros (e.g. 35 = €35). Used for "starting from" display. */
+  startingPrice?: number | null
 }

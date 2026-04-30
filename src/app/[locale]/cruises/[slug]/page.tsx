@@ -68,6 +68,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
     initialGuests: guests ? Number(guests) : undefined,
     initialTime: time,
     cancellationPolicy: data.cancellationPolicy,
+    startingPrice: listing.starting_price ?? null,
     infoPills: [
       ...(listing.duration_display ? [{ icon: 'duration' as const, label: listing.duration_display }] : []),
       ...(listing.max_guests ? [{ icon: 'guests' as const, label: `Up to ${listing.max_guests} guests` }] : []),
