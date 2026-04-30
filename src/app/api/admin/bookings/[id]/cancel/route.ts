@@ -25,9 +25,10 @@ export async function POST(
       .single()
 
     if (fetchError || !booking) return apiError('Booking not found', 404)
-    if (booking.status === 'cancelled') return apiError('Booking is already cancelled', 409)
+    // Note: we allow re-cancelling an already-cancelled booking so the admin
+    // can still issue a Stripe refund or force-sync the status.
 
-    if (booking.booking_uuid) {
+    if (booking.booking_uuid && booking.status !== 'cancelled') {
       try {
         const fh = getFareHarborClient()
         await fh.cancelBooking(booking.booking_uuid)
@@ -48,23 +49,31 @@ export async function POST(
 
     // Stripe refund (website bookings only)
     let refundId: string | null = null
+    let refundError: string | null = null
     if (
       refundOption !== 'none' &&
       booking.booking_source === 'website' &&
       booking.stripe_payment_intent_id
     ) {
-      const stripe = getStripe()
-      const refundParams: Parameters<typeof stripe.refunds.create>[0] = {
-        payment_intent: booking.stripe_payment_intent_id,
+      try {
+        const stripe = getStripe()
+        const refundParams: Parameters<typeof stripe.refunds.create>[0] = {
+          payment_intent: booking.stripe_payment_intent_id,
+        }
+        if (refundOption === 'partial' && partialAmountCents && partialAmountCents > 0) {
+          refundParams.amount = partialAmountCents
+        }
+        const refund = await stripe.refunds.create(refundParams)
+        refundId = refund.id
+      } catch (err) {
+        // Refund failed (e.g. PI not found, already refunded, test/live key mismatch)
+        // Booking is already cancelled in DB — surface the warning but don't block.
+        refundError = err instanceof Error ? err.message : 'Stripe refund failed'
+        console.error('[cancel-booking] Stripe refund failed for booking', id, err)
       }
-      if (refundOption === 'partial' && partialAmountCents && partialAmountCents > 0) {
-        refundParams.amount = partialAmountCents
-      }
-      const refund = await stripe.refunds.create(refundParams)
-      refundId = refund.id
     }
 
-    return apiOk({ cancelled: true, refundId })
+    return apiOk({ cancelled: true, refundId, refundError })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return apiError(message)

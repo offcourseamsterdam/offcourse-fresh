@@ -45,6 +45,12 @@ export function CancelBookingModal({
       })
       const json = await res.json()
       if (!json.ok) throw new Error(json.error ?? 'Cancellation failed')
+      // Booking cancelled — if Stripe refund failed, warn before closing
+      if (json.refundError) {
+        setError(`Booking cancelled ✓ — Stripe refund failed: ${json.refundError}. Process it manually in your Stripe dashboard.`)
+        setLoading(false)
+        return
+      }
       onSuccess()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
@@ -114,10 +120,18 @@ export function CancelBookingModal({
           </div>
         )}
 
-        {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+        {error && (
+          <p className={`text-sm rounded-lg px-3 py-2 ${
+            error.startsWith('Booking cancelled')
+              ? 'text-amber-700 bg-amber-50'
+              : 'text-red-600 bg-red-50'
+          }`}>{error}</p>
+        )}
 
         <div className="flex gap-2 justify-end pt-1">
-          <Button variant="outline" size="sm" onClick={onClose} disabled={loading}>Go back</Button>
+          <Button variant="outline" size="sm" onClick={onClose} disabled={loading}>
+            {error?.startsWith('Booking cancelled') ? 'Close' : 'Go back'}
+          </Button>
           <Button
             variant="destructive"
             size="sm"
