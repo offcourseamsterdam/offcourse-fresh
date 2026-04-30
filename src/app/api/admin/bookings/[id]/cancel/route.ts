@@ -3,7 +3,7 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { getStripe } from '@/lib/stripe/server'
-import { FHNotFoundError } from '@/lib/fareharbor/types'
+import { FHNotFoundError, FHValidationError } from '@/lib/fareharbor/types'
 
 export async function POST(
   request: NextRequest,
@@ -32,8 +32,10 @@ export async function POST(
         const fh = getFareHarborClient()
         await fh.cancelBooking(booking.booking_uuid)
       } catch (err) {
-        // If FH says 404, the booking is already gone there — proceed with local cancel
-        if (!(err instanceof FHNotFoundError)) throw err
+        // If FH says the booking is already gone or already cancelled, proceed with local cancel
+        const alreadyCancelled = err instanceof FHValidationError &&
+          err.message.toLowerCase().includes('already')
+        if (!(err instanceof FHNotFoundError) && !alreadyCancelled) throw err
       }
     }
 
