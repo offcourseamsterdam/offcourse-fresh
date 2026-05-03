@@ -16,7 +16,8 @@ export interface CruiseListing {
   price_display: string | null
   price_label: string | null
   hero_image_url: string | null
-  images: Array<{ url: string; alt_text?: string }>
+  hero_image_asset_id: string | null
+  images: Array<{ url: string; alt_text?: string; image_asset_id?: string | null }>
   benefits: Array<{ text: string; icon?: string }>
   highlights: Array<{ text: string }>
   inclusions: Array<{ text: string }>

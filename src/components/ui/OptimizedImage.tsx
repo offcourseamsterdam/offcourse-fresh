@@ -89,8 +89,7 @@ export function OptimizedImage({
           priority={priority}
           sizes={sizes}
           className={className}
-          style={containerStyle}
-          {...(objectFit ? { style: { ...containerStyle, objectFit } } : {})}
+          style={{ ...containerStyle, objectFit }}
         />
       )
     }
