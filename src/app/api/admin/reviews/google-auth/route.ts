@@ -21,10 +21,10 @@ export async function GET(request: Request) {
     return apiError('Unauthorized', 403)
   }
 
-  // Use the actual request origin so the redirect_uri matches
-  // whether we're on offcourse-fresh.vercel.app or offcourseamsterdam.com
-  const requestUrl = new URL(request.url)
-  const origin = requestUrl.origin
+  // Always use the canonical site URL as the OAuth redirect_uri — using the
+  // dynamic request origin breaks when admin is accessed from Vercel preview URLs
+  // which aren't registered in Google Cloud Console.
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
 
   // Extract locale from referer so we can redirect back to the right locale after OAuth
   const referer = request.headers.get('referer') ?? ''
@@ -34,7 +34,7 @@ export async function GET(request: Request) {
   // Generate random state for CSRF protection
   const state = crypto.randomUUID()
 
-  // Store state + locale + origin in short-lived cookies for the callback
+  // Store state + locale + canonical origin in short-lived cookies for the callback
   const cookieStore = await cookies()
   const cookieOpts = {
     httpOnly: true,
@@ -45,10 +45,10 @@ export async function GET(request: Request) {
   }
   cookieStore.set('google_oauth_state', state, cookieOpts)
   cookieStore.set('google_oauth_locale', locale, cookieOpts)
-  cookieStore.set('google_oauth_origin', origin, cookieOpts)
+  cookieStore.set('google_oauth_origin', siteUrl, cookieOpts)
 
   try {
-    const authUrl = getGoogleAuthUrl(state, origin)
+    const authUrl = getGoogleAuthUrl(state, siteUrl)
     return NextResponse.redirect(authUrl)
   } catch (err) {
     console.error('[google-auth] Failed to build auth URL:', err)
