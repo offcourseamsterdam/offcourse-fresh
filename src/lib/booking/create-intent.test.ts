@@ -73,8 +73,8 @@ describe('createPaymentIntent — FareHarbor net vs gross', () => {
 
     expect(paymentIntentsCreate).toHaveBeenCalledTimes(1)
     const args = paymentIntentsCreate.mock.calls[0][0]
-    // Must charge €400.00 gross — never €366.97 net
-    expect(args.amount).toBe(40000)
+    // Must charge €400.00 gross + €5.20 city tax (2 guests × €2.60) = €405.20
+    expect(args.amount).toBe(40520)
   })
 
   it('falls back to total when total_including_tax is missing', async () => {
@@ -92,7 +92,8 @@ describe('createPaymentIntent — FareHarbor net vs gross', () => {
     await createPaymentIntent(baseInput)
 
     const args = paymentIntentsCreate.mock.calls[0][0]
-    expect(args.amount).toBe(40000)
+    // €400.00 base + €5.20 city tax (2 guests × €2.60)
+    expect(args.amount).toBe(40520)
   })
 
   it('falls back to client baseAmountCents when FareHarbor has no matching rate', async () => {
@@ -101,10 +102,11 @@ describe('createPaymentIntent — FareHarbor net vs gross', () => {
     await createPaymentIntent(baseInput)
 
     const args = paymentIntentsCreate.mock.calls[0][0]
-    expect(args.amount).toBe(40000)
+    // €400.00 base + €5.20 city tax (2 guests × €2.60)
+    expect(args.amount).toBe(40520)
   })
 
-  it('adds €2.60/guest city tax for shared cruises', async () => {
+  it('adds €2.60/guest city tax for all cruise types (shared and private)', async () => {
     getAvailabilityDetail.mockResolvedValue({
       customer_type_rates: [
         {
@@ -118,6 +120,23 @@ describe('createPaymentIntent — FareHarbor net vs gross', () => {
 
     const args = paymentIntentsCreate.mock.calls[0][0]
     // shared: per-guest gross 10000 × 4 = 40000, + city tax 4 × 260 = 1040 → 41040
+    expect(args.amount).toBe(41040)
+  })
+
+  it('adds €2.60/guest city tax for private cruises', async () => {
+    getAvailabilityDetail.mockResolvedValue({
+      customer_type_rates: [
+        {
+          pk: 22222,
+          customer_prototype: { total: 36697, total_including_tax: 40000 },
+        },
+      ],
+    })
+
+    await createPaymentIntent({ ...baseInput, category: 'private', guestCount: 4 })
+
+    const args = paymentIntentsCreate.mock.calls[0][0]
+    // private: flat boat price 40000 + city tax 4 × 260 = 1040 → 41040
     expect(args.amount).toBe(41040)
   })
 })

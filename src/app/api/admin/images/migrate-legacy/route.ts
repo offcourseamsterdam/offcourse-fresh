@@ -11,6 +11,7 @@ interface ScanResult {
   context: 'cruise' | 'extras' | 'hero'
   context_id: string | null
   url: string
+  isHero?: boolean
 }
 
 /**
@@ -33,11 +34,13 @@ export async function POST(_req: NextRequest) {
 
     for (const c of cruises ?? []) {
       if (c.hero_image_url && !c.hero_image_asset_id) {
-        targets.push({ context: 'cruise', context_id: c.id, url: c.hero_image_url })
+        targets.push({ context: 'cruise', context_id: c.id, url: c.hero_image_url, isHero: true })
       }
       const imgs = Array.isArray(c.images) ? c.images : []
       for (const img of imgs) {
         let url: string | undefined
+        const hasAssetId = img && typeof img === 'object' && !Array.isArray(img) && (img as Record<string, unknown>).image_asset_id
+        if (hasAssetId) continue  // already linked
         if (typeof img === 'string') {
           url = img
         } else if (img && typeof img === 'object' && !Array.isArray(img) && typeof (img as Record<string, unknown>).url === 'string') {
@@ -80,6 +83,12 @@ export async function POST(_req: NextRequest) {
     const linked: string[] = []
     const errors: { url: string; error: string }[] = []
 
+    const CONTEXT_BUCKET: Record<string, string> = {
+      cruise: 'cruise-images',
+      extras: 'extras-images',
+      hero: 'hero-images',
+    }
+
     for (const target of uniqueByUrl.values()) {
       try {
         const res = await fetch(target.url)
@@ -90,44 +99,85 @@ export async function POST(_req: NextRequest) {
         const buffer = Buffer.from(await res.arrayBuffer())
         const sha256 = crypto.createHash('sha256').update(buffer).digest('hex')
 
-        // Check existing
+        // Check existing asset by hash
         const { data: existing } = await supabase
           .from('image_assets')
           .select('id, status')
           .eq('sha256', sha256)
           .maybeSingle()
 
-        if (existing) {
+        let resolvedAssetId: string
+
+        if (!existing) {
+          const { data: inserted, error: insertError } = await supabase
+            .from('image_assets')
+            .insert({
+              context: target.context,
+              context_id: target.context_id,
+              original_url: target.url,
+              mime_type: res.headers.get('content-type') ?? 'image/jpeg',
+              file_size_bytes: buffer.length,
+              sha256,
+              status: 'pending',
+              bucket: CONTEXT_BUCKET[target.context] ?? 'cruise-images',
+            })
+            .select('id')
+            .single()
+
+          if (insertError || !inserted) {
+            errors.push({ url: target.url, error: insertError?.message ?? 'Insert failed' })
+            continue
+          }
+          created.push(inserted.id)
+          resolvedAssetId = inserted.id
+        } else {
           linked.push(existing.id)
-          continue
+          resolvedAssetId = existing.id
         }
 
-        const CONTEXT_BUCKET: Record<string, string> = {
-          cruise: 'cruise-images',
-          extras: 'extras-images',
-          hero: 'hero-images',
+        // ── Link asset back to source table so the frontend can use it ──
+        if (target.context === 'cruise' && target.context_id) {
+          if (target.isHero) {
+            await supabase
+              .from('cruise_listings')
+              .update({ hero_image_asset_id: resolvedAssetId })
+              .eq('id', target.context_id)
+              .is('hero_image_asset_id', null)
+          } else {
+            // Update matching item in images JSONB to add image_asset_id
+            const { data: listing } = await supabase
+              .from('cruise_listings')
+              .select('images')
+              .eq('id', target.context_id)
+              .single()
+            if (listing?.images && Array.isArray(listing.images)) {
+              const updated = (listing.images as Array<Record<string, unknown>>).map(img => {
+                if (typeof img === 'object' && !Array.isArray(img) && img.url === target.url && !img.image_asset_id) {
+                  return { ...img, image_asset_id: resolvedAssetId }
+                }
+                return img
+              })
+              await supabase
+                .from('cruise_listings')
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                .update({ images: updated as any })
+                .eq('id', target.context_id)
+            }
+          }
+        } else if (target.context === 'extras' && target.context_id) {
+          await supabase
+            .from('extras')
+            .update({ image_asset_id: resolvedAssetId })
+            .eq('id', target.context_id)
+            .is('image_asset_id', null)
+        } else if (target.context === 'hero' && target.context_id) {
+          await supabase
+            .from('hero_carousel_items')
+            .update({ image_asset_id: resolvedAssetId })
+            .eq('id', target.context_id)
+            .is('image_asset_id', null)
         }
 
-        const { data: inserted, error: insertError } = await supabase
-          .from('image_assets')
-          .insert({
-            context: target.context,
-            context_id: target.context_id,
-            original_url: target.url,
-            mime_type: res.headers.get('content-type') ?? 'image/jpeg',
-            file_size_bytes: buffer.length,
-            sha256,
-            status: 'pending',
-            bucket: CONTEXT_BUCKET[target.context] ?? 'cruise-images',
-          })
-          .select('id')
-          .single()
-
-        if (insertError || !inserted) {
-          errors.push({ url: target.url, error: insertError?.message ?? 'Insert failed' })
-          continue
-        }
-        created.push(inserted.id)
       } catch (err) {
         errors.push({ url: target.url, error: err instanceof Error ? err.message : 'Unknown error' })
       }

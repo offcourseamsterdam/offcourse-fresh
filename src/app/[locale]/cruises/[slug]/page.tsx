@@ -156,7 +156,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
 
         {/* ── Gallery ── */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <ImageGallery images={data.images} heroUrl={data.heroUrl} videoUrl={data.videoUrl} title={data.title} reviews={data.serializedReviews} reviewCount={data.reviewCount ?? undefined} />
+          <ImageGallery images={data.images} heroUrl={data.heroUrl} heroAsset={data.heroAsset} videoUrl={data.videoUrl} title={data.title} reviews={data.serializedReviews} reviewCount={data.reviewCount ?? undefined} />
         </div>
 
         {/* ── Inline booking (mobile/tablet) ── */}

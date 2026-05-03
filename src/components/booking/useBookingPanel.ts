@@ -147,7 +147,7 @@ export function useBookingPanel({
   }
 
   const guestCount = category === 'private' ? state.guests : state.totalTickets
-  const cityTaxCents = category === 'shared' ? state.totalTickets * 260 : 0
+  const cityTaxCents = guestCount * 260
   const durationMinutes = state.selectedCustomerType?.durationMinutes
 
   const ticketBreakdown = category === 'shared' && state.selectedSlot

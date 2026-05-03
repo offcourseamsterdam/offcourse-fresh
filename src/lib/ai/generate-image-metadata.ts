@@ -209,16 +209,25 @@ async function translateWithClaude(args: {
 }
 
 function parseJsonStrict<T>(raw: string, source: string): T {
-  const cleaned = raw
+  // Strip markdown fences first
+  let cleaned = raw
     .trim()
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```$/i, '')
     .trim()
+
+  // Extract the outermost JSON object even if the model added surrounding prose
+  const start = cleaned.indexOf('{')
+  const end = cleaned.lastIndexOf('}')
+  if (start !== -1 && end > start) {
+    cleaned = cleaned.slice(start, end + 1)
+  }
+
   try {
     return JSON.parse(cleaned) as T
   } catch (err) {
     throw new Error(
-      `Invalid JSON from ${source}: ${err instanceof Error ? err.message : 'parse error'}`,
+      `Invalid JSON from ${source}: ${err instanceof Error ? err.message : 'parse error'} — raw: ${raw.slice(0, 300)}`,
     )
   }
 }

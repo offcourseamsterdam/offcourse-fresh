@@ -22,6 +22,7 @@ export type GalleryReview = {
 interface ImageGalleryProps {
   images: GalleryImage[]
   heroUrl: string | null
+  heroAsset?: ImageAsset | null
   videoUrl?: string | null
   title: string
   reviews: GalleryReview[]
@@ -31,6 +32,7 @@ interface ImageGalleryProps {
 export function ImageGallery({
   images,
   heroUrl,
+  heroAsset,
   videoUrl,
   title,
   reviews,
@@ -40,9 +42,9 @@ export function ImageGallery({
   const [isHoveringImages, setIsHoveringImages] = useState(false)
   const [isHoveringReview, setIsHoveringReview] = useState(false)
 
-  // All images: hero first, then the rest (deduplicated)
+  // All images: hero first (with its optimized asset), then the rest (deduplicated)
   const allImages = heroUrl
-    ? [{ url: heroUrl, alt_text: title }, ...images.filter((img) => img.url !== heroUrl)]
+    ? [{ url: heroUrl, alt_text: title, asset: heroAsset ?? null }, ...images.filter((img) => img.url !== heroUrl)]
     : images
 
   const gridImages = allImages.slice(1)

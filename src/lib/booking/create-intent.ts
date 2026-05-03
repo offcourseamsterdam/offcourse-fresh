@@ -63,15 +63,15 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
     ? await supabase.from('extras').select('*').in('id', selectedExtraIds).eq('is_active', true)
     : { data: [] as any[], error: null }
   if (extrasResult.error) {
-    console.error('[create-intent] extras query failed', extrasResult.error)
+    throw new Error(`Failed to fetch extras: ${extrasResult.error.message}`)
   }
-  const extras = extrasResult.data
+  const extras = extrasResult.data ?? []
 
   const quantities = new Map(Object.entries(extraQuantities))
-  const calc = calculateExtras(serverBaseAmount, guestCount, (extras ?? []) as any, durationMinutes, quantities)
+  const calc = calculateExtras(serverBaseAmount, guestCount, extras as any, durationMinutes, quantities)
 
-  // City tax: €2.60 per ticket on shared cruises (municipality levy, not in FareHarbor)
-  const cityTaxCents = category === 'shared' ? guestCount * 260 : 0
+  // City tax: €2.60 per guest (municipality levy, not in FareHarbor — applies to all cruise types)
+  const cityTaxCents = guestCount * 260
 
   // Apply promo discount (server re-validates the amount passed from client)
   const totalBeforeDiscount = calc.grand_total_cents + cityTaxCents
