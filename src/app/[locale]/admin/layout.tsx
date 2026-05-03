@@ -54,7 +54,7 @@ const navSections: NavSection[] = [
       { href: '/admin/fareharbor',         label: 'FareHarbor API',        icon: 'fareharbor' },
       { href: '/admin/connections',        label: 'Other API Connections', icon: 'connections',  comingSoon: true },
       { href: '/admin/review-tool',        label: 'Review Tool',           icon: 'reviewtool',  comingSoon: true },
-      { href: '/admin/image-optimization', label: 'Image Optimization',    icon: 'images',      comingSoon: true },
+      { href: '/admin/image-optimization', label: 'Image Optimization',    icon: 'images' },
     ],
   },
 ]

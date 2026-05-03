@@ -677,6 +677,7 @@ export type Database = {
           faqs: Json | null
           fareharbor_item_pk: number
           google_maps_url: string | null
+          hero_image_asset_id: string | null
           hero_image_url: string | null
           highlights: Json | null
           id: string
@@ -745,6 +746,7 @@ export type Database = {
           faqs?: Json | null
           fareharbor_item_pk: number
           google_maps_url?: string | null
+          hero_image_asset_id?: string | null
           hero_image_url?: string | null
           highlights?: Json | null
           id?: string
@@ -813,6 +815,7 @@ export type Database = {
           faqs?: Json | null
           fareharbor_item_pk?: number
           google_maps_url?: string | null
+          hero_image_asset_id?: string | null
           hero_image_url?: string | null
           highlights?: Json | null
           id?: string
@@ -865,6 +868,13 @@ export type Database = {
             columns: ["boat_id"]
             isOneToOne: false
             referencedRelation: "boats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cruise_listings_hero_image_asset_id_fkey"
+            columns: ["hero_image_asset_id"]
+            isOneToOne: false
+            referencedRelation: "image_assets"
             referencedColumns: ["id"]
           },
           {
@@ -1168,6 +1178,7 @@ export type Database = {
           description_pt: string | null
           description_zh: string | null
           id: string
+          image_asset_id: string | null
           image_url: string | null
           ingredients: string[] | null
           is_active: boolean
@@ -1207,6 +1218,7 @@ export type Database = {
           description_pt?: string | null
           description_zh?: string | null
           id?: string
+          image_asset_id?: string | null
           image_url?: string | null
           ingredients?: string[] | null
           is_active?: boolean
@@ -1246,6 +1258,7 @@ export type Database = {
           description_pt?: string | null
           description_zh?: string | null
           id?: string
+          image_asset_id?: string | null
           image_url?: string | null
           ingredients?: string[] | null
           is_active?: boolean
@@ -1266,7 +1279,15 @@ export type Database = {
           updated_at?: string | null
           vat_rate?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "extras_image_asset_id_fkey"
+            columns: ["image_asset_id"]
+            isOneToOne: false
+            referencedRelation: "image_assets"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       fareharbor_items: {
         Row: {
@@ -1373,6 +1394,7 @@ export type Database = {
           caption_zh: string | null
           created_at: string
           id: string
+          image_asset_id: string | null
           image_url: string
           is_active: boolean
           media_type: string
@@ -1396,6 +1418,7 @@ export type Database = {
           caption_zh?: string | null
           created_at?: string
           id?: string
+          image_asset_id?: string | null
           image_url: string
           is_active?: boolean
           media_type?: string
@@ -1419,13 +1442,22 @@ export type Database = {
           caption_zh?: string | null
           created_at?: string
           id?: string
+          image_asset_id?: string | null
           image_url?: string
           is_active?: boolean
           media_type?: string
           sort_order?: number
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "hero_carousel_items_image_asset_id_fkey"
+            columns: ["image_asset_id"]
+            isOneToOne: false
+            referencedRelation: "image_assets"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       homepage_tour_cards: {
         Row: {
@@ -1506,6 +1538,93 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      image_assets: {
+        Row: {
+          alt_text: Json | null
+          base_filename: string | null
+          blur_data_url: string | null
+          bucket: string | null
+          caption: Json | null
+          confidence: number | null
+          context: string
+          context_id: string | null
+          created_at: string
+          dominant_color: string | null
+          failure_reason: string | null
+          file_size_bytes: number | null
+          id: string
+          is_animated: boolean | null
+          mime_type: string | null
+          original_height: number | null
+          original_path: string | null
+          original_url: string
+          original_width: number | null
+          primary_keywords: string[] | null
+          processed_at: string | null
+          quality_issues: string[] | null
+          sha256: string
+          status: string
+          updated_at: string
+          variants: Json | null
+        }
+        Insert: {
+          alt_text?: Json | null
+          base_filename?: string | null
+          blur_data_url?: string | null
+          bucket?: string | null
+          caption?: Json | null
+          confidence?: number | null
+          context: string
+          context_id?: string | null
+          created_at?: string
+          dominant_color?: string | null
+          failure_reason?: string | null
+          file_size_bytes?: number | null
+          id?: string
+          is_animated?: boolean | null
+          mime_type?: string | null
+          original_height?: number | null
+          original_path?: string | null
+          original_url: string
+          original_width?: number | null
+          primary_keywords?: string[] | null
+          processed_at?: string | null
+          quality_issues?: string[] | null
+          sha256: string
+          status?: string
+          updated_at?: string
+          variants?: Json | null
+        }
+        Update: {
+          alt_text?: Json | null
+          base_filename?: string | null
+          blur_data_url?: string | null
+          bucket?: string | null
+          caption?: Json | null
+          confidence?: number | null
+          context?: string
+          context_id?: string | null
+          created_at?: string
+          dominant_color?: string | null
+          failure_reason?: string | null
+          file_size_bytes?: number | null
+          id?: string
+          is_animated?: boolean | null
+          mime_type?: string | null
+          original_height?: number | null
+          original_path?: string | null
+          original_url?: string
+          original_width?: number | null
+          primary_keywords?: string[] | null
+          processed_at?: string | null
+          quality_issues?: string[] | null
+          sha256?: string
+          status?: string
+          updated_at?: string
+          variants?: Json | null
+        }
+        Relationships: []
       }
       image_seo_history: {
         Row: {

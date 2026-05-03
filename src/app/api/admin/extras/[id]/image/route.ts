@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { validateUpload, createPendingAsset } from '@/lib/images/upload-helper'
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -9,50 +10,38 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const file = formData.get('file') as File | null
     if (!file) return apiError('No file provided', 400)
 
-    const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
-    const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif']
-    const MAX_SIZE = 10 * 1024 * 1024 // 10MB
+    const validation = await validateUpload(file)
+    if (!validation.ok) return apiError(validation.error, validation.status)
 
-    const ext = (file.name.split('.').pop() ?? '').toLowerCase()
+    const result = await createPendingAsset({
+      buffer: validation.buffer,
+      bucket: 'extras-images',
+      ext: validation.ext,
+      mimeType: validation.mimeType,
+      context: 'extras',
+      contextId: id,
+      pathPrefix: id,
+    })
 
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      return apiError('Invalid file type. Allowed: JPEG, PNG, WebP, GIF', 400)
-    }
-    if (!ALLOWED_EXTENSIONS.includes(ext)) {
-      return apiError('Invalid file extension', 400)
-    }
-    if (file.size > MAX_SIZE) {
-      return apiError('File too large. Maximum size is 10MB', 400)
-    }
-
-    const path = `${id}/${crypto.randomUUID()}.${ext}`
-    const buffer = Buffer.from(await file.arrayBuffer())
-
+    // Link the extras row to the new asset
     const supabase = createAdminClient()
-
-    const { error: uploadError } = await supabase.storage
-      .from('extras-images')
-      .upload(path, buffer, {
-        contentType: file.type,
-        upsert: false,
-      })
-
-    if (uploadError) {
-      return apiError(uploadError.message)
-    }
-
-    const { data: { publicUrl } } = supabase.storage.from('extras-images').getPublicUrl(path)
-
     const { error: updateError } = await supabase
       .from('extras')
-      .update({ image_url: publicUrl, updated_at: new Date().toISOString() })
+      .update({
+        image_asset_id: result.assetId,
+        image_url: result.originalUrl, // legacy fallback for unprocessed images
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', id)
 
-    if (updateError) {
-      return apiError(updateError.message)
-    }
+    if (updateError) return apiError(updateError.message)
 
-    return apiOk({ url: publicUrl, path })
+    return apiOk({
+      assetId: result.assetId,
+      status: result.status,
+      url: result.originalUrl,
+      deduplicated: result.deduplicated,
+    })
   } catch (e) {
     return apiError(e instanceof Error ? e.message : 'Unexpected server error', 500)
   }
