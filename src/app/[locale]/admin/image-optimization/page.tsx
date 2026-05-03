@@ -37,6 +37,13 @@ export default function ImageOptimizationPage() {
 
   useEffect(() => { refresh() }, [refresh])
 
+  // Auto-poll every 5s while images are processing so tabs update without manual refresh
+  useEffect(() => {
+    if ((data?.counts.processing ?? 0) === 0) return
+    const id = setInterval(() => refresh(true), 5000)
+    return () => clearInterval(id)
+  }, [data?.counts.processing, refresh])
+
   const processAllPending = async () => {
     if (!data || data.counts.pending === 0) return
     setBatchRunning(true)
