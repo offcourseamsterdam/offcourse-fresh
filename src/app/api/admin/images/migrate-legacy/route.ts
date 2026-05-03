@@ -102,6 +102,12 @@ export async function POST(_req: NextRequest) {
           continue
         }
 
+        const CONTEXT_BUCKET: Record<string, string> = {
+          cruise: 'cruise-images',
+          extras: 'extras-images',
+          hero: 'hero-images',
+        }
+
         const { data: inserted, error: insertError } = await supabase
           .from('image_assets')
           .insert({
@@ -112,6 +118,7 @@ export async function POST(_req: NextRequest) {
             file_size_bytes: buffer.length,
             sha256,
             status: 'pending',
+            bucket: CONTEXT_BUCKET[target.context] ?? 'cruise-images',
           })
           .select('id')
           .single()

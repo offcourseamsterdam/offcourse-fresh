@@ -68,7 +68,12 @@ export async function processAsset(assetId: string): Promise<ProcessAssetResult 
     const baseFilename = aiMetadata?.seo_filename ?? `image-${assetId.slice(0, 8)}`
 
     // 6. Upload variants to Supabase Storage in the same bucket
-    const bucket = asset.bucket as string
+    const CONTEXT_BUCKET: Record<string, string> = {
+      cruise: 'cruise-images',
+      extras: 'extras-images',
+      hero: 'hero-images',
+    }
+    const bucket = (asset.bucket as string | null) ?? CONTEXT_BUCKET[asset.context] ?? 'cruise-images'
     const subfolder = asset.context_id ? `${asset.context_id}/` : ''
     const cacheControl = 'public, max-age=31536000, immutable'
 

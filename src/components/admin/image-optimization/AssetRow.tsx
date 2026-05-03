@@ -92,7 +92,11 @@ export function AssetRow({ asset, onProcessed }: Props) {
       </td>
 
       <td className="px-3 py-2 text-right">
-        {error && <div className="text-xs text-red-600 mb-1">{error}</div>}
+        {(error ?? asset.failure_reason) && (
+          <div className="text-xs text-red-600 mb-1 truncate max-w-[200px]" title={error ?? asset.failure_reason ?? undefined}>
+            {error ?? asset.failure_reason}
+          </div>
+        )}
         {asset.status === 'pending' || asset.status === 'failed' ? (
           <button
             disabled={busy}
