@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { processUploadedImage } from './process'
-import { generateImageMetadata } from '@/lib/ai/generate-image-metadata'
+import { generateImageMetadataFromBuffer } from '@/lib/ai/generate-image-metadata'
 
 export interface ProcessAssetResult {
   ok: true
@@ -56,11 +56,13 @@ export async function processAsset(assetId: string): Promise<ProcessAssetResult 
     // 3. Sharp pipeline
     const processed = await processUploadedImage(originalBuffer)
 
-    // 4 + 5. AI metadata (Gemini + Claude). Wrap in try/catch — if it fails, keep going
-    // with empty metadata so the variants still get saved and the image is usable.
+    // 4 + 5. AI metadata (Gemini + Claude). Use the 640px WebP variant from Sharp output —
+    // much smaller than the original (50-150KB vs 5MB+), avoids a second HTTP download,
+    // and has a reliable mimeType. Wrap in try/catch so variants still get saved on failure.
     let aiMetadata = null
     try {
-      aiMetadata = await generateImageMetadata(asset.original_url)
+      const ref = processed.variants.find(v => v.width === 640) ?? processed.variants[0]
+      aiMetadata = await generateImageMetadataFromBuffer(ref.webp, 'image/webp')
     } catch (err) {
       console.warn(`[processAsset ${assetId}] AI metadata failed, continuing without:`, err)
     }

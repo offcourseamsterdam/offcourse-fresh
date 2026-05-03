@@ -18,8 +18,8 @@ export default function ImageOptimizationPage() {
   const [migrating, setMigrating] = useState(false)
   const [migrateMessage, setMigrateMessage] = useState<string | null>(null)
 
-  const refresh = useCallback(async () => {
-    setLoading(true)
+  const refresh = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
     setError(null)
     try {
       const params = new URLSearchParams()
@@ -31,11 +31,18 @@ export default function ImageOptimizationPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [filter])
 
   useEffect(() => { refresh() }, [refresh])
+
+  // Auto-poll every 5s while images are processing so tabs update without manual refresh
+  useEffect(() => {
+    if ((data?.counts.processing ?? 0) === 0) return
+    const id = setInterval(() => refresh(true), 5000)
+    return () => clearInterval(id)
+  }, [data?.counts.processing, refresh])
 
   const processAllPending = async () => {
     if (!data || data.counts.pending === 0) return
@@ -91,7 +98,7 @@ export default function ImageOptimizationPage() {
           </p>
         </div>
         <button
-          onClick={refresh}
+          onClick={() => refresh()}
           disabled={loading}
           className="flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded border border-zinc-300 hover:bg-zinc-100 disabled:opacity-50"
         >

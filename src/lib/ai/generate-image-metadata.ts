@@ -56,11 +56,32 @@ export async function generateImageMetadata(
   opts: GenerateOptions = {},
 ): Promise<ImageMetadata> {
   const fetchImpl = opts.fetchImpl ?? fetch
+  const { base64, mimeType } = await fetchImageAsBase64(imageUrl, fetchImpl)
+  return generateImageMetadataFromBase64(base64, mimeType, opts)
+}
+
+/**
+ * Same as generateImageMetadata but accepts a pre-fetched buffer directly.
+ * Preferred in the processing pipeline since Sharp already has the data in memory —
+ * avoids a second HTTP download and ensures a small, consistent image size for Gemini.
+ */
+export async function generateImageMetadataFromBuffer(
+  buffer: Buffer,
+  mimeType: string,
+  opts: GenerateOptions = {},
+): Promise<ImageMetadata> {
+  const base64 = buffer.toString('base64')
+  return generateImageMetadataFromBase64(base64, mimeType, opts)
+}
+
+async function generateImageMetadataFromBase64(
+  base64: string,
+  mimeType: string,
+  opts: GenerateOptions = {},
+): Promise<ImageMetadata> {
   const claude = opts.claude ?? getClaude()
   const gemini = opts.gemini ?? getGemini()
   const keywords = opts.keywords ?? flattenKeywords()
-
-  const { base64, mimeType } = await fetchImageAsBase64(imageUrl, fetchImpl)
 
   const visionResult = await describeWithGemini({
     gemini,
