@@ -21,4 +21,4 @@ export function getGemini(): GoogleGenerativeAI {
 }
 
 export const CLAUDE_MODEL = 'claude-sonnet-4-20250514'
-export const GEMINI_MODEL = 'gemini-2.5-flash'
+export const GEMINI_MODEL = 'gemini-2.0-flash'

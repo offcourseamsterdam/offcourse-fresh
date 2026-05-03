@@ -9,6 +9,7 @@ export interface ProcessAssetResult {
   totalBytes: number
   metadataConfidence: number
   qualityIssues: string[]
+  aiWarning?: string
 }
 
 export interface ProcessAssetError {
@@ -56,15 +57,16 @@ export async function processAsset(assetId: string): Promise<ProcessAssetResult 
     // 3. Sharp pipeline
     const processed = await processUploadedImage(originalBuffer)
 
-    // 4 + 5. AI metadata (Gemini + Claude). Use the 640px WebP variant from Sharp output —
-    // much smaller than the original (50-150KB vs 5MB+), avoids a second HTTP download,
-    // and has a reliable mimeType. Wrap in try/catch so variants still get saved on failure.
+    // 4 + 5. AI metadata (Gemini + Claude). Use the 320px WebP — smallest variant,
+    // fastest for Gemini inline data, well within the 60s function timeout.
     let aiMetadata = null
+    let aiWarning: string | undefined
     try {
-      const ref = processed.variants.find(v => v.width === 640) ?? processed.variants[0]
+      const ref = processed.variants.find(v => v.width === 320) ?? processed.variants[0]
       aiMetadata = await generateImageMetadataFromBuffer(ref.webp, 'image/webp')
     } catch (err) {
-      console.warn(`[processAsset ${assetId}] AI metadata failed, continuing without:`, err)
+      aiWarning = err instanceof Error ? err.message : String(err)
+      console.warn(`[processAsset ${assetId}] AI metadata failed:`, aiWarning)
     }
 
     const baseFilename = aiMetadata?.seo_filename ?? `image-${assetId.slice(0, 8)}`
@@ -145,6 +147,7 @@ export async function processAsset(assetId: string): Promise<ProcessAssetResult 
       totalBytes,
       metadataConfidence: aiMetadata?.confidence ?? 0,
       qualityIssues: aiMetadata?.quality_issues ?? [],
+      aiWarning,
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown processing error'
