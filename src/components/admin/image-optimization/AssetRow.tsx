@@ -58,17 +58,23 @@ export function AssetRow({ asset, onProcessed }: Props) {
             {asset.base_filename ?? asset.id.slice(0, 8) + '…'}
           </div>
           <div className="text-xs text-zinc-500">{asset.context} {asset.context_id ? `· ${asset.context_id.slice(0, 8)}` : ''}</div>
+          {hasAltText && altText?.en && (
+            <div className="text-xs text-zinc-600 mt-0.5 max-w-[260px]">
+              <span className="text-zinc-400 mr-1">en:</span>
+              <span className="italic">{altText.en}</span>
+            </div>
+          )}
           {hasAltText && (
             <button
               onClick={() => setExpanded(e => !e)}
               className="flex items-center gap-0.5 text-xs text-blue-600 hover:text-blue-800 mt-0.5"
             >
               {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-              Alt text
+              {expanded ? 'Hide' : 'All languages'}
             </button>
           )}
           {asset.status === 'complete' && !hasAltText && (
-            <span className="text-xs text-amber-600">No alt text</span>
+            <span className="text-xs text-amber-600">No alt text — reprocess to generate</span>
           )}
         </td>
 
