@@ -6,7 +6,9 @@ import { DesktopGalleryGrid } from './DesktopGalleryGrid'
 import { MobileCarousel } from './MobileCarousel'
 import { ReviewPopup } from './ReviewPopup'
 
-export type GalleryImage = { url: string; alt_text?: string | null }
+import type { ImageAsset } from '@/lib/images/types'
+
+export type GalleryImage = { url: string; alt_text?: string | null; asset?: ImageAsset | null }
 export type GalleryReview = {
   id: string
   reviewer_name: string

@@ -1,9 +1,10 @@
-import Image from 'next/image'
 import { Link } from '@/i18n/navigation'
 import { formatPrice } from '@/lib/utils'
 import type { SearchResult } from '@/types'
 import type { Locale } from '@/lib/i18n/config'
 import { CategoryBadge } from '@/components/ui/CategoryBadge'
+import { OptimizedImage } from '@/components/ui/OptimizedImage'
+import type { ImageAsset } from '@/lib/images/types'
 
 interface SearchResultCardProps {
   result: SearchResult
@@ -23,12 +24,13 @@ export function SearchResultCard({ result, locale, date, guests }: SearchResultC
         {/* Photo */}
         <div className="relative aspect-[4/3] overflow-hidden bg-[#e5e7eb]">
           {result.listing.hero_image_url ? (
-            <Image
-              src={result.listing.hero_image_url}
+            <OptimizedImage
+              asset={(result.listing as { hero_asset?: ImageAsset | null }).hero_asset ?? null}
+              fallbackUrl={result.listing.hero_image_url}
               alt={result.listing.title}
+              context="card"
               fill
-              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-              className="object-cover group-hover:scale-105 transition-transform duration-500"
+              className="group-hover:scale-105 transition-transform duration-500"
             />
           ) : (
             <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-primary/5" />

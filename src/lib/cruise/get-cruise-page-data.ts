@@ -4,11 +4,19 @@ import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import { formatExtraPrice } from '@/lib/constants'
 import type { Locale } from '@/lib/i18n/config'
 import type { Database } from '@/lib/supabase/types'
+import type { ImageAsset } from '@/lib/images/types'
 
 type CruiseListing = Database['public']['Tables']['cruise_listings']['Row']
-type CruiseImage = { url: string; alt_text?: string | null }
+/** Item shape inside cruise_listings.images JSONB. image_asset_id is optional — */
+/** items uploaded before the optimization pipeline don't have it. */
+type CruiseImage = { url: string; alt_text?: string | null; image_asset_id?: string | null }
 type Benefit = { text: string }
 type Faq = { question: string; answer: string }
+
+/** Image item enriched with its optimized asset (if available). */
+export interface CruiseImageItem extends CruiseImage {
+  asset: ImageAsset | null
+}
 
 // Deduplicate the listing fetch between generateMetadata and the page component
 export const getListingBySlug = cache(async (slug: string) => {
@@ -61,12 +69,34 @@ export async function getCruisePageData(listing: CruiseListing, locale: Locale) 
   })
 
   // Parse JSONB fields
-  const images = (listing.images as CruiseImage[] | null) ?? []
+  const rawImages = (listing.images as CruiseImage[] | null) ?? []
   const highlights = (listing.highlights as Benefit[] | null) ?? []
   const faqs = (listing.faqs as Faq[] | null) ?? []
   const cancellationPolicy = typeof listing.cancellation_policy === 'string'
     ? listing.cancellation_policy
     : (listing.cancellation_policy as { text?: string } | null)?.text ?? null
+
+  // Fetch optimized image assets in one batched query, keyed by ID
+  const assetIdsToFetch = [
+    listing.hero_image_asset_id,
+    ...rawImages.map(i => i.image_asset_id ?? null),
+  ].filter((id): id is string => Boolean(id))
+
+  const assetMap = new Map<string, ImageAsset>()
+  if (assetIdsToFetch.length > 0) {
+    const { data: assets } = await supabase
+      .from('image_assets')
+      .select('*')
+      .in('id', assetIdsToFetch)
+    for (const a of (assets ?? []) as ImageAsset[]) assetMap.set(a.id, a)
+  }
+
+  const heroAsset = listing.hero_image_asset_id ? assetMap.get(listing.hero_image_asset_id) ?? null : null
+  // Enrich each image item with its optimized asset (or null if not yet processed)
+  const images: CruiseImageItem[] = rawImages.map(i => ({
+    ...i,
+    asset: i.image_asset_id ? assetMap.get(i.image_asset_id) ?? null : null,
+  }))
 
   const heroUrl = listing.hero_image_url ?? images[0]?.url ?? null
   const title = getLocalizedField(listing, 'title', loc)
@@ -103,7 +133,7 @@ export async function getCruisePageData(listing: CruiseListing, locale: Locale) 
   const totalReviews = reviewCount ?? reviews?.length ?? 0
 
   return {
-    listing, title, tagline, description, heroUrl, images, highlights, faqs,
+    listing, title, tagline, description, heroUrl, heroAsset, images, highlights, faqs,
     cancellationPolicy, serializedReviews, serializedFood, serializedDrinks,
     listingBoats, reviewCount, totalReviews, avgRating, videoUrl, loc,
   }

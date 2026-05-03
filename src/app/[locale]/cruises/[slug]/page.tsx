@@ -108,10 +108,26 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
     ],
   }
 
+  // Build LCP preload props for the hero image (only when asset is processed)
+  const heroPreload = data.heroAsset && data.heroAsset.status === 'complete' && data.heroAsset.variants?.length
+    ? buildHeroPreload(data.heroAsset.variants)
+    : null
+
   return (
     <>
       <TrackPageView event="view_cruise_detail" metadata={{ slug, category: listing.category }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      {/* LCP preload: tells the browser to fetch the hero AVIF before parsing the rest of the HTML.
+          Typically saves 200-500ms on Largest Contentful Paint. React 19 hoists <link> to <head>. */}
+      {heroPreload && (
+        <link
+          rel="preload"
+          as="image"
+          imageSrcSet={heroPreload.srcSet}
+          imageSizes={heroPreload.sizes}
+          type="image/avif"
+        />
+      )}
 
       <StickyBookingHeader title={data.title} priceDisplay={listing.price_display} />
       <MobileBookingCTA />
