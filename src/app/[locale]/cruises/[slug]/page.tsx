@@ -212,3 +212,11 @@ async function getCruiseHeroImageObject(
     ? { '@type': 'ImageObject', url: listing.hero_image_url, name: alt }
     : null
 }
+
+
+/** Build srcSet + sizes for an LCP <link rel="preload"> tag for the cruise hero. */
+function buildHeroPreload(variants: Array<{ width: number; avif_url: string }>) {
+  const sorted = variants.slice().sort((a, b) => a.width - b.width)
+  const srcSet = sorted.map(v => `${v.avif_url} ${v.width}w`).join(", ")
+  return { srcSet, sizes: "(max-width: 1024px) 100vw, 50vw" }
+}
