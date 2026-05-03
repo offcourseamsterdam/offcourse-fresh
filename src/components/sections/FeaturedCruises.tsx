@@ -145,14 +145,8 @@ function CruiseCard({ listing, rotation, slots, loading, date, guests }: {
         {/* CTAs */}
         <div className="flex gap-3 justify-center">
           <Link
-            href={date ? `/cruises/${listing.slug}?date=${date}&guests=${guests}` : `/cruises/${listing.slug}`}
-            className="flex-1 max-w-[140px] border-2 border-accent text-accent rounded-full py-2 font-palmore text-sm text-center hover:bg-accent hover:text-white transition-all duration-300"
-          >
-            Book
-          </Link>
-          <Link
             href={`/cruises/${listing.slug}`}
-            className="flex-1 max-w-[140px] border-2 border-white text-white py-2 font-avenir text-sm text-center hover:bg-white hover:text-primary transition-all duration-300"
+            className="flex-1 max-w-[180px] border-2 border-white text-white py-2 font-avenir text-sm text-center hover:bg-white hover:text-primary transition-all duration-300"
           >
             More Info
           </Link>
