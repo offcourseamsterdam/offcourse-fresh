@@ -3,8 +3,9 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { processAsset } from '@/lib/images/processor'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-// Long-running: serial processing of up to ~20 images. Each takes 15-30s.
-export const maxDuration = 600
+// Vercel Hobby caps at 300s. Each image takes ~10-20s, so batch limit
+// is enforced to ~10 per call below.
+export const maxDuration = 300
 
 interface BatchBody {
   assetIds?: string[]
@@ -35,7 +36,9 @@ export async function POST(req: NextRequest) {
         .select('id')
         .eq('status', body.status)
         .order('created_at', { ascending: true })
-        .limit(body.limit ?? 20)
+        // Cap at 10 per call: 10 × 20s = 200s, safely under Hobby's 300s limit.
+        // Frontend can call again with more if there are still pending images.
+        .limit(Math.min(body.limit ?? 10, 10))
       if (error) return apiError(error.message)
       assetIds = (data ?? []).map(r => r.id)
     } else {

@@ -3,7 +3,9 @@ import crypto from 'node:crypto'
 import { apiOk, apiError } from '@/lib/api/response'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-export const maxDuration = 600
+// Vercel Hobby caps at 300s. Migration scans all listings + inserts asset
+// rows — typically completes in <60s for ~100 images.
+export const maxDuration = 300
 
 interface ScanResult {
   context: 'cruise' | 'extras' | 'hero'
