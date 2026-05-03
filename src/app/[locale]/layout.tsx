@@ -88,6 +88,9 @@ export default async function LocaleLayout({ children, params }: Props) {
     <NextIntlClientProvider messages={messages}>
       <AuthProvider>
         <SearchProvider>
+          {/* Resource hints for the Supabase Storage CDN — saves ~100ms on first image load. */}
+          <link rel="preconnect" href="https://fkylzllxvepmrtqxisrn.supabase.co" />
+          <link rel="dns-prefetch" href="https://fkylzllxvepmrtqxisrn.supabase.co" />
           <script
             type="application/ld+json"
             dangerouslySetInnerHTML={{ __html: JSON.stringify(orgJsonLd) }}

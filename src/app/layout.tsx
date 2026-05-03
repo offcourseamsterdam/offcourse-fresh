@@ -23,11 +23,6 @@ export default function RootLayout({
 }) {
   return (
     <html suppressHydrationWarning>
-      <head>
-        {/* Preconnect to Supabase Storage CDN — saves ~100ms on first image load */}
-        <link rel="preconnect" href="https://fkylzllxvepmrtqxisrn.supabase.co" crossOrigin="" />
-        <link rel="dns-prefetch" href="https://fkylzllxvepmrtqxisrn.supabase.co" />
-      </head>
       <body>{children}</body>
     </html>
   )
