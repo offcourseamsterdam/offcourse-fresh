@@ -93,7 +93,7 @@ export function AssetRow({ asset, onProcessed }: Props) {
 
       <td className="px-3 py-2 text-right">
         {(error ?? asset.failure_reason) && (
-          <div className="text-xs text-red-600 mb-1 truncate max-w-[200px]" title={error ?? asset.failure_reason ?? undefined}>
+          <div className="text-xs text-red-600 mb-1 max-w-[220px] break-words select-all cursor-text text-left">
             {error ?? asset.failure_reason}
           </div>
         )}
