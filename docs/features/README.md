@@ -8,4 +8,5 @@ One file per track or major feature. Written before every PR and kept up to date
 | Public pages + SEO | [track-b-public-pages.md](track-b-public-pages.md) | B | done |
 | Google Reviews integration | [google-reviews.md](google-reviews.md) | — | done |
 | Partner-invoiced listings (Webikeamsterdam) | [partner-invoiced-listings.md](partner-invoiced-listings.md) | — | done |
+| Image optimization pipeline (Sharp + AVIF + Gemini) | [image-optimization.md](image-optimization.md) | — | done |
 | Codebase refactoring plan | [codebase-refactoring-plan.md](codebase-refactoring-plan.md) | — | planned |

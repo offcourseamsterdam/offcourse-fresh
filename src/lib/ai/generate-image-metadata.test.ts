@@ -42,6 +42,7 @@ const VALID_GEMINI_JSON = JSON.stringify({
   en_caption: 'the light hits different from the water',
   primary_keywords: ['electric boat Amsterdam', 'Jordaan', 'golden hour canal'],
   confidence: 0.92,
+  quality_issues: [],
 })
 
 const VALID_CLAUDE_JSON = JSON.stringify({
@@ -148,6 +149,73 @@ describe('generateImageMetadata', () => {
       }),
     ).rejects.toThrow(/missing locale: zh/)
   })
+
+  it('builds an SEO filename from primary_keywords', async () => {
+    const result = await generateImageMetadata('https://example.com/photo.png', {
+      fetchImpl: mockFetch(),
+      gemini: mockGemini(VALID_GEMINI_JSON),
+      claude: mockClaude(VALID_CLAUDE_JSON),
+    })
+    expect(result.seo_filename).toMatch(/electric|boat|amsterdam|jordaan/)
+    expect(result.seo_filename).toMatch(/^[a-z0-9-]+$/)
+  })
+
+  it('returns empty quality_issues when image is fine', async () => {
+    const result = await generateImageMetadata('https://example.com/photo.png', {
+      fetchImpl: mockFetch(),
+      gemini: mockGemini(VALID_GEMINI_JSON),
+      claude: mockClaude(VALID_CLAUDE_JSON),
+    })
+    expect(result.quality_issues).toEqual([])
+  })
+
+  it('passes through valid quality_issues from Gemini', async () => {
+    const blurryGemini = JSON.stringify({
+      en_alt: 'A boat photo',
+      en_caption: 'on the water',
+      primary_keywords: ['boat'],
+      confidence: 0.6,
+      quality_issues: ['blurry', 'too_dark'],
+    })
+    const result = await generateImageMetadata('https://example.com/photo.png', {
+      fetchImpl: mockFetch(),
+      gemini: mockGemini(blurryGemini),
+      claude: mockClaude(VALID_CLAUDE_JSON),
+    })
+    expect(result.quality_issues).toEqual(['blurry', 'too_dark'])
+  })
+
+  it('filters out unknown quality_issue values', async () => {
+    const weirdGemini = JSON.stringify({
+      en_alt: 'A boat photo',
+      en_caption: 'on the water',
+      primary_keywords: ['boat'],
+      confidence: 0.7,
+      quality_issues: ['blurry', 'made_up_flag', 'totally_invalid'],
+    })
+    const result = await generateImageMetadata('https://example.com/photo.png', {
+      fetchImpl: mockFetch(),
+      gemini: mockGemini(weirdGemini),
+      claude: mockClaude(VALID_CLAUDE_JSON),
+    })
+    expect(result.quality_issues).toEqual(['blurry'])
+  })
+
+  it('handles missing quality_issues field gracefully', async () => {
+    const noFlags = JSON.stringify({
+      en_alt: 'A boat photo',
+      en_caption: 'on the water',
+      primary_keywords: ['boat'],
+      confidence: 0.7,
+      // no quality_issues key
+    })
+    const result = await generateImageMetadata('https://example.com/photo.png', {
+      fetchImpl: mockFetch(),
+      gemini: mockGemini(noFlags),
+      claude: mockClaude(VALID_CLAUDE_JSON),
+    })
+    expect(result.quality_issues).toEqual([])
+  })
 })
 
 describe('isCompleteMetadata', () => {
@@ -156,6 +224,8 @@ describe('isCompleteMetadata', () => {
     caption: { en: 'b', nl: 'b', de: 'b', fr: 'b', es: 'b', pt: 'b', zh: 'b' },
     primary_keywords: [],
     confidence: 1,
+    seo_filename: 'image',
+    quality_issues: [],
   }
 
   it('returns true when all locales have text', () => {

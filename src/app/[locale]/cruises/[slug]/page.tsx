@@ -25,14 +25,42 @@ export async function generateMetadata({ params }: Props) {
   const title = getLocalizedField(meta, 'seo_title', loc) ?? meta.title
   const description = getLocalizedField(meta, 'seo_meta_description', loc) ?? meta.tagline ?? undefined
   const isPartnerInvoice = meta.payment_mode === 'partner_invoice'
+
+  // Open Graph image — pick the optimised 1080px variant if available, else legacy hero
+  const ogImageUrl = await getCruiseOgImage(meta)
+
   return {
     title: `${title} — Off Course Amsterdam`,
     description,
-    openGraph: { title, description: description ?? undefined },
+    openGraph: {
+      title,
+      description: description ?? undefined,
+      ...(ogImageUrl ? { images: [{ url: ogImageUrl, alt: title }] } : {}),
+    },
+    twitter: ogImageUrl
+      ? { card: 'summary_large_image', images: [ogImageUrl] }
+      : undefined,
     // Partner-invoice listings are distributed only via physical QR codes.
     // Keep them out of search engines so the URL can't be found by accident.
     ...(isPartnerInvoice ? { robots: { index: false, follow: false } } : {}),
   }
+}
+
+/** Pick the best image URL for Open Graph cards — prefer optimised 1080px AVIF variant. */
+async function getCruiseOgImage(listing: { id: string; hero_image_url: string | null; hero_image_asset_id?: string | null }): Promise<string | null> {
+  if (!listing.hero_image_asset_id) return listing.hero_image_url
+  const { createClient } = await import('@/lib/supabase/server')
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('image_assets')
+    .select('variants, status')
+    .eq('id', listing.hero_image_asset_id)
+    .maybeSingle()
+  if (!data || data.status !== 'complete') return listing.hero_image_url
+  const variants = (data.variants as Array<{ width: number; webp_url: string; avif_url: string }>) ?? []
+  // OG / Twitter cards prefer JPEG/WebP — pick 1080px WebP for max compatibility
+  const ideal = variants.find(v => v.width === 1080) ?? variants[variants.length - 1]
+  return ideal?.webp_url ?? listing.hero_image_url
 }
 
 export default async function CruiseListingPage({ params, searchParams }: Props) {
@@ -45,12 +73,16 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
 
   const data = await getCruisePageData(listing, locale as Locale)
 
+  // JSON-LD ImageObject for Google Images / Discover ranking
+  const heroImage = await getCruiseHeroImageObject(listing, data.title)
+
   // JSON-LD structured data
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Product',
     name: data.title,
     description: data.tagline ?? undefined,
+    ...(heroImage ? { image: heroImage } : {}),
     offers: listing.starting_price
       ? { '@type': 'Offer', priceCurrency: 'EUR', price: listing.starting_price, availability: 'https://schema.org/InStock' }
       : undefined,
@@ -147,4 +179,36 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
       </div>
     </>
   )
+}
+
+
+/** Build a JSON-LD ImageObject from the optimised hero asset (or legacy URL). */
+async function getCruiseHeroImageObject(
+  listing: { id: string; hero_image_url: string | null; hero_image_asset_id?: string | null },
+  alt: string,
+) {
+  if (listing.hero_image_asset_id) {
+    const { createClient } = await import('@/lib/supabase/server')
+    const supabase = await createClient()
+    const { data: asset } = await supabase
+      .from('image_assets')
+      .select('variants, alt_text, original_width, original_height, status')
+      .eq('id', listing.hero_image_asset_id)
+      .maybeSingle()
+    if (asset && asset.status === 'complete') {
+      const variants = (asset.variants as Array<{ width: number; avif_url: string; webp_url: string }>) ?? []
+      const largest = variants[variants.length - 1]
+      const altText = (asset.alt_text as Record<string, string> | null)?.en ?? alt
+      return {
+        '@type': 'ImageObject',
+        url: largest?.webp_url ?? listing.hero_image_url,
+        width: asset.original_width ?? undefined,
+        height: asset.original_height ?? undefined,
+        name: altText,
+      }
+    }
+  }
+  return listing.hero_image_url
+    ? { '@type': 'ImageObject', url: listing.hero_image_url, name: alt }
+    : null
 }
