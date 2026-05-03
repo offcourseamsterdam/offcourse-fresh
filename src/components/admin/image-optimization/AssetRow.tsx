@@ -14,7 +14,7 @@ export function AssetRow({ asset, onProcessed }: Props) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const handleProcess = async (action: 'process' | 'reprocess') => {
+  const handleProcess = async (action: 'process' | 'reprocess' | 'reset') => {
     setBusy(true)
     setError(null)
     try {
@@ -113,9 +113,15 @@ export function AssetRow({ asset, onProcessed }: Props) {
           >
             {busy ? 'Working…' : 'Re-process'}
           </button>
-        ) : (
-          <span className="text-xs text-zinc-500">running…</span>
-        )}
+        ) : asset.status === 'processing' ? (
+          <button
+            disabled={busy}
+            onClick={() => handleProcess('reset')}
+            className="text-sm font-medium px-3 py-1 rounded border border-zinc-300 text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+          >
+            {busy ? 'Resetting…' : 'Reset'}
+          </button>
+        ) : null}
       </td>
     </tr>
   )
