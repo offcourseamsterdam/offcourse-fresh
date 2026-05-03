@@ -73,15 +73,64 @@ interface ReviewReply {
   updateTime: string
 }
 
-interface GbpReview {
+export interface GbpReview {
   name: string
   reviewId: string
-  reviewer: { displayName: string }
-  starRating: string
-  comment: string
+  reviewer: {
+    displayName: string
+    profilePhotoUrl?: string
+    isAnonymous?: boolean
+  }
+  starRating: 'ONE' | 'TWO' | 'THREE' | 'FOUR' | 'FIVE'
+  comment?: string
   createTime: string
   updateTime: string
   reviewReply?: ReviewReply
+}
+
+interface GbpReviewListResponse {
+  reviews?: GbpReview[]
+  averageRating?: number
+  totalReviewCount?: number
+  nextPageToken?: string
+}
+
+/**
+ * Fetch all reviews for a location, paginating through all pages.
+ * Returns the full list plus aggregate stats.
+ */
+export async function listAllReviews(
+  accessToken: string,
+  accountId: string,
+  locationId: string,
+): Promise<{ reviews: GbpReview[]; averageRating?: number; totalReviewCount?: number }> {
+  const reviews: GbpReview[] = []
+  let pageToken: string | undefined
+  let averageRating: number | undefined
+  let totalReviewCount: number | undefined
+
+  do {
+    const url = new URL(`${MY_BUSINESS_API}/${accountId}/${locationId}/reviews`)
+    url.searchParams.set('pageSize', '50')
+    if (pageToken) url.searchParams.set('pageToken', pageToken)
+
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+
+    if (!res.ok) {
+      const body = await res.text()
+      throw new Error(`List reviews failed (${res.status}): ${body}`)
+    }
+
+    const data = await res.json() as GbpReviewListResponse
+    if (data.reviews) reviews.push(...data.reviews)
+    if (data.averageRating !== undefined) averageRating = data.averageRating
+    if (data.totalReviewCount !== undefined) totalReviewCount = data.totalReviewCount
+    pageToken = data.nextPageToken
+  } while (pageToken)
+
+  return { reviews, averageRating, totalReviewCount }
 }
 
 /**
