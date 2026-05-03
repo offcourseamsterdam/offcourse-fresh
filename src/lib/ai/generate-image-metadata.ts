@@ -3,12 +3,19 @@ import type { GoogleGenerativeAI } from '@google/generative-ai'
 import { OFF_COURSE_SYSTEM_PROMPT, LOCALES, type Locale } from './context'
 import { flattenKeywords } from './seo-keywords'
 import { CLAUDE_MODEL, GEMINI_MODEL, getClaude, getGemini } from './clients'
+import { buildSeoFilename } from '../images/seo-filename'
+
+export type QualityIssue = 'blurry' | 'too_dark' | 'too_bright' | 'low_resolution' | 'bad_composition' | 'watermarked'
 
 export type ImageMetadata = {
   alt_text: Record<Locale, string>
   caption: Record<Locale, string>
   primary_keywords: string[]
   confidence: number
+  /** SEO-friendly base filename derived from primary_keywords (no extension/suffix). */
+  seo_filename: string
+  /** Quality flags from Gemini — empty array when image is fine. */
+  quality_issues: QualityIssue[]
 }
 
 export type GenerateOptions = {
@@ -24,7 +31,17 @@ type GeminiResult = {
   en_caption: string
   primary_keywords: string[]
   confidence: number
+  quality_issues: QualityIssue[]
 }
+
+const VALID_QUALITY_ISSUES: ReadonlySet<QualityIssue> = new Set([
+  'blurry',
+  'too_dark',
+  'too_bright',
+  'low_resolution',
+  'bad_composition',
+  'watermarked',
+])
 
 type TranslationLocale = Exclude<Locale, 'en'>
 type ClaudeTranslations = {
@@ -64,6 +81,8 @@ export async function generateImageMetadata(
     caption: { en: visionResult.en_caption, ...translations.caption },
     primary_keywords: visionResult.primary_keywords,
     confidence: visionResult.confidence,
+    seo_filename: buildSeoFilename(visionResult.primary_keywords),
+    quality_issues: visionResult.quality_issues,
   }
 }
 
@@ -99,11 +118,18 @@ async function describeWithGemini(args: {
     '2. en_caption — a short caption, 5-10 words, in Off Course\'s voice (warm, slightly poetic, never corporate).',
     '3. primary_keywords — array of 2-5 keywords from the provided list that this image TRULY depicts. Do not invent, do not stuff.',
     '4. confidence — 0.0 to 1.0, how confident you are that the description is accurate.',
+    '5. quality_issues — array of flags ONLY if the image has real problems. Empty array if fine. Allowed values:',
+    '   - "blurry": noticeable motion blur or out-of-focus subject',
+    '   - "too_dark": underexposed, hard to make out subject',
+    '   - "too_bright": overexposed, blown highlights',
+    '   - "low_resolution": pixelated or visibly compressed',
+    '   - "bad_composition": subject cut off, awkward framing, distracting clutter',
+    '   - "watermarked": stock-photo watermark or visible logo overlay',
     '',
     `Keyword pool: ${args.keywords.join(', ')}`,
     args.context ? `Context hint: ${args.context}` : '',
     '',
-    'Output ONLY JSON with keys: en_alt, en_caption, primary_keywords, confidence.',
+    'Output ONLY JSON with keys: en_alt, en_caption, primary_keywords, confidence, quality_issues.',
   ]
     .filter(Boolean)
     .join('\n')
@@ -114,7 +140,12 @@ async function describeWithGemini(args: {
   ])
 
   const text = result.response.text()
-  return parseJsonStrict<GeminiResult>(text, 'gemini')
+  const parsed = parseJsonStrict<GeminiResult>(text, 'gemini')
+  // Defensive: filter to only allowed quality_issue values
+  parsed.quality_issues = Array.isArray(parsed.quality_issues)
+    ? parsed.quality_issues.filter((q): q is QualityIssue => VALID_QUALITY_ISSUES.has(q as QualityIssue))
+    : []
+  return parsed
 }
 
 async function translateWithClaude(args: {
