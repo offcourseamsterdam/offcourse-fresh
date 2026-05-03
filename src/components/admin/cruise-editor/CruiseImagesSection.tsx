@@ -22,7 +22,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { SafeImage } from '@/components/ui/SafeImage'
 import { CruiseTabProps, patchListing } from './shared'
 
-type ImageItem = { url: string; alt_text?: string }
+type ImageItem = { url: string; alt_text?: string; image_asset_id?: string | null }
 
 /* ── Sortable image card ──────────────────────────────────────────────────── */
 
@@ -141,17 +141,29 @@ export function CruiseImagesSection({ listing, onSave }: CruiseTabProps) {
     fd.append('file', file)
     fd.append('listingId', listing.id)
     const res = await fetch('/api/admin/cruise-listings/images', { method: 'POST', body: fd })
-    return res.json() as Promise<{ ok: boolean; url?: string; error?: string }>
+    // Upload route returns { ok, data: { assetId, status, url, deduplicated } }
+    return res.json() as Promise<{
+      ok: boolean
+      data?: { assetId: string; status: string; url: string; deduplicated: boolean }
+      error?: string
+    }>
   }
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return
     setUploading(true); setError(null)
     const newImages = [...images]
+    let firstNewAssetId: string | null = null
     for (const file of Array.from(files)) {
       const result = await uploadFile(file)
-      if (result.ok && result.url) {
-        newImages.push({ url: result.url, alt_text: '' })
+      if (result.ok && result.data?.url) {
+        const item: ImageItem = {
+          url: result.data.url,
+          alt_text: '',
+          image_asset_id: result.data.assetId,
+        }
+        newImages.push(item)
+        if (!firstNewAssetId) firstNewAssetId = result.data.assetId
       } else {
         setError(result.error ?? 'Upload failed — no changes were saved')
         setUploading(false)
@@ -159,23 +171,39 @@ export function CruiseImagesSection({ listing, onSave }: CruiseTabProps) {
       }
     }
     setImages(newImages)
-    const heroUrl = newImages[0]?.url ?? listing.hero_image_url
-    const json = await patchListing(listing.id, { images: newImages, hero_image_url: heroUrl })
+    // If there was no hero before, the first new image becomes the hero (URL + asset_id)
+    const hadHero = Boolean(listing.hero_image_url)
+    const heroUrl = hadHero ? listing.hero_image_url : newImages[0]?.url
+    const heroAssetId = hadHero ? listing.hero_image_asset_id : (newImages[0]?.image_asset_id ?? firstNewAssetId)
+    const json = await patchListing(listing.id, {
+      images: newImages,
+      hero_image_url: heroUrl,
+      hero_image_asset_id: heroAssetId ?? null,
+    })
     if (json.ok && json.data) onSave(json.data)
     setUploading(false)
   }
 
   async function setHero(url: string) {
-    const json = await patchListing(listing.id, { hero_image_url: url })
+    const picked = images.find(i => i.url === url)
+    const json = await patchListing(listing.id, {
+      hero_image_url: url,
+      hero_image_asset_id: picked?.image_asset_id ?? null,
+    })
     if (json.ok && json.data) onSave(json.data)
   }
 
   async function removeImage(url: string) {
     const updated = images.filter(i => i.url !== url)
     setImages(updated)
-    const heroUrl =
-      listing.hero_image_url === url ? (updated[0]?.url ?? null) : listing.hero_image_url
-    const json = await patchListing(listing.id, { images: updated, hero_image_url: heroUrl })
+    const isRemovingHero = listing.hero_image_url === url
+    const heroUrl = isRemovingHero ? (updated[0]?.url ?? null) : listing.hero_image_url
+    const heroAssetId = isRemovingHero ? (updated[0]?.image_asset_id ?? null) : listing.hero_image_asset_id
+    const json = await patchListing(listing.id, {
+      images: updated,
+      hero_image_url: heroUrl,
+      hero_image_asset_id: heroAssetId,
+    })
     if (json.ok && json.data) onSave(json.data)
   }
 

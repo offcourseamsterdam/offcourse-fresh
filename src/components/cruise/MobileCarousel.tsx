@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import Image from 'next/image'
 import { ChevronRight } from 'lucide-react'
+import { OptimizedImage } from '@/components/ui/OptimizedImage'
 import type { GalleryImage } from './ImageGallery'
 
 interface MobileCarouselProps {
@@ -53,13 +53,13 @@ export function MobileCarousel({ images, title, onTap }: MobileCarouselProps) {
             className="relative flex-shrink-0 w-full aspect-[16/10] focus:outline-none"
             style={{ scrollSnapAlign: 'start' }}
           >
-            <Image
-              src={img.url}
+            <OptimizedImage
+              asset={img.asset}
+              fallbackUrl={img.url}
               alt={img.alt_text ?? title}
+              context="carousel"
               fill
               priority={i === 0}
-              className="object-cover"
-              sizes="100vw"
             />
           </button>
         ))}

@@ -1,7 +1,7 @@
 'use client'
 
-import Image from 'next/image'
 import { Camera } from 'lucide-react'
+import { OptimizedImage } from '@/components/ui/OptimizedImage'
 import type { GalleryImage } from './ImageGallery'
 
 interface DesktopGalleryGridProps {
@@ -42,13 +42,14 @@ export function DesktopGalleryGrid({
         aria-label="View all photos"
       >
         {allImages[0] && (
-          <Image
-            src={allImages[0].url}
+          <OptimizedImage
+            asset={allImages[0].asset}
+            fallbackUrl={allImages[0].url}
             alt={allImages[0].alt_text ?? title}
+            context="hero"
             fill
             priority
-            className="object-cover group-hover:brightness-90 transition-all duration-200"
-            sizes="50vw"
+            className="group-hover:brightness-90 transition-all duration-200"
           />
         )}
       </button>
@@ -72,7 +73,14 @@ export function DesktopGalleryGrid({
               onMouseLeave={() => onHoverImages(false)}
               onClick={onOpenModal}
             >
-              <Image src={img.url} alt={img.alt_text ?? ''} fill className="object-cover group-hover:brightness-90 transition-all duration-200" sizes="25vw" />
+              <OptimizedImage
+                asset={img.asset}
+                fallbackUrl={img.url}
+                alt={img.alt_text ?? ''}
+                context="card"
+                fill
+                className="group-hover:brightness-90 transition-all duration-200"
+              />
               {i === 2 && allImages.length > 4 && <ShowAllOverlay count={allImages.length} />}
             </button>
           ))}
@@ -89,7 +97,14 @@ export function DesktopGalleryGrid({
                 onMouseLeave={() => onHoverImages(false)}
                 onClick={onOpenModal}
               >
-                <Image src={img.url} alt={img.alt_text ?? ''} fill className="object-cover group-hover:brightness-90 transition-all duration-200" sizes="25vw" />
+                <OptimizedImage
+                  asset={img.asset}
+                  fallbackUrl={img.url}
+                  alt={img.alt_text ?? ''}
+                  context="card"
+                  fill
+                  className="group-hover:brightness-90 transition-all duration-200"
+                />
               </button>
             ))}
           </div>
@@ -102,7 +117,14 @@ export function DesktopGalleryGrid({
               onMouseLeave={() => onHoverImages(false)}
               onClick={onOpenModal}
             >
-              <Image src={img.url} alt={img.alt_text ?? ''} fill className="object-cover group-hover:brightness-90 transition-all duration-200" sizes="25vw" />
+              <OptimizedImage
+                asset={img.asset}
+                fallbackUrl={img.url}
+                alt={img.alt_text ?? ''}
+                context="card"
+                fill
+                className="group-hover:brightness-90 transition-all duration-200"
+              />
               {i === 2 && allImages.length > 6 && <ShowAllOverlay count={allImages.length} />}
             </button>
           ))}
@@ -117,7 +139,7 @@ function ShowAllOverlay({ count }: { count: number }) {
     <div className="absolute inset-0 bg-black/30 flex items-end justify-end p-3 pointer-events-none">
       <span className="pointer-events-auto bg-white/90 backdrop-blur-sm text-sm font-semibold text-[var(--color-primary)] px-3 py-2 rounded-lg flex items-center gap-2 hover:bg-white transition-colors">
         <Camera className="w-4 h-4" />
-        Show all photos
+        Show all photos ({count})
       </span>
     </div>
   )

@@ -1,4 +1,4 @@
-import Image from 'next/image'
+import { OptimizedImage } from '@/components/ui/OptimizedImage'
 import { Minus, Plus } from 'lucide-react'
 import { fmtEuros } from '@/lib/utils'
 import { DEFAULT_DURATION_MINUTES } from '@/lib/constants'
@@ -125,11 +125,12 @@ export function ExtraCard({
           {/* Optional thumbnail */}
           {extra.image_url && (
             <div className="relative w-10 h-10 rounded-md overflow-hidden flex-shrink-0 bg-zinc-100">
-              <Image
-                src={extra.image_url}
+              <OptimizedImage
+                asset={null}
+                fallbackUrl={extra.image_url}
                 alt={extra.name}
+                context="thumb"
                 fill
-                className="object-cover"
                 sizes="40px"
               />
             </div>

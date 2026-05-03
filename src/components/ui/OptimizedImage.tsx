@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react'
+import Image from 'next/image'
 import { buildSrcSet, pickVariant } from '@/lib/images/srcset'
 import { IMAGE_CONTEXT_SIZES, IMAGE_CONTEXT_FALLBACK_WIDTH, type ImageAsset, type ImageContext } from '@/lib/images/types'
 
@@ -32,7 +33,8 @@ interface OptimizedImageProps {
  *
  * Falls back gracefully:
  *   - asset complete → 12 variants served from Supabase CDN, no Vercel image opt
- *   - asset pending/legacy → renders fallbackUrl directly with `loading="lazy"`
+ *   - asset pending/legacy → renders Next.js <Image> so visitors still get
+ *     resize + WebP via Vercel's free-tier optimization until the asset is processed
  *
  * Backed by /admin/image-optimization for the processing pipeline.
  */
@@ -73,13 +75,36 @@ export function OptimizedImage({
     height: !fill ? height : undefined,
   }
 
-  // Legacy / pending — single src
+  // Legacy / pending — use Next.js <Image> so visitors still get
+  // resize + WebP from Vercel's optimizer until the admin processes the asset.
   if (!isComplete) {
     const src = fallbackUrl ?? asset?.original_url ?? null
     if (!src) return null
+    if (fill) {
+      return (
+        <Image
+          src={src}
+          alt={alt}
+          fill
+          priority={priority}
+          sizes={sizes}
+          className={className}
+          style={containerStyle}
+          {...(objectFit ? { style: { ...containerStyle, objectFit } } : {})}
+        />
+      )
+    }
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img src={src} {...baseImgProps} />
+      <Image
+        src={src}
+        alt={alt}
+        width={width ?? 800}
+        height={height ?? 600}
+        priority={priority}
+        sizes={sizes}
+        className={className}
+        style={{ ...containerStyle, objectFit }}
+      />
     )
   }
 

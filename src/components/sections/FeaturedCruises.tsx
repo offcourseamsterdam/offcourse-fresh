@@ -1,18 +1,22 @@
 'use client'
 
-import Image from 'next/image'
 import { Link } from '@/i18n/navigation'
 import { CategoryBadge } from '@/components/ui/CategoryBadge'
+import { OptimizedImage } from '@/components/ui/OptimizedImage'
 import { useSearch } from '@/lib/search/SearchContext'
 import type { Database } from '@/lib/supabase/types'
 import type { AvailabilitySlot } from '@/types'
+import type { ImageAsset } from '@/lib/images/types'
 
 type CruiseListingRow = Database['public']['Tables']['cruise_listings']['Row']
 
 export type FeaturedCruiseListing = Pick<
   CruiseListingRow,
   'id' | 'slug' | 'category' | 'hero_image_url' | 'title' | 'tagline' | 'price_display' | 'duration_display'
->
+> & {
+  /** Optional optimized hero asset — when present, served as AVIF/WebP. */
+  hero_asset?: ImageAsset | null
+}
 
 // ── Date formatting ──────────────────────────────────────────────────────────
 
@@ -101,12 +105,12 @@ function CruiseCard({ listing, rotation, slots, loading, date, guests }: {
         {/* Image with badge */}
         <div className="relative aspect-[4/3] overflow-hidden bg-[#e5e7eb] mb-3">
           {listing.hero_image_url ? (
-            <Image
-              src={listing.hero_image_url}
+            <OptimizedImage
+              asset={listing.hero_asset}
+              fallbackUrl={listing.hero_image_url}
               alt={listing.title ?? ''}
+              context="card"
               fill
-              sizes="320px"
-              className="object-cover"
             />
           ) : (
             <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-primary/5" />
