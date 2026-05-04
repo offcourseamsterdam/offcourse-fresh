@@ -81,36 +81,44 @@ export async function processAsset(assetId: string): Promise<ProcessAssetResult 
     const subfolder = asset.context_id ? `${asset.context_id}/` : ''
     const cacheControl = 'public, max-age=31536000, immutable'
 
-    const uploadedVariants = await Promise.all(
-      processed.variants.map(async v => {
-        const avifPath = `${subfolder}${baseFilename}_${v.width}.avif`
-        const webpPath = `${subfolder}${baseFilename}_${v.width}.webp`
+    console.log(`[processAsset ${assetId}] uploading to bucket="${bucket}" context="${asset.context}"`)
 
-        const [avifUpload, webpUpload] = await Promise.all([
-          supabase.storage.from(bucket).upload(avifPath, v.avif, {
-            contentType: 'image/avif', upsert: true, cacheControl,
-          }),
-          supabase.storage.from(bucket).upload(webpPath, v.webp, {
-            contentType: 'image/webp', upsert: true, cacheControl,
-          }),
-        ])
+    const uploadedVariants: Array<{
+      width: number; height: number; avif_url: string; webp_url: string; avif_size: number; webp_size: number
+    }> = []
 
-        if (avifUpload.error) throw new Error(`AVIF upload failed: ${avifUpload.error.message}`)
-        if (webpUpload.error) throw new Error(`WebP upload failed: ${webpUpload.error.message}`)
+    for (const v of processed.variants) {
+      const avifPath = `${subfolder}${baseFilename}_${v.width}.avif`
+      const webpPath = `${subfolder}${baseFilename}_${v.width}.webp`
 
-        const avifUrl = supabase.storage.from(bucket).getPublicUrl(avifPath).data.publicUrl
-        const webpUrl = supabase.storage.from(bucket).getPublicUrl(webpPath).data.publicUrl
+      const avifUpload = await supabase.storage.from(bucket).upload(avifPath, v.avif, {
+        contentType: 'image/avif', upsert: true, cacheControl,
+      })
+      if (avifUpload.error) {
+        console.error(`[processAsset ${assetId}] AVIF upload error bucket="${bucket}" path="${avifPath}":`, JSON.stringify(avifUpload.error))
+        throw new Error(`AVIF upload failed (bucket: ${bucket}): ${avifUpload.error.message}`)
+      }
 
-        return {
-          width: v.width,
-          height: v.height,
-          avif_url: avifUrl,
-          webp_url: webpUrl,
-          avif_size: v.avif.length,
-          webp_size: v.webp.length,
-        }
-      }),
-    )
+      const webpUpload = await supabase.storage.from(bucket).upload(webpPath, v.webp, {
+        contentType: 'image/webp', upsert: true, cacheControl,
+      })
+      if (webpUpload.error) {
+        console.error(`[processAsset ${assetId}] WebP upload error bucket="${bucket}" path="${webpPath}":`, JSON.stringify(webpUpload.error))
+        throw new Error(`WebP upload failed (bucket: ${bucket}): ${webpUpload.error.message}`)
+      }
+
+      const avifUrl = supabase.storage.from(bucket).getPublicUrl(avifPath).data.publicUrl
+      const webpUrl = supabase.storage.from(bucket).getPublicUrl(webpPath).data.publicUrl
+
+      uploadedVariants.push({
+        width: v.width,
+        height: v.height,
+        avif_url: avifUrl,
+        webp_url: webpUrl,
+        avif_size: v.avif.length,
+        webp_size: v.webp.length,
+      })
+    }
 
     const totalBytes = uploadedVariants.reduce(
       (sum, v) => sum + (v.avif_size ?? 0) + (v.webp_size ?? 0), 0,

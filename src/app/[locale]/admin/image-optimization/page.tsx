@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Loader2, RefreshCw, Zap, Database } from 'lucide-react'
+import { Loader2, RefreshCw, Zap, Database, RotateCcw } from 'lucide-react'
 import { AssetRow } from '@/components/admin/image-optimization/AssetRow'
 import type { ImageListResponse } from '@/components/admin/image-optimization/types'
 import type { ImageAssetStatus } from '@/lib/images/types'
@@ -17,6 +17,7 @@ export default function ImageOptimizationPage() {
   const [batchProgress, setBatchProgress] = useState<string | null>(null)
   const [migrating, setMigrating] = useState(false)
   const [migrateMessage, setMigrateMessage] = useState<string | null>(null)
+  const [resettingFailed, setResettingFailed] = useState(false)
 
   const refresh = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -63,6 +64,21 @@ export default function ImageOptimizationPage() {
     } finally {
       setBatchRunning(false)
       setTimeout(() => setBatchProgress(null), 5000)
+    }
+  }
+
+  const resetFailed = async () => {
+    if (!data || data.counts.failed === 0) return
+    setResettingFailed(true)
+    try {
+      const res = await fetch('/api/admin/images/reset-failed', { method: 'POST' })
+      const json = await res.json()
+      if (!json.ok) throw new Error(json.error)
+      await refresh()
+    } catch (e) {
+      alert(`Reset failed: ${e instanceof Error ? e.message : 'unknown'}`)
+    } finally {
+      setResettingFailed(false)
     }
   }
 
@@ -124,6 +140,14 @@ export default function ImageOptimizationPage() {
         >
           {batchRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
           Process all pending ({counts.pending})
+        </button>
+        <button
+          onClick={resetFailed}
+          disabled={resettingFailed || counts.failed === 0}
+          className="flex items-center gap-2 px-4 py-2 rounded border border-red-300 text-red-700 font-medium hover:bg-red-50 disabled:opacity-50"
+        >
+          {resettingFailed ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+          Reset failed ({counts.failed})
         </button>
         <button
           onClick={migrateLegacy}
