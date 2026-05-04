@@ -38,10 +38,10 @@ export default function ImageOptimizationPage() {
 
   useEffect(() => { refresh() }, [refresh])
 
-  // Auto-poll every 5s while images are processing so tabs update without manual refresh
+  // Poll every 2s while images are processing to keep step indicators live
   useEffect(() => {
     if ((data?.counts.processing ?? 0) === 0) return
-    const id = setInterval(() => refresh(true), 5000)
+    const id = setInterval(() => refresh(true), 2000)
     return () => clearInterval(id)
   }, [data?.counts.processing, refresh])
 
@@ -143,11 +143,11 @@ export default function ImageOptimizationPage() {
         </button>
         <button
           onClick={resetFailed}
-          disabled={resettingFailed || counts.failed === 0}
+          disabled={resettingFailed || (counts.failed === 0 && counts.processing === 0)}
           className="flex items-center gap-2 px-4 py-2 rounded border border-red-300 text-red-700 font-medium hover:bg-red-50 disabled:opacity-50"
         >
           {resettingFailed ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-          Reset failed ({counts.failed})
+          Reset stuck ({counts.failed + counts.processing})
         </button>
         <button
           onClick={migrateLegacy}

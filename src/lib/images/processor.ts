@@ -2,6 +2,32 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { processUploadedImage } from './process'
 import { generateImageMetadataFromBuffer } from '@/lib/ai/generate-image-metadata'
 
+export type ProcessingStep =
+  | 'download'       // fetching original from storage
+  | 'sharp'          // Sharp resize/convert pipeline
+  | 'ai_metadata'    // Gemini vision analysis
+  | 'translate'      // Claude locale translation
+  | 'upload'         // uploading AVIF + WebP variants
+  | 'save'           // writing final metadata to DB
+
+export const PROCESSING_STEPS: ProcessingStep[] = [
+  'download',
+  'sharp',
+  'ai_metadata',
+  'translate',
+  'upload',
+  'save',
+]
+
+export const STEP_LABELS: Record<ProcessingStep, string> = {
+  download:    'Download',
+  sharp:       'Sharp',
+  ai_metadata: 'Gemini',
+  translate:   'Translate',
+  upload:      'Upload',
+  save:        'Save',
+}
+
 export interface ProcessAssetResult {
   ok: true
   assetId: string
@@ -16,49 +42,49 @@ export interface ProcessAssetError {
   ok: false
   assetId: string
   error: string
+  failedStep: ProcessingStep | null
 }
 
-/**
- * Run the full pipeline on a single image_assets row that's in 'pending' (or 'failed') state.
- *
- * Flow:
- *   1. Mark status = 'processing'
- *   2. Download original from Supabase Storage
- *   3. Sharp pipeline → variants (AVIF + WebP × 6 widths) + blur + dominant color
- *   4. Gemini → alt text, keywords, quality_issues, SEO filename
- *   5. Claude → translate alt text + caption to 6 locales
- *   6. Upload all 12 variant files to Supabase Storage with SEO filenames
- *   7. Update row with variants[], blur_data_url, dominant_color, alt_text, etc.
- *   8. Mark status = 'complete'
- *
- * Errors leave status = 'failed' with failure_reason.
- */
 export async function processAsset(assetId: string): Promise<ProcessAssetResult | ProcessAssetError> {
   const supabase = createAdminClient()
 
-  // 1. Lock the row (mark processing)
+  const step = async (name: ProcessingStep) => {
+    await supabase
+      .from('image_assets')
+      .update({ processing_step: name })
+      .eq('id', assetId)
+  }
+
+  // Lock the row
   const { data: asset, error: fetchError } = await supabase
     .from('image_assets')
-    .update({ status: 'processing', failure_reason: null })
+    .update({ status: 'processing', processing_step: null, failure_reason: null })
     .eq('id', assetId)
     .select('*')
     .single()
 
   if (fetchError || !asset) {
-    return { ok: false, assetId, error: `Asset not found: ${fetchError?.message}` }
+    return { ok: false, assetId, error: `Asset not found: ${fetchError?.message}`, failedStep: null }
   }
 
+  let currentStep: ProcessingStep | null = null
+
   try {
-    // 2. Download original
+    // ── Step 1: Download ─────────────────────────────────────────────────────
+    currentStep = 'download'
+    await step('download')
     const originalRes = await fetch(asset.original_url)
     if (!originalRes.ok) throw new Error(`Failed to download original: ${originalRes.status}`)
     const originalBuffer = Buffer.from(await originalRes.arrayBuffer())
 
-    // 3. Sharp pipeline
+    // ── Step 2: Sharp pipeline ───────────────────────────────────────────────
+    currentStep = 'sharp'
+    await step('sharp')
     const processed = await processUploadedImage(originalBuffer)
 
-    // 4 + 5. AI metadata (Gemini + Claude). Use the 320px WebP — smallest variant,
-    // fastest for Gemini inline data, well within the 60s function timeout.
+    // ── Step 3: Gemini vision analysis ───────────────────────────────────────
+    currentStep = 'ai_metadata'
+    await step('ai_metadata')
     let aiMetadata = null
     let aiWarning: string | undefined
     try {
@@ -66,16 +92,25 @@ export async function processAsset(assetId: string): Promise<ProcessAssetResult 
       aiMetadata = await generateImageMetadataFromBuffer(ref.webp, 'image/webp')
     } catch (err) {
       aiWarning = err instanceof Error ? err.message : String(err)
-      console.warn(`[processAsset ${assetId}] AI metadata failed:`, aiWarning)
+      console.warn(`[processAsset ${assetId}] AI metadata failed (non-fatal):`, aiWarning)
     }
+
+    // ── Step 4: Claude translation ───────────────────────────────────────────
+    // Translation is part of generateImageMetadataFromBuffer, so the step
+    // fires after Gemini. We record it here for UI clarity.
+    currentStep = 'translate'
+    await step('translate')
 
     const baseFilename = aiMetadata?.seo_filename ?? `image-${assetId.slice(0, 8)}`
 
-    // 6. Upload variants to Supabase Storage in the same bucket
+    // ── Step 5: Upload variants ──────────────────────────────────────────────
+    currentStep = 'upload'
+    await step('upload')
+
     const CONTEXT_BUCKET: Record<string, string> = {
       cruise: 'cruise-images',
       extras: 'extras-images',
-      hero: 'hero-images',
+      hero:   'hero-images',
     }
     const bucket = (asset.bucket as string | null) ?? CONTEXT_BUCKET[asset.context] ?? 'cruise-images'
     const subfolder = asset.context_id ? `${asset.context_id}/` : ''
@@ -124,11 +159,15 @@ export async function processAsset(assetId: string): Promise<ProcessAssetResult 
       (sum, v) => sum + (v.avif_size ?? 0) + (v.webp_size ?? 0), 0,
     )
 
-    // 7. Update row
+    // ── Step 6: Save ─────────────────────────────────────────────────────────
+    currentStep = 'save'
+    await step('save')
+
     const { error: updateError } = await supabase
       .from('image_assets')
       .update({
         status: 'complete',
+        processing_step: null,
         base_filename: baseFilename,
         variants: uploadedVariants,
         blur_data_url: processed.blur,
@@ -163,6 +202,6 @@ export async function processAsset(assetId: string): Promise<ProcessAssetResult 
       .from('image_assets')
       .update({ status: 'failed', failure_reason: message })
       .eq('id', assetId)
-    return { ok: false, assetId, error: message }
+    return { ok: false, assetId, error: message, failedStep: currentStep }
   }
 }

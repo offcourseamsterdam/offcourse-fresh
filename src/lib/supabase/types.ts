@@ -1562,6 +1562,7 @@ export type Database = {
           original_width: number | null
           primary_keywords: string[] | null
           processed_at: string | null
+          processing_step: string | null
           quality_issues: string[] | null
           sha256: string
           status: string
@@ -1590,6 +1591,7 @@ export type Database = {
           original_width?: number | null
           primary_keywords?: string[] | null
           processed_at?: string | null
+          processing_step?: string | null
           quality_issues?: string[] | null
           sha256: string
           status?: string
@@ -1618,6 +1620,7 @@ export type Database = {
           original_width?: number | null
           primary_keywords?: string[] | null
           processed_at?: string | null
+          processing_step?: string | null
           quality_issues?: string[] | null
           sha256?: string
           status?: string
@@ -2681,3 +2684,4 @@ export const Constants = {
     },
   },
 } as const
+

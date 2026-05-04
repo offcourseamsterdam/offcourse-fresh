@@ -16,6 +16,8 @@ export interface ImageAssetVariant {
 
 export type ImageAssetStatus = 'pending' | 'processing' | 'complete' | 'failed'
 
+export type ProcessingStep = 'download' | 'sharp' | 'ai_metadata' | 'translate' | 'upload' | 'save'
+
 export type ImageAssetContext = 'cruise' | 'extras' | 'hero' | 'boat' | 'priorities' | 'people'
 
 /**
@@ -41,6 +43,7 @@ export interface ImageAsset {
   confidence: number | null
   quality_issues: QualityIssue[] | null
   failure_reason: string | null
+  processing_step: ProcessingStep | null
   processed_at: string | null
   created_at: string
 }
