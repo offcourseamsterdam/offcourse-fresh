@@ -389,7 +389,7 @@ async function saveToSupabase(p: BookingPayload): Promise<{ ok: true } | { ok: f
       fareharbor_availability_pk: p.availPk,
       fareharbor_customer_type_rate_pk: p.customerTypeRatePk,
       stripe_payment_intent_id: p.stripePaymentIntentId,
-      stripe_amount: isInternal ? 0 : p.baseAmountCents + p.extrasAmountCents - p.discountAmountCents,
+      stripe_amount: isInternal ? 0 : p.baseAmountCents + p.extrasAmountCents + (p.guestCount * 260) - p.discountAmountCents,
       base_amount_cents: p.baseAmountCents,
       base_vat_rate: 9,
       base_vat_amount_cents: p.baseVatAmountCents,

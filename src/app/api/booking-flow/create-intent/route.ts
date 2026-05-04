@@ -18,6 +18,7 @@ export async function POST(request: NextRequest) {
       category, date, contact,
       selectedExtraIds = [],
       extraQuantities = {},
+      displayedExtrasAmountCents = 0,
       durationMinutes = DEFAULT_DURATION_MINUTES,
       promoCodeId,
       discountAmountCents,
@@ -25,6 +26,16 @@ export async function POST(request: NextRequest) {
 
     if (baseAmountCents == null || !availPk || !customerTypeRatePk || !contact?.name || !contact?.email) {
       return apiError('Missing required fields', 400)
+    }
+
+    // Guard: if the checkout page showed extras but no IDs arrived, the session
+    // is stale (JSON.stringify silently drops undefined). Fail loudly rather than
+    // charging the wrong amount.
+    if (displayedExtrasAmountCents > 0 && selectedExtraIds.length === 0) {
+      return apiError(
+        'Your session appears to be outdated. Please go back and re-select your extras before completing payment.',
+        409,
+      )
     }
 
     if (!Number.isFinite(Number(guestCount)) || Number(guestCount) < 1) {

@@ -1,7 +1,7 @@
 'use client'
 
 import { ReactNode } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { Check, ChevronDown } from 'lucide-react'
 
 interface StepAccordionProps {
@@ -67,22 +67,18 @@ export function StepAccordion({
         )}
       </button>
 
-      {/* Content — animated open/close */}
-      <AnimatePresence initial={false}>
-        {isActive && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
-            className="overflow-hidden"
-          >
-            <div className="pb-4 px-1">
-              {children}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Content — always mounted so child state survives step navigation */}
+      <motion.div
+        initial={false}
+        animate={isActive ? { height: 'auto', opacity: 1 } : { height: 0, opacity: 0 }}
+        transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
+        className="overflow-hidden"
+        aria-hidden={!isActive}
+      >
+        <div className="pb-4 px-1">
+          {children}
+        </div>
+      </motion.div>
     </div>
   )
 }
