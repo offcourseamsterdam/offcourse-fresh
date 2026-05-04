@@ -102,6 +102,7 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
       guest_email: String(contact?.email ?? ''),
       guest_phone: String(contact?.phone ?? ''),
       extras_summary: extrasSummary,
+      city_tax_cents: String(cityTaxCents),
       ...(promoCodeId ? { promo_code_id: promoCodeId, discount_amount_cents: String(discountAmountCents) } : {}),
     },
   })

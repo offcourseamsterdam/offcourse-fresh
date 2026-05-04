@@ -58,20 +58,29 @@ export function ExtrasStep({
         if (cancelled) return
         if (json.ok) {
           const fetched: ApiExtra[] = json.data?.extras ?? []
+          const fetchedIds = new Set(fetched.map(e => e.id))
+          const requiredIds = new Set(fetched.filter(e => e.is_required).map(e => e.id))
           setExtras(fetched)
-          // Pre-select all required extras
-          const required = new Set(
-            fetched.filter(e => e.is_required).map(e => e.id)
-          )
-          setSelectedIds(required)
-          // Initialize quantities for required counter-mode extras
-          const initQty = new Map<string, number>()
-          for (const e of fetched) {
-            if (e.is_required && e.quantity_mode === 'counter') {
-              initQty.set(e.id, e.min_quantity ?? 1)
+          // Preserve previous valid selections; always ensure required extras are included.
+          // Without this, changing guestCount triggers a re-fetch that wipes optional selections.
+          setSelectedIds(prev => {
+            const updated = new Set([...prev].filter(id => fetchedIds.has(id)))
+            for (const id of requiredIds) updated.add(id)
+            return updated
+          })
+          // Keep previous counter-mode quantities for extras that still exist;
+          // required counter-mode extras get their minimum quantity if not already set.
+          setQuantities(prev => {
+            const next = new Map<string, number>()
+            for (const e of fetched) {
+              if (e.is_required && e.quantity_mode === 'counter') {
+                next.set(e.id, prev.get(e.id) ?? (e.min_quantity ?? 1))
+              } else if (e.quantity_mode === 'counter' && prev.has(e.id)) {
+                next.set(e.id, prev.get(e.id)!)
+              }
             }
-          }
-          setQuantities(initQty)
+            return next
+          })
         } else {
           setFetchError(json.error ?? 'Failed to load extras')
         }
