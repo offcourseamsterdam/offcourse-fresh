@@ -12,7 +12,7 @@ export function partnerInviteEmailHtml(data: {
   partnerName: string
   inviteUrl: string
 }) {
-  const name = data.partnerName.split(' ')[0] // first name only
+  const name = data.partnerName // use the full partner/company name
 
   return `
 <!DOCTYPE html>
