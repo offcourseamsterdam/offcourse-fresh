@@ -66,6 +66,7 @@ export default function PartnersPage() {
 
   // Invite
   const [inviting, setInviting] = useState<string | null>(null)
+  const [inviteMsg, setInviteMsg] = useState<{ id: string; text: string; ok: boolean } | null>(null)
 
   // ── Create partner ────────────────────────────────────────────────────
 
@@ -126,20 +127,21 @@ export default function PartnersPage() {
   // ── Invite ────────────────────────────────────────────────────────────
 
   async function handleInvite(id: string, name: string) {
-    if (!confirm(`Send a portal invite email to "${name}"?`)) return
     setInviting(id)
+    setInviteMsg(null)
     try {
       const res = await fetch(`/api/admin/partners/${id}/invite`, { method: 'POST' })
       const json = await res.json()
       if (json.ok) {
-        alert(json.data?.message ?? 'Invite sent!')
+        setInviteMsg({ id, text: json.data?.message ?? 'Invite sent!', ok: true })
       } else {
-        alert(json.error ?? 'Failed to send invite')
+        setInviteMsg({ id, text: json.error ?? 'Failed to send invite', ok: false })
       }
     } catch {
-      alert('Failed to send invite')
+      setInviteMsg({ id, text: 'Failed to send invite', ok: false })
     } finally {
       setInviting(null)
+      setTimeout(() => setInviteMsg(null), 4000)
     }
   }
 
@@ -401,6 +403,13 @@ export default function PartnersPage() {
                     )}
                   </div>
                 </div>
+
+                {/* Invite feedback */}
+                {inviteMsg?.id === p.id && (
+                  <div className={`px-5 py-2 text-xs font-medium border-t ${inviteMsg.ok ? 'text-emerald-700 bg-emerald-50 border-emerald-100' : 'text-red-700 bg-red-50 border-red-100'}`}>
+                    {inviteMsg.text}
+                  </div>
+                )}
 
                 {/* Expanded: campaigns */}
                 {isExpanded && !isEditing && (
