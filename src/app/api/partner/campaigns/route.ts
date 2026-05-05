@@ -7,7 +7,7 @@ import { getPartnerIdFromRequest } from '@/lib/partner/get-partner-id'
  * GET /api/partner/campaigns
  *
  * Returns campaigns belonging to the authenticated partner,
- * enriched with a booking count per campaign.
+ * enriched with booking count and total commission earned.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -16,7 +16,6 @@ export async function GET(request: NextRequest) {
 
     const admin = createAdminClient()
 
-    // Fetch campaigns and bookings for this partner in parallel
     const [campaignsRes, bookingsRes] = await Promise.all([
       admin
         .from('campaigns')
@@ -25,27 +24,33 @@ export async function GET(request: NextRequest) {
         .order('created_at', { ascending: false }),
       admin
         .from('bookings')
-        .select('campaign_id')
+        .select('campaign_id, commission_amount_cents')
         .eq('partner_id', partnerId)
+        .eq('status', 'confirmed')
         .not('campaign_id', 'is', null),
     ])
 
     if (campaignsRes.error) return apiError(campaignsRes.error.message)
     if (bookingsRes.error) return apiError(bookingsRes.error.message)
 
-    // Count bookings per campaign
-    const bookingCountByCampaign: Record<string, number> = {}
+    const statsByCampaign: Record<string, { count: number; commission: number }> = {}
     for (const b of bookingsRes.data ?? []) {
       if (!b.campaign_id) continue
-      bookingCountByCampaign[b.campaign_id] = (bookingCountByCampaign[b.campaign_id] ?? 0) + 1
+      const s = statsByCampaign[b.campaign_id] ?? { count: 0, commission: 0 }
+      s.count++
+      s.commission += b.commission_amount_cents ?? 0
+      statsByCampaign[b.campaign_id] = s
     }
 
     const campaigns = (campaignsRes.data ?? []).map(c => ({
-      ...c,
-      booking_count: bookingCountByCampaign[c.id] ?? 0,
+      name: c.name,
+      slug: c.slug,
+      is_active: c.is_active,
+      bookings_count: statsByCampaign[c.id]?.count ?? 0,
+      commission_cents: statsByCampaign[c.id]?.commission ?? 0,
     }))
 
-    return apiOk({ campaigns })
+    return apiOk(campaigns)
   } catch (err) {
     return apiError(err instanceof Error ? err.message : 'Unknown error')
   }
