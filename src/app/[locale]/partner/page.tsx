@@ -197,7 +197,7 @@ export default function PartnerDashboardPage() {
   }
 
   return (
-    <div className="p-6 sm:p-8 max-w-4xl space-y-6">
+    <div className="p-6 sm:p-8 max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[var(--color-primary)]">Partner Overview</h1>
