@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { processUploadedImage } from './process'
 import { generateImageMetadataFromBuffer } from '@/lib/ai/generate-image-metadata'
@@ -187,6 +188,16 @@ export async function processAsset(assetId: string): Promise<ProcessAssetResult 
 
     if (updateError) throw new Error(`Failed to save processed asset: ${updateError.message}`)
 
+    // ── Step 7: Link asset back to its source table ───────────────────────────
+    // migrate-legacy attempts this at scan-time, but can fail silently.
+    // Running it here after successful processing guarantees the link is set.
+    try {
+      await linkAssetToSource(supabase, assetId, asset.context, asset.context_id, asset.original_url)
+    } catch (linkErr) {
+      // Non-fatal — log it but don't fail the whole processing job
+      console.warn(`[processAsset ${assetId}] link-back failed (non-fatal):`, linkErr)
+    }
+
     return {
       ok: true,
       assetId,
@@ -203,5 +214,81 @@ export async function processAsset(assetId: string): Promise<ProcessAssetResult 
       .update({ status: 'failed', failure_reason: message })
       .eq('id', assetId)
     return { ok: false, assetId, error: message, failedStep: currentStep }
+  }
+}
+
+/**
+ * Write image_asset_id back to the source table after successful processing.
+ * Called automatically by processAsset — also used by migrate-legacy.
+ *
+ * Handles all three contexts:
+ *   cruise  → hero_image_asset_id column OR image_asset_id inside images JSONB
+ *   extras  → extras.image_asset_id column
+ *   hero    → hero_carousel_items.image_asset_id column
+ */
+export async function linkAssetToSource(
+  supabase: SupabaseClient,
+  assetId: string,
+  context: string | null,
+  contextId: string | null,
+  originalUrl: string | null,
+): Promise<void> {
+  if (!contextId || !originalUrl) return
+
+  if (context === 'cruise') {
+    // ── Check if this is the hero image ─────────────────────────────────────
+    const { data: listing, error: listingErr } = await supabase
+      .from('cruise_listings')
+      .select('id, hero_image_url, hero_image_asset_id, images')
+      .eq('id', contextId)
+      .maybeSingle()
+
+    if (listingErr) throw new Error(`Failed to fetch listing ${contextId}: ${listingErr.message}`)
+    if (!listing) return
+
+    if (listing.hero_image_url === originalUrl && !listing.hero_image_asset_id) {
+      const { error } = await supabase
+        .from('cruise_listings')
+        .update({ hero_image_asset_id: assetId })
+        .eq('id', contextId)
+        .is('hero_image_asset_id', null)
+      if (error) throw new Error(`hero_image_asset_id update failed: ${error.message}`)
+      return
+    }
+
+    // ── Gallery image: patch the matching entry in images JSONB ──────────────
+    const images = Array.isArray(listing.images) ? listing.images as Array<Record<string, unknown>> : []
+    const target = images.find(img => img.url === originalUrl)
+    if (!target || target.image_asset_id) return  // already linked or not found
+
+    const updated = images.map(img =>
+      img.url === originalUrl && !img.image_asset_id
+        ? { ...img, image_asset_id: assetId }
+        : img
+    )
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await supabase
+      .from('cruise_listings')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .update({ images: updated as any })
+      .eq('id', contextId)
+    if (error) throw new Error(`images JSONB update failed: ${error.message}`)
+
+  } else if (context === 'extras') {
+    const { error } = await supabase
+      .from('extras')
+      .update({ image_asset_id: assetId })
+      .eq('id', contextId)
+      .is('image_asset_id', null)
+    if (error) throw new Error(`extras image_asset_id update failed: ${error.message}`)
+
+  } else if (context === 'hero') {
+    const { error } = await supabase
+      .from('hero_carousel_items')
+      .update({ image_asset_id: assetId })
+      .eq('id', contextId)
+      .is('image_asset_id', null)
+    if (error) throw new Error(`hero_carousel_items image_asset_id update failed: ${error.message}`)
   }
 }

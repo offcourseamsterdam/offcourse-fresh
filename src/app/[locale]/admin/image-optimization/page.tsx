@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Loader2, RefreshCw, Zap, Database, RotateCcw } from 'lucide-react'
+import { Loader2, RefreshCw, Zap, Database, RotateCcw, Link2 } from 'lucide-react'
 import { AssetRow } from '@/components/admin/image-optimization/AssetRow'
 import type { ImageListResponse } from '@/components/admin/image-optimization/types'
 import type { ImageAssetStatus } from '@/lib/images/types'
@@ -20,6 +20,8 @@ export default function ImageOptimizationPage() {
   const [migrating, setMigrating] = useState(false)
   const [migrateMessage, setMigrateMessage] = useState<string | null>(null)
   const [resettingFailed, setResettingFailed] = useState(false)
+  const [backfilling, setBackfilling] = useState(false)
+  const [backfillMessage, setBackfillMessage] = useState<string | null>(null)
 
   const refresh = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -103,6 +105,27 @@ export default function ImageOptimizationPage() {
       alert(`Reset failed: ${e instanceof Error ? e.message : 'unknown'}`)
     } finally {
       setResettingFailed(false)
+    }
+  }
+
+  const backfillLinks = async () => {
+    setBackfilling(true)
+    setBackfillMessage('Linking complete assets to listings…')
+    try {
+      const res = await fetch('/api/admin/images/backfill-links', { method: 'POST' })
+      const json = await res.json()
+      if (!json.ok) throw new Error(json.error)
+      const { total, linked, errors } = json.data
+      setBackfillMessage(
+        errors === 0
+          ? `Done — ${linked} of ${total} complete assets linked to their listings.`
+          : `Done — ${linked} of ${total} linked. ${errors} errors (check console).`,
+      )
+      await refresh()
+    } catch (e) {
+      setBackfillMessage(`Error: ${e instanceof Error ? e.message : 'unknown'}`)
+    } finally {
+      setBackfilling(false)
     }
   }
 
@@ -193,11 +216,19 @@ export default function ImageOptimizationPage() {
           {migrating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
           Scan legacy images
         </button>
+        <button
+          onClick={backfillLinks}
+          disabled={backfilling || counts.complete === 0}
+          className="flex items-center gap-2 px-4 py-2 rounded border border-emerald-300 text-emerald-800 font-medium hover:bg-emerald-50 disabled:opacity-50"
+        >
+          {backfilling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+          Backfill links ({counts.complete})
+        </button>
       </div>
 
-      {(batchProgress || migrateMessage) && (
+      {(batchProgress || migrateMessage || backfillMessage) && (
         <div className="mb-4 p-3 rounded bg-blue-50 border border-blue-200 text-sm text-blue-900">
-          {batchProgress ?? migrateMessage}
+          {batchProgress ?? migrateMessage ?? backfillMessage}
         </div>
       )}
 

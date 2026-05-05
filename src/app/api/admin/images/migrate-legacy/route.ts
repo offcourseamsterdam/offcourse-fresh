@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import crypto from 'node:crypto'
 import { apiOk, apiError } from '@/lib/api/response'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { linkAssetToSource } from '@/lib/images/processor'
 
 // Vercel Hobby caps at 300s. Migration scans all listings + inserts asset
 // rows — typically completes in <60s for ~100 images.
@@ -136,46 +137,10 @@ export async function POST(_req: NextRequest) {
         }
 
         // ── Link asset back to source table so the frontend can use it ──
-        if (target.context === 'cruise' && target.context_id) {
-          if (target.isHero) {
-            await supabase
-              .from('cruise_listings')
-              .update({ hero_image_asset_id: resolvedAssetId })
-              .eq('id', target.context_id)
-              .is('hero_image_asset_id', null)
-          } else {
-            // Update matching item in images JSONB to add image_asset_id
-            const { data: listing } = await supabase
-              .from('cruise_listings')
-              .select('images')
-              .eq('id', target.context_id)
-              .single()
-            if (listing?.images && Array.isArray(listing.images)) {
-              const updated = (listing.images as Array<Record<string, unknown>>).map(img => {
-                if (typeof img === 'object' && !Array.isArray(img) && img.url === target.url && !img.image_asset_id) {
-                  return { ...img, image_asset_id: resolvedAssetId }
-                }
-                return img
-              })
-              await supabase
-                .from('cruise_listings')
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                .update({ images: updated as any })
-                .eq('id', target.context_id)
-            }
-          }
-        } else if (target.context === 'extras' && target.context_id) {
-          await supabase
-            .from('extras')
-            .update({ image_asset_id: resolvedAssetId })
-            .eq('id', target.context_id)
-            .is('image_asset_id', null)
-        } else if (target.context === 'hero' && target.context_id) {
-          await supabase
-            .from('hero_carousel_items')
-            .update({ image_asset_id: resolvedAssetId })
-            .eq('id', target.context_id)
-            .is('image_asset_id', null)
+        try {
+          await linkAssetToSource(supabase, resolvedAssetId, target.context, target.context_id, target.url)
+        } catch (linkErr) {
+          errors.push({ url: target.url, error: `link-back failed: ${linkErr instanceof Error ? linkErr.message : String(linkErr)}` })
         }
 
       } catch (err) {
