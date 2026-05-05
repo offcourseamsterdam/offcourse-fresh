@@ -43,6 +43,7 @@ export async function GET(request: NextRequest) {
     }
 
     const campaigns = (campaignsRes.data ?? []).map(c => ({
+      id: c.id,
       name: c.name,
       slug: c.slug,
       is_active: c.is_active,

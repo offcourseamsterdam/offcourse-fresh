@@ -9,11 +9,8 @@ interface Props {
 
 const navSections = [
   { label: 'Partner', items: [
-    { href: '/partner',            label: 'Overview',    icon: 'dashboard' },
-    { href: '/partner/bookings',   label: 'Bookings',    icon: 'bookings' },
-    { href: '/partner/campaigns',  label: 'Campaigns',   icon: 'campaigns' },
-    { href: '/partner/commission', label: 'Commission',  icon: 'statistics' },
-    { href: '/partner/settings',   label: 'Settings',    icon: 'settings' },
+    { href: '/partner',          label: 'Dashboard',  icon: 'dashboard' },
+    { href: '/partner/settings', label: 'Settings',   icon: 'settings' },
   ]},
 ]
 
