@@ -20,6 +20,10 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
+        hostname: '*.offcourseamsterdam.com',
+      },
+      {
+        protocol: 'https',
         hostname: 'offcourseamsterdam.com',
       },
     ],
