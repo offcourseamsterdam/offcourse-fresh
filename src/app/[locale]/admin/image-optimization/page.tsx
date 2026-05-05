@@ -15,6 +15,8 @@ export default function ImageOptimizationPage() {
   const [filter, setFilter] = useState<Filter>('all')
   const [batchRunning, setBatchRunning] = useState(false)
   const [batchProgress, setBatchProgress] = useState<string | null>(null)
+  const [batchStats, setBatchStats] = useState<{ done: number; total: number; failed: number } | null>(null)
+  const stopBatchRef = { current: false }
   const [migrating, setMigrating] = useState(false)
   const [migrateMessage, setMigrateMessage] = useState<string | null>(null)
   const [resettingFailed, setResettingFailed] = useState(false)
@@ -47,28 +49,50 @@ export default function ImageOptimizationPage() {
 
   const processAllPending = async () => {
     if (!data || data.counts.pending === 0) return
+
+    // Collect IDs of all pending assets right now
+    const ids = data.assets.filter(a => a.status === 'pending').map(a => a.id)
+    if (ids.length === 0) return
+
     setBatchRunning(true)
-    setBatchProgress(`Processing ${data.counts.pending} pending images…`)
-    try {
-      const res = await fetch('/api/admin/images/process-batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'pending', limit: data.counts.pending }),
-      })
-      const json = await res.json()
-      if (!json.ok) throw new Error(json.error)
-      setBatchProgress(`Done — ${json.data.succeeded} succeeded, ${json.data.failed} failed`)
-      await refresh()
-    } catch (e) {
-      setBatchProgress(`Error: ${e instanceof Error ? e.message : 'unknown'}`)
-    } finally {
-      setBatchRunning(false)
-      setTimeout(() => setBatchProgress(null), 5000)
+    stopBatchRef.current = false
+    setBatchStats({ done: 0, total: ids.length, failed: 0 })
+    setBatchProgress(null)
+
+    let failed = 0
+    for (let i = 0; i < ids.length; i++) {
+      if (stopBatchRef.current) {
+        setBatchProgress(`Stopped after ${i} of ${ids.length} images.`)
+        break
+      }
+
+      setBatchStats({ done: i, total: ids.length, failed })
+
+      try {
+        const res = await fetch(`/api/admin/images/${ids[i]}/process`, { method: 'POST' })
+        const json = await res.json()
+        if (!json.ok) failed++
+      } catch {
+        failed++
+      }
+
+      // Refresh the table after each image so step progress updates live
+      await refresh(true)
     }
+
+    setBatchStats({ done: ids.length, total: ids.length, failed })
+    setBatchProgress(
+      failed === 0
+        ? `All ${ids.length} images processed successfully.`
+        : `Done — ${ids.length - failed} succeeded, ${failed} failed.`
+    )
+    setBatchRunning(false)
+    await refresh()
+    setTimeout(() => { setBatchProgress(null); setBatchStats(null) }, 6000)
   }
 
   const resetFailed = async () => {
-    if (!data || data.counts.failed === 0) return
+    if (!data || (data.counts.failed === 0 && data.counts.processing === 0)) return
     setResettingFailed(true)
     try {
       const res = await fetch('/api/admin/images/reset-failed', { method: 'POST' })
@@ -133,14 +157,26 @@ export default function ImageOptimizationPage() {
 
       {/* Batch controls */}
       <div className="flex flex-wrap gap-3 mb-4">
-        <button
-          onClick={processAllPending}
-          disabled={batchRunning || counts.pending === 0}
-          className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50"
-        >
-          {batchRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-          Process all pending ({counts.pending})
-        </button>
+        {batchRunning ? (
+          <button
+            onClick={() => { stopBatchRef.current = true }}
+            className="flex items-center gap-2 px-4 py-2 rounded bg-red-600 text-white font-medium hover:bg-red-700"
+          >
+            <Loader2 className="w-4 h-4 animate-spin" />
+            {batchStats
+              ? `Processing ${batchStats.done + 1} / ${batchStats.total} — Stop`
+              : 'Processing… Stop'}
+          </button>
+        ) : (
+          <button
+            onClick={processAllPending}
+            disabled={counts.pending === 0}
+            className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50"
+          >
+            <Zap className="w-4 h-4" />
+            Process all pending ({counts.pending})
+          </button>
+        )}
         <button
           onClick={resetFailed}
           disabled={resettingFailed || (counts.failed === 0 && counts.processing === 0)}
