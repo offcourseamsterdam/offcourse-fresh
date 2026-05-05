@@ -1,7 +1,7 @@
 'use client'
 
 import { Fragment } from 'react'
-import { Loader2, ChevronDown, ChevronUp, Plus, Pencil, Ban } from 'lucide-react'
+import { Loader2, ChevronDown, ChevronUp, Plus, Pencil, Ban, Trash2 } from 'lucide-react'
 import { KPICard } from '@/components/admin/tracking/KPICard'
 import { CopyUrlButton } from './CopyUrlButton'
 
@@ -120,6 +120,7 @@ interface ChannelSectionProps {
   listingNames: Map<string, string>
   onEditCampaign: (campaign: Campaign) => void
   onDeactivateCampaign: (campaignId: string, channelId: string) => void
+  onDeleteCampaign: (campaignId: string, channelId: string) => void
   onAddCampaign: (channelId: string) => void
 }
 
@@ -141,6 +142,7 @@ export function ChannelSection({
   listingNames,
   onEditCampaign,
   onDeactivateCampaign,
+  onDeleteCampaign,
   onAddCampaign,
 }: ChannelSectionProps) {
   const visibleCampaigns = activePartner
@@ -350,11 +352,19 @@ export function ChannelSection({
                                         >
                                           <Pencil className="w-3 h-3" /> Edit
                                         </button>
+                                        {c.is_active && (
+                                          <button
+                                            onClick={(e) => { e.stopPropagation(); onDeactivateCampaign(c.id, ch.id) }}
+                                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-amber-600 hover:bg-amber-50 transition-colors"
+                                          >
+                                            <Ban className="w-3 h-3" /> Deactivate
+                                          </button>
+                                        )}
                                         <button
-                                          onClick={(e) => { e.stopPropagation(); onDeactivateCampaign(c.id, ch.id) }}
+                                          onClick={(e) => { e.stopPropagation(); onDeleteCampaign(c.id, ch.id) }}
                                           className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-500 hover:bg-red-50 transition-colors"
                                         >
-                                          <Ban className="w-3 h-3" /> Deactivate
+                                          <Trash2 className="w-3 h-3" /> Delete
                                         </button>
                                       </div>
                                     </>

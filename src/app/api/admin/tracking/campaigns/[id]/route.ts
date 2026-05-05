@@ -46,3 +46,14 @@ export async function PUT(
   if (error) return apiError(error.message)
   return apiOk(data)
 }
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params
+  const supabase = createAdminClient()
+  const { error } = await supabase.from('campaigns').delete().eq('id', id)
+  if (error) return apiError(error.message)
+  return apiOk({ deleted: true })
+}

@@ -34,6 +34,7 @@ export async function PATCH(
 
     const updates: Record<string, unknown> = {}
     if (body.name !== undefined) updates.name = String(body.name).trim()
+    if (body.email !== undefined) updates.email = body.email ? String(body.email).trim() : null
     if (body.commission_rate !== undefined) updates.commission_rate = Number(body.commission_rate)
 
     if (Object.keys(updates).length === 0) return apiError('No fields to update', 400)

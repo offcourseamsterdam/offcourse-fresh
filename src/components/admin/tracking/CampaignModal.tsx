@@ -39,10 +39,12 @@ interface CampaignModalProps {
   onSaved: () => void
   /** Pre-select a channel when opening from within a channel */
   defaultChannelId?: string
+  /** Pre-select a partner when opening from the Partners page */
+  defaultPartnerId?: string
   editing?: EditingCampaign | null
 }
 
-export function CampaignModal({ open, onClose, onSaved, defaultChannelId, editing }: CampaignModalProps) {
+export function CampaignModal({ open, onClose, onSaved, defaultChannelId, defaultPartnerId, editing }: CampaignModalProps) {
   const [channels, setChannels] = useState<Channel[]>([])
   const [allPartners, setAllPartners] = useState<Partner[]>([])
   const [listings, setListings] = useState<Listing[]>([])
@@ -78,7 +80,7 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId, editin
     if (open) {
       setName(editing?.name ?? '')
       setChannelId(editing?.channel_id ?? defaultChannelId ?? '')
-      setPartnerId(editing?.partner_id ?? '')
+      setPartnerId(editing?.partner_id ?? defaultPartnerId ?? '')
       setListingId(editing?.listing_id ?? '')
       setCommissionType((editing?.investment_type as 'percentage' | 'fixed_amount') ?? 'percentage')
       setCommissionValue(editing?.percentage_value?.toString() ?? '')
@@ -86,7 +88,7 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId, editin
       setNotes(editing?.notes ?? '')
       setError(null)
     }
-  }, [open, defaultChannelId, editing])
+  }, [open, defaultChannelId, defaultPartnerId, editing])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()

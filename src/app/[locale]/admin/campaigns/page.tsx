@@ -124,6 +124,16 @@ export default function CampaignsPage() {
     if (json.ok) setCampaigns((prev) => ({ ...prev, [channelId]: json.data }))
   }
 
+  async function deleteCampaign(campaignId: string, channelId: string) {
+    if (!confirm('Delete this campaign? This cannot be undone.')) return
+    await fetch(`/api/admin/tracking/campaigns/${campaignId}`, { method: 'DELETE' })
+    const params = new URLSearchParams({ from: dateRange.from, to: dateRange.to })
+    const res = await fetch(`/api/admin/tracking/channels/${channelId}/campaigns?${params}`)
+    const json = await res.json()
+    if (json.ok) setCampaigns((prev) => ({ ...prev, [channelId]: json.data }))
+    refreshChannels()
+  }
+
   function isPartnersChannel(channelId: string) {
     return channels.find(c => c.id === channelId)?.slug === 'partners'
   }
@@ -176,6 +186,7 @@ export default function CampaignsPage() {
               listingNames={listingNames}
               onEditCampaign={(campaign) => { setEditingCampaign(campaign); setShowCampaignModal(true) }}
               onDeactivateCampaign={deactivateCampaign}
+              onDeleteCampaign={deleteCampaign}
               onAddCampaign={(channelId) => { setCampaignModalChannelId(channelId); setShowCampaignModal(true) }}
             />
           ))}
