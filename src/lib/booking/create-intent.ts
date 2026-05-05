@@ -20,6 +20,7 @@ interface CreateIntentInput {
   durationMinutes: number
   promoCodeId?: string
   discountAmountCents?: number
+  displayedTotalCents?: number
 }
 
 interface CreateIntentResult {
@@ -40,6 +41,7 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
     guestCount, category, date, contact,
     selectedExtraIds, extraQuantities = {}, durationMinutes = DEFAULT_DURATION_MINUTES,
     promoCodeId, discountAmountCents: inputDiscount = 0,
+    displayedTotalCents,
   } = input
 
   // Verify base price server-side from FareHarbor.
@@ -77,6 +79,12 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
   const totalBeforeDiscount = calc.grand_total_cents + cityTaxCents
   const discountAmountCents = Math.min(inputDiscount, totalBeforeDiscount)
   const chargedCents = Math.max(50, totalBeforeDiscount - discountAmountCents)
+
+  if (displayedTotalCents != null && Math.abs(displayedTotalCents - chargedCents) > 50) {
+    throw new Error(
+      `Amount shown to you (€${(displayedTotalCents / 100).toFixed(2)}) doesn't match what we calculated (€${(chargedCents / 100).toFixed(2)}). Please go back and refresh your booking.`
+    )
+  }
 
   if (calc.grand_total_cents < 50) {
     throw new Error('Amount must be at least €0.50')

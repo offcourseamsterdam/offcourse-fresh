@@ -454,9 +454,18 @@ export function CheckoutFlow({
           category: bookingData.category,
           date: bookingData.date,
           contact: { name: details.name, email: details.email, phone: details.phone },
-          selectedExtraIds: bookingData.selectedExtraIds ?? [],
-          extraQuantities: bookingData.extraQuantities ?? {},
+          // Recover IDs from calculation line_items when selectedExtraIds is unexpectedly empty
+          // (guards against sessionStorage state divergence where extrasCalculation is set but IDs are lost)
+          selectedExtraIds: (bookingData.selectedExtraIds ?? []).length > 0
+            ? bookingData.selectedExtraIds
+            : (bookingData.extrasCalculation?.line_items?.map(li => li.extra_id).filter(Boolean) ?? []),
+          extraQuantities: Object.keys(bookingData.extraQuantities ?? {}).length > 0
+            ? bookingData.extraQuantities
+            : Object.fromEntries(
+                (bookingData.extrasCalculation?.line_items ?? []).map(li => [li.extra_id, li.quantity])
+              ),
           displayedExtrasAmountCents: bookingData.extrasCalculation?.extras_amount_cents ?? 0,
+          displayedTotalCents: totalAmountCents,
           durationMinutes: bookingData.durationMinutes ?? bookingData.selectedCustomerType?.durationMinutes ?? 90,
           promoCodeId: promoResult?.promoCodeId,
           discountAmountCents: promoResult?.discountAmountCents,
@@ -687,6 +696,16 @@ export function CheckoutFlow({
                     <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
                       <strong className="block">No payment today 🤝</strong>
                       This booking is settled with {partnerName ?? 'the partner'} — you&apos;ve already paid them at the desk.
+                    </div>
+                  )}
+                  {bookingData.selectedExtraIds.length === 0 && (
+                    <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                      <strong className="block mb-1">No extras selected</strong>
+                      Looks like you haven&apos;t added any food or drinks.{' '}
+                      <a href={`/cruises/${listingSlug}`} className="underline font-medium">
+                        Go back to add extras
+                      </a>{' '}
+                      or continue below if that&apos;s intentional.
                     </div>
                   )}
                   <GuestInfoForm

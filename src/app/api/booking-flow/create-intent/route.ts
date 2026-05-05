@@ -22,6 +22,7 @@ export async function POST(request: NextRequest) {
       durationMinutes = DEFAULT_DURATION_MINUTES,
       promoCodeId,
       discountAmountCents,
+      displayedTotalCents,
     } = body
 
     if (baseAmountCents == null || !availPk || !customerTypeRatePk || !contact?.name || !contact?.email) {
@@ -54,6 +55,7 @@ export async function POST(request: NextRequest) {
       durationMinutes: Number(durationMinutes),
       promoCodeId,
       discountAmountCents: discountAmountCents ? Number(discountAmountCents) : undefined,
+      displayedTotalCents: displayedTotalCents ? Number(displayedTotalCents) : undefined,
     })
 
     return apiOk(result)
