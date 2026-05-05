@@ -10,6 +10,11 @@ import { DateRangePicker, type DateRange } from '@/components/ui/DateRangePicker
 // ── Types ──────────────────────────────────────────────────────────────────
 
 interface Overview {
+  total_clicks: number
+  total_unique_visitors: number
+  total_bookings: number
+  total_commission_cents: number
+  // legacy
   commission_this_month_cents: number
   bookings_this_month: number
   active_campaigns: number
@@ -274,10 +279,11 @@ export default function PartnerDashboardPage() {
           <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
         </div>
       ) : overview ? (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <KPICard label="Commission this month" value={fmtEuros(overview.commission_this_month_cents)} />
-          <KPICard label="Bookings this month" value={String(overview.bookings_this_month)} />
-          <KPICard label="Active campaigns" value={String(overview.active_campaigns)} />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <KPICard label="Total traffic" value={String(overview.total_clicks)} />
+          <KPICard label="Unique visitors" value={String(overview.total_unique_visitors)} />
+          <KPICard label="Total bookings" value={String(overview.total_bookings)} />
+          <KPICard label="Total commission" value={fmtEuros(overview.total_commission_cents)} />
         </div>
       ) : null}
 
