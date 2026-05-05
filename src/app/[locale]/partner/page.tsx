@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Loader2, ChevronDown, ChevronUp, Megaphone, BarChart2, Settings } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Loader2, ChevronDown, ChevronUp, Megaphone, BarChart2, Settings, MousePointerClick } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { fmtEuros } from '@/lib/utils'
+import { DateRangePicker, type DateRange } from '@/components/ui/DateRangePicker'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -54,6 +55,23 @@ interface QuarterGroup {
   commission_cents: number
 }
 
+interface CampaignClickRow {
+  id: string
+  name: string
+  slug: string
+  is_active: boolean
+  clicks: number
+  unique_visitors: number
+}
+
+interface ClicksData {
+  from: string
+  to: string
+  total_clicks: number
+  unique_visitors: number
+  by_campaign: CampaignClickRow[]
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function groupByQuarter(months: MonthRow[]): QuarterGroup[] {
@@ -72,6 +90,15 @@ function groupByQuarter(months: MonthRow[]): QuarterGroup[] {
 function formatMonth(month: string) {
   const [year, mm] = month.split('-')
   return new Date(Number(year), Number(mm) - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+}
+
+function defaultDateRange(): DateRange {
+  const to = new Date()
+  const from = new Date()
+  from.setDate(from.getDate() - 29)
+  const fmt = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return { from: fmt(from), to: fmt(to) }
 }
 
 // ── Subcomponents ──────────────────────────────────────────────────────────
@@ -132,6 +159,18 @@ function SectionCard({
   )
 }
 
+// ── Mini stat tile for traffic section ────────────────────────────────────
+
+function StatTile({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+  return (
+    <div className="bg-zinc-50 rounded-xl px-4 py-3 border border-zinc-100">
+      <p className="text-xs text-zinc-400 mb-0.5">{label}</p>
+      <p className="text-xl font-bold text-zinc-900 tabular-nums">{value}</p>
+      {sub && <p className="text-[10px] text-zinc-400 mt-0.5">{sub}</p>}
+    </div>
+  )
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────
 
 export default function PartnerDashboardPage() {
@@ -140,12 +179,15 @@ export default function PartnerDashboardPage() {
   const [overview, setOverview] = useState<Overview | null>(null)
   const [campaigns, setCampaigns] = useState<CampaignWithId[]>([])
   const [commission, setCommission] = useState<CommissionData | null>(null)
+  const [clicks, setClicks] = useState<ClicksData | null>(null)
+  const [dateRange, setDateRange] = useState<DateRange>(defaultDateRange)
 
   const [loadingOverview, setLoadingOverview] = useState(true)
   const [loadingCampaigns, setLoadingCampaigns] = useState(false)
   const [loadingCommission, setLoadingCommission] = useState(false)
+  const [loadingClicks, setLoadingClicks] = useState(false)
 
-  const [openSection, setOpenSection] = useState<'campaigns' | 'commission' | null>(null)
+  const [openSection, setOpenSection] = useState<'campaigns' | 'commission' | 'traffic' | null>(null)
   const [expandedCampaign, setExpandedCampaign] = useState<string | null>(null)
   const [campaignBookings, setCampaignBookings] = useState<Record<string, Booking[]>>({})
   const [loadingCampaignBookings, setLoadingCampaignBookings] = useState<string | null>(null)
@@ -158,8 +200,24 @@ export default function PartnerDashboardPage() {
       .finally(() => setLoadingOverview(false))
   }, [])
 
+  // Fetch clicks data when traffic section is open + date range changes
+  const fetchClicks = useCallback(async (range: DateRange) => {
+    setLoadingClicks(true)
+    const params = new URLSearchParams({ from: range.from, to: range.to })
+    const res = await fetch(`/api/partner/clicks?${params}`)
+    const json = await res.json()
+    if (json.ok) setClicks(json.data)
+    setLoadingClicks(false)
+  }, [])
+
+  useEffect(() => {
+    if (openSection === 'traffic') {
+      fetchClicks(dateRange)
+    }
+  }, [openSection, dateRange, fetchClicks])
+
   // Load section data lazily
-  async function toggleSection(section: 'campaigns' | 'commission') {
+  async function toggleSection(section: 'campaigns' | 'commission' | 'traffic') {
     if (openSection === section) { setOpenSection(null); return }
     setOpenSection(section)
 
@@ -167,11 +225,7 @@ export default function PartnerDashboardPage() {
       setLoadingCampaigns(true)
       const res = await fetch('/api/partner/campaigns')
       const json = await res.json()
-      if (json.ok) {
-        // The campaigns API returns array but we need IDs — fetch with IDs
-        // The current API doesn't return id, so we need to add it
-        setCampaigns(json.data ?? [])
-      }
+      if (json.ok) setCampaigns(json.data ?? [])
       setLoadingCampaigns(false)
     }
 
@@ -182,6 +236,7 @@ export default function PartnerDashboardPage() {
       if (json.ok) setCommission(json.data)
       setLoadingCommission(false)
     }
+    // traffic section: handled by the useEffect above
   }
 
   async function toggleCampaignBookings(campaignId: string) {
@@ -224,6 +279,86 @@ export default function PartnerDashboardPage() {
           <KPICard label="Active campaigns" value={String(overview.active_campaigns)} />
         </div>
       ) : null}
+
+      {/* Traffic / Clicks section */}
+      <SectionCard
+        icon={<MousePointerClick className="w-4 h-4" />}
+        title="Traffic"
+        subtitle={clicks ? `${clicks.total_clicks} clicks · ${clicks.unique_visitors} visitors` : undefined}
+        isOpen={openSection === 'traffic'}
+        onToggle={() => toggleSection('traffic')}
+        loading={loadingClicks && openSection === 'traffic'}
+      >
+        {/* Date range picker */}
+        <div className="mb-5">
+          <DateRangePicker
+            value={dateRange}
+            onChange={range => {
+              setDateRange(range)
+              setClicks(null)
+            }}
+          />
+        </div>
+
+        {loadingClicks ? (
+          <div className="flex items-center justify-center py-6">
+            <Loader2 className="w-4 h-4 animate-spin text-zinc-400" />
+          </div>
+        ) : clicks ? (
+          <div className="space-y-5">
+            {/* Overall totals */}
+            <div className="grid grid-cols-2 gap-3">
+              <StatTile label="Total clicks" value={clicks.total_clicks} sub="link visits in period" />
+              <StatTile label="Unique visitors" value={clicks.unique_visitors} sub="distinct visitor IDs" />
+            </div>
+
+            {/* Per-campaign breakdown */}
+            {clicks.by_campaign.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">By campaign</p>
+                <div className="rounded-xl border border-zinc-100 overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-zinc-50 text-zinc-400 uppercase tracking-wider">
+                        <th className="px-3 py-2 text-left font-medium">Campaign</th>
+                        <th className="px-3 py-2 text-right font-medium">Clicks</th>
+                        <th className="px-3 py-2 text-right font-medium">Visitors</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100">
+                      {clicks.by_campaign.map(c => (
+                        <tr key={c.id} className="hover:bg-zinc-50 transition-colors">
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-zinc-800 font-medium">{c.name}</span>
+                              {!c.is_active && (
+                                <span className="text-[9px] bg-zinc-100 text-zinc-400 px-1 py-0.5 rounded-full">inactive</span>
+                              )}
+                            </div>
+                            <code className="text-zinc-400 font-mono text-[10px]">/t/{c.slug}</code>
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-semibold text-zinc-900 tabular-nums">
+                            {c.clicks}
+                          </td>
+                          <td className="px-3 py-2.5 text-right text-zinc-600 tabular-nums">
+                            {c.unique_visitors}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {clicks.by_campaign.length === 0 && (
+              <p className="text-sm text-zinc-400 text-center py-4">
+                No clicks recorded in this period.
+              </p>
+            )}
+          </div>
+        ) : null}
+      </SectionCard>
 
       {/* Campaigns section */}
       <SectionCard
