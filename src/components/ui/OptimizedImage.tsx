@@ -86,6 +86,7 @@ export function OptimizedImage({
           src={src}
           alt={alt}
           fill
+          unoptimized
           priority={priority}
           sizes={sizes}
           className={className}
@@ -99,6 +100,7 @@ export function OptimizedImage({
         alt={alt}
         width={width ?? 800}
         height={height ?? 600}
+        unoptimized
         priority={priority}
         sizes={sizes}
         className={className}
