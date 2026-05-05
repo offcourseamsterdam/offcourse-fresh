@@ -34,20 +34,6 @@ export async function POST(
     if (!partner) return apiError('Partner not found', 404)
     if (!partner.email) return apiError('Partner has no email address — add one first', 400)
 
-    // ── Check for existing linked user_profile ─────────────────────────────
-    const { data: existingProfile } = await supabase
-      .from('user_profiles')
-      .select('id, email')
-      .eq('partner_id', id)
-      .maybeSingle()
-
-    if (existingProfile) {
-      return apiError(
-        `A user account already exists for this partner (${existingProfile.email})`,
-        409,
-      )
-    }
-
     // ── Supabase admin client (service role) ───────────────────────────────
     const authAdmin = createSupabaseAdmin(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -57,31 +43,44 @@ export async function POST(
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://offcourseamsterdam.com'
     const redirectTo = `${siteUrl}/auth/callback?locale=en`
 
+    // ── Check for existing linked user_profile ─────────────────────────────
+    // If an account already exists we still send the email — just as a
+    // magic-link (sign in) rather than an invite (account setup).
+    const { data: existingProfile } = await supabase
+      .from('user_profiles')
+      .select('id, email')
+      .eq('partner_id', id)
+      .maybeSingle()
+
+    const accountExists = Boolean(existingProfile)
+
     // ── Ensure the auth user exists ────────────────────────────────────────
-    // Try to create them; if they already exist in auth, proceed to link-back.
-    let authUserId: string | null = null
+    let authUserId: string | null = existingProfile?.id ?? null
 
-    const { data: createData, error: createError } = await authAdmin.auth.admin.createUser({
-      email: partner.email,
-      email_confirm: false,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ...(({ invite: true } as any)),
-    })
+    if (!accountExists) {
+      const { data: createData, error: createError } = await authAdmin.auth.admin.createUser({
+        email: partner.email,
+        email_confirm: false,
+      })
 
-    if (!createError && createData?.user) {
-      authUserId = createData.user.id
-    } else if (createError?.message?.toLowerCase().includes('already been registered') || createError?.message?.toLowerCase().includes('already exists')) {
-      // User already exists in auth — look them up
-      const { data: listData } = await authAdmin.auth.admin.listUsers({ perPage: 1000 })
-      const existing = listData?.users?.find(u => u.email?.toLowerCase() === partner.email!.toLowerCase())
-      if (existing) authUserId = existing.id
-    } else if (createError) {
-      return apiError(createError.message)
+      if (!createError && createData?.user) {
+        authUserId = createData.user.id
+      } else if (
+        createError?.message?.toLowerCase().includes('already been registered') ||
+        createError?.message?.toLowerCase().includes('already exists')
+      ) {
+        const { data: listData } = await authAdmin.auth.admin.listUsers({ perPage: 1000 })
+        const existing = listData?.users?.find(u => u.email?.toLowerCase() === partner.email!.toLowerCase())
+        if (existing) authUserId = existing.id
+      } else if (createError) {
+        return apiError(createError.message)
+      }
     }
 
-    // ── Generate the invite / magic link ───────────────────────────────────
+    // ── Generate invite link (new account) or magic link (existing account) ─
+    const linkType = accountExists ? 'magiclink' : 'invite'
     const { data: linkData, error: linkError } = await authAdmin.auth.admin.generateLink({
-      type: 'invite',
+      type: linkType,
       email: partner.email,
       options: { redirectTo, data: { display_name: partner.name } },
     })
@@ -119,7 +118,8 @@ export async function POST(
       return apiError(`User created but email failed to send: ${sendError.message}`)
     }
 
-    return apiOk({ message: `Invite sent to ${partner.email}`, userId: authUserId })
+    const verb = accountExists ? 'Login link' : 'Invite'
+    return apiOk({ message: `${verb} sent to ${partner.email}`, userId: authUserId })
   } catch (err) {
     return apiError(err instanceof Error ? err.message : 'Unknown error')
   }
