@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Loader2, ChevronDown, ChevronUp, Megaphone, BarChart2 } from 'lucide-react'
+import { Loader2, ChevronDown, ChevronUp, Megaphone, BarChart2, Settings } from 'lucide-react'
+import Link from 'next/link'
+import { useParams } from 'next/navigation'
 import { fmtEuros } from '@/lib/utils'
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -133,6 +135,8 @@ function SectionCard({
 // ── Main page ──────────────────────────────────────────────────────────────
 
 export default function PartnerDashboardPage() {
+  const params = useParams()
+  const locale = (params?.locale as string) ?? 'en'
   const [overview, setOverview] = useState<Overview | null>(null)
   const [campaigns, setCampaigns] = useState<CampaignWithId[]>([])
   const [commission, setCommission] = useState<CommissionData | null>(null)
@@ -194,9 +198,18 @@ export default function PartnerDashboardPage() {
 
   return (
     <div className="p-6 sm:p-8 max-w-4xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-[var(--color-primary)]">Partner Overview</h1>
-        <p className="text-sm text-zinc-500 mt-1">Your bookings, campaigns, and commission at a glance.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--color-primary)]">Partner Overview</h1>
+          <p className="text-sm text-zinc-500 mt-1">Your bookings, campaigns, and commission at a glance.</p>
+        </div>
+        <Link
+          href={`/${locale}/partner/settings`}
+          className="p-2 rounded-xl text-zinc-400 hover:text-zinc-600 hover:bg-white transition-colors"
+          title="Settings"
+        >
+          <Settings className="w-5 h-5" />
+        </Link>
       </div>
 
       {/* KPI cards */}

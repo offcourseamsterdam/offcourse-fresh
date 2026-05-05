@@ -1,5 +1,4 @@
 import ProtectedLayout from '@/components/auth/ProtectedLayout'
-import DashboardSidebar from '@/components/layout/DashboardSidebar'
 import { PartnerContext } from './PartnerContext'
 
 interface Props {
@@ -7,23 +6,15 @@ interface Props {
   params: Promise<{ locale: string }>
 }
 
-const navSections = [
-  { label: 'Partner', items: [
-    { href: '/partner',          label: 'Dashboard',  icon: 'dashboard' },
-    { href: '/partner/settings', label: 'Settings',   icon: 'settings' },
-  ]},
-]
-
 export default async function PartnerLayout({ children, params }: Props) {
   const { locale } = await params
 
   return (
     <ProtectedLayout allowedRoles={['admin', 'partner']} locale={locale}>
       {(profile) => (
-        <div className="flex min-h-screen">
-          <DashboardSidebar locale={locale} profile={profile} portalName="Partner Portal" navSections={navSections} />
-          <main className="flex-1 bg-gray-50 overflow-auto">
-            <PartnerContext profile={profile} />
+        <div className="min-h-screen bg-gray-50">
+          <PartnerContext profile={profile} />
+          <main className="overflow-auto">
             {children}
           </main>
         </div>

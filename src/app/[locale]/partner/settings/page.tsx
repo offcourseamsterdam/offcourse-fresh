@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
+import { useParams } from 'next/navigation'
 
 interface Settings {
   email: string
@@ -39,6 +41,8 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 }
 
 export default function PartnerSettingsPage() {
+  const params = useParams()
+  const locale = (params?.locale as string) ?? 'en'
   const [settings, setSettings] = useState<Settings>({
     email: '',
     notify_per_booking: true,
@@ -105,9 +109,17 @@ export default function PartnerSettingsPage() {
 
   return (
     <div className="p-6 sm:p-8 max-w-2xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-[var(--color-primary)]">Notification Settings</h1>
-        <p className="text-sm text-zinc-500 mt-1">Choose which notifications you want to receive.</p>
+      <div className="flex items-center gap-3">
+        <Link
+          href={`/${locale}/partner`}
+          className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-white transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </Link>
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--color-primary)]">Settings</h1>
+          <p className="text-sm text-zinc-500 mt-0.5">Notification preferences for your partner account.</p>
+        </div>
       </div>
 
       {/* Notification email */}
