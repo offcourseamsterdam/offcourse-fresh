@@ -126,7 +126,7 @@ async function describeWithGemini(args: {
   mimeType: string
   keywords: string[]
   context?: string
-}): Promise<GeminiResult> {
+}, retries = 3): Promise<GeminiResult> {
   const model = args.gemini.getGenerativeModel({ model: GEMINI_MODEL })
 
   const prompt = [
@@ -155,10 +155,22 @@ async function describeWithGemini(args: {
     .filter(Boolean)
     .join('\n')
 
-  const result = await model.generateContent([
-    { text: prompt },
-    { inlineData: { data: args.base64, mimeType: args.mimeType } },
-  ])
+  let result
+  try {
+    result = await model.generateContent([
+      { text: prompt },
+      { inlineData: { data: args.base64, mimeType: args.mimeType } },
+    ])
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    // Retry on transient 503 overload errors (Gemini 2.5 Flash can be busy)
+    if (retries > 0 && msg.includes('503')) {
+      const delay = (4 - retries) * 5000 // 5s, 10s, 15s back-off
+      await new Promise(r => setTimeout(r, delay))
+      return describeWithGemini(args, retries - 1)
+    }
+    throw err
+  }
 
   const text = result.response.text()
   const parsed = parseJsonStrict<GeminiResult>(text, 'gemini')
