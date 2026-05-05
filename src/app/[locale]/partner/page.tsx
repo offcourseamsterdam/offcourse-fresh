@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Loader2, ChevronDown, ChevronUp, Megaphone, BarChart2, Settings, MousePointerClick } from 'lucide-react'
+import { Loader2, ChevronDown, ChevronUp, Megaphone, BarChart2, Settings, MousePointerClick, Copy, Check } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { fmtEuros } from '@/lib/utils'
@@ -66,6 +66,7 @@ interface CampaignClickRow {
   name: string
   slug: string
   is_active: boolean
+  commission_rate: string | null
   clicks: number
   unique_visitors: number
 }
@@ -174,6 +175,38 @@ function StatTile({ label, value, sub }: { label: string; value: string | number
       <p className="text-xl font-bold text-zinc-900 tabular-nums">{value}</p>
       {sub && <p className="text-[10px] text-zinc-400 mt-0.5">{sub}</p>}
     </div>
+  )
+}
+
+// ── Copy-link button ──────────────────────────────────────────────────────
+
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://offcourseamsterdam.com'
+
+function CopyLinkButton({ slug }: { slug: string }) {
+  const [copied, setCopied] = useState(false)
+  const url = `${SITE_URL}/t/${slug}`
+
+  function handleCopy(e: React.MouseEvent) {
+    e.stopPropagation()
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      title={copied ? 'Copied!' : `Copy link: ${url}`}
+      className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-colors flex-shrink-0 ${
+        copied
+          ? 'bg-emerald-50 text-emerald-700'
+          : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700'
+      }`}
+    >
+      {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+      {copied ? 'Copied' : 'Copy link'}
+    </button>
   )
 }
 
@@ -328,6 +361,7 @@ export default function PartnerDashboardPage() {
                     <thead>
                       <tr className="bg-zinc-50 text-zinc-400 uppercase tracking-wider">
                         <th className="px-3 py-2 text-left font-medium">Campaign</th>
+                        <th className="px-3 py-2 text-right font-medium hidden sm:table-cell">Commission</th>
                         <th className="px-3 py-2 text-right font-medium">Clicks</th>
                         <th className="px-3 py-2 text-right font-medium">Visitors</th>
                       </tr>
@@ -336,13 +370,25 @@ export default function PartnerDashboardPage() {
                       {clicks.by_campaign.map(c => (
                         <tr key={c.id} className="hover:bg-zinc-50 transition-colors">
                           <td className="px-3 py-2.5">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-zinc-800 font-medium">{c.name}</span>
                               {!c.is_active && (
                                 <span className="text-[9px] bg-zinc-100 text-zinc-400 px-1 py-0.5 rounded-full">inactive</span>
                               )}
                             </div>
-                            <code className="text-zinc-400 font-mono text-[10px]">/t/{c.slug}</code>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <code className="text-zinc-400 font-mono text-[10px]">/t/{c.slug}</code>
+                              <CopyLinkButton slug={c.slug} />
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 text-right hidden sm:table-cell">
+                            {c.commission_rate ? (
+                              <span className="bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-full font-medium text-[10px]">
+                                {c.commission_rate}
+                              </span>
+                            ) : (
+                              <span className="text-zinc-300">—</span>
+                            )}
                           </td>
                           <td className="px-3 py-2.5 text-right font-semibold text-zinc-900 tabular-nums">
                             {c.clicks}
@@ -399,7 +445,10 @@ export default function PartnerDashboardPage() {
                         </span>
                       )}
                     </div>
-                    <code className="text-xs text-zinc-400 font-mono">/t/{c.slug}</code>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <code className="text-xs text-zinc-400 font-mono">/t/{c.slug}</code>
+                      <CopyLinkButton slug={c.slug} />
+                    </div>
                   </div>
                   <div className="flex items-center gap-5 text-right flex-shrink-0">
                     <div>
