@@ -76,15 +76,24 @@ function StepProgress({ currentStep, status, failureReason }: {
 export function AssetRow({ asset, onProcessed }: Props) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [aiWarning, setAiWarning] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
 
   const handleProcess = async (action: 'process' | 'reprocess' | 'reset') => {
     setBusy(true)
     setError(null)
+    setAiWarning(null)
     try {
       const res = await fetch(`/api/admin/images/${asset.id}/${action}`, { method: 'POST' })
       const json = await res.json()
       if (!json.ok) throw new Error(json.error)
+      // Surface AI step failures (e.g. quota exceeded) — these don't fail the whole job
+      // but result in images with no alt text / SEO metadata.
+      if (json.data?.aiWarning) {
+        const msg = String(json.data.aiWarning)
+        // Truncate long API error messages to the first meaningful line
+        setAiWarning(msg.split('\n')[0].slice(0, 180))
+      }
       onProcessed()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Processing failed')
@@ -189,6 +198,11 @@ export function AssetRow({ asset, onProcessed }: Props) {
         </td>
 
         <td className="px-3 py-2 text-right">
+          {aiWarning && !showStepProgress && (
+            <div className="text-xs text-amber-600 mb-1 max-w-[220px] break-words text-left">
+              ⚠ AI skipped: {aiWarning}
+            </div>
+          )}
           {(error ?? asset.failure_reason) && !showStepProgress && (
             <div className="text-xs text-red-600 mb-1 max-w-[220px] break-words select-all cursor-text text-left">
               {error ?? asset.failure_reason}
