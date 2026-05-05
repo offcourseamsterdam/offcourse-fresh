@@ -3,7 +3,6 @@
 import { Fragment } from 'react'
 import { Loader2, ChevronDown, ChevronUp, Plus, Pencil, Ban } from 'lucide-react'
 import { KPICard } from '@/components/admin/tracking/KPICard'
-import { FunnelChart } from '@/components/admin/tracking/FunnelChart'
 import { CopyUrlButton } from './CopyUrlButton'
 
 export interface Channel {
@@ -53,11 +52,14 @@ export interface CampaignMetrics {
   roi: number | null
 }
 
-export interface FunnelStep {
-  event: string
-  label: string
-  count: number
-  drop_off_rate: number
+export interface CampaignBooking {
+  id: string
+  created_at: string | null
+  booking_date: string | null
+  start_time: string | null
+  listing_title: string | null
+  stripe_amount: number | null
+  commission_amount_cents: number | null
 }
 
 interface PartnerTabsProps {
@@ -112,7 +114,7 @@ interface ChannelSectionProps {
   expandedCampaign: string | null
   onToggleCampaign: (id: string) => void
   campaignMetrics: Record<string, CampaignMetrics>
-  campaignFunnels: Record<string, FunnelStep[]>
+  campaignBookings: Record<string, CampaignBooking[]>
   loadingCampaignDetail: string | null
   partnerNames: Map<string, string>
   listingNames: Map<string, string>
@@ -133,7 +135,7 @@ export function ChannelSection({
   expandedCampaign,
   onToggleCampaign,
   campaignMetrics,
-  campaignFunnels,
+  campaignBookings,
   loadingCampaignDetail,
   partnerNames,
   listingNames,
@@ -214,7 +216,7 @@ export function ChannelSection({
                     return visibleCampaigns.map((c) => {
                       const isCampaignExpanded = expandedCampaign === c.id
                       const metrics = campaignMetrics[c.id]
-                      const funnel = campaignFunnels[c.id]
+                      const recentBookings = campaignBookings[c.id]
                       const detailLoading = loadingCampaignDetail === c.id
                       return (
                         <Fragment key={c.id}>
@@ -278,30 +280,66 @@ export function ChannelSection({
                                   ) : (
                                     <>
                                       {metrics && (
-                                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                                        <div className={`grid gap-2.5 ${metrics.roi !== null ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-6' : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5'}`}>
                                           <KPICard label="Sessions" value={metrics.sessions.toLocaleString()} />
                                           <KPICard label="Unique Users" value={metrics.unique_visitors.toLocaleString()} />
                                           <KPICard label="Bookings" value={metrics.bookings.toLocaleString()} />
                                           <KPICard label="Conversion" value={`${(metrics.conversion_rate * 100).toFixed(1)}%`} />
                                           <KPICard label="Revenue" value={`€${(metrics.revenue_cents / 100).toLocaleString('nl-NL', { maximumFractionDigits: 0 })}`} />
-                                          {metrics.roi !== null ? (
+                                          {metrics.roi !== null && (
                                             <KPICard
                                               label="ROI"
                                               value={`${metrics.roi >= 0 ? '+' : ''}${(metrics.roi * 100).toFixed(0)}%`}
                                               subtitle={metrics.roi >= 0 ? 'positive' : 'negative'}
                                             />
-                                          ) : (
-                                            <KPICard label="ROI" value="—" subtitle="no investment set" />
                                           )}
                                         </div>
                                       )}
 
                                       <div className="bg-zinc-50 rounded-xl border border-zinc-200 p-4">
-                                        <h3 className="text-xs font-semibold text-zinc-700 mb-3">Funnel</h3>
-                                        {funnel && funnel.length > 0 ? (
-                                          <FunnelChart steps={funnel} />
+                                        <h3 className="text-xs font-semibold text-zinc-700 mb-3">Recent Bookings</h3>
+                                        {recentBookings && recentBookings.length > 0 ? (
+                                          <table className="w-full text-xs">
+                                            <thead>
+                                              <tr className="text-zinc-400 uppercase tracking-wider border-b border-zinc-200">
+                                                <th className="text-left pb-2 font-medium">Booked</th>
+                                                <th className="text-left pb-2 font-medium hidden sm:table-cell">Cruise date</th>
+                                                <th className="text-left pb-2 font-medium">Cruise</th>
+                                                <th className="text-right pb-2 font-medium">Revenue</th>
+                                                {recentBookings.some(b => b.commission_amount_cents) && (
+                                                  <th className="text-right pb-2 font-medium hidden sm:table-cell">Commission</th>
+                                                )}
+                                              </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-zinc-100">
+                                              {recentBookings.map(b => (
+                                                <tr key={b.id}>
+                                                  <td className="py-2 text-zinc-500">
+                                                    {b.created_at ? new Date(b.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—'}
+                                                  </td>
+                                                  <td className="py-2 text-zinc-500 hidden sm:table-cell">
+                                                    {b.booking_date ? new Date(b.booking_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—'}
+                                                    {b.start_time ? ` ${b.start_time.slice(0, 5)}` : ''}
+                                                  </td>
+                                                  <td className="py-2 text-zinc-700 font-medium max-w-[160px] truncate">
+                                                    {b.listing_title ?? '—'}
+                                                  </td>
+                                                  <td className="py-2 text-right tabular-nums text-zinc-700">
+                                                    €{((b.stripe_amount ?? 0) / 100).toLocaleString('nl-NL', { maximumFractionDigits: 0 })}
+                                                  </td>
+                                                  {recentBookings.some(b2 => b2.commission_amount_cents) && (
+                                                    <td className="py-2 text-right tabular-nums text-zinc-500 hidden sm:table-cell">
+                                                      {b.commission_amount_cents
+                                                        ? `€${(b.commission_amount_cents / 100).toLocaleString('nl-NL', { maximumFractionDigits: 0 })}`
+                                                        : '—'}
+                                                    </td>
+                                                  )}
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
                                         ) : (
-                                          <p className="text-xs text-zinc-400 py-4 text-center">No funnel data for this period</p>
+                                          <p className="text-xs text-zinc-400 py-4 text-center">No bookings in this period</p>
                                         )}
                                       </div>
 

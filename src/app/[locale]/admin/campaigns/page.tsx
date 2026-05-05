@@ -6,7 +6,7 @@ import { Loader2, Megaphone } from 'lucide-react'
 import { PeriodSelector, getDateRange, type PeriodKey } from '@/components/admin/tracking/PeriodSelector'
 import { CampaignModal } from '@/components/admin/tracking/CampaignModal'
 import { CategoryTabs, type CategoryFilter } from '@/components/admin/tracking/CategoryTabs'
-import { ChannelSection, type ChannelWithMetrics, type Campaign, type CampaignMetrics, type FunnelStep } from './ChannelSection'
+import { ChannelSection, type ChannelWithMetrics, type Campaign, type CampaignMetrics, type CampaignBooking } from './ChannelSection'
 
 export default function CampaignsPage() {
   const [period, setPeriod] = useState<PeriodKey>('30d')
@@ -27,7 +27,7 @@ export default function CampaignsPage() {
 
   const [expandedCampaign, setExpandedCampaign] = useState<string | null>(null)
   const [campaignMetrics, setCampaignMetrics] = useState<Record<string, CampaignMetrics>>({})
-  const [campaignFunnels, setCampaignFunnels] = useState<Record<string, FunnelStep[]>>({})
+  const [campaignBookings, setCampaignBookings] = useState<Record<string, CampaignBooking[]>>({})
   const [loadingCampaignDetail, setLoadingCampaignDetail] = useState<string | null>(null)
 
   const [partnerNames, setPartnerNames] = useState<Map<string, string>>(new Map())
@@ -81,7 +81,7 @@ export default function CampaignsPage() {
     setDateRange({ from, to })
     setCampaigns({})
     setCampaignMetrics({})
-    setCampaignFunnels({})
+    setCampaignBookings({})
     setExpandedChannel(null)
     setExpandedCampaign(null)
   }
@@ -92,18 +92,18 @@ export default function CampaignsPage() {
       return
     }
     setExpandedCampaign(campaignId)
-    if (campaignMetrics[campaignId] && campaignFunnels[campaignId]) return
+    if (campaignMetrics[campaignId] && campaignBookings[campaignId]) return
 
     setLoadingCampaignDetail(campaignId)
     try {
       const params = new URLSearchParams({ from: dateRange.from, to: dateRange.to })
-      const [metricsRes, funnelRes] = await Promise.all([
+      const [metricsRes, bookingsRes] = await Promise.all([
         fetch(`/api/admin/tracking/campaigns/${campaignId}/metrics?${params}`),
-        fetch(`/api/admin/tracking/funnel?${params}&campaign_id=${campaignId}`),
+        fetch(`/api/admin/tracking/campaigns/${campaignId}/bookings?${params}`),
       ])
-      const [metricsJson, funnelJson] = await Promise.all([metricsRes.json(), funnelRes.json()])
+      const [metricsJson, bookingsJson] = await Promise.all([metricsRes.json(), bookingsRes.json()])
       if (metricsJson.ok) setCampaignMetrics((prev) => ({ ...prev, [campaignId]: metricsJson.data }))
-      if (funnelJson.ok) setCampaignFunnels((prev) => ({ ...prev, [campaignId]: funnelJson.data }))
+      if (bookingsJson.ok) setCampaignBookings((prev) => ({ ...prev, [campaignId]: bookingsJson.data }))
     } catch (err) {
       console.error('Failed to load campaign detail:', err)
     } finally {
@@ -170,7 +170,7 @@ export default function CampaignsPage() {
               expandedCampaign={expandedCampaign}
               onToggleCampaign={toggleCampaign}
               campaignMetrics={campaignMetrics}
-              campaignFunnels={campaignFunnels}
+              campaignBookings={campaignBookings}
               loadingCampaignDetail={loadingCampaignDetail}
               partnerNames={partnerNames}
               listingNames={listingNames}
@@ -188,7 +188,7 @@ export default function CampaignsPage() {
         onSaved={() => {
           setCampaigns({})
           setCampaignMetrics({})
-          setCampaignFunnels({})
+          setCampaignBookings({})
           refreshChannels()
           if (expandedChannel) {
             const params = new URLSearchParams({ from: dateRange.from, to: dateRange.to })

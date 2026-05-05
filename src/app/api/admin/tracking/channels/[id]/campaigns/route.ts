@@ -47,17 +47,14 @@ export async function GET(
             .eq('status', 'confirmed')
         : { data: [] }
 
-      const bookingsBySession = new Set(bookings?.map((b) => b.session_id) ?? [])
-
       const enriched = campaigns.map((c) => {
         const campaignSessions = sessions?.filter((s) => s.campaign_slug === c.slug) ?? []
         const uniqueUsers = new Set(
           campaignSessions.map((s) => s.visitor_id).filter((id) => !id.startsWith('anon_'))
         ).size
-        const campaignBookings = campaignSessions.filter((s) => bookingsBySession.has(s.id))
-        const revenue = bookings
-          ?.filter((b) => campaignSessions.some((s) => s.id === b.session_id))
-          .reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0) ?? 0
+        const campaignSessionIds = new Set(campaignSessions.map((s) => s.id))
+        const campaignBookings = bookings?.filter((b) => b.session_id && campaignSessionIds.has(b.session_id)) ?? []
+        const revenue = campaignBookings.reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0)
         const investmentCents = c.investment_amount != null ? c.investment_amount * 100 : null
         const roi = investmentCents && investmentCents > 0
           ? (revenue - investmentCents) / investmentCents
