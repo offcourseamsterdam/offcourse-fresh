@@ -17,6 +17,8 @@ export interface SummaryData {
     bookings: number
     revenueCents: number
     commissionCents: number
+    /** e.g. "10%" or "€25 fixed" — omitted when unknown */
+    commissionRate?: string
   }[]
   isInvoice?: boolean        // Quarterly invoice format
 }
@@ -28,7 +30,10 @@ export function periodicSummaryHtml(data: SummaryData) {
 
   const campaignRows = data.campaigns.map((c) => `
     <tr>
-      <td style="padding:6px 0;font-size:12px;color:#3f3f46;">${escapeHtml(c.name)}</td>
+      <td style="padding:6px 0;font-size:12px;color:#3f3f46;">
+        ${escapeHtml(c.name)}
+        ${c.commissionRate ? `<span style="font-size:10px;color:#a1a1aa;margin-left:4px;">${escapeHtml(c.commissionRate)}</span>` : ''}
+      </td>
       <td style="padding:6px 0;font-size:12px;text-align:right;color:#3f3f46;">${c.bookings}</td>
       <td style="padding:6px 0;font-size:12px;text-align:right;color:#3f3f46;">€${(c.revenueCents / 100).toFixed(2)}</td>
       <td style="padding:6px 0;font-size:12px;text-align:right;font-weight:600;color:#059669;">€${(c.commissionCents / 100).toFixed(2)}</td>

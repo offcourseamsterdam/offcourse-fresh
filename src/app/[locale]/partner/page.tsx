@@ -19,6 +19,7 @@ interface Campaign {
   name: string
   slug: string
   is_active: boolean
+  commission_rate: string | null
   bookings_count: number
   commission_cents: number
 }
@@ -385,6 +386,11 @@ export default function PartnerDashboardPage() {
                       <span className="text-sm font-medium text-zinc-900">{c.name}</span>
                       {!c.is_active && (
                         <span className="text-[10px] bg-zinc-100 text-zinc-500 px-1.5 py-0.5 rounded-full">inactive</span>
+                      )}
+                      {c.commission_rate && (
+                        <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-full font-medium">
+                          {c.commission_rate}
+                        </span>
                       )}
                     </div>
                     <code className="text-xs text-zinc-400 font-mono">/t/{c.slug}</code>

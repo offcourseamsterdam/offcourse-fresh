@@ -43,7 +43,7 @@ export async function buildSummaryForRecipient(
   }
 
   // Get campaigns linked to this partner or channel
-  let campaignQuery = supabase.from('campaigns').select('id, name, slug')
+  let campaignQuery = supabase.from('campaigns').select('id, name, slug, investment_type, percentage_value, investment_amount')
   if (setting.partner_id) {
     campaignQuery = campaignQuery.eq('partner_id', setting.partner_id)
   } else if (setting.channel_id) {
@@ -96,11 +96,20 @@ export async function buildSummaryForRecipient(
       }
     }
 
+    // Format the commission rate as a human-readable string
+    let commissionRate: string | undefined
+    if (campaign.investment_type === 'percentage' && campaign.percentage_value != null) {
+      commissionRate = `${campaign.percentage_value}%`
+    } else if (campaign.investment_type === 'fixed_amount' && campaign.investment_amount != null) {
+      commissionRate = `€${(campaign.investment_amount / 100).toFixed(0)} fixed`
+    }
+
     return {
       name: campaign.name,
       bookings: campaignBookings.length,
       revenueCents,
       commissionCents,
+      commissionRate,
     }
   }).filter((c) => c.bookings > 0) // Only include campaigns with bookings
 

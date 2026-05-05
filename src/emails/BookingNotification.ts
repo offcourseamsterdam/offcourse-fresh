@@ -15,6 +15,8 @@ export function bookingNotificationHtml(data: {
   guestCount: number
   amountCents: number
   commissionCents: number
+  /** e.g. "10%" or "€25 fixed" — shown next to the commission row */
+  commissionRate?: string
 }) {
   const amount = `€${(data.amountCents / 100).toFixed(2)}`
   const commission = `€${(data.commissionCents / 100).toFixed(2)}`
@@ -38,7 +40,12 @@ export function bookingNotificationHtml(data: {
         <tr><td style="padding:6px 0;color:#71717a;">Date</td><td style="padding:6px 0;">${escapeHtml(data.bookingDate)}</td></tr>
         <tr><td style="padding:6px 0;color:#71717a;">Guests</td><td style="padding:6px 0;">${data.guestCount}</td></tr>
         <tr><td style="padding:6px 0;color:#71717a;">Amount</td><td style="padding:6px 0;">${amount}</td></tr>
-        <tr><td style="padding:6px 0;color:#71717a;border-top:1px solid #f4f4f5;">Commission</td><td style="padding:6px 0;font-weight:700;color:#059669;border-top:1px solid #f4f4f5;">${commission}</td></tr>
+        <tr>
+          <td style="padding:6px 0;color:#71717a;border-top:1px solid #f4f4f5;">Commission</td>
+          <td style="padding:6px 0;font-weight:700;color:#059669;border-top:1px solid #f4f4f5;">
+            ${commission}${data.commissionRate ? ` <span style="font-size:11px;font-weight:400;color:#a1a1aa;">(${escapeHtml(data.commissionRate)})</span>` : ''}
+          </td>
+        </tr>
       </table>
     </td></tr>
     <tr><td style="padding:16px 24px;border:1px solid #e4e4e7;border-top:0;border-radius:0 0 12px 12px;background:#fafafa;">

@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     const [campaignsRes, bookingsRes] = await Promise.all([
       admin
         .from('campaigns')
-        .select('id, name, slug, listing_id, percentage_value, investment_type, is_active, created_at')
+        .select('id, name, slug, listing_id, percentage_value, investment_type, investment_amount, is_active, created_at')
         .eq('partner_id', partnerId)
         .order('created_at', { ascending: false }),
       admin
@@ -42,14 +42,24 @@ export async function GET(request: NextRequest) {
       statsByCampaign[b.campaign_id] = s
     }
 
-    const campaigns = (campaignsRes.data ?? []).map(c => ({
-      id: c.id,
-      name: c.name,
-      slug: c.slug,
-      is_active: c.is_active,
-      bookings_count: statsByCampaign[c.id]?.count ?? 0,
-      commission_cents: statsByCampaign[c.id]?.commission ?? 0,
-    }))
+    const campaigns = (campaignsRes.data ?? []).map(c => {
+      let commission_rate: string | null = null
+      if (c.investment_type === 'percentage' && c.percentage_value != null) {
+        commission_rate = `${c.percentage_value}%`
+      } else if (c.investment_type === 'fixed_amount' && c.investment_amount != null) {
+        commission_rate = `€${(c.investment_amount / 100).toFixed(0)} fixed`
+      }
+
+      return {
+        id: c.id,
+        name: c.name,
+        slug: c.slug,
+        is_active: c.is_active,
+        commission_rate,
+        bookings_count: statsByCampaign[c.id]?.count ?? 0,
+        commission_cents: statsByCampaign[c.id]?.commission ?? 0,
+      }
+    })
 
     return apiOk(campaigns)
   } catch (err) {
