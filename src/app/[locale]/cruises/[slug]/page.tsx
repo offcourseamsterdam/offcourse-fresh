@@ -183,13 +183,16 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
               faqLabel={t('faq')}
             />
 
-            {/* Desktop sidebar — bounded sticky container so a tall booking
-                panel (e.g. extras step) scrolls internally instead of being
-                cut off below the fold. */}
+            {/* Desktop sidebar — bounded sticky container with a fixed
+                heading and an internally-scrolling card body, so the title
+                stays anchored at the top while a tall booking panel (e.g.
+                extras step) scrolls beneath it. */}
             <div className="hidden lg:block lg:col-span-1">
-              <div className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto pr-1">
-                <h3 className="font-briston text-[24px] text-[var(--color-primary)] uppercase mb-3">Book this cruise</h3>
-                <BookingPanel {...bookingPanelProps} layout="sidebar" />
+              <div className="sticky top-24 max-h-[calc(100vh-7rem)] flex flex-col">
+                <h3 className="font-briston text-[24px] text-[var(--color-primary)] uppercase mb-3 flex-shrink-0">Book this cruise</h3>
+                <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+                  <BookingPanel {...bookingPanelProps} layout="sidebar" />
+                </div>
               </div>
             </div>
           </div>
