@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Loader2, RefreshCw, Database, Plus, Check, Globe, Home, Pencil } from 'lucide-react'
+import { Loader2, RefreshCw, Database, Plus, Check, Globe, Home, Pencil, Clock } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────
 
@@ -25,6 +25,7 @@ interface CruiseListing {
   allowed_resource_pks: number[]
   allowed_customer_type_pks: number[]
   availability_filters: Record<string, unknown>
+  booking_cutoff_hours: number | null
   created_at: string
 }
 
@@ -113,6 +114,8 @@ export default function AdminCruisesPage() {
 
   const selectedFhItem = fhItems?.find(i => i.fareharbor_pk === form.fareharbor_item_pk)
 
+  const [savingCutoff, setSavingCutoff] = useState<string | null>(null)
+
   async function toggleListingField(id: string, field: 'is_published' | 'is_featured', value: boolean) {
     mutateListings(prev => prev ? { data: prev.data.map(l => l.id === id ? { ...l, [field]: value } : l) } : prev, { revalidate: false })
     await fetch(`/api/admin/cruise-listings/${id}`, {
@@ -120,6 +123,18 @@ export default function AdminCruisesPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ [field]: value }),
     })
+  }
+
+  async function saveCutoff(id: string, rawValue: string) {
+    const value = rawValue === '' ? null : Number(rawValue)
+    setSavingCutoff(id)
+    mutateListings(prev => prev ? { data: prev.data.map(l => l.id === id ? { ...l, booking_cutoff_hours: value } : l) } : prev, { revalidate: false })
+    await fetch(`/api/admin/cruise-listings/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ booking_cutoff_hours: value }),
+    })
+    setSavingCutoff(null)
   }
 
   function togglePk(list: number[], pk: number): number[] {
@@ -356,6 +371,11 @@ export default function AdminCruisesPage() {
                       <Home className="w-3.5 h-3.5" /> Homepage
                     </span>
                   </TableHead>
+                  <TableHead>
+                    <span className="flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5" /> Cutoff (h)
+                    </span>
+                  </TableHead>
                   <TableHead />
                 </TableRow>
               </TableHeader>
@@ -404,6 +424,23 @@ export default function AdminCruisesPage() {
                           }`}
                         />
                       </button>
+                    </TableCell>
+                    {/* Booking cutoff */}
+                    <TableCell onClick={e => e.stopPropagation()}>
+                      <div className="relative flex items-center">
+                        <input
+                          type="number"
+                          min={0}
+                          step={1}
+                          defaultValue={l.booking_cutoff_hours ?? ''}
+                          onBlur={e => saveCutoff(l.id, e.target.value)}
+                          placeholder="—"
+                          className="w-16 text-sm border border-zinc-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-zinc-300 text-center"
+                        />
+                        {savingCutoff === l.id && (
+                          <Loader2 className="w-3 h-3 animate-spin text-zinc-400 absolute -right-4" />
+                        )}
+                      </div>
                     </TableCell>
                     {/* Edit button */}
                     <TableCell onClick={e => e.stopPropagation()}>
