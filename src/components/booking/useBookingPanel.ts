@@ -136,11 +136,11 @@ export function useBookingPanel({
     ? `${state.totalTickets} ${state.totalTickets === 1 ? 'ticket' : 'tickets'}`
     : undefined
 
+  // Only show a value when something is actually selected.
+  // Otherwise the tab falls back to the step label ("Extras").
   const extrasSummary = state.extrasCalculation && state.extrasCalculation.line_items.length > 0
     ? `+${fmtEuros(state.extrasCalculation.extras_amount_cents)}`
-    : state.step === 'extras' || state.selectedExtraIds.length > 0
-      ? 'None added'
-      : undefined
+    : undefined
 
   let basePriceCents = 0
   if (category === 'private' && state.selectedCustomerType) {
