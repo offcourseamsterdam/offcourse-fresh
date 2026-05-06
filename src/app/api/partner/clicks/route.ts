@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     // Get all campaigns for this partner
     const { data: campaigns, error: campaignsError } = await admin
       .from('campaigns')
-      .select('id, name, slug, is_active, commission_rate')
+      .select('id, name, slug, is_active, percentage_value')
       .eq('partner_id', partnerId)
       .order('created_at', { ascending: false })
 
@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
       name: c.name,
       slug: c.slug,
       is_active: c.is_active,
-      commission_rate: c.commission_rate ?? null,
+      commission_rate: c.percentage_value ?? null,
       clicks: clicksMap[c.id] ?? 0,
       unique_visitors: visitorsMap[c.id]?.size ?? 0,
     }))
