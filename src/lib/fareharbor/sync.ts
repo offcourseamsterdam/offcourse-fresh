@@ -1,5 +1,5 @@
 import { getFareHarborClient } from './client'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import type { FHMinimalAvailability } from './types'
 
 export interface SyncResult {
@@ -37,7 +37,7 @@ export async function syncFareHarborItems(): Promise<SyncResult> {
 
   try {
     const client = getFareHarborClient()
-    const supabase = await createServiceClient()
+    const supabase = createAdminClient()
     const items = await client.getItems()
 
     let resourcesCount = 0
@@ -149,7 +149,7 @@ export async function syncFareHarborItems(): Promise<SyncResult> {
 // Load all synced items with their resources and customer types from Supabase.
 // resources and customer_types are now JSONB columns on the item row — single query.
 export async function loadSyncedItems() {
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
   const { data, error } = await supabase.from('fareharbor_items').select('*').order('name')
   if (error) return { ok: false as const, error: error.message }
   return { ok: true as const, data: data ?? [], synced_at: data?.[0]?.last_synced_at ?? null }

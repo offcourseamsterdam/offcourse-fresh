@@ -9,7 +9,7 @@ import {
   type ListingFilterConfig,
   type ReasonCode,
 } from './filters'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import type { FHMinimalAvailability } from './types'
 import type { AvailabilitySlot, AvailabilityCustomerType } from '@/types'
 import type { CustomerTypeConfig } from './config'
@@ -24,7 +24,7 @@ export async function getFilteredAvailability(
   date: string,
   guests: number
 ): Promise<FilteredAvailabilityResult> {
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
 
   // fareharbor_item_pk is stored directly on the listing — no join needed
   const { data: listing, error: listingError } = await supabase

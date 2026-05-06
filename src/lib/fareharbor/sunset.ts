@@ -1,4 +1,4 @@
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { toDateStr } from '@/lib/utils'
 
 const AMSTERDAM_LAT = 52.3676
@@ -68,7 +68,7 @@ async function fetchFromApi(
  */
 export async function getSunsetTime(date: Date): Promise<string | null> {
   const dateStr = toDateStr(date)
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
 
   // 1. Check cache
   try {
@@ -115,7 +115,7 @@ export async function getSunsetTime(date: Date): Promise<string | null> {
  * Returns the number of newly fetched dates.
  */
 export async function preSeedSunsetTimes(daysAhead: number = 90): Promise<number> {
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
   let fetched = 0
 
   // Build the list of dates we need

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 // Derive item_type from item name
 function deriveItemType(name: string): 'private' | 'shared' {
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const client = getFareHarborClient()
-    const supabase = await createServiceClient()
+    const supabase = createAdminClient()
     const now = new Date().toISOString()
 
     // Fetch all FareHarbor items

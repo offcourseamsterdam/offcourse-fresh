@@ -1,4 +1,4 @@
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Check, Calendar, Mail, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 
@@ -19,7 +19,7 @@ export default async function ConfirmationPage({ params, searchParams }: Props) 
   let booking = null
 
   if (payment_intent) {
-    const supabase = await createServiceClient()
+    const supabase = createAdminClient()
     const { data } = await supabase
       .from('bookings')
       .select('*')
@@ -28,7 +28,7 @@ export default async function ConfirmationPage({ params, searchParams }: Props) 
     booking = data
   } else if (fh) {
     // Partner-invoice bookings (no Stripe PI) are looked up by FareHarbor UUID
-    const supabase = await createServiceClient()
+    const supabase = createAdminClient()
     const { data } = await supabase
       .from('bookings')
       .select('*')

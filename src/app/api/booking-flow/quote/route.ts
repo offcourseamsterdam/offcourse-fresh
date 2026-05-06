@@ -39,18 +39,6 @@ export async function POST(request: NextRequest) {
       return apiError('guestCount must be a positive integer', 400)
     }
 
-    console.log('[quote] request', {
-      listingId,
-      availPk,
-      customerTypeRatePk,
-      guestCount,
-      category,
-      durationMinutes,
-      selectedExtraIds,
-      extraQuantities,
-      promoCodeId,
-    })
-
     const quote = await calculateQuote({
       listingId,
       availPk: Number(availPk),
