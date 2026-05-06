@@ -29,7 +29,7 @@ export async function getFilteredAvailability(
   // fareharbor_item_pk is stored directly on the listing — no join needed
   const { data: listing, error: listingError } = await supabase
     .from('cruise_listings')
-    .select('id, fareharbor_item_pk, allowed_resource_pks, allowed_customer_type_pks, availability_filters, booking_cutoff_hours')
+    .select('id, fareharbor_item_pk, allowed_resource_pks, allowed_customer_type_pks, availability_filters, booking_cutoff_hours, max_guests')
     .eq('id', listingId)
     .single()
 
@@ -96,7 +96,10 @@ export async function getFilteredAvailability(
   const effectiveCutoffItem = {
     booking_cutoff_hours: listing.booking_cutoff_hours ?? fhItem?.booking_cutoff_hours ?? null,
     item_type: fhItem?.item_type ?? null,
-    max_slot_capacity: fhItem?.max_slot_capacity ?? null,
+    // max_slot_capacity: use explicit FH item config first, then fall back to
+    // listing.max_guests — for a shared cruise that's the boat's full capacity,
+    // so a lower slot.capacity reliably means someone already booked.
+    max_slot_capacity: fhItem?.max_slot_capacity ?? listing.max_guests ?? null,
   }
   const slotsWithCutoff = applyCutoff(slots, effectiveCutoffItem, new Date())
 
