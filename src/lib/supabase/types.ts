@@ -661,6 +661,7 @@ export type Database = {
           availability_filters: Json | null
           benefits: Json | null
           boat_id: string | null
+          booking_cutoff_hours: number | null
           cancellation_policy: Json | null
           category: string | null
           created_at: string | null
@@ -730,6 +731,7 @@ export type Database = {
           availability_filters?: Json | null
           benefits?: Json | null
           boat_id?: string | null
+          booking_cutoff_hours?: number | null
           cancellation_policy?: Json | null
           category?: string | null
           created_at?: string | null
@@ -799,6 +801,7 @@ export type Database = {
           availability_filters?: Json | null
           benefits?: Json | null
           boat_id?: string | null
+          booking_cutoff_hours?: number | null
           cancellation_policy?: Json | null
           category?: string | null
           created_at?: string | null

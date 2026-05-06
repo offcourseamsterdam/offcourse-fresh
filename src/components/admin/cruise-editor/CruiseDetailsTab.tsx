@@ -16,6 +16,7 @@ export function CruiseDetailsTab({ listing, onSave }: CruiseTabProps) {
     duration_display: listing.duration_display ?? '',
     max_guests: listing.max_guests?.toString() ?? '',
     fareharbor_item_pk: listing.fareharbor_item_pk?.toString() ?? '',
+    booking_cutoff_hours: listing.booking_cutoff_hours?.toString() ?? '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -27,6 +28,7 @@ export function CruiseDetailsTab({ listing, onSave }: CruiseTabProps) {
       ...form,
       max_guests: form.max_guests ? Number(form.max_guests) : null,
       fareharbor_item_pk: form.fareharbor_item_pk ? Number(form.fareharbor_item_pk) : null,
+      booking_cutoff_hours: form.booking_cutoff_hours ? Number(form.booking_cutoff_hours) : null,
     })
     if (json.ok && json.data) onSave(json.data)
     else setError(json.error ?? 'Save failed')
@@ -122,6 +124,21 @@ export function CruiseDetailsTab({ listing, onSave }: CruiseTabProps) {
         />
         <p className="text-xs text-zinc-400 mt-1">
           The FareHarbor product ID this listing connects to. Find it in your FareHarbor dashboard under Items.
+        </p>
+      </Field>
+      <Field label="Booking cutoff (hours)">
+        <input
+          className={inputCls}
+          type="number"
+          min={0}
+          step={1}
+          value={form.booking_cutoff_hours}
+          onChange={e => setForm(f => ({ ...f, booking_cutoff_hours: e.target.value }))}
+          placeholder="e.g. 24 — leave empty to use FH item default"
+        />
+        <p className="text-xs text-zinc-400 mt-1">
+          Slots within this many hours of departure show &ldquo;Chat to book&rdquo; instead of the checkout button.
+          Leave empty to fall back to the FareHarbor item&apos;s default cutoff.
         </p>
       </Field>
       {error && <p className="text-sm text-red-600">{error}</p>}

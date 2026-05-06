@@ -40,6 +40,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     'hero_image_url','benefits','highlights','inclusions','faqs','images',
     'cancellation_policy','duration_display','max_guests','slug',
     'payment_mode','required_partner_id',
+    'booking_cutoff_hours',
   ]
   const patch: Record<string, unknown> = {}
   for (const key of allowed) {

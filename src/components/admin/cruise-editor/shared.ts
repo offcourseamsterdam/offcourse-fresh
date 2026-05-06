@@ -35,6 +35,7 @@ export interface CruiseListing {
   fareharbor_item_pk: number
   payment_mode: 'stripe' | 'partner_invoice'
   required_partner_id: string | null
+  booking_cutoff_hours: number | null
 }
 
 export interface CruiseTabProps {

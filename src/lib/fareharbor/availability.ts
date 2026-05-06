@@ -28,7 +28,7 @@ export async function getFilteredAvailability(
   // fareharbor_item_pk is stored directly on the listing — no join needed
   const { data: listing, error: listingError } = await supabase
     .from('cruise_listings')
-    .select('id, fareharbor_item_pk, allowed_resource_pks, allowed_customer_type_pks, availability_filters')
+    .select('id, fareharbor_item_pk, allowed_resource_pks, allowed_customer_type_pks, availability_filters, booking_cutoff_hours')
     .eq('id', listingId)
     .single()
 
@@ -90,8 +90,12 @@ export async function getFilteredAvailability(
 
   const slots = validSlots.map(a => transformToSlot(a, typeMap))
 
-  // Apply booking cutoff (public only — admin callers skip this via the flag)
-  const slotsWithCutoff = applyCutoff(slots, fhItem ?? null, new Date())
+  // Apply booking cutoff (public only — admin callers skip this via the flag).
+  // Listing-level cutoff takes precedence over the FH item default.
+  const effectiveCutoffItem = fhItem
+    ? { ...fhItem, booking_cutoff_hours: listing.booking_cutoff_hours ?? fhItem.booking_cutoff_hours }
+    : null
+  const slotsWithCutoff = applyCutoff(slots, effectiveCutoffItem, new Date())
 
   return { slots: slotsWithCutoff, reasonCode: null }
 }
