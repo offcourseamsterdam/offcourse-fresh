@@ -1,6 +1,6 @@
 'use client'
 
-import { StepAccordion } from './StepAccordion'
+import { BookingStepTabs } from './BookingStepTabs'
 import { DateStep } from './DateStep'
 import { GuestStep } from './GuestStep'
 import { TimeSlotStep } from './TimeSlotStep'
@@ -24,10 +24,10 @@ export function BookingPanel(props: BookingPanelProps) {
 
 function BookingPanelSidebar(props: BookingPanelProps) {
   const {
-    state, dispatch, category,
+    state, dispatch, category, steps,
     handleDateConfirm, handleGuestsConfirm, handleExtrasChange, handleProceedToCheckout,
-    isStepCompleted, isStepActive, stepNumber,
-    dateSummary, guestsSummary, timeSummary, boatSummary, ticketSummary,
+    isStepCompleted,
+    dateSummary, guestsSummary, timeSummary, boatSummary, ticketSummary, extrasSummary,
     basePriceCents, guestCount, cityTaxCents, ticketBreakdown,
     listingId,
   } = useBookingPanel(props)
@@ -62,48 +62,97 @@ function BookingPanelSidebar(props: BookingPanelProps) {
         </div>
       )}
 
-      <StepAccordion title="Pick a date" summary={dateSummary} stepNumber={stepNumber('date')} isActive={isStepActive('date')} isCompleted={isStepCompleted('date')} onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'date' })}>
-        <DateStep mode={category} initialDate={state.date || undefined} initialGuests={state.guests} onConfirm={handleDateConfirm} />
-      </StepAccordion>
+      {/* Step tabs — replaces the previous vertical accordion */}
+      <BookingStepTabs
+        steps={steps}
+        currentStep={state.step}
+        isCompleted={isStepCompleted}
+        summaries={{
+          date: dateSummary,
+          guests: guestsSummary,
+          time: timeSummary,
+          boat: boatSummary,
+          tickets: ticketSummary,
+          extras: extrasSummary,
+        }}
+        onStepClick={(step) => dispatch({ type: 'REOPEN_STEP', step })}
+      />
 
-      {category === 'private' && (
-        <StepAccordion title="How many guests?" summary={guestsSummary} stepNumber={stepNumber('guests')} isActive={isStepActive('guests')} isCompleted={isStepCompleted('guests')} onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'guests' })}>
-          <GuestStep initialGuests={state.guests} maxGuests={12} onConfirm={handleGuestsConfirm} />
-        </StepAccordion>
-      )}
+      {/* Active-step body */}
+      <div className="pt-4">
+        {state.step === 'date' && (
+          <DateStep
+            mode={category}
+            initialDate={state.date || undefined}
+            initialGuests={state.guests}
+            onConfirm={handleDateConfirm}
+          />
+        )}
 
-      <StepAccordion title="Pick a time" summary={timeSummary} stepNumber={stepNumber('time')} isActive={isStepActive('time')} isCompleted={isStepCompleted('time')} onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'time' })}>
-        <TimeSlotStep slots={state.slots} loading={state.loadingSlots} mode={category} selectedSlotPk={state.selectedSlot?.pk ?? null} onSelect={(slot) => dispatch({ type: 'SELECT_SLOT', slot, category })} />
-      </StepAccordion>
+        {state.step === 'guests' && category === 'private' && (
+          <GuestStep
+            initialGuests={state.guests}
+            maxGuests={12}
+            onConfirm={handleGuestsConfirm}
+          />
+        )}
 
-      {category === 'private' && (
-        <StepAccordion title="Choose your boat" summary={boatSummary} stepNumber={stepNumber('boat')} isActive={isStepActive('boat')} isCompleted={isStepCompleted('boat')} onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'boat' })}>
-          {state.selectedSlot && (
-            <BoatDurationStep customerTypes={state.selectedSlot.customerTypes} guests={state.guests} selectedCustomerTypePk={state.selectedCustomerType?.pk ?? null} onSelect={(ct, boatId) => dispatch({ type: 'SELECT_BOAT_DURATION', customerType: ct, boatId })} allSlots={state.slots} selectedSlot={state.selectedSlot} onSelectSlot={(slot) => dispatch({ type: 'SELECT_SLOT', slot, category: 'private' })} />
-          )}
-        </StepAccordion>
-      )}
+        {state.step === 'time' && (
+          <TimeSlotStep
+            slots={state.slots}
+            loading={state.loadingSlots}
+            mode={category}
+            selectedSlotPk={state.selectedSlot?.pk ?? null}
+            onSelect={(slot) => dispatch({ type: 'SELECT_SLOT', slot, category })}
+          />
+        )}
 
-      {category === 'shared' && (
-        <StepAccordion title="Select tickets" summary={ticketSummary} stepNumber={stepNumber('tickets')} isActive={isStepActive('tickets')} isCompleted={isStepCompleted('tickets')} onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'tickets' })}>
-          {state.selectedSlot && (
-            <>
-              <TicketStep customerTypes={state.selectedSlot.customerTypes} ticketCounts={state.ticketCounts} maxCapacity={state.selectedSlot.capacity} onUpdateCount={(pk, count) => dispatch({ type: 'UPDATE_TICKET_COUNT', customerTypePk: pk, count })} onConfirm={() => dispatch({ type: 'CONFIRM_TICKETS' })} />
-              {state.totalTickets > 0 && (
-                <div className="mt-3 flex justify-end">
-                  <Button variant="primary" size="md" className="rounded-xl font-bold px-8" onClick={() => dispatch({ type: 'CONFIRM_TICKETS' })}>
-                    Next
-                  </Button>
-                </div>
-              )}
-            </>
-          )}
-        </StepAccordion>
-      )}
+        {state.step === 'boat' && category === 'private' && state.selectedSlot && (
+          <BoatDurationStep
+            customerTypes={state.selectedSlot.customerTypes}
+            guests={state.guests}
+            selectedCustomerTypePk={state.selectedCustomerType?.pk ?? null}
+            onSelect={(ct, boatId) => dispatch({ type: 'SELECT_BOAT_DURATION', customerType: ct, boatId })}
+            allSlots={state.slots}
+            selectedSlot={state.selectedSlot}
+            onSelectSlot={(slot) => dispatch({ type: 'SELECT_SLOT', slot, category: 'private' })}
+          />
+        )}
 
-      <StepAccordion title="Add food, drinks & extras" summary={state.selectedExtraIds.length > 0 ? `${state.selectedExtraIds.length} extras selected` : undefined} stepNumber={stepNumber('extras')} isActive={isStepActive('extras')} isCompleted={isStepCompleted('extras')} onReopen={() => dispatch({ type: 'REOPEN_STEP', step: 'extras' })}>
-        <ExtrasStep listingId={listingId} guestCount={guestCount} baseAmountCents={basePriceCents} durationMinutes={state.selectedCustomerType?.durationMinutes} onExtrasChange={handleExtrasChange} />
-      </StepAccordion>
+        {state.step === 'tickets' && category === 'shared' && state.selectedSlot && (
+          <>
+            <TicketStep
+              customerTypes={state.selectedSlot.customerTypes}
+              ticketCounts={state.ticketCounts}
+              maxCapacity={state.selectedSlot.capacity}
+              onUpdateCount={(pk, count) => dispatch({ type: 'UPDATE_TICKET_COUNT', customerTypePk: pk, count })}
+              onConfirm={() => dispatch({ type: 'CONFIRM_TICKETS' })}
+            />
+            {state.totalTickets > 0 && (
+              <div className="mt-3 flex justify-end">
+                <Button
+                  variant="primary"
+                  size="md"
+                  className="rounded-xl font-bold px-8"
+                  onClick={() => dispatch({ type: 'CONFIRM_TICKETS' })}
+                >
+                  Next
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+
+        {state.step === 'extras' && (
+          <ExtrasStep
+            listingId={listingId}
+            guestCount={guestCount}
+            baseAmountCents={basePriceCents}
+            durationMinutes={state.selectedCustomerType?.durationMinutes}
+            onExtrasChange={handleExtrasChange}
+          />
+        )}
+      </div>
 
       {basePriceCents > 0 && (
         <PriceSummary basePriceCents={basePriceCents} extrasCalculation={state.extrasCalculation} mode={category} cruiseLabel={boatSummary} ticketBreakdown={ticketBreakdown} cityTaxCents={cityTaxCents} />

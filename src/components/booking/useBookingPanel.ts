@@ -136,6 +136,12 @@ export function useBookingPanel({
     ? `${state.totalTickets} ${state.totalTickets === 1 ? 'ticket' : 'tickets'}`
     : undefined
 
+  const extrasSummary = state.extrasCalculation && state.extrasCalculation.line_items.length > 0
+    ? `+${fmtEuros(state.extrasCalculation.extras_amount_cents)}`
+    : state.step === 'extras' || state.selectedExtraIds.length > 0
+      ? 'None added'
+      : undefined
+
   let basePriceCents = 0
   if (category === 'private' && state.selectedCustomerType) {
     basePriceCents = state.selectedCustomerType.priceCents
@@ -209,7 +215,7 @@ export function useBookingPanel({
     // Step helpers
     steps, isStepCompleted, isStepActive, stepNumber,
     // Summaries
-    dateSummary, guestsSummary, timeSummary, boatSummary, ticketSummary,
+    dateSummary, guestsSummary, timeSummary, boatSummary, ticketSummary, extrasSummary,
     // Derived
     basePriceCents, guestCount, cityTaxCents, ticketBreakdown,
     // Props pass-through
