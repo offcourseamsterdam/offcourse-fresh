@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Loader2, RefreshCw, Database, Plus, Check, Globe, Home, Pencil, Clock } from 'lucide-react'
+import { Loader2, RefreshCw, Database, Plus, Check, Globe, Home, Pencil, Clock, Copy } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────
 
@@ -115,6 +115,7 @@ export default function AdminCruisesPage() {
   const selectedFhItem = fhItems?.find(i => i.fareharbor_pk === form.fareharbor_item_pk)
 
   const [savingCutoff, setSavingCutoff] = useState<string | null>(null)
+  const [duplicating, setDuplicating] = useState<string | null>(null)
 
   async function toggleListingField(id: string, field: 'is_published' | 'is_featured', value: boolean) {
     mutateListings(prev => prev ? { data: prev.data.map(l => l.id === id ? { ...l, [field]: value } : l) } : prev, { revalidate: false })
@@ -123,6 +124,19 @@ export default function AdminCruisesPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ [field]: value }),
     })
+  }
+
+  async function duplicateListing(id: string) {
+    setDuplicating(id)
+    try {
+      const res = await fetch(`/api/admin/cruise-listings/${id}/duplicate`, { method: 'POST' })
+      const json = await res.json()
+      if (json.ok) {
+        router.push(`/${locale}/admin/cruises/${json.data.listing.id}`)
+      }
+    } finally {
+      setDuplicating(null)
+    }
   }
 
   async function saveCutoff(id: string, rawValue: string) {
@@ -442,15 +456,28 @@ export default function AdminCruisesPage() {
                         )}
                       </div>
                     </TableCell>
-                    {/* Edit button */}
+                    {/* Edit + Duplicate buttons */}
                     <TableCell onClick={e => e.stopPropagation()}>
-                      <button
-                        onClick={() => router.push(`/${locale}/admin/cruises/${l.id}`)}
-                        className="p-1.5 rounded hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 transition-colors"
-                        title="Edit listing"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => router.push(`/${locale}/admin/cruises/${l.id}`)}
+                          className="p-1.5 rounded hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 transition-colors"
+                          title="Edit listing"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => duplicateListing(l.id)}
+                          disabled={duplicating === l.id}
+                          className="p-1.5 rounded hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 transition-colors disabled:opacity-40"
+                          title="Duplicate listing"
+                        >
+                          {duplicating === l.id
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <Copy className="w-3.5 h-3.5" />
+                          }
+                        </button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
