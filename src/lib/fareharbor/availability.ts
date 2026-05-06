@@ -4,6 +4,7 @@ import {
   applyAllFilters,
   getValidTimeSlots,
   getTimeFromISO,
+  formatDisplayTime,
   getReasonCode,
   type ListingFilterConfig,
   type ReasonCode,
@@ -92,9 +93,11 @@ export async function getFilteredAvailability(
 
   // Apply booking cutoff (public only — admin callers skip this via the flag).
   // Listing-level cutoff takes precedence over the FH item default.
-  const effectiveCutoffItem = fhItem
-    ? { ...fhItem, booking_cutoff_hours: listing.booking_cutoff_hours ?? fhItem.booking_cutoff_hours }
-    : null
+  const effectiveCutoffItem = {
+    booking_cutoff_hours: listing.booking_cutoff_hours ?? fhItem?.booking_cutoff_hours ?? null,
+    item_type: fhItem?.item_type ?? null,
+    max_slot_capacity: fhItem?.max_slot_capacity ?? null,
+  }
   const slotsWithCutoff = applyCutoff(slots, effectiveCutoffItem, new Date())
 
   return { slots: slotsWithCutoff, reasonCode: null }
@@ -179,7 +182,7 @@ export function transformToSlot(
   availability: FHMinimalAvailability,
   typeMap: Map<number, CustomerTypeConfig>
 ): AvailabilitySlot {
-  const startTime = getTimeFromISO(availability.start_at)
+  const startTime = formatDisplayTime(availability.start_at)
 
   const customerTypes: AvailabilityCustomerType[] = availability.customer_type_rates
     .map(rate => {

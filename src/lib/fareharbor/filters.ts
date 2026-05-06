@@ -38,6 +38,7 @@ export type BoatStatus = 'available' | 'sold_out' | 'too_many_guests' | 'unavail
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+/** Returns "HH:MM" in Amsterdam time — used internally for filter comparisons */
 export function getTimeFromISO(isoString: string): string {
   const date = new Date(isoString)
   return date.toLocaleTimeString('en-GB', {
@@ -46,6 +47,22 @@ export function getTimeFromISO(isoString: string): string {
     minute: '2-digit',
     hour12: false,
   })
+}
+
+/** Returns a display string like "3pm", "11:30am" — used in slot buttons */
+export function formatDisplayTime(isoString: string): string {
+  const date = new Date(isoString)
+  const raw = date.toLocaleTimeString('en-US', {
+    timeZone: 'Europe/Amsterdam',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+  // "3:00 PM" → "3pm", "11:30 AM" → "11:30am"
+  return raw
+    .replace(':00', '')
+    .replace(' AM', 'am')
+    .replace(' PM', 'pm')
 }
 
 /** Compare two "HH:MM" time strings. Returns negative if a < b, 0 if equal, positive if a > b */
