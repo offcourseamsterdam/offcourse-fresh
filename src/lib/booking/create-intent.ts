@@ -1,26 +1,19 @@
 import { getStripe } from '@/lib/stripe/server'
 import { createServiceClient } from '@/lib/supabase/server'
-import { getFareHarborClient } from '@/lib/fareharbor/client'
-import { calculateExtras, type ExtrasCalculation } from '@/lib/extras/calculate'
-import { DEFAULT_DURATION_MINUTES } from '@/lib/constants'
+import { calculateQuote } from '@/lib/booking/calculate-quote'
+import { type ExtrasCalculation } from '@/lib/extras/calculate'
 import { fmtEuros } from '@/lib/utils'
 
 interface CreateIntentInput {
-  baseAmountCents: number
-  listingId: string
+  /**
+   * Required: the server-issued quoteId from /api/booking-flow/quote.
+   * The quote is the source of truth for the charge amount — we never trust
+   * client-supplied prices.
+   */
+  quoteId: string
   listingTitle: string
-  availPk: number
-  customerTypeRatePk: number
-  guestCount: number
-  category: string
   date: string
   contact: { name: string; email: string; phone?: string }
-  selectedExtraIds: string[]
-  extraQuantities?: Record<string, number>
-  durationMinutes: number
-  promoCodeId?: string
-  discountAmountCents?: number
-  displayedTotalCents?: number
 }
 
 interface CreateIntentResult {
@@ -31,89 +24,126 @@ interface CreateIntentResult {
 }
 
 /**
- * Shared logic for creating a Stripe PaymentIntent.
- * Verifies the base price from FareHarbor (never trusts client amounts),
- * fetches extras from DB, calculates the total, and creates the PaymentIntent.
+ * Create a Stripe PaymentIntent against a server-issued price quote.
+ *
+ * Flow:
+ *   1. Look up the quote in `pricing_quotes` by id.
+ *   2. Reject if expired or already consumed.
+ *   3. Recompute the quote inputs server-side (defence-in-depth — should match).
+ *   4. Charge the recomputed total via Stripe.
+ *   5. Mark the quote consumed.
  */
 export async function createPaymentIntent(input: CreateIntentInput): Promise<CreateIntentResult> {
-  const {
-    listingId, listingTitle, availPk, customerTypeRatePk,
-    guestCount, category, date, contact,
-    selectedExtraIds, extraQuantities = {}, durationMinutes = DEFAULT_DURATION_MINUTES,
-    promoCodeId, discountAmountCents: inputDiscount = 0,
-    displayedTotalCents,
-  } = input
+  const { quoteId, listingTitle, date, contact } = input
 
-  // Verify base price server-side from FareHarbor.
-  // Use total_including_tax (gross) — this is the price we charge customers.
-  // FareHarbor's `total` field is NET (ex-VAT); using it would under-charge by 9%.
-  const fh = getFareHarborClient()
-  const availDetail = await fh.getAvailabilityDetail(availPk)
-  const matchingRate = availDetail.customer_type_rates?.find(
-    (r: { pk: number }) => r.pk === customerTypeRatePk
-  )
-  const verifiedBaseCents =
-    matchingRate?.customer_prototype?.total_including_tax
-    ?? matchingRate?.customer_prototype?.total
-    ?? input.baseAmountCents
-  const isPrivate = category === 'private'
-  const serverBaseAmount = isPrivate ? verifiedBaseCents : verifiedBaseCents * guestCount
-
-  // Fetch selected extras from DB
-  const supabase = await createServiceClient()
-  const extrasResult = selectedExtraIds.length > 0
-    ? await supabase.from('extras').select('*').in('id', selectedExtraIds).eq('is_active', true)
-    : { data: [] as any[], error: null }
-  if (extrasResult.error) {
-    throw new Error(`Failed to fetch extras: ${extrasResult.error.message}`)
+  if (!quoteId) {
+    throw new Error('Missing quoteId — please refresh your booking and try again.')
   }
-  const extras = extrasResult.data ?? []
 
-  const quantities = new Map(Object.entries(extraQuantities))
-  const calc = calculateExtras(serverBaseAmount, guestCount, extras as any, durationMinutes, quantities)
+  const supabase = await createServiceClient()
 
-  // City tax: €2.60 per guest (municipality levy, not in FareHarbor — applies to all cruise types)
-  const cityTaxCents = guestCount * 260
+  // 1. Look up the quote
+  const { data: quoteRow, error: quoteError } = await supabase
+    .from('pricing_quotes')
+    .select('*')
+    .eq('id', quoteId)
+    .maybeSingle()
 
-  // Apply promo discount (server re-validates the amount passed from client)
-  const totalBeforeDiscount = calc.grand_total_cents + cityTaxCents
-  const discountAmountCents = Math.min(inputDiscount, totalBeforeDiscount)
-  const chargedCents = Math.max(50, totalBeforeDiscount - discountAmountCents)
+  if (quoteError || !quoteRow) {
+    throw new Error('Your price quote could not be found. Please refresh your booking and try again.')
+  }
 
-  if (displayedTotalCents != null && Math.abs(displayedTotalCents - chargedCents) > 50) {
+  // 2. Validate freshness
+  const now = new Date()
+  if (new Date(quoteRow.expires_at) < now) {
+    throw new Error('Your price quote has expired. Please refresh your booking and try again.')
+  }
+  if (quoteRow.consumed_at) {
+    throw new Error('This quote has already been used. Please refresh your booking and try again.')
+  }
+
+  // 3. Defence-in-depth: re-run the calculation with the same inputs.
+  //    If it differs, refuse — something changed (price, deactivated extra) since
+  //    the quote was issued.
+  const recomputed = await calculateQuote({
+    listingId: String(quoteRow.listing_id ?? ''),
+    availPk: Number(quoteRow.avail_pk),
+    customerTypeRatePk: Number(quoteRow.customer_type_rate_pk ?? 0),
+    guestCount: Number(quoteRow.guest_count),
+    category: String(quoteRow.category),
+    durationMinutes: Number(quoteRow.duration_minutes),
+    selectedExtraIds: (quoteRow.selected_extra_ids as string[]) ?? [],
+    extraQuantities: (quoteRow.extra_quantities as Record<string, number>) ?? {},
+    promoCodeId: quoteRow.promo_code_id,
+    discountAmountCents: Number(quoteRow.discount_amount_cents ?? 0),
+  })
+
+  if (recomputed.totalCents !== quoteRow.total_cents) {
+    console.error('[create-intent] quote total drift detected', {
+      quoteId,
+      stored: quoteRow.total_cents,
+      recomputed: recomputed.totalCents,
+    })
     throw new Error(
-      `Amount shown to you (€${(displayedTotalCents / 100).toFixed(2)}) doesn't match what we calculated (€${(chargedCents / 100).toFixed(2)}). Please go back and refresh your booking.`
+      'The price changed since you saw this booking. Please refresh and review the new total.',
     )
   }
 
-  if (calc.grand_total_cents < 50) {
+  if (recomputed.totalCents < 50) {
     throw new Error('Amount must be at least €0.50')
   }
 
-  const extrasSummary = calc.line_items
+  // 4. Create Stripe PaymentIntent against the recomputed total.
+  const extrasSummary = recomputed.extrasCalculation.line_items
     .map(li => `${li.name} (${fmtEuros(li.amount_cents)})`)
     .join(', ')
 
   const paymentIntent = await getStripe().paymentIntents.create({
-    amount: chargedCents,
+    amount: recomputed.totalCents,
     currency: 'eur',
     payment_method_types: ['card', 'ideal', 'link'],
     metadata: {
+      quote_id: String(quoteId),
       listing_title: String(listingTitle ?? ''),
-      listing_id: String(listingId ?? ''),
-      avail_pk: String(availPk),
-      customer_type_rate_pk: String(customerTypeRatePk),
-      guest_count: String(guestCount),
-      category: String(category ?? ''),
+      listing_id: String(quoteRow.listing_id ?? ''),
+      avail_pk: String(quoteRow.avail_pk),
+      customer_type_rate_pk: String(quoteRow.customer_type_rate_pk ?? ''),
+      guest_count: String(quoteRow.guest_count),
+      category: String(quoteRow.category),
       date: String(date ?? ''),
       guest_name: String(contact?.name ?? ''),
       guest_email: String(contact?.email ?? ''),
       guest_phone: String(contact?.phone ?? ''),
       extras_summary: extrasSummary,
-      city_tax_cents: String(cityTaxCents),
-      ...(promoCodeId ? { promo_code_id: promoCodeId, discount_amount_cents: String(discountAmountCents) } : {}),
+      city_tax_cents: String(recomputed.cityTaxCents),
+      ...(quoteRow.promo_code_id
+        ? {
+            promo_code_id: String(quoteRow.promo_code_id),
+            discount_amount_cents: String(recomputed.discountAmountCents),
+          }
+        : {}),
     },
   })
 
-  return { clientSecret: paymentIntent.client_secret!, calculation: calc, discountAmountCents, chargedCents }
+  // 5. Mark the quote consumed (best-effort; ignore failure — Stripe is the source of truth)
+  await supabase
+    .from('pricing_quotes')
+    .update({ consumed_at: now.toISOString(), consumed_intent_id: paymentIntent.id })
+    .eq('id', quoteId)
+
+  console.log('[create-intent] charge', {
+    quoteId,
+    intentId: paymentIntent.id,
+    chargedCents: recomputed.totalCents,
+    cityTax: recomputed.cityTaxCents,
+    extrasAmount: recomputed.extrasCalculation.extras_amount_cents,
+    discount: recomputed.discountAmountCents,
+  })
+
+  return {
+    clientSecret: paymentIntent.client_secret!,
+    calculation: recomputed.extrasCalculation,
+    discountAmountCents: recomputed.discountAmountCents,
+    chargedCents: recomputed.totalCents,
+  }
 }

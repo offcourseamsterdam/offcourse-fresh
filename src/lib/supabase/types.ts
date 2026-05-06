@@ -2058,6 +2058,93 @@ export type Database = {
         }
         Relationships: []
       }
+      pricing_quotes: {
+        Row: {
+          avail_pk: number
+          base_price_cents: number
+          breakdown: Json
+          category: string
+          city_tax_cents: number
+          consumed_at: string | null
+          consumed_intent_id: string | null
+          created_at: string
+          customer_type_rate_pk: number | null
+          discount_amount_cents: number
+          duration_minutes: number
+          expires_at: string
+          extra_quantities: Json
+          extras_amount_cents: number
+          guest_count: number
+          id: string
+          listing_id: string | null
+          promo_code_id: string | null
+          selected_extra_ids: string[]
+          server_base_amount_cents: number
+          total_cents: number
+        }
+        Insert: {
+          avail_pk: number
+          base_price_cents: number
+          breakdown: Json
+          category: string
+          city_tax_cents: number
+          consumed_at?: string | null
+          consumed_intent_id?: string | null
+          created_at?: string
+          customer_type_rate_pk?: number | null
+          discount_amount_cents?: number
+          duration_minutes: number
+          expires_at?: string
+          extra_quantities?: Json
+          extras_amount_cents: number
+          guest_count: number
+          id?: string
+          listing_id?: string | null
+          promo_code_id?: string | null
+          selected_extra_ids?: string[]
+          server_base_amount_cents: number
+          total_cents: number
+        }
+        Update: {
+          avail_pk?: number
+          base_price_cents?: number
+          breakdown?: Json
+          category?: string
+          city_tax_cents?: number
+          consumed_at?: string | null
+          consumed_intent_id?: string | null
+          created_at?: string
+          customer_type_rate_pk?: number | null
+          discount_amount_cents?: number
+          duration_minutes?: number
+          expires_at?: string
+          extra_quantities?: Json
+          extras_amount_cents?: number
+          guest_count?: number
+          id?: string
+          listing_id?: string | null
+          promo_code_id?: string | null
+          selected_extra_ids?: string[]
+          server_base_amount_cents?: number
+          total_cents?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pricing_quotes_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "cruise_listings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pricing_quotes_promo_code_id_fkey"
+            columns: ["promo_code_id"]
+            isOneToOne: false
+            referencedRelation: "promo_codes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       priorities_cards: {
         Row: {
           alt_text: string | null

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { Loader2 } from 'lucide-react'
@@ -37,6 +37,19 @@ interface BookingData {
   basePriceCents: number
   cityTaxCents: number
   durationMinutes?: number
+}
+
+/** Server-canonical quote response from /api/booking-flow/quote */
+interface ServerQuote {
+  quoteId: string
+  expiresAt: string
+  basePriceCents: number
+  serverBaseAmountCents: number
+  extrasCalculation: ExtrasCalculation
+  cityTaxCents: number
+  discountAmountCents: number
+  totalCents: number
+  durationMinutes: number
 }
 
 interface PromoResult {
@@ -313,6 +326,10 @@ export function CheckoutFlow({
   const [submittingPartnerBooking, setSubmittingPartnerBooking] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [promoResult, setPromoResult] = useState<PromoResult | null>(null)
+  // Server-canonical price quote — single source of truth for what's displayed and charged
+  const [quote, setQuote] = useState<ServerQuote | null>(null)
+  const [quoteLoading, setQuoteLoading] = useState(false)
+  const [quoteError, setQuoteError] = useState<string | null>(null)
 
   // Load booking data from sessionStorage
   useEffect(() => {
@@ -348,6 +365,90 @@ export function CheckoutFlow({
     if (bookingData) trackEvent('view_details', { listing: bookingData.listingSlug })
   }, [bookingData])
 
+  // ── Server-canonical pricing ─────────────────────────────────────────────
+  //
+  // Whenever the booking inputs (or applied promo) change, ask the server for
+  // a fresh quote. The displayed total comes from the server, and the quoteId
+  // is what we pass to /create-intent. No local price math.
+
+  const fetchQuoteRef = useRef<AbortController | null>(null)
+
+  const refreshQuote = useCallback(async (data: BookingData, promo: PromoResult | null): Promise<ServerQuote | null> => {
+    // Cancel any in-flight request so a fast input change doesn't race
+    fetchQuoteRef.current?.abort()
+    const controller = new AbortController()
+    fetchQuoteRef.current = controller
+
+    const customerTypeRatePk = data.category === 'private'
+      ? data.selectedCustomerType?.pk
+      : data.selectedSlot.customerTypes[0]?.pk
+
+    if (!customerTypeRatePk) {
+      setQuoteError('Booking is missing a customer type — please go back and re-select.')
+      return null
+    }
+
+    setQuoteLoading(true)
+    setQuoteError(null)
+    try {
+      const res = await fetch('/api/booking-flow/quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          listingId: data.listingId,
+          availPk: data.selectedSlot.pk,
+          customerTypeRatePk,
+          guestCount: data.guests,
+          category: data.category,
+          durationMinutes: data.durationMinutes ?? data.selectedCustomerType?.durationMinutes ?? 90,
+          // Recover IDs from extrasCalculation line_items if selectedExtraIds is empty
+          // (defensive — JSON.stringify can drop undefined; older sessions may have arrays out of sync)
+          selectedExtraIds: (data.selectedExtraIds ?? []).length > 0
+            ? data.selectedExtraIds
+            : (data.extrasCalculation?.line_items?.map(li => li.extra_id).filter(Boolean) ?? []),
+          extraQuantities: Object.keys(data.extraQuantities ?? {}).length > 0
+            ? data.extraQuantities
+            : Object.fromEntries(
+                (data.extrasCalculation?.line_items ?? []).map(li => [li.extra_id, li.quantity])
+              ),
+          promoCodeId: promo?.promoCodeId,
+          discountAmountCents: promo?.discountAmountCents,
+        }),
+      })
+      const json = await res.json()
+      if (!json.ok) {
+        setQuoteError(json.error ?? 'Could not generate price quote.')
+        setQuote(null)
+        return null
+      }
+      const fresh = json.data as ServerQuote
+      setQuote(fresh)
+      return fresh
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return null
+      setQuoteError(getErrorMessage(err))
+      setQuote(null)
+      return null
+    } finally {
+      if (!controller.signal.aborted) setQuoteLoading(false)
+    }
+  }, [])
+
+  // Initial quote when bookingData first loads
+  useEffect(() => {
+    if (!bookingData) return
+    refreshQuote(bookingData, promoResult)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookingData])
+
+  // Re-quote when promo changes
+  useEffect(() => {
+    if (!bookingData) return
+    refreshQuote(bookingData, promoResult)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [promoResult?.promoCodeId, promoResult?.discountAmountCents])
+
   // Partner-invoice flow: skip Stripe, post straight to /book with bookingSource + partnerCode
   async function handlePartnerInvoiceSubmit(details: CustomerDetails & { partnerCode?: string }) {
     if (!bookingData) return
@@ -356,14 +457,17 @@ export function CheckoutFlow({
     setError(null)
 
     try {
+      // Refresh quote first so our recorded amounts match the canonical math.
+      const fresh = await refreshQuote(bookingData, promoResult)
       const customerTypeRatePk = bookingData.category === 'private'
         ? bookingData.selectedCustomerType?.pk
         : bookingData.selectedSlot.customerTypes[0]?.pk
 
-      const extrasTotalCents = bookingData.extrasCalculation
-        ? bookingData.extrasCalculation.line_items.reduce((s, li) => s + li.amount_cents, 0)
-        : 0
-      const totalAmount = bookingData.basePriceCents + extrasTotalCents
+      const extrasTotalCents = fresh?.extrasCalculation.extras_amount_cents
+        ?? bookingData.extrasCalculation?.extras_amount_cents
+        ?? 0
+      const totalAmount = fresh?.totalCents
+        ?? (bookingData.basePriceCents + extrasTotalCents)
 
       const res = await fetch('/api/booking-flow/book', {
         method: 'POST',
@@ -422,6 +526,10 @@ export function CheckoutFlow({
       return
     }
     if (!bookingData) return
+    if (!quote) {
+      setError('Your price quote is still loading — please try again in a moment.')
+      return
+    }
     trackEvent('view_payment', { listing: bookingData.listingSlug })
     setContact(details)
     // Persist contact for iDEAL redirect recovery (component re-mounts after bank redirect)
@@ -437,38 +545,21 @@ export function CheckoutFlow({
     setError(null)
 
     try {
-      const customerTypeRatePk = bookingData.category === 'private'
-        ? bookingData.selectedCustomerType?.pk
-        : bookingData.selectedSlot.customerTypes[0]?.pk
+      // Refresh the quote one final time before charging — guarantees the
+      // quoteId we send is fresh and matches the displayed total.
+      const currentQuote = await refreshQuote(bookingData, promoResult)
+      if (!currentQuote) {
+        throw new Error('Could not finalise your price. Please refresh and try again.')
+      }
 
       const res = await fetch('/api/booking-flow/create-intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          baseAmountCents: bookingData.basePriceCents,
-          listingId: bookingData.listingId,
+          quoteId: currentQuote.quoteId,
           listingTitle: bookingData.listingTitle,
-          availPk: bookingData.selectedSlot.pk,
-          customerTypeRatePk,
-          guestCount: bookingData.guests,
-          category: bookingData.category,
           date: bookingData.date,
           contact: { name: details.name, email: details.email, phone: details.phone },
-          // Recover IDs from calculation line_items when selectedExtraIds is unexpectedly empty
-          // (guards against sessionStorage state divergence where extrasCalculation is set but IDs are lost)
-          selectedExtraIds: (bookingData.selectedExtraIds ?? []).length > 0
-            ? bookingData.selectedExtraIds
-            : (bookingData.extrasCalculation?.line_items?.map(li => li.extra_id).filter(Boolean) ?? []),
-          extraQuantities: Object.keys(bookingData.extraQuantities ?? {}).length > 0
-            ? bookingData.extraQuantities
-            : Object.fromEntries(
-                (bookingData.extrasCalculation?.line_items ?? []).map(li => [li.extra_id, li.quantity])
-              ),
-          displayedExtrasAmountCents: bookingData.extrasCalculation?.extras_amount_cents ?? 0,
-          displayedTotalCents: totalAmountCents,
-          durationMinutes: bookingData.durationMinutes ?? bookingData.selectedCustomerType?.durationMinutes ?? 90,
-          promoCodeId: promoResult?.promoCodeId,
-          discountAmountCents: promoResult?.discountAmountCents,
         }),
       })
 
@@ -488,13 +579,14 @@ export function CheckoutFlow({
     setCreatingIntent(true)
     setError(null)
     try {
+      const fresh = await refreshQuote(bookingData, promoResult)
       const customerTypeRatePk = bookingData.category === 'private'
         ? bookingData.selectedCustomerType?.pk
         : bookingData.selectedSlot.customerTypes[0]?.pk
 
-      const extrasTotalCents = bookingData.extrasCalculation
-        ? bookingData.extrasCalculation.line_items.reduce((s, li) => s + li.amount_cents, 0)
-        : 0
+      const extrasTotalCents = fresh?.extrasCalculation.extras_amount_cents
+        ?? bookingData.extrasCalculation?.extras_amount_cents
+        ?? 0
 
       const res = await fetch('/api/booking-flow/book', {
         method: 'POST',
@@ -565,7 +657,11 @@ export function CheckoutFlow({
       const extrasTotalCents = data.extrasCalculation
         ? data.extrasCalculation.line_items.reduce((s, li) => s + li.amount_cents, 0)
         : 0
-      const totalAmount = data.basePriceCents + extrasTotalCents
+      // Prefer the canonical quote total (matches what Stripe actually charged);
+      // fall back to base + extras + cityTax if the quote isn't in memory
+      // (e.g. iDEAL redirect that re-mounted the component before /quote returned).
+      const totalAmount = quote?.totalCents
+        ?? (data.basePriceCents + extrasTotalCents + (data.cityTaxCents ?? 0))
 
       const res = await fetch('/api/booking-flow/book', {
         method: 'POST',
@@ -637,13 +733,16 @@ export function CheckoutFlow({
     ? `${boatName} · ${Math.floor(bookingData.selectedCustomerType.durationMinutes / 60)}h`
     : 'Cruise'
 
-  const extrasTotalCents = bookingData.extrasCalculation
-    ? bookingData.extrasCalculation.extras_amount_cents
-    : 0
-  const cityTaxCents = bookingData.cityTaxCents ?? 0
-  const grossTotalCents = bookingData.basePriceCents + extrasTotalCents + cityTaxCents
-  const discountAmountCents = promoResult?.discountAmountCents ?? 0
-  const totalAmountCents = Math.max(0, grossTotalCents - discountAmountCents)
+  // Server-canonical price quote drives EVERY displayed total. If the quote
+  // hasn't loaded yet we fall back to the snapshot from sessionStorage just
+  // for an instant render, but submission is gated on `quote` being set.
+  const quoteBasePriceCents = quote?.serverBaseAmountCents ?? bookingData.basePriceCents
+  const quoteExtrasCalc = quote?.extrasCalculation ?? bookingData.extrasCalculation
+  const cityTaxCents = quote?.cityTaxCents ?? bookingData.cityTaxCents ?? 0
+  const discountAmountCents = quote?.discountAmountCents ?? promoResult?.discountAmountCents ?? 0
+  const grossTotalCents =
+    quoteBasePriceCents + (quoteExtrasCalc?.extras_amount_cents ?? 0) + cityTaxCents
+  const totalAmountCents = quote?.totalCents ?? Math.max(0, grossTotalCents - discountAmountCents)
 
   const currentStep = clientSecret ? 'payment' : 'details'
   const isFull = promoResult?.isFull ?? false
@@ -756,13 +855,19 @@ export function CheckoutFlow({
                 boatName={boatName}
                 durationMinutes={bookingData.selectedCustomerType?.durationMinutes ?? null}
                 guestCount={bookingData.guests}
-                basePriceCents={bookingData.basePriceCents}
-                extrasCalculation={bookingData.extrasCalculation}
+                basePriceCents={quoteBasePriceCents}
+                extrasCalculation={quoteExtrasCalc}
                 cityTaxCents={cityTaxCents > 0 ? cityTaxCents : undefined}
                 cancellationPolicy={cancellationPolicy}
                 cruiseLabel={cruiseLabel}
                 discountAmountCents={discountAmountCents > 0 ? discountAmountCents : undefined}
               />
+              {quoteLoading && (
+                <p className="text-xs text-zinc-400 mt-2 text-center">Refreshing your total…</p>
+              )}
+              {quoteError && (
+                <p className="text-xs text-red-500 mt-2 text-center">{quoteError}</p>
+              )}
             </div>
           </div>
         </div>
