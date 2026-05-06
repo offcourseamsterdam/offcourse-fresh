@@ -390,6 +390,20 @@ export function CheckoutFlow({
 
     setQuoteLoading(true)
     setQuoteError(null)
+    // Diagnostic — temporary: log the booking data shape going to /quote so we
+    // can spot drops between sessionStorage and the request body.
+    if (typeof window !== 'undefined') {
+      console.log('[CheckoutFlow] refreshQuote inputs', {
+        guestCount: data.guests,
+        category: data.category,
+        durationMinutes: data.durationMinutes ?? data.selectedCustomerType?.durationMinutes,
+        selectedExtraIds: data.selectedExtraIds,
+        line_item_ids: data.extrasCalculation?.line_items?.map(li => li.extra_id),
+        extraQuantities: data.extraQuantities,
+        availPk: data.selectedSlot?.pk,
+        customerTypeRatePk,
+      })
+    }
     try {
       const res = await fetch('/api/booking-flow/quote', {
         method: 'POST',
