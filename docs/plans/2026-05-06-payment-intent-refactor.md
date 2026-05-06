@@ -9,22 +9,33 @@
 Payments today work *most* of the time, but the architecture has two structural risks that will eventually cost money:
 
 1. **The webhook is not authoritative.** Public bookings flow `confirmPayment` → iDEAL redirect → client returns to the page → client calls `POST /api/booking-flow/book`. The Stripe webhook listens only to `checkout.session.completed` / `checkout.session.expired`, never to `payment_intent.succeeded`. If the customer's redirect is lost (closed tab, network drop, device switch, browser cleared sessionStorage), Stripe has the money, FareHarbor may or may not have a slot reserved, and Supabase has no booking row. There is no server-side fallback.
-2. **Two parallel payment models.** Public flow uses PaymentIntents. Admin "payment link" uses Checkout Sessions. They diverge on city tax (admin path skips it), on price calculation, on metadata shape, and on which webhook events drive state. Two systems doing the same job is a permanent maintenance tax.
+2. **Two parallel payment models.** Public flow uses PaymentIntents. Admin "payment link" uses Checkout Sessions. They diverge on price calculation, on metadata shape, and on which webhook events drive state. Two systems doing the same job is a permanent maintenance tax.
+3. **Admin no-payment booking is a first-class category, not an edge case.** Four of the six booking sources (`complimentary`, `partner_invoice`, `withlocals`, `clickandboat`) record a full booking row — with price, VAT, and extras breakdown — but **never touch Stripe**. Stats, partner settlements, and reconciliation depend on those rows being complete and consistent with charged bookings. Today the recorded values come straight from the client request body; the canonical price calculator (when introduced) must apply to every path, charged or not.
 
-On top of that: no idempotency keys on PaymentIntent creation, weak webhook event deduplication, hardcoded city-tax constant in three files, two ~770-line god modules (`book/route.ts`, `CheckoutFlow.tsx`), and tests that cover only the price-discipline happy path.
+On top of that: no idempotency keys on PaymentIntent creation, weak webhook event deduplication, hardcoded city-tax constant in three files, two ~770-line god modules (`book/route.ts`, `CheckoutFlow.tsx`), tests that cover only the price-discipline happy path, and a schema gap — there is no `city_tax_amount_cents` column; city tax is implicit (`guestCount * 260`) inside `stripe_amount` for website bookings only.
 
-The intended outcome: one pricing engine, one source of truth for metadata, the webhook as the authoritative state machine, and idempotency at every Stripe boundary. **Customer-visible behavior does not change** beyond the webhook safety net catching the dropped-redirect case.
+The intended outcome: one pricing engine that produces the canonical breakdown for **recording** as well as charging, one source of truth for metadata, the webhook as the authoritative state machine, idempotency at every Stripe boundary, and a typed booking-source contract that makes no-payment recording as testable as paid recording. **Customer-visible behavior does not change** beyond the webhook safety net catching the dropped-redirect case.
 
 ---
 
 ## 1. High-level understanding
 
-There are four payment paths today:
+The booking-source enum is centralized at `src/lib/constants.ts:47-56` and has **six values**, split into two groups by whether Stripe is invoked:
 
-- **Path A — Public website (PaymentIntent).** `POST /api/booking-flow/create-intent` → `createPaymentIntent()` → client `confirmPayment()` → optional iDEAL redirect → on return, client `POST /api/booking-flow/book` → FH validate + create + Supabase insert. Webhook is silent.
-- **Path B — Admin payment link (Checkout Session).** `POST /api/admin/booking-flow/create-payment-link` → FH booking created up-front → Stripe Checkout Session → Supabase row → email link → customer pays → webhook `checkout.session.completed` flips `payment_status` to `paid`.
-- **Path C — Cron payment reminders (Checkout Session).** Hourly cron iterates Stripe sessions older than 18h and emails customers.
-- **Path D — Partner invoice (no Stripe).** `POST /api/booking-flow/book` with `bookingSource: 'partner_invoice'`. Skips Stripe entirely.
+**Charged paths (Stripe touched):**
+
+- **`'website'` (PaymentIntent).** `POST /api/booking-flow/create-intent` → `createPaymentIntent()` → client `confirmPayment()` → optional iDEAL redirect → on return, client `POST /api/booking-flow/book` → FH validate + create + Supabase insert. Webhook is silent.
+- **`'payment_link'` (Checkout Session).** `POST /api/admin/booking-flow/create-payment-link` → FH booking created up-front → Stripe Checkout Session → Supabase row → email link → customer pays → webhook `checkout.session.completed` flips `payment_status` to `paid`. Hourly cron at `/api/cron/payment-reminders` chases unpaid sessions older than 18h.
+
+**No-payment paths (record value only, no Stripe):**
+
+- **`'complimentary'`** — admin comp/freebie. `payment_status='comp'`, `stripe_amount=0`, full price/VAT breakdown recorded.
+- **`'partner_invoice'`** — partner-owed. `payment_status='partner_invoice_pending'`, `stripe_amount=0`, full price/VAT recorded, attribution to partner + commission %.
+- **`'withlocals'`** / **`'clickandboat'`** — third-party platform attribution. `payment_status='comp'`, `stripe_amount=0`, full price/VAT recorded, auto-attributed to a campaign whose slug matches the source string.
+
+All four no-payment sources flow through `src/app/api/admin/booking-flow/book/route.ts` (the same route also handles admin-initiated `'website'` bookings), branched on an `isInternal` flag. The recorded price fields (`base_amount_cents`, `base_vat_amount_cents`, `extras_amount_cents`, `extras_vat_amount_cents`, `total_vat_amount_cents`) are accepted from the request body and written verbatim — there is no server-side recalculation today.
+
+**Schema note.** The `bookings` table has **no `city_tax_amount_cents` column**. City tax appears in code only as `guestCount * 260` embedded inside `stripe_amount` for charged website bookings (`book/route.ts:~392`). For every no-payment path it isn't recorded at all. That's a schema gap, not a code bug — but it means downstream stats can't separate operating revenue from the city-tax pass-through without re-deriving it from `guest_count`.
 
 Hot files:
 
@@ -33,7 +44,10 @@ Hot files:
 - `src/app/api/booking-flow/create-intent/route.ts` (~66 lines): public POST endpoint that delegates to `createPaymentIntent`.
 - `src/app/api/webhooks/stripe/route.ts` (~56 lines): handles two events, both `checkout.session.*`.
 - `src/app/api/booking-flow/book/route.ts` (~769 lines): the post-payment booking creator. Mixes FH validation, FH booking, Supabase insert, partner-invoice path, campaign attribution, commission, Slack alerts.
-- `src/app/api/admin/booking-flow/create-payment-link/route.ts` (~167 lines): admin payment-link path; uses Checkout Sessions, omits city tax, has a three-step external-state race.
+- `src/app/api/admin/booking-flow/create-payment-link/route.ts` (~167 lines): admin payment-link path; uses Checkout Sessions, accepts a flat `overrideAmountCents` and writes all VAT fields as `0`, has a three-step external-state race.
+- `src/app/api/admin/booking-flow/book/route.ts` (~ same module as the booking-flow book route, with admin entry; handles all four no-payment sources via the `isInternal` branch).
+- `src/lib/constants.ts` (booking-source enum at lines 47–56 — single source of truth).
+- `src/lib/tracking/queries.ts:getOverviewKPIs` (~lines 113/118): revenue dashboard sums `stripe_amount` only — by design, so internal bookings show zero revenue. Booking counts include all sources.
 - `src/components/checkout/CheckoutFlow.tsx` (~773 lines): client-side; mixes Elements rendering, iDEAL redirect recovery via sessionStorage, post-payment booking call.
 - `src/components/admin/fareharbor/PaymentForm.tsx` (~77 lines): admin Elements form.
 - `src/app/api/cron/payment-reminders/route.ts` (~95 lines): reminder emails.
@@ -49,7 +63,8 @@ Trust boundary (today): client provides `selectedExtraIds`, `displayedTotalCents
 | P1 | No `payment_intent.succeeded` webhook handler | `src/app/api/webhooks/stripe/route.ts` | Public path relies entirely on client returning from redirect. Lost redirect = paid customer, no booking. Webhook must be a safety net, not absent. |
 | P2 | No idempotency key on `paymentIntents.create` | `src/lib/booking/create-intent.ts` (~line 97) | Network retry from client creates duplicate intents. Stripe is at-least-once on retries; we should pin keys. |
 | P3 | Weak webhook deduplication | `src/app/api/webhooks/stripe/route.ts` (lines ~25–32) | Only protection is `eq('payment_status', 'pending_payment')`. No event-ID dedup table. Stripe retries can re-execute side effects (Slack, refunds). |
-| P4 | Admin `create-payment-link` skips city tax | `src/app/api/admin/booking-flow/create-payment-link/route.ts` (~lines 99–134) | Charges `overrideAmountCents` raw; `base_vat_amount_cents`, `extras_amount_cents`, `total_vat_amount_cents` written as 0. Diverges silently from public path. |
+| P4a | Admin `create-payment-link` bypasses the price calculator | `src/app/api/admin/booking-flow/create-payment-link/route.ts` (~lines 99–134) | Writes `base_amount_cents = overrideAmountCents` and `base_vat_amount_cents = extras_amount_cents = extras_vat_amount_cents = total_vat_amount_cents = 0`. The flat-amount UX is intentional, but the recorded breakdown is unusable for stats. |
+| P4b | No `city_tax_amount_cents` column anywhere | `bookings` table schema; city tax is implicit (`guestCount * 260`) inside `stripe_amount` for `'website'` bookings only | Schema gap, not a code bug. Internal bookings don't record city tax at all. Downstream reports can't distinguish operating revenue from city-tax pass-through without re-deriving from `guest_count`. |
 | P5 | Race condition: FH booking → Stripe session → Supabase save | `src/app/api/admin/booking-flow/create-payment-link/route.ts` | No transaction across three external systems. Webhook can arrive before Supabase write completes; booking ends up in limbo (FH reserved, Stripe paid, no DB row). |
 | P6 | Two parallel payment models | Public path = PaymentIntents; admin path = Checkout Sessions | Two webhook surfaces, two metadata shapes, two recovery flows. Bug fix in one path will not propagate. |
 | P7 | City-tax constant duplicated | `src/lib/booking/create-intent.ts` (~line 76: `260`), `src/lib/booking/useBookingPanel.ts`, `src/app/api/booking-flow/book/route.ts` (~line 392) | Three places to update if the rate changes. Easy to miss one and produce silent under/over-charge. |
@@ -62,6 +77,7 @@ Trust boundary (today): client provides `selectedExtraIds`, `displayedTotalCents
 | P14 | 50-cent client/server total tolerance | `src/lib/booking/create-intent.ts` (~line 83) | A 50¢ window is wide enough to hide UI staleness bugs that overcharge customers. Should be near-zero with explicit logging when triggered. |
 | P15 | Test coverage on the money path is shallow | `src/lib/booking/create-intent.test.ts` (~6 cases — all happy-path price discipline). No tests for webhook, book route, create-payment-link. | The most consequential code in the repo (real money) has the lightest safety net. |
 | P16 | `extras_summary` is a lossy comma-string | `src/lib/booking/create-intent.ts` (~line 93) | If extras share a name they collapse. Webhook reconstruction would need to re-query Supabase. |
+| P17 | No-payment paths trust client-supplied price fields | `src/app/api/admin/booking-flow/book/route.ts` `isInternal` branches (the four no-payment sources) | `baseAmountCents`, `extrasAmountCents`, and the three VAT fields come from the request body and are written verbatim. Trust boundary is the admin user, but the values still aren't computed by a canonical calculator — UI staleness or a wrong client-side derivation can persist into stats and partner settlements without surfacing. |
 
 ---
 
@@ -69,13 +85,14 @@ Trust boundary (today): client provides `selectedExtraIds`, `displayedTotalCents
 
 - **G1 — Webhook is authoritative.** Add `payment_intent.succeeded` and `payment_intent.payment_failed` handlers. The client redirect path becomes a fast happy-path; the webhook is the safety net that catches dropped redirects. (Resolves P1, mitigates P5.)
 - **G2 — Idempotency end-to-end.** Idempotency keys on `paymentIntents.create`. Event-ID dedup table for the webhook. (Resolves P2, P3.)
-- **G3 — One pricing engine.** Single `calculateBookingTotal()` function used by `create-intent.ts`, `book/route.ts`, `useBookingPanel.ts`, and `create-payment-link/route.ts`. Single exported `CITY_TAX_PER_GUEST_CENTS` constant. (Resolves P4, P7.)
+- **G3 — One pricing engine, for recording as well as charging.** Single `calculateBookingTotal()` function produces the canonical price breakdown. Used by every payment path **and every no-payment recording path** — `create-intent.ts`, `book/route.ts` (including all four `isInternal` branches), `useBookingPanel.ts`, `create-payment-link/route.ts`. Stripe charge logic is a separate consumer of the breakdown — Stripe ≠ recording. Single exported `CITY_TAX_PER_GUEST_CENTS` constant. (Resolves P4a, P7, P17.)
 - **G4 — Typed structured metadata.** Define `BookingPaymentMetadata` with a zod schema. Serializer to Stripe's `Record<string,string>` and parser back. Always include `booking_id` (or pre-allocated UUID) and `fareharbor_uuid` once known. (Resolves P13, P16.)
 - **G5 — Never silently lose a paid booking.** If Supabase write fails after FH booking + payment, the route refunds (or queues a refund) and alerts loudly; it does not return 200 OK. (Resolves P8.)
 - **G6 — Centralize Stripe config.** One module reads all three env vars at startup, validates them, pins API version, exposes the singleton client and the publishable key helper. (Resolves P11, P12.)
 - **G7 — Shrink god modules.** Split `book/route.ts` and `CheckoutFlow.tsx` into named, testable units behind their existing public surfaces. (Resolves P9, P10.)
 - **G8 — Test the orchestration boundary.** Add tests for webhook event handlers (with idempotency), book route (with Supabase failure), create-payment-link (with city tax), and the price calculator. (Resolves P15.)
 - **G9 (optional, Phase 3) — Unify the two payment models.** Either convert admin payment links to PaymentIntents, or factor a shared adapter so that both paths share one metadata shape, one price calculator, and one webhook reconciler. (Resolves P6.)
+- **G10 — Booking-source contract is typed and tested.** Promote `BOOKING_SOURCES` from `src/lib/constants.ts:47-56` to a discriminated union that maps each source to its required `payment_status` values and required field-write contract (which columns must be populated, which must be `0`/`null`, whether Stripe is touched). Cover with tests. (Resolves P17 in part; precondition for testing the no-payment recording paths.)
 
 External behavior stays the same except for the webhook safety net catching the dropped-redirect case. Pricing displayed to customers does not change.
 
@@ -99,11 +116,20 @@ External behavior stays the same except for the webhook safety net catching the 
 
 6. **Define `BookingPaymentMetadata`.** In `src/lib/booking/types.ts`, define the structured metadata type and a matching zod schema. Add `to_stripe_metadata(meta)` serializer that produces Stripe's flat string map and a `from_stripe_metadata(raw)` parser used by the webhook. Include a pre-allocated `booking_id` UUID minted at create-intent time. (Resolves P13.)
 
-7. **Build a single price calculator.** Create `src/lib/booking/calculate-total.ts` with `calculateBookingTotal({ baseAmountCents, extrasAmountCents, guestCount, discountAmountCents })` returning `{ city_tax_cents, subtotal_cents, grand_total_cents, base_vat_cents, extras_vat_cents, total_vat_cents }`. Use it in `create-intent.ts`, `book/route.ts`, `useBookingPanel.ts`, and `create-payment-link/route.ts`. (Resolves P7; precondition for P4.)
+7. **Build a single price calculator and apply it to every recording path.** Create `src/lib/booking/calculate-total.ts` with `calculateBookingTotal({ baseAmountCents, extrasAmountCents, guestCount, discountAmountCents })` returning `{ city_tax_cents, subtotal_cents, grand_total_cents, base_vat_cents, extras_vat_cents, total_vat_cents }`. Use it in `create-intent.ts`, `useBookingPanel.ts`, `create-payment-link/route.ts`, **and every branch of `src/app/api/admin/booking-flow/book/route.ts`** — including the four no-payment branches (`complimentary`, `partner_invoice`, `withlocals`, `clickandboat`). The route's existing client-supplied price fields become **inputs to be reconciled** against the calculator's output, with structured logs (and a 500 in production) on mismatch. (Resolves P7, P17; precondition for P4a.)
 
-8. **Fix admin city-tax omission.** In `create-payment-link/route.ts`, replace the raw `overrideAmountCents` write with a call to `calculateBookingTotal()`. Persist the same VAT/city-tax breakdown as the public path. (Resolves P4.)
+8. **Fix admin `payment_link` recording.** In `create-payment-link/route.ts`, the current flat-`overrideAmountCents` UX writes all VAT fields as 0. Two options — pick one with Beer:
+
+   - **8a.** Replace the flat-amount UX with structured inputs (`baseAmountCents`, `extrasAmountCents`, `guestCount`, `discountAmountCents`) and call `calculateBookingTotal()`. Loses the simplicity, gains a fully populated VAT breakdown identical to the public path.
+   - **8b.** Keep the flat `overrideAmountCents` UX. Reverse-calculate the VAT breakdown from the flat amount using the standard 9% rate so the recorded row matches the public path's shape. Lower disruption, less precise (the breakdown is derived rather than authoritative).
+
+   Either way, no customer-facing pricing change — admin still enters the same total they enter today; only the recorded breakdown changes. (Resolves P4a.)
 
 9. **Add idempotency keys to PaymentIntent creation.** In `createPaymentIntent`, derive a stable key from `listing_id + avail_pk + email + chargedCents + booking_id`. Pass it as the second arg to `paymentIntents.create`. (Resolves P2.)
+
+9b. **Centralize and type the booking-source contract.** Promote `BOOKING_SOURCES` from `src/lib/constants.ts:47-56` to a discriminated union in `src/lib/booking/types.ts` that maps each source to its required `payment_status` values and the columns that must be written / left at `0`. Add a `validateBookingRecord(record): asserts record is BookingRecord` helper. Cover with exhaustiveness tests. Pre-condition for step 7's reconciliation against per-source contracts. (Resolves G10.)
+
+9c. **Document and stabilize the stats-query contract.** The current revenue dashboard (`src/lib/tracking/queries.ts:getOverviewKPIs` ~lines 113/118) sums `stripe_amount` by design — internal bookings show zero revenue. Add JSDoc explaining this. Add a sibling helper `getOverviewKPIsByBookingValue()` that sums `base_amount_cents` for stats that include no-payment bookings. Add optional `bookingSource` and `payment_status` filters so dashboards can slice paid vs unpaid without re-implementing the join. Future readers see the choice and don't accidentally "fix" the dashboard.
 
 10. **Add a `processed_stripe_event_ids` table.** Migration: `(event_id text primary key, type text, processed_at timestamptz)`. In the webhook, before any side effect, `INSERT … ON CONFLICT DO NOTHING`; if no row was inserted, return 200 immediately. (Resolves P3.)
 
@@ -161,9 +187,11 @@ Higher risk; only after Phase 2 has shipped and stabilized.
 | 4 — explicit return types | Catches future drift | Low | None |
 | 5 — narrow tolerance | Surfaces UI bugs | Low–Med | Will produce log noise during transition; treat as signal |
 | 6 — typed metadata | Schema-safe webhook reads | Low | Stripe metadata values must be strings; serializer must enforce |
-| 7 — single price calculator | Removes a class of pricing drift | Med | Output must match current values byte-for-byte; snapshot tests required |
-| 8 — admin city tax | Admin charges go up by €2.60×guests | **Med–High** (customer-visible) | Coordinate with Beer; existing pending payment links may be unaffected — verify |
+| 7 — single price calculator (all paths, charged + no-payment) | Removes a class of pricing drift; makes no-payment recording trustworthy | Med | Output must match current values byte-for-byte for charged paths; for no-payment paths, expect mismatches against the current client-supplied values — log them as signal, then reconcile |
+| 8 — admin payment_link recording (8a or 8b) | Admin payment-link rows have a real VAT breakdown | Low–Med | **Not** a customer-facing pricing change — admin enters the same flat amount. Decision needed: structured inputs (8a) vs reverse-derived breakdown (8b) |
 | 9 — idempotency keys | Eliminates duplicate intents | Low | Key must include enough variance to permit retried *different* bookings |
+| 9b — booking-source contract | Per-source field-write rules are testable | Low | Discriminated union must stay exhaustive; CI catches missing cases |
+| 9c — stats-query contract | Future readers don't "fix" the dashboard | Low | Pure docs + new helper; no behavior change to existing query |
 | 10 — event-ID dedup table | Eliminates duplicate side effects | Low–Med | Migration must run before code deploys |
 | 11 — `payment_intent.succeeded` handler | **Closes the dropped-redirect hole** | **Med–High** (real-money path) | Idempotency is critical; must not double-book on a redirect that *did* succeed |
 | 12 — `payment_intent.payment_failed` handler | Better customer signal | Low | None |
@@ -205,12 +233,15 @@ Higher risk; only after Phase 2 has shipped and stabilized.
    - `payment_intent.succeeded` when DB row missing → creates FH booking + DB row.
    - `payment_intent.payment_failed` marks pending row failed.
 4. **`src/app/api/booking-flow/book/route.test.ts`** — cover:
-   - Happy path.
+   - Happy path (`'website'`).
    - Supabase insert failure → triggers refund + Slack + 500 (not 200).
-   - Partner-invoice path skips Stripe.
+   - One case per no-payment source (`complimentary`, `partner_invoice`, `withlocals`, `clickandboat`): assert `stripe_amount = 0`, the correct `payment_status`, and a fully populated price/VAT breakdown produced by `calculateBookingTotal()`.
+   - Reconciliation: client-supplied price fields that don't match the calculator → structured log + 500 in production.
 5. **`src/app/api/admin/booking-flow/create-payment-link/route.test.ts`** — cover:
-   - City tax included in `stripe_amount` and `total_vat_amount_cents`.
+   - VAT breakdown populated (per chosen option 8a or 8b) — no more all-zeros.
    - Race recovery: webhook arrives before save → state still consistent (relies on event-ID dedup + `pending_bookings`).
+6. **`src/lib/booking/types.test.ts`** — discriminated-union exhaustiveness across all six `BOOKING_SOURCES`; `validateBookingRecord` accepts each source's correct shape and rejects mismatches (e.g. `'website'` with `stripe_amount=0`, `'partner_invoice'` with `payment_status='paid'`).
+7. **`src/lib/tracking/queries.test.ts`** — assert `getOverviewKPIs` returns `revenue=0` for a `'comp'` booking; assert `getOverviewKPIsByBookingValue` returns the recorded `base_amount_cents` for the same booking.
 
 ### Per-phase validation checklist
 
@@ -224,7 +255,9 @@ Higher risk; only after Phase 2 has shipped and stabilized.
   - Admin payment link → customer pays → `checkout.session.completed` flips status; replay event → no second update.
   - Admin payment link → expire → FH cancel + DB cancel.
 - [ ] Snapshot diff `/api/booking-flow/create-intent` response for a known input before/after each step (output must be byte-identical except for new fields like `booking_id`).
-- [ ] After step 8: re-create three admin payment links pre- and post-change for the same input; confirm `stripe_amount` increased by exactly `260 × guest_count`.
+- [ ] After step 7: create one booking per no-payment source (`complimentary`, `partner_invoice`, `withlocals`, `clickandboat`) and assert the recorded `base_amount_cents` / VAT fields match `calculateBookingTotal()` output exactly.
+- [ ] After step 8: re-create three admin payment links pre- and post-change for the same input; confirm `stripe_amount` is unchanged (admin still enters the same flat amount) but `base_vat_amount_cents` / `total_vat_amount_cents` are now populated.
+- [ ] After step 9c: query the dashboard for a comp booking; confirm `revenue=0` and `bookingValue` reflects `base_amount_cents`.
 
 ---
 
@@ -251,25 +284,30 @@ Higher risk; only after Phase 2 has shipped and stabilized.
 - **Branch naming:** keep this plan on `claude/refactoring-plan-template-Wn1Tw`; spin off feature branches per phase, e.g. `refactor/payments-phase-1-cleanup`, `refactor/payments-add-pi-succeeded`, `refactor/payments-unify-models`.
 - **Commit messages** name the smell (`fix: handle payment_intent.succeeded webhook (resolves P1)`) so plan and history stay in sync.
 - **Don't skip the test-first rule.** Steps 11 and 13 in particular must not land without their tests; they are the ones touching live money.
-- **Coordinate step 8 with Beer.** Admin payment links currently under-charge by €2.60 × guests. Fixing that is an intentional pricing change — should be communicated, not silently shipped.
+- **Coordinate step 8 with Beer.** The admin payment-link UX choice (8a structured inputs vs 8b reverse-derived VAT) is a product decision, not just a refactor. Customer-facing pricing does not change either way.
 
 ### Critical files (modification surface)
 
 - `src/lib/booking/create-intent.ts`
 - `src/lib/booking/useBookingPanel.ts`
 - `src/lib/booking/calculate-total.ts` *(new)*
-- `src/lib/booking/constants.ts` *(new)*
-- `src/lib/booking/types.ts` *(new or extended)*
+- `src/lib/booking/constants.ts` *(new — module-local constants like `CITY_TAX_PER_GUEST_CENTS`; the booking-source enum stays in `src/lib/constants.ts`)*
+- `src/lib/booking/types.ts` *(new or extended — discriminated booking-source union, `BookingPaymentMetadata`, `BookingPayload`)*
+- `src/lib/booking/types.test.ts` *(new — exhaustiveness + record validation)*
 - `src/lib/booking/save-booking.ts` *(new, Phase 3)*
 - `src/lib/booking/partner-invoice.ts` *(new, Phase 3)*
 - `src/lib/booking/notify.ts` *(new, Phase 3)*
 - `src/lib/booking/book.ts` *(new, Phase 3 — orchestrator)*
+- `src/lib/constants.ts` *(existing — `BOOKING_SOURCES` source of truth)*
+- `src/lib/tracking/queries.ts` *(existing — stats query semantics + new `getOverviewKPIsByBookingValue` helper)*
+- `src/lib/tracking/queries.test.ts` *(new — paid vs booking-value query contract)*
 - `src/lib/stripe/server.ts`
 - `src/lib/stripe/client.ts` *(new)*
 - `src/lib/stripe/env.ts` *(new)*
 - `src/app/api/webhooks/stripe/route.ts`
 - `src/app/api/booking-flow/create-intent/route.ts`
 - `src/app/api/booking-flow/book/route.ts`
+- `src/app/api/admin/booking-flow/book/route.ts` *(the bigger surface — all four no-payment branches live here)*
 - `src/app/api/admin/booking-flow/create-payment-link/route.ts`
 - `src/app/api/cron/payment-reminders/route.ts`
 - `src/components/checkout/CheckoutFlow.tsx`
@@ -284,4 +322,6 @@ Higher risk; only after Phase 2 has shipped and stabilized.
 - `createPaymentIntent` (`src/lib/booking/create-intent.ts`) — keep as the single PaymentIntent creation entry; extend rather than fork.
 - `getFareHarborClient()` and the two-step `validateBooking` / `createBooking` — the webhook's new `payment_intent.succeeded` handler must use these, not a parallel path.
 - `BookingPayload` (currently inline in `book/route.ts`, ~lines 327–357) — promote to `src/lib/booking/types.ts` and have both the route and the webhook handler share it.
+- `BOOKING_SOURCES` (`src/lib/constants.ts:47-56`) — single source of truth for the enum; promote to a discriminated union but do not duplicate the literal list.
+- `getOverviewKPIs` and the booking queries in `src/lib/tracking/queries.ts` — extend with optional filters and the new `getOverviewKPIsByBookingValue` sibling; do not fork.
 - The existing tolerance check in `create-intent.ts` — keep the structure, narrow the threshold, add the log.
