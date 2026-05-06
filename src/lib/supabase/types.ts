@@ -1291,6 +1291,7 @@ export type Database = {
       }
       fareharbor_items: {
         Row: {
+          booking_cutoff_hours: number | null
           created_at: string | null
           customer_types: Json | null
           fareharbor_pk: number
@@ -1298,11 +1299,13 @@ export type Database = {
           is_active: boolean | null
           item_type: string
           last_synced_at: string | null
+          max_slot_capacity: number | null
           name: string
           resources: Json | null
           shortname: string
         }
         Insert: {
+          booking_cutoff_hours?: number | null
           created_at?: string | null
           customer_types?: Json | null
           fareharbor_pk: number
@@ -1310,11 +1313,13 @@ export type Database = {
           is_active?: boolean | null
           item_type: string
           last_synced_at?: string | null
+          max_slot_capacity?: number | null
           name: string
           resources?: Json | null
           shortname?: string
         }
         Update: {
+          booking_cutoff_hours?: number | null
           created_at?: string | null
           customer_types?: Json | null
           fareharbor_pk?: number
@@ -1322,6 +1327,7 @@ export type Database = {
           is_active?: boolean | null
           item_type?: string
           last_synced_at?: string | null
+          max_slot_capacity?: number | null
           name?: string
           resources?: Json | null
           shortname?: string

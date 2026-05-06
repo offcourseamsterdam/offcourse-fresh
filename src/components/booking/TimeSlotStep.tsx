@@ -60,34 +60,51 @@ export function TimeSlotStep({ slots, loading, mode, selectedSlotPk, onSelect, s
   // Find max capacity across all slots for scaling the bars
   const maxCapacity = Math.max(...slots.map(s => s.capacity), 1)
 
+  const WHATSAPP_URL = 'https://wa.me/31645351618'
+
   return (
     <div className="space-y-2">
       <p className="text-xs text-zinc-500 mb-3">Select your preferred departure time</p>
 
       <div className="grid grid-cols-3 gap-2">
-        {slots.map((slot, index) => {
+        {slots.map((slot) => {
           const isSelected = selectedSlotPk === slot.pk
           const isSoldOut = slot.capacity < 1
+          const isChatToBook = !isSoldOut && slot.callToBook === true
           const capacityRatio = slot.capacity / maxCapacity
           const urgencyLabel = mode === 'shared' ? getCapacityLabel(slot.capacity) : null
+
+          function handleClick() {
+            if (isSoldOut) return
+            if (isChatToBook) { window.open(WHATSAPP_URL, '_blank'); return }
+            onSelect(slot)
+          }
+
           return (
             <button
               key={slot.pk}
               type="button"
-              onClick={() => !isSoldOut && onSelect(slot)}
+              onClick={handleClick}
               disabled={isSoldOut}
               className={`relative overflow-hidden rounded-xl border-2 py-2.5 px-3 text-sm font-semibold transition-all duration-200 ${
                 isSoldOut
                   ? 'border-zinc-100 text-zinc-300 cursor-not-allowed line-through bg-zinc-50'
-                  : isSelected
-                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-white scale-[1.02] shadow-md'
-                    : 'border-zinc-200 text-zinc-700 bg-white hover:border-[var(--color-primary)] hover:scale-[1.02] cursor-pointer'
+                  : isChatToBook
+                    ? 'border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 cursor-pointer'
+                    : isSelected
+                      ? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-white scale-[1.02] shadow-md'
+                      : 'border-zinc-200 text-zinc-700 bg-white hover:border-[var(--color-primary)] hover:scale-[1.02] cursor-pointer'
               }`}
             >
               {slot.startTime}
 
+              {/* "Chat to book" label — past cutoff, no prior bookings */}
+              {isChatToBook && (
+                <span className="block text-[10px] font-medium mt-0.5">Chat to book</span>
+              )}
+
               {/* Capacity bar — shared tours only */}
-              {mode === 'shared' && !isSoldOut && !isSelected && (
+              {mode === 'shared' && !isSoldOut && !isChatToBook && !isSelected && (
                 <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-zinc-100">
                   <div
                     className={`h-full ${getCapacityColor(capacityRatio)} rounded-full transition-all duration-500`}
@@ -97,7 +114,7 @@ export function TimeSlotStep({ slots, loading, mode, selectedSlotPk, onSelect, s
               )}
 
               {/* Urgency label */}
-              {urgencyLabel && !isSelected && (
+              {urgencyLabel && !isChatToBook && !isSelected && (
                 <span className="block text-[10px] font-medium text-amber-600 mt-0.5">
                   {urgencyLabel}
                 </span>

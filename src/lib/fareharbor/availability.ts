@@ -36,10 +36,10 @@ export async function getFilteredAvailability(
     return { slots: [], reasonCode: 'NO_AVAILABILITIES' }
   }
 
-  // Load resource name→boat mapping from the FH item's JSONB resources column
+  // Load resource mapping + cutoff config from the FH item
   const { data: fhItem } = await supabase
     .from('fareharbor_items')
-    .select('resources')
+    .select('resources, item_type, booking_cutoff_hours, max_slot_capacity')
     .eq('fareharbor_pk', listing.fareharbor_item_pk)
     .single()
 
@@ -90,7 +90,10 @@ export async function getFilteredAvailability(
 
   const slots = validSlots.map(a => transformToSlot(a, typeMap))
 
-  return { slots, reasonCode: null }
+  // Apply booking cutoff (public only — admin callers skip this via the flag)
+  const slotsWithCutoff = applyCutoff(slots, fhItem ?? null, new Date())
+
+  return { slots: slotsWithCutoff, reasonCode: null }
 }
 
 export async function getRawAvailabilities(
@@ -136,6 +139,36 @@ export async function applyListingFilters(
 
   const slots = validSlots.map(a => transformToSlot(a, typeMap))
   return { slots, reasonCode: null }
+}
+
+// ── Booking cutoff ────────────────────────────────────────────────────────────
+
+/**
+ * Mark slots that fall inside the booking cutoff window as `callToBook: true`.
+ *
+ * Exception for shared cruises: if the slot's remaining capacity is already
+ * less than the item's full capacity (meaning at least one person has booked),
+ * we keep the slot bookable — the boat is going out anyway.
+ */
+function applyCutoff(
+  slots: AvailabilitySlot[],
+  fhItem: { booking_cutoff_hours: number | null; item_type: string | null; max_slot_capacity: number | null } | null,
+  now: Date
+): AvailabilitySlot[] {
+  const cutoffHours = fhItem?.booking_cutoff_hours ?? null
+  if (!cutoffHours) return slots  // no cutoff configured
+
+  return slots.map(slot => {
+    const minutesUntil = (new Date(slot.startAt).getTime() - now.getTime()) / 60_000
+    if (minutesUntil > cutoffHours * 60) return slot  // outside window — bookable
+
+    // Inside cutoff window. Check shared-cruise exception.
+    const maxCap = fhItem?.max_slot_capacity ?? null
+    const isShared = fhItem?.item_type === 'shared'
+    const hasExistingBooking = isShared && maxCap !== null && slot.capacity < maxCap
+
+    return hasExistingBooking ? slot : { ...slot, callToBook: true }
+  })
 }
 
 export function transformToSlot(

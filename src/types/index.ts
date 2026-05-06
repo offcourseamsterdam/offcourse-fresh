@@ -11,6 +11,7 @@ export interface AvailabilitySlot {
   headline: string
   customerTypes: AvailabilityCustomerType[]
   capacity: number    // max across customer type rates (≥1 = at least one option bookable)
+  callToBook?: boolean // true when slot is past cutoff with no prior bookings → show WhatsApp CTA
 }
 
 export interface AvailabilityCustomerType {
