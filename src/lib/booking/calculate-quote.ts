@@ -18,7 +18,7 @@
  */
 
 import { getFareHarborClient } from '@/lib/fareharbor/client'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { calculateExtras, type ExtrasCalculation, type Extra } from '@/lib/extras/calculate'
 import { DEFAULT_DURATION_MINUTES } from '@/lib/constants'
 
@@ -97,7 +97,11 @@ export async function calculateQuote(input: QuoteInput): Promise<QuoteResult> {
   // 2. Fetch active extras from the DB (only the ones the user selected).
   //    Filtering by is_active means a deactivated extra silently drops — we
   //    log the count mismatch below for forensics.
-  const supabase = await createServiceClient()
+  //    NOTE: use createAdminClient (raw service role, no cookies) — the
+  //    cookie-aware createServiceClient picks up the user's auth role and
+  //    falls foul of the extras table's `authenticated`-less RLS policy,
+  //    silently returning 0 rows for logged-in admins/partners.
+  const supabase = createAdminClient()
   const extrasResult = selectedExtraIds.length > 0
     ? await supabase.from('extras').select('*').in('id', selectedExtraIds).eq('is_active', true)
     : { data: [] as Extra[], error: null }

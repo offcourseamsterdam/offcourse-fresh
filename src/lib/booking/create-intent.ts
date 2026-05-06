@@ -1,5 +1,5 @@
 import { getStripe } from '@/lib/stripe/server'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { calculateQuote } from '@/lib/booking/calculate-quote'
 import { type ExtrasCalculation } from '@/lib/extras/calculate'
 import { fmtEuros } from '@/lib/utils'
@@ -40,7 +40,7 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
     throw new Error('Missing quoteId — please refresh your booking and try again.')
   }
 
-  const supabase = await createServiceClient()
+  const supabase = createAdminClient()
 
   // 1. Look up the quote
   const { data: quoteRow, error: quoteError } = await supabase

@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const getAvailabilityDetail = vi.fn()
 const supabaseFrom = vi.fn()
 
-vi.mock('@/lib/supabase/server', () => ({
-  createServiceClient: async () => ({
+vi.mock('@/lib/supabase/admin', () => ({
+  createAdminClient: () => ({
     from: supabaseFrom,
   }),
 }))

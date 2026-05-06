@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { calculateQuote } from '@/lib/booking/calculate-quote'
 import { DEFAULT_DURATION_MINUTES } from '@/lib/constants'
 
@@ -65,7 +65,8 @@ export async function POST(request: NextRequest) {
     })
 
     // Persist the quote so create-intent can reference it by id.
-    const supabase = await createServiceClient()
+    // Use createAdminClient (raw service role) — never user-context aware.
+    const supabase = createAdminClient()
     const { data: quoteRow, error: insertError } = await supabase
       .from('pricing_quotes')
       .insert({
