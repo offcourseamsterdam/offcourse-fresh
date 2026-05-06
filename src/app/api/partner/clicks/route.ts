@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     // Get all campaigns for this partner
     const { data: campaigns, error: campaignsError } = await admin
       .from('campaigns')
-      .select('id, name, slug, is_active, percentage_value')
+      .select('id, name, slug, is_active, investment_type, percentage_value, investment_amount')
       .eq('partner_id', partnerId)
       .order('created_at', { ascending: false })
 
@@ -93,7 +93,11 @@ export async function GET(request: NextRequest) {
       name: c.name,
       slug: c.slug,
       is_active: c.is_active,
-      commission_rate: c.percentage_value ?? null,
+      commission_rate: c.investment_type === 'percentage' && c.percentage_value != null
+        ? `${c.percentage_value}%`
+        : c.investment_type === 'fixed_amount' && c.investment_amount != null
+          ? `€${(c.investment_amount / 100).toFixed(0)} fixed`
+          : null,
       clicks: clicksMap[c.id] ?? 0,
       unique_visitors: visitorsMap[c.id]?.size ?? 0,
     }))
