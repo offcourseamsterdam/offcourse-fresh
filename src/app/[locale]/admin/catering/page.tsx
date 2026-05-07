@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { Loader2, RefreshCw, UtensilsCrossed, Send, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { KPICard } from '@/components/admin/tracking/KPICard'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { BookingStatusBadge } from '@/components/admin/BookingStatusBadge'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
@@ -27,15 +26,8 @@ interface CateringBooking {
   cateringAmountCents: number
 }
 
-interface CateringStats {
-  totalRevenueCents: number
-  bookingCount: number
-  pendingCount: number
-}
-
 interface CateringData {
   bookings: CateringBooking[]
-  stats: CateringStats
 }
 
 // ── Page ───────────────────────────────────────────────────────────────────
@@ -48,7 +40,6 @@ export default function CateringPage() {
   const [sendErrors, setSendErrors] = useState<Record<string, string>>({})
 
   const bookings = data?.bookings ?? []
-  const stats = data?.stats
 
   async function handleSendEmail(bookingId: string) {
     setSending(prev => ({ ...prev, [bookingId]: true }))
@@ -91,25 +82,6 @@ export default function CateringPage() {
       </div>
 
       <AdminErrorBanner error={error} />
-
-      {/* KPI cards */}
-      {stats && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <KPICard
-            label="Catering revenue"
-            value={fmtAdminAmountRounded(stats.totalRevenueCents) ?? '€0'}
-          />
-          <KPICard
-            label="Bookings with catering"
-            value={String(stats.bookingCount)}
-          />
-          <KPICard
-            label="Pending (not sent)"
-            value={String(stats.pendingCount)}
-            subtitle={stats.pendingCount > 0 ? 'Needs action' : 'All sent ✓'}
-          />
-        </div>
-      )}
 
       {/* Loading */}
       {isLoading && !data && (
