@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Pencil, Ban, CalendarDays } from 'lucide-react'
+import { Pencil, Ban, CalendarDays, UtensilsCrossed } from 'lucide-react'
 import { EXTRAS_CATEGORIES } from '@/lib/constants'
 import { fmtAdminAmount } from '@/lib/admin/format'
 import { BookingSourceBadge } from '@/components/admin/BookingSourceBadge'
@@ -9,14 +9,11 @@ import type { BookingSource } from '@/lib/constants'
 import { CancelBookingModal } from '@/components/admin/booking-actions/CancelBookingModal'
 import { EditBookingModal } from '@/components/admin/booking-actions/EditBookingModal'
 import { RescheduleBookingModal } from '@/components/admin/booking-actions/RescheduleBookingModal'
+import { AddCateringModal } from '@/components/admin/booking-actions/AddCateringModal'
+import { cateringAmountCents } from '@/lib/catering/filter'
+import type { AdminExtraLineItem } from '@/lib/admin/types'
 
 // ── Types ──────────────────────────────────────────────────────────────────
-
-interface ExtraLineItem {
-  name: string
-  amount_cents: number
-  category?: string
-}
 
 interface BookingDetailRowProps {
   bookingId: string
@@ -32,12 +29,13 @@ interface BookingDetailRowProps {
   customerEmail: string | null
   customerPhone: string | null
   guestNote: string | null
+  guestCount: number | null
   baseAmountCents: number | null
   extrasAmountCents: number | null
   totalVatAmountCents: number | null
   stripeAmount: number | null
   depositAmountCents: number | null
-  extrasSelected: ExtraLineItem[] | null
+  extrasSelected: AdminExtraLineItem[] | null
   bookingSource: string | null
   className?: string
 }
@@ -58,6 +56,7 @@ export function BookingDetailRow({
   customerEmail,
   customerPhone,
   guestNote,
+  guestCount,
   baseAmountCents,
   extrasAmountCents,
   totalVatAmountCents,
@@ -70,14 +69,15 @@ export function BookingDetailRow({
   const [showCancel, setShowCancel] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const [showReschedule, setShowReschedule] = useState(false)
+  const [showAddCatering, setShowAddCatering] = useState(false)
 
   const isCancelled = status === 'cancelled'
   const isInternal = bookingSource && bookingSource !== 'website'
   const isWebsiteBooking = !bookingSource || bookingSource === 'website'
-  const extras = (extrasSelected ?? []) as ExtraLineItem[]
+  const extras = (extrasSelected ?? []) as AdminExtraLineItem[]
 
   // Group extras by category
-  const byCategory = EXTRAS_CATEGORIES.reduce<Record<string, ExtraLineItem[]>>((acc, cat) => {
+  const byCategory = EXTRAS_CATEGORIES.reduce<Record<string, AdminExtraLineItem[]>>((acc, cat) => {
     const items = extras.filter(e => e.category === cat)
     if (items.length > 0) acc[cat] = items
     return acc
@@ -85,9 +85,10 @@ export function BookingDetailRow({
   // Items with no category go last
   const uncategorized = extras.filter(e => !e.category || !EXTRAS_CATEGORIES.includes(e.category as never))
 
-  const grandTotal = isInternal
-    ? depositAmountCents
-    : stripeAmount
+  const grandTotal = isInternal ? depositAmountCents : stripeAmount
+
+  // Catering revenue breakdown
+  const cateringCents = cateringAmountCents(extras)
 
   return (
     <div className={`px-4 py-4 bg-zinc-50 border-t border-zinc-100 ${className}`}>
@@ -121,9 +122,14 @@ export function BookingDetailRow({
                   <p className="text-xs text-zinc-400 capitalize mb-1">{cat}</p>
                   {items.map((item, i) => (
                     <div key={i} className="flex justify-between text-sm">
-                      <span className="text-zinc-700">{item.name}</span>
+                      <span className="text-zinc-700">
+                        {item.name}
+                        {item.quantity && item.quantity > 1 ? ` ×${item.quantity}` : ''}
+                      </span>
                       <span className={`font-medium ${isInternal ? 'text-zinc-400' : 'text-zinc-900'}`}>
-                        {isInternal ? <span className="line-through text-zinc-300">{fmtAdminAmount(item.amount_cents)}</span> : fmtAdminAmount(item.amount_cents)}
+                        {isInternal
+                          ? <span className="line-through text-zinc-300">{fmtAdminAmount(item.amount_cents)}</span>
+                          : fmtAdminAmount(item.amount_cents)}
                       </span>
                     </div>
                   ))}
@@ -157,6 +163,14 @@ export function BookingDetailRow({
                   <div className="flex justify-between">
                     <span className="text-zinc-500">Extras</span>
                     <span className="text-zinc-900">{fmtAdminAmount(extrasAmountCents)}</span>
+                  </div>
+                )}
+                {cateringCents > 0 && (
+                  <div className="flex justify-between text-xs text-zinc-400 pl-2">
+                    <span className="flex items-center gap-1">
+                      <UtensilsCrossed className="w-3 h-3" /> Catering
+                    </span>
+                    <span>{fmtAdminAmount(cateringCents)}</span>
                   </div>
                 )}
                 {totalVatAmountCents != null && totalVatAmountCents > 0 && (
@@ -196,7 +210,7 @@ export function BookingDetailRow({
 
       {/* Action buttons — only for non-cancelled bookings */}
       {!isCancelled && (
-        <div className="flex items-center gap-2 pt-3 border-t border-zinc-100 mt-4">
+        <div className="flex items-center gap-2 pt-3 border-t border-zinc-100 mt-4 flex-wrap">
           <button
             onClick={() => setShowEdit(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-600 hover:bg-zinc-100 transition-colors"
@@ -210,6 +224,13 @@ export function BookingDetailRow({
           >
             <CalendarDays className="w-3.5 h-3.5" />
             Reschedule
+          </button>
+          <button
+            onClick={() => setShowAddCatering(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-amber-600 hover:bg-amber-50 transition-colors"
+          >
+            <UtensilsCrossed className="w-3.5 h-3.5" />
+            {cateringCents > 0 ? 'Edit catering' : 'Add catering'}
           </button>
           <button
             onClick={() => setShowCancel(true)}
@@ -256,6 +277,16 @@ export function BookingDetailRow({
           cruiseTitle={listingTitle}
           onClose={() => setShowReschedule(false)}
           onSuccess={() => { setShowReschedule(false); onRefresh() }}
+        />
+      )}
+      {showAddCatering && (
+        <AddCateringModal
+          bookingId={bookingId}
+          guestCount={guestCount ?? 1}
+          existingExtras={extras}
+          baseAmountCents={baseAmountCents}
+          onClose={() => setShowAddCatering(false)}
+          onSuccess={() => { setShowAddCatering(false); onRefresh() }}
         />
       )}
     </div>

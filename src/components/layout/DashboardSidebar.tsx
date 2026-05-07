@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { preload } from 'swr'
-import { adminFetcher } from '@/hooks/useAdminFetch'
+import { adminFetcher, useAdminFetch } from '@/hooks/useAdminFetch'
 import AdminSignOutButton from '@/components/auth/AdminSignOutButton'
 import { Separator } from '@/components/ui/separator'
 import type { UserProfile } from '@/lib/auth/types'
@@ -28,12 +28,14 @@ import {
   Handshake,
   Settings,
   Ticket,
+  UtensilsCrossed,
 } from 'lucide-react'
 
 export interface NavItem {
   href: string
   label: string
   icon: string
+  badge?: 'pending-catering-count'
   comingSoon?: boolean
 }
 
@@ -52,6 +54,7 @@ interface DashboardSidebarProps {
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   dashboard: LayoutDashboard,
   bookings: Calendar,
+  catering: UtensilsCrossed,
   planning: Map,
   customers: Users,
   cruises: Ship,
@@ -86,6 +89,8 @@ export default function DashboardSidebar({
   navSections,
 }: DashboardSidebarProps) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const { data: cateringPending } = useAdminFetch<{ count: number }>('/api/admin/catering/pending-count')
+  const pendingCateringCount = cateringPending?.count ?? 0
 
   const initials = (profile.display_name || profile.email)
     .split(' ')
@@ -143,6 +148,7 @@ export default function DashboardSidebar({
                         </li>
                       )
                     }
+                    const badgeCount = item.badge === 'pending-catering-count' ? pendingCateringCount : 0
                     return (
                       <li key={item.href}>
                         <Link
@@ -154,7 +160,12 @@ export default function DashboardSidebar({
                           className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 transition-colors group"
                         >
                           <Icon className="w-4 h-4 text-zinc-400 group-hover:text-zinc-600 transition-colors flex-shrink-0" />
-                          {item.label}
+                          <span className="flex-1">{item.label}</span>
+                          {badgeCount > 0 && (
+                            <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold flex items-center justify-center leading-none flex-shrink-0">
+                              {badgeCount > 99 ? '99+' : badgeCount}
+                            </span>
+                          )}
                         </Link>
                       </li>
                     )

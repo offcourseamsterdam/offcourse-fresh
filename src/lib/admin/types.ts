@@ -1,6 +1,14 @@
 // Shared TypeScript types for the admin environment.
 // These mirror the columns returned by /api/admin/* routes.
 
+export interface AdminExtraLineItem {
+  name: string
+  amount_cents: number
+  category?: string
+  extra_id?: string
+  quantity?: number
+}
+
 export interface AdminBooking {
   id: string
   created_at: string
@@ -22,12 +30,13 @@ export interface AdminBooking {
   guest_note: string | null
   booking_source: string | null
   deposit_amount_cents: number | null
-  extras_selected: Array<{ name: string; amount_cents: number; category?: string }> | null
+  extras_selected: AdminExtraLineItem[] | null
   base_amount_cents: number | null
   extras_amount_cents: number | null
   base_vat_amount_cents: number | null
   extras_vat_amount_cents: number | null
   total_vat_amount_cents: number | null
+  catering_email_sent_at: string | null
 }
 
 export interface AdminPromoCode {

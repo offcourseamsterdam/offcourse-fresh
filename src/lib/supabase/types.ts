@@ -235,6 +235,7 @@ export type Database = {
           booking_uuid: string | null
           campaign_id: string | null
           category: string | null
+          catering_email_sent_at: string | null
           commission_amount_cents: number | null
           created_at: string | null
           currency: string | null
@@ -284,6 +285,7 @@ export type Database = {
           booking_uuid?: string | null
           campaign_id?: string | null
           category?: string | null
+          catering_email_sent_at?: string | null
           commission_amount_cents?: number | null
           created_at?: string | null
           currency?: string | null
@@ -333,6 +335,7 @@ export type Database = {
           booking_uuid?: string | null
           campaign_id?: string | null
           category?: string | null
+          catering_email_sent_at?: string | null
           commission_amount_cents?: number | null
           created_at?: string | null
           currency?: string | null

@@ -10,7 +10,7 @@ export async function PATCH(
   try {
     const { id } = await params
     const body = await request.json()
-    const { customer_name, customer_email, customer_phone, guest_note, deposit_amount_cents } = body
+    const { customer_name, customer_email, customer_phone, guest_note, deposit_amount_cents, extras_selected, extras_amount_cents, extras_vat_amount_cents } = body
 
     const supabase = createAdminClient()
 
@@ -37,6 +37,15 @@ export async function PATCH(
     }
     if (typeof deposit_amount_cents === 'number') {
       updates.deposit_amount_cents = deposit_amount_cents
+    }
+    if (Array.isArray(extras_selected)) {
+      updates.extras_selected = extras_selected
+    }
+    if (typeof extras_amount_cents === 'number') {
+      updates.extras_amount_cents = extras_amount_cents
+    }
+    if (typeof extras_vat_amount_cents === 'number') {
+      updates.extras_vat_amount_cents = extras_vat_amount_cents
     }
 
     if (Object.keys(updates).length === 1) {

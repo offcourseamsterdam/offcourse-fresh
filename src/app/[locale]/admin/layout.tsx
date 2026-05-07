@@ -12,9 +12,10 @@ const navSections: NavSection[] = [
   {
     label: 'Operations',
     items: [
-      { href: '/admin/bookings',   label: 'Bookings',   icon: 'bookings' },
-      { href: '/admin/planning',   label: 'Planning',   icon: 'planning',   comingSoon: true },
-      { href: '/admin/customers',  label: 'Customers',  icon: 'customers',  comingSoon: true },
+      { href: '/admin/bookings',  label: 'Bookings',  icon: 'bookings' },
+      { href: '/admin/catering',  label: 'Catering',  icon: 'catering',  badge: 'pending-catering-count' },
+      { href: '/admin/planning',  label: 'Planning',  icon: 'planning',  comingSoon: true },
+      { href: '/admin/customers', label: 'Customers', icon: 'customers', comingSoon: true },
     ],
   },
   {

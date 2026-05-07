@@ -44,7 +44,7 @@ export default function BookingsPage() {
     .reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0) ?? 0
 
   return (
-    <div className="p-8 max-w-6xl space-y-6">
+    <div className="p-8 max-w-none space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -113,15 +113,15 @@ export default function BookingsPage() {
             <table className="w-full text-sm">
               <thead className="bg-zinc-50 border-b border-zinc-200">
                 <tr>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Date</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Time</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Cruise</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Guest</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Guests</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Amount</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Type</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Status</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Ref</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider min-w-[100px]">Date</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider min-w-[110px]">Time</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider min-w-[200px]">Cruise</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider min-w-[180px]">Guest</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider w-16">Guests</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider w-24">Amount</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider w-24">Type</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider w-28">Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider w-28">Ref</th>
                   <th className="px-4 py-3 w-10" />
                 </tr>
               </thead>
@@ -191,6 +191,7 @@ export default function BookingsPage() {
                             customerEmail={b.customer_email}
                             customerPhone={b.customer_phone}
                             guestNote={b.guest_note}
+                            guestCount={b.guest_count}
                             baseAmountCents={b.base_amount_cents}
                             extrasAmountCents={b.extras_amount_cents}
                             totalVatAmountCents={b.total_vat_amount_cents}
