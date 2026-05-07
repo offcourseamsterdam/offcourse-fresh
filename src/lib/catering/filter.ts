@@ -13,7 +13,7 @@ export interface ExtrasLineItem {
   quantity?: number
 }
 
-export const CATERING_CATEGORIES = ['food', 'drinks'] as const
+export const CATERING_CATEGORIES = ['food'] as const
 
 /**
  * Filter an extras_selected array down to catering items only.

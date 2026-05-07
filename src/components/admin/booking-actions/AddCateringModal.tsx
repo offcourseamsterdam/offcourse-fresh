@@ -71,7 +71,7 @@ export function AddCateringModal({
         const json = await res.json()
         const all: CatalogExtra[] = json.data?.extras ?? []
         const catering = all.filter(
-          e => e.is_active && (e.category === 'food' || e.category === 'drinks'),
+          e => e.is_active && e.category === 'food',
         )
         setCatalogItems(catering)
 
@@ -104,10 +104,8 @@ export function AddCateringModal({
     setSaving(true)
     setError(null)
     try {
-      // Keep all non-catering extras unchanged
-      const nonCatering = existingExtras.filter(
-        e => e.category !== 'food' && e.category !== 'drinks',
-      )
+      // Keep all non-food extras unchanged (drinks stay on the booking as-is)
+      const nonCatering = existingExtras.filter(e => e.category !== 'food')
 
       // Build new catering line items for anything with qty > 0
       const newCateringItems: AdminExtraLineItem[] = []
@@ -171,7 +169,7 @@ export function AddCateringModal({
     return sum + calcItemAmount(e, guestCount, qty)
   }, 0)
 
-  const categories = ['food', 'drinks'] as const
+  const categories = ['food'] as const
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
