@@ -176,12 +176,10 @@ export default function StatisticsPage() {
                   <KPICard
                     label="Total catering"
                     value={fmtAdminAmountRounded(cateringStats.totalRevenueCents) ?? '€0'}
-                    subtitle={`${cateringStats.cateringBookingCount} bookings`}
                   />
                   <KPICard
                     label="Food revenue"
                     value={fmtAdminAmountRounded(cateringStats.foodRevenueCents) ?? '€0'}
-                    subtitle={`${cateringStats.foodPct}% of bookings`}
                   />
                   <KPICard
                     label="Drinks revenue"
@@ -190,7 +188,6 @@ export default function StatisticsPage() {
                   <KPICard
                     label="Avg per catering booking"
                     value={fmtAdminAmountRounded(cateringStats.avgCateringCents) ?? '€0'}
-                    subtitle="bookings that ordered"
                   />
                 </div>
 
