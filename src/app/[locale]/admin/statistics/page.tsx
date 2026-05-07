@@ -40,8 +40,15 @@ function pctDelta(current: number, previous: number): number {
 }
 
 interface CateringRevenueStats {
-  food: { revenueCents: number; bookingCount: number }
-  drinks: { revenueCents: number; bookingCount: number }
+  totalRevenueCents: number
+  foodRevenueCents: number
+  drinksRevenueCents: number
+  totalBookingCount: number
+  cateringBookingCount: number
+  avgCateringCents: number
+  foodPct: number
+  noFoodPct: number
+  drinksBreakdown: { name: string; count: number; pct: number }[]
 }
 
 export default function StatisticsPage() {
@@ -155,35 +162,95 @@ export default function StatisticsPage() {
           </div>
 
           {/* Catering */}
-          <div className="bg-white rounded-xl border border-zinc-200 p-5">
-            <div className="flex items-center gap-2 mb-4">
+          <div className="bg-white rounded-xl border border-zinc-200 p-5 space-y-6">
+            <div className="flex items-center gap-2">
               <UtensilsCrossed className="w-4 h-4 text-amber-500" />
               <h2 className="text-sm font-semibold text-zinc-900">Catering</h2>
               <span className="text-xs text-zinc-400">all time · confirmed bookings</span>
             </div>
+
             {cateringStats ? (
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <KPICard
-                  label="Food revenue"
-                  value={fmtAdminAmountRounded(cateringStats.food.revenueCents) ?? '€0'}
-                  subtitle={`${cateringStats.food.bookingCount} booking${cateringStats.food.bookingCount !== 1 ? 's' : ''}`}
-                />
-                <KPICard
-                  label="Food orders"
-                  value={String(cateringStats.food.bookingCount)}
-                  subtitle="bookings with food"
-                />
-                <KPICard
-                  label="Drinks revenue"
-                  value={fmtAdminAmountRounded(cateringStats.drinks.revenueCents) ?? '€0'}
-                  subtitle={`${cateringStats.drinks.bookingCount} booking${cateringStats.drinks.bookingCount !== 1 ? 's' : ''}`}
-                />
-                <KPICard
-                  label="Drinks orders"
-                  value={String(cateringStats.drinks.bookingCount)}
-                  subtitle="bookings with drinks"
-                />
-              </div>
+              <>
+                {/* Revenue row */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <KPICard
+                    label="Total catering"
+                    value={fmtAdminAmountRounded(cateringStats.totalRevenueCents) ?? '€0'}
+                    subtitle={`${cateringStats.cateringBookingCount} bookings`}
+                  />
+                  <KPICard
+                    label="Food revenue"
+                    value={fmtAdminAmountRounded(cateringStats.foodRevenueCents) ?? '€0'}
+                    subtitle={`${cateringStats.foodPct}% of bookings`}
+                  />
+                  <KPICard
+                    label="Drinks revenue"
+                    value={fmtAdminAmountRounded(cateringStats.drinksRevenueCents) ?? '€0'}
+                  />
+                  <KPICard
+                    label="Avg per catering booking"
+                    value={fmtAdminAmountRounded(cateringStats.avgCateringCents) ?? '€0'}
+                    subtitle="bookings that ordered"
+                  />
+                </div>
+
+                {/* Breakdown row */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 border-t border-zinc-100">
+
+                  {/* Drinks mix */}
+                  <div>
+                    <p className="text-[10px] font-semibold tracking-widest uppercase text-zinc-400 mb-3">
+                      Drinks selection
+                    </p>
+                    <div className="space-y-2.5">
+                      {cateringStats.drinksBreakdown.map(d => (
+                        <div key={d.name} className="flex items-center gap-3">
+                          <span className={`text-sm flex-1 truncate ${d.name === 'No drinks extra' ? 'text-zinc-400' : 'text-zinc-700'}`}>
+                            {d.name}
+                          </span>
+                          <div className="w-28 bg-zinc-100 rounded-full h-1.5 overflow-hidden flex-shrink-0">
+                            <div
+                              className={`h-1.5 rounded-full ${d.name === 'No drinks extra' ? 'bg-zinc-300' : 'bg-blue-400'}`}
+                              style={{ width: `${Math.min(d.pct, 100)}%` }}
+                            />
+                          </div>
+                          <span className={`text-xs font-medium tabular-nums w-10 text-right flex-shrink-0 ${d.name === 'No drinks extra' ? 'text-zinc-400' : 'text-zinc-900'}`}>
+                            {d.pct}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Food snack rate */}
+                  <div>
+                    <p className="text-[10px] font-semibold tracking-widest uppercase text-zinc-400 mb-3">
+                      Food
+                    </p>
+                    <div className="space-y-2.5">
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm text-zinc-700 flex-1">Booked a snack</span>
+                        <div className="w-28 bg-zinc-100 rounded-full h-1.5 overflow-hidden flex-shrink-0">
+                          <div className="bg-amber-400 h-1.5 rounded-full" style={{ width: `${Math.min(cateringStats.foodPct, 100)}%` }} />
+                        </div>
+                        <span className="text-xs font-medium text-zinc-900 tabular-nums w-10 text-right flex-shrink-0">
+                          {cateringStats.foodPct}%
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm text-zinc-400 flex-1">No food</span>
+                        <div className="w-28 bg-zinc-100 rounded-full h-1.5 overflow-hidden flex-shrink-0">
+                          <div className="bg-zinc-200 h-1.5 rounded-full" style={{ width: `${Math.min(cateringStats.noFoodPct, 100)}%` }} />
+                        </div>
+                        <span className="text-xs font-medium text-zinc-400 tabular-nums w-10 text-right flex-shrink-0">
+                          {cateringStats.noFoodPct}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              </>
             ) : (
               <div className="flex items-center gap-2 text-sm text-zinc-400">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading…
