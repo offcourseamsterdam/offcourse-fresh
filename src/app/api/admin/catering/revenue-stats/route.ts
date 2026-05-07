@@ -1,3 +1,4 @@
+import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -18,14 +19,23 @@ function pct(part: number, total: number): number {
   return Math.round((part / total) * 1000) / 10 // one decimal, e.g. 33.3
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = request.nextUrl
+    const from = searchParams.get('from') // ISO string or YYYY-MM-DD
+    const to = searchParams.get('to')
+
     const supabase = createAdminClient()
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('bookings')
       .select('extras_selected')
       .in('status', ['confirmed', 'booked'])
+
+    if (from) query = query.gte('booking_date', from.slice(0, 10))
+    if (to)   query = query.lte('booking_date', to.slice(0, 10))
+
+    const { data, error } = await query
 
     if (error) return apiError(error.message)
 
@@ -37,7 +47,6 @@ export async function GET() {
     let foodBookingCount = 0
     let cateringBookingCount = 0
 
-    // Drinks breakdown: count bookings per drink extra name
     const drinksByName: Record<string, { count: number; revenueCents: number }> = {}
     let noDrinksCount = 0
 
@@ -53,7 +62,6 @@ export async function GET() {
       if (food > 0) foodBookingCount++
       if (food > 0 || drinks > 0) cateringBookingCount++
 
-      // Per-name drink breakdown
       const drinkItems = extras.filter(e => e.category === 'drinks')
       if (drinkItems.length === 0) {
         noDrinksCount++

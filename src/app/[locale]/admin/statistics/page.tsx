@@ -61,8 +61,11 @@ export default function StatisticsPage() {
     useAdminFetch<OverviewData>(`/api/admin/tracking/overview?${statsParams}`)
   const { data: funnelData, isLoading: loadingFunnel, refresh: refreshFunnel } =
     useAdminFetch<FunnelStep[]>(`/api/admin/tracking/funnel?${statsParams}`)
+  const [cateringPeriod, setCateringPeriod] = useState<PeriodKey>('30d')
+  const [cateringDateRange, setCateringDateRange] = useState(getDateRange('30d'))
+  const cateringParams = new URLSearchParams({ from: cateringDateRange.from, to: cateringDateRange.to })
   const { data: cateringStats } =
-    useAdminFetch<CateringRevenueStats>('/api/admin/catering/revenue-stats')
+    useAdminFetch<CateringRevenueStats>(`/api/admin/catering/revenue-stats?${cateringParams}`)
 
   const funnel = funnelData ?? []
   const loading = loadingOverview || loadingFunnel
@@ -163,10 +166,18 @@ export default function StatisticsPage() {
 
           {/* Catering */}
           <div className="bg-white rounded-xl border border-zinc-200 p-5 space-y-6">
-            <div className="flex items-center gap-2">
-              <UtensilsCrossed className="w-4 h-4 text-amber-500" />
-              <h2 className="text-sm font-semibold text-zinc-900">Catering</h2>
-              <span className="text-xs text-zinc-400">all time · confirmed bookings</span>
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div className="flex items-center gap-2">
+                <UtensilsCrossed className="w-4 h-4 text-amber-500" />
+                <h2 className="text-sm font-semibold text-zinc-900">Catering</h2>
+              </div>
+              <PeriodSelector
+                value={cateringPeriod}
+                onChange={(key, from, to) => {
+                  setCateringPeriod(key)
+                  setCateringDateRange({ from, to })
+                }}
+              />
             </div>
 
             {cateringStats ? (
