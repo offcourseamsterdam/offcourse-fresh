@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { calculateQuote } from '@/lib/booking/calculate-quote'
 import { type ExtrasCalculation } from '@/lib/extras/calculate'
 import { fmtEuros } from '@/lib/utils'
+import { toClickType } from '@/lib/tracking/click-ids'
 
 interface CreateIntentInput {
   /**
@@ -13,7 +14,17 @@ interface CreateIntentInput {
   quoteId: string
   listingTitle: string
   date: string
+  /** ISO datetime of departure — stored in PI metadata for webhook recovery. */
+  startAt?: string | null
+  /** ISO datetime of cruise end — stored in PI metadata for webhook recovery. */
+  endAt?: string | null
   contact: { name: string; email: string; phone?: string }
+  /** Google ad click id value (oc_gclid cookie) — the Google Ads conversion key. */
+  gclid?: string | null
+  /** Which kind of click id (gclid/wbraid/gbraid) — selects the upload field. */
+  clickType?: string | null
+  /** Whether the visitor accepted the tracking banner — gates send-to-Google. */
+  marketingConsent?: boolean
 }
 
 interface CreateIntentResult {
@@ -34,7 +45,7 @@ interface CreateIntentResult {
  *   5. Mark the quote consumed.
  */
 export async function createPaymentIntent(input: CreateIntentInput): Promise<CreateIntentResult> {
-  const { quoteId, listingTitle, date, contact } = input
+  const { quoteId, listingTitle, date, startAt, endAt, contact, gclid, clickType, marketingConsent } = input
 
   if (!quoteId) {
     throw new Error('Missing quoteId — please refresh your booking and try again.')
@@ -111,11 +122,24 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
       guest_count: String(quoteRow.guest_count),
       category: String(quoteRow.category),
       date: String(date ?? ''),
+      start_at: String(startAt ?? ''),
+      end_at: String(endAt ?? ''),
       guest_name: String(contact?.name ?? ''),
       guest_email: String(contact?.email ?? ''),
       guest_phone: String(contact?.phone ?? ''),
       extras_summary: extrasSummary,
+      // Price breakdown — needed by the webhook safety net to recreate the booking
+      // when the browser-side flow fails (e.g. browser closed after iDEAL redirect).
+      server_base_amount_cents: String(recomputed.serverBaseAmount),
+      extras_amount_cents: String(recomputed.extrasCalculation.extras_amount_cents),
+      base_vat_amount_cents: String(recomputed.extrasCalculation.base_vat_amount_cents),
+      extras_vat_amount_cents: String(recomputed.extrasCalculation.extras_vat_amount_cents),
+      total_vat_amount_cents: String(recomputed.extrasCalculation.total_vat_amount_cents),
       city_tax_cents: String(recomputed.cityTaxCents),
+      // Google Ads attribution: gclid is the conversion key; consent_marketing
+      // gates whether the Stripe webhook may forward the conversion to Google.
+      consent_marketing: marketingConsent ? 'yes' : 'no',
+      ...(gclid ? { gclid: String(gclid), click_type: toClickType(clickType) } : {}),
       ...(quoteRow.promo_code_id
         ? {
             promo_code_id: String(quoteRow.promo_code_id),

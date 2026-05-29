@@ -1,6 +1,7 @@
 import type { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { ATTRIBUTION_COOKIE_DAYS, COOKIE_ATTRIBUTION, USER_AGENT_MAX_LENGTH } from './constants'
+import { ATTRIBUTION_COOKIE_DAYS, COOKIE_ATTRIBUTION, COOKIE_GCLID, COOKIE_CLICK_TYPE, GCLID_COOKIE_DAYS, USER_AGENT_MAX_LENGTH } from './constants'
+import type { ClickType } from './click-ids'
 
 /**
  * Server-side campaign tracking utilities.
@@ -88,6 +89,45 @@ export function buildAttributionCookie(attr: CampaignAttribution): AttributionCo
       sameSite: 'lax',
       httpOnly: false,
     },
+  }
+}
+
+/**
+ * Build a click-id cookie set on the /t/<slug> redirect when a Google ad's
+ * auto-tagging appended ?gclid= / ?wbraid= / ?gbraid= to the tracking link.
+ * Same options as the attribution cookie; longer (90-day) window to match
+ * Google's default conversion window. `name` is oc_gclid (value) or
+ * oc_click_type (which kind).
+ */
+function buildClickCookie(name: string, value: string): AttributionCookie {
+  return {
+    name,
+    value,
+    options: {
+      path: '/',
+      maxAge: GCLID_COOKIE_DAYS * 86_400,
+      sameSite: 'lax',
+      httpOnly: false,
+    },
+  }
+}
+
+export const buildGclidCookie = (clickId: string) => buildClickCookie(COOKIE_GCLID, clickId)
+export const buildClickTypeCookie = (type: ClickType) => buildClickCookie(COOKIE_CLICK_TYPE, type)
+
+/**
+ * Forward the click id onto the redirect destination so the landing page URL
+ * still carries it (lets a future Consent Mode gtag register the click). `param`
+ * is the click type so iOS ids are forwarded under the correct key. Returns the
+ * url unchanged if it can't be parsed or already carries that param.
+ */
+export function appendClickId(url: string, value: string, param: ClickType = 'gclid'): string {
+  try {
+    const u = new URL(url)
+    if (!u.searchParams.has(param)) u.searchParams.set(param, value)
+    return u.toString()
+  } catch {
+    return url
   }
 }
 

@@ -204,24 +204,40 @@
   /* Section texture backgrounds */
   .bg-texture-sand {
     background-image: url('/textures/bg-sand.png');
+    background-image: image-set(
+      url('/textures/bg-sand.avif') type('image/avif'),
+      url('/textures/bg-sand.webp') type('image/webp')
+    );
     background-size: cover;
     background-position: center;
   }
 
   .bg-texture-lavender {
     background-image: url('/textures/bg-lavender.png');
+    background-image: image-set(
+      url('/textures/bg-lavender.avif') type('image/avif'),
+      url('/textures/bg-lavender.webp') type('image/webp')
+    );
     background-size: cover;
     background-position: center;
   }
 
   .bg-texture-purple {
     background-image: url('/textures/bg-purple.png');
+    background-image: image-set(
+      url('/textures/bg-purple.avif') type('image/avif'),
+      url('/textures/bg-purple.webp') type('image/webp')
+    );
     background-size: cover;
     background-position: center;
   }
 
   .bg-texture-pink {
     background-image: url('/textures/bg-purple.png');
+    background-image: image-set(
+      url('/textures/bg-purple.avif') type('image/avif'),
+      url('/textures/bg-purple.webp') type('image/webp')
+    );
     background-size: cover;
     background-position: center;
   }
@@ -232,12 +248,20 @@
 
   .bg-texture-periwinkle {
     background-image: url('/textures/bg-lavender.png');
+    background-image: image-set(
+      url('/textures/bg-lavender.avif') type('image/avif'),
+      url('/textures/bg-lavender.webp') type('image/webp')
+    );
     background-size: cover;
     background-position: center;
   }
 
   .bg-texture-yellow {
     background-image: url('/textures/bg-yellow.png');
+    background-image: image-set(
+      url('/textures/bg-yellow.avif') type('image/avif'),
+      url('/textures/bg-yellow.webp') type('image/webp')
+    );
     background-size: cover;
     background-position: center;
   }

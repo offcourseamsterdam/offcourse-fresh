@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { initSession, initAnonymousSession, trackEvent } from '@/lib/tracking/client'
-import { getCookie } from '@/lib/tracking/attribution'
+import { getCookie, captureClickIdsFromURL } from '@/lib/tracking/attribution'
 import { COOKIE_CONSENT } from '@/lib/tracking/constants'
 
 /**
@@ -23,6 +23,11 @@ export function TrackingScript() {
     // Skip tracking entirely for admin/support users
     if (getCookie('oc_internal')) return
 
+    // Fallback click-id capture for ad clicks that land directly on a page (not
+    // via a /t/<slug> link, which captures it server-side). It's our own data, so
+    // it runs regardless of consent — only the send-to-Google is consent-gated.
+    captureClickIdsFromURL()
+
     const consent = getCookie(COOKIE_CONSENT)
 
     if (consent === 'yes') {
@@ -35,7 +40,7 @@ export function TrackingScript() {
       // No consent yet (or declined) — still count the visit, just no cookies
       initAnonymousSession()
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   // Track page views on route changes — only with consent, never for admins
   useEffect(() => {

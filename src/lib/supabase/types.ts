@@ -251,6 +251,7 @@ export type Database = {
           extras_vat_amount_cents: number | null
           fareharbor_availability_pk: number | null
           fareharbor_customer_type_rate_pk: number | null
+          gclid: string | null
           guest_count: number | null
           guest_note: string | null
           id: string
@@ -301,6 +302,7 @@ export type Database = {
           extras_vat_amount_cents?: number | null
           fareharbor_availability_pk?: number | null
           fareharbor_customer_type_rate_pk?: number | null
+          gclid?: string | null
           guest_count?: number | null
           guest_note?: string | null
           id?: string
@@ -351,6 +353,7 @@ export type Database = {
           extras_vat_amount_cents?: number | null
           fareharbor_availability_pk?: number | null
           fareharbor_customer_type_rate_pk?: number | null
+          gclid?: string | null
           guest_count?: number | null
           guest_note?: string | null
           id?: string
@@ -559,6 +562,7 @@ export type Database = {
           notes: string | null
           partner_id: string | null
           percentage_value: number | null
+          settlement_model: string
           slug: string
           updated_at: string | null
         }
@@ -575,6 +579,7 @@ export type Database = {
           notes?: string | null
           partner_id?: string | null
           percentage_value?: number | null
+          settlement_model?: string
           slug: string
           updated_at?: string | null
         }
@@ -591,6 +596,7 @@ export type Database = {
           notes?: string | null
           partner_id?: string | null
           percentage_value?: number | null
+          settlement_model?: string
           slug?: string
           updated_at?: string | null
         }
@@ -1166,6 +1172,7 @@ export type Database = {
       }
       extras: {
         Row: {
+          adults_only: boolean
           alt_text: string | null
           alt_text_de: string | null
           alt_text_es: string | null
@@ -1189,6 +1196,7 @@ export type Database = {
           ingredients: string[] | null
           is_active: boolean
           is_required: boolean
+          min_people: number | null
           min_quantity: number
           name: string
           name_de: string | null
@@ -1206,6 +1214,7 @@ export type Database = {
           vat_rate: number
         }
         Insert: {
+          adults_only?: boolean
           alt_text?: string | null
           alt_text_de?: string | null
           alt_text_es?: string | null
@@ -1229,6 +1238,7 @@ export type Database = {
           ingredients?: string[] | null
           is_active?: boolean
           is_required?: boolean
+          min_people?: number | null
           min_quantity?: number
           name: string
           name_de?: string | null
@@ -1246,6 +1256,7 @@ export type Database = {
           vat_rate?: number
         }
         Update: {
+          adults_only?: boolean
           alt_text?: string | null
           alt_text_de?: string | null
           alt_text_es?: string | null
@@ -1269,6 +1280,7 @@ export type Database = {
           ingredients?: string[] | null
           is_active?: boolean
           is_required?: boolean
+          min_people?: number | null
           min_quantity?: number
           name?: string
           name_de?: string | null
@@ -1298,6 +1310,7 @@ export type Database = {
       fareharbor_items: {
         Row: {
           booking_cutoff_hours: number | null
+          cancellation_tiers: Json | null
           created_at: string | null
           customer_types: Json | null
           fareharbor_pk: number
@@ -1312,6 +1325,7 @@ export type Database = {
         }
         Insert: {
           booking_cutoff_hours?: number | null
+          cancellation_tiers?: Json | null
           created_at?: string | null
           customer_types?: Json | null
           fareharbor_pk: number
@@ -1326,6 +1340,7 @@ export type Database = {
         }
         Update: {
           booking_cutoff_hours?: number | null
+          cancellation_tiers?: Json | null
           created_at?: string | null
           customer_types?: Json | null
           fareharbor_pk?: number
@@ -1337,6 +1352,54 @@ export type Database = {
           name?: string
           resources?: Json | null
           shortname?: string
+        }
+        Relationships: []
+      }
+      google_ads_conversions: {
+        Row: {
+          adjusted_at: string | null
+          adjustment_response: Json | null
+          adjustment_status: string | null
+          consent_marketing: boolean | null
+          created_at: string
+          currency: string
+          error: string | null
+          gclid: string | null
+          google_response: Json | null
+          payment_intent_id: string
+          status: string
+          uploaded_at: string | null
+          value_cents: number
+        }
+        Insert: {
+          adjusted_at?: string | null
+          adjustment_response?: Json | null
+          adjustment_status?: string | null
+          consent_marketing?: boolean | null
+          created_at?: string
+          currency?: string
+          error?: string | null
+          gclid?: string | null
+          google_response?: Json | null
+          payment_intent_id: string
+          status?: string
+          uploaded_at?: string | null
+          value_cents?: number
+        }
+        Update: {
+          adjusted_at?: string | null
+          adjustment_response?: Json | null
+          adjustment_status?: string | null
+          consent_marketing?: boolean | null
+          created_at?: string
+          currency?: string
+          error?: string | null
+          gclid?: string | null
+          google_response?: Json | null
+          payment_intent_id?: string
+          status?: string
+          uploaded_at?: string | null
+          value_cents?: number
         }
         Relationships: []
       }
@@ -2204,8 +2267,10 @@ export type Database = {
       }
       promo_codes: {
         Row: {
+          campaign_id: string | null
           code: string
           created_at: string
+          discount_scope: string
           discount_type: string
           discount_value: number | null
           fixed_discount_cents: number | null
@@ -2220,8 +2285,10 @@ export type Database = {
           valid_until: string | null
         }
         Insert: {
+          campaign_id?: string | null
           code: string
           created_at?: string
+          discount_scope?: string
           discount_type: string
           discount_value?: number | null
           fixed_discount_cents?: number | null
@@ -2236,8 +2303,10 @@ export type Database = {
           valid_until?: string | null
         }
         Update: {
+          campaign_id?: string | null
           code?: string
           created_at?: string
+          discount_scope?: string
           discount_type?: string
           discount_value?: number | null
           fixed_discount_cents?: number | null
@@ -2252,6 +2321,13 @@ export type Database = {
           valid_until?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "promo_codes_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "promo_codes_partner_id_fkey"
             columns: ["partner_id"]

@@ -61,10 +61,14 @@ export default async function LocaleLayout({ children, params }: Props) {
     pathname === '/partner' || pathname.startsWith('/partner/')
   )
 
-  const messages = await getMessages()
-
-  // Fetch cruise listings for Navbar dropdown (cached for 5 min)
-  const navListings = await getNavListings()
+  // Run the two independent fetches concurrently; skip the nav query entirely on
+  // admin/partner routes, where the Navbar (its only consumer) isn't rendered.
+  const [messages, navListings] = await Promise.all([
+    getMessages(),
+    isAdminRoute
+      ? Promise.resolve<Awaited<ReturnType<typeof getNavListings>>>([])
+      : getNavListings(),
+  ])
 
   const orgJsonLd = {
     '@context': 'https://schema.org',

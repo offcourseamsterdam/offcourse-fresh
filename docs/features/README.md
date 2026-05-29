@@ -9,4 +9,6 @@ One file per track or major feature. Written before every PR and kept up to date
 | Google Reviews integration | [google-reviews.md](google-reviews.md) | — | done |
 | Partner-invoiced listings (Webikeamsterdam) | [partner-invoiced-listings.md](partner-invoiced-listings.md) | — | done |
 | Image optimization pipeline (Sharp + AVIF + Gemini) | [image-optimization.md](image-optimization.md) | — | done |
+| Google Ads conversion tracking (server-side) | [google-ads-conversion-tracking.md](google-ads-conversion-tracking.md) | — | done |
+| Google Ads architecture overview (handoff/blueprint) | [google-ads-architecture-overview.md](google-ads-architecture-overview.md) | — | done |
 | Codebase refactoring plan | [codebase-refactoring-plan.md](codebase-refactoring-plan.md) | — | planned |

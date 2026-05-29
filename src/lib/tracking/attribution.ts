@@ -2,12 +2,16 @@ import {
   COOKIE_VISITOR_ID,
   COOKIE_SESSION_ID,
   COOKIE_ATTRIBUTION,
+  COOKIE_GCLID,
+  COOKIE_CLICK_TYPE,
   VISITOR_COOKIE_DAYS,
+  GCLID_COOKIE_DAYS,
   SESSION_TIMEOUT_MINUTES,
   UTM_PARAMS,
   SOCIAL_SOURCES,
   type UTMParams,
 } from './constants'
+import { pickClickId } from './click-ids'
 
 // ── Cookie helpers (browser-only) ──
 
@@ -82,6 +86,30 @@ export function parseUTMFromURL(url: string): UTMParams {
 
 export function hasUTMParams(utm: UTMParams): boolean {
   return Object.values(utm).some(Boolean)
+}
+
+// ── Google ad click ids (gclid / wbraid / gbraid) ──
+//
+// Captured client-side on ad landings as a FALLBACK to the /t/<slug> redirect
+// (which captures it server-side). Stored first-party so it survives the booking
+// flow and the iDEAL redirect. Only the *send to Google* is consent-gated, not
+// this capture — it's our own data.
+//
+// The value goes in oc_gclid and its kind in oc_click_type, so the eventual
+// upload can target the correct API field (gbraid/wbraid don't match as gclid).
+
+export function captureClickIdsFromURL(): void {
+  if (typeof window === 'undefined') return
+  const params = new URLSearchParams(window.location.search)
+  const picked = pickClickId((k) => params.get(k))
+  if (picked) {
+    setCookie(COOKIE_GCLID, picked.value, GCLID_COOKIE_DAYS)
+    setCookie(COOKIE_CLICK_TYPE, picked.type, GCLID_COOKIE_DAYS)
+  }
+}
+
+export function getGclid(): string | null {
+  return getCookie(COOKIE_GCLID)
 }
 
 // ── Attribution cookie ──

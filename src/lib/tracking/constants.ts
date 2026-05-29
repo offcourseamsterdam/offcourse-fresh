@@ -42,11 +42,17 @@ export const COOKIE_VISITOR_ID = 'oc_vid'
 export const COOKIE_SESSION_ID = 'oc_sid'
 export const COOKIE_ATTRIBUTION = 'oc_attr'
 export const COOKIE_CONSENT = 'oc_consent'
+/** Google ad click id value (gclid/wbraid/gbraid) — forwarded to Google as the conversion key */
+export const COOKIE_GCLID = 'oc_gclid'
+/** Which kind of click id oc_gclid holds: 'gclid' | 'wbraid' | 'gbraid' */
+export const COOKIE_CLICK_TYPE = 'oc_click_type'
 
 /** Visitor cookie lasts 1 year */
 export const VISITOR_COOKIE_DAYS = 365
 /** Attribution cookie lasts 30 days (first-touch window) */
 export const ATTRIBUTION_COOKIE_DAYS = 30
+/** gclid cookie lasts 90 days — matches Google's default click-conversion window */
+export const GCLID_COOKIE_DAYS = 90
 /** Session expires after 30 minutes of inactivity */
 export const SESSION_TIMEOUT_MINUTES = 30
 

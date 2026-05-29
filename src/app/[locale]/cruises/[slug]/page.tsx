@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { getTranslations } from 'next-intl/server'
+import { Clock, Users } from 'lucide-react'
 import { BookingPanel } from '@/components/booking/BookingPanel'
 import { ImageGallery } from '@/components/cruise/ImageGallery'
 import { StickyBookingHeader } from '@/components/cruise/StickyBookingHeader'
@@ -9,6 +10,7 @@ import { getListingBySlug, getCruisePageData } from '@/lib/cruise/get-cruise-pag
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import { TrackPageView } from '@/components/tracking/TrackPageView'
 import type { Locale } from '@/lib/i18n/config'
+import type { ImageAsset } from '@/lib/images/types'
 
 export const revalidate = 60
 
@@ -74,7 +76,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
   const data = await getCruisePageData(listing, locale as Locale)
 
   // JSON-LD ImageObject for Google Images / Discover ranking
-  const heroImage = await getCruiseHeroImageObject(listing, data.title)
+  const heroImage = buildCruiseHeroImageObject(data.heroAsset, listing.hero_image_url, data.title)
 
   // JSON-LD structured data
   const jsonLd = {
@@ -89,6 +91,39 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
     provider: { '@type': 'LocalBusiness', name: 'Off Course Amsterdam' },
   }
 
+  // Section header shared by mobile inline + desktop sidebar — pulls pills + price out of the card
+  const renderStartCruisingHeader = () => (
+    <div className="flex items-end justify-between gap-4 mb-4 sm:mb-6">
+      <div className="flex-1 min-w-0">
+        <h2 className="font-briston text-[28px] sm:text-[36px] text-[var(--color-accent)] uppercase leading-none">
+          Start Cruising
+        </h2>
+        {(listing.duration_display || listing.max_guests) && (
+          <div className="flex flex-wrap gap-1.5 mt-3">
+            {listing.duration_display && (
+              <span className="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] bg-[var(--color-sand)] px-2.5 py-1 rounded-full">
+                <Clock className="w-3 h-3" />
+                {listing.duration_display}
+              </span>
+            )}
+            {listing.max_guests && (
+              <span className="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] bg-[var(--color-sand)] px-2.5 py-1 rounded-full">
+                <Users className="w-3 h-3" />
+                Up to {listing.max_guests} guests
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+      {listing.starting_price != null && (
+        <div className="text-right flex-shrink-0">
+          <p className="text-xs text-[var(--color-muted)] leading-none mb-1">starting from</p>
+          <p className="font-palmore text-3xl text-[var(--color-primary)] leading-none">€{listing.starting_price}</p>
+        </div>
+      )}
+    </div>
+  )
+
   // Shared booking panel props
   const bookingPanelProps = {
     listingId: listing.id,
@@ -100,6 +135,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
     initialGuests: guests ? Number(guests) : undefined,
     initialTime: time,
     cancellationPolicy: data.cancellationPolicy,
+    cancellationTiers: data.cancellationTiers,
     startingPrice: listing.starting_price ?? null,
     infoPills: [
       ...(listing.duration_display ? [{ icon: 'duration' as const, label: listing.duration_display }] : []),
@@ -132,7 +168,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
       <StickyBookingHeader title={data.title} priceDisplay={listing.price_display} />
       <MobileBookingCTA />
 
-      <div className="min-h-screen bg-texture-sand pb-24 lg:pb-0">
+      <div className="min-h-screen bg-texture-sand pb-32 lg:pb-0">
 
         {/* ── Hero ── */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 sm:pt-20 pb-4">
@@ -140,29 +176,38 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
           <h1 className="text-2xl sm:text-4xl font-black text-[var(--color-primary)] mt-2 uppercase">{data.title}</h1>
           {data.tagline && <p className="text-[var(--color-muted)] mt-1 text-sm sm:text-base">{data.tagline}</p>}
 
-          {data.avgRating && data.totalReviews > 0 && (
-            <div className="flex items-center gap-2 mt-3">
-              <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-[var(--color-primary)] text-white font-bold text-sm">{data.avgRating}</span>
-              <div className="flex flex-col">
-                <span className="text-sm">
-                  <span className="font-bold text-[var(--color-ink)]">Exceptional</span>
-                  <span className="text-[var(--color-muted)]"> &middot; {data.totalReviews} reviews</span>
-                </span>
-                <a href="#reviews" className="text-sm text-[var(--color-primary)] font-medium hover:underline">See all reviews</a>
+          {data.avgRating && data.totalReviews > 0 && (() => {
+            const avg = Number(data.avgRating)
+            const label = avg >= 4.9 ? 'Exceptional' : avg >= 4.5 ? 'Excellent' : avg >= 4 ? 'Very good' : avg >= 3.5 ? 'Good' : 'Nice'
+            return (
+              <div className="flex items-center gap-2 mt-3">
+                <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-[var(--color-primary)] text-white font-bold text-sm">{data.avgRating}</span>
+                <div className="flex flex-col">
+                  <span className="text-sm">
+                    <span className="font-bold text-[var(--color-ink)]">{label}</span>
+                    <span className="text-[var(--color-muted)]"> &middot; {data.totalReviews} reviews</span>
+                  </span>
+                  <a href="#reviews" className="text-sm text-[var(--color-primary)] font-medium hover:underline">See all reviews</a>
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
         </div>
 
         {/* ── Gallery ── */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <ImageGallery images={data.images} heroUrl={data.heroUrl} heroAsset={data.heroAsset} videoUrl={data.videoUrl} title={data.title} reviews={data.serializedReviews} reviewCount={data.reviewCount ?? undefined} />
+          {/*
+            Use totalReviews (Google's count, e.g. 43) so the popover matches
+            the header "Exceptional · 43 reviews" — not data.reviewCount which
+            counts only the curated social_proof_reviews shown in the carousel.
+          */}
+          <ImageGallery images={data.images} heroUrl={data.heroUrl} heroAsset={data.heroAsset} videoUrl={data.videoUrl} title={data.title} reviews={data.serializedReviews} reviewCount={data.totalReviews ?? undefined} />
         </div>
 
         {/* ── Inline booking (mobile/tablet) ── */}
         <div id="booking" className="lg:hidden max-w-7xl mx-auto px-4 sm:px-6 py-8">
           <div className="border-t border-gray-200 pt-6 mb-6" />
-          <h2 className="font-avenir font-bold text-xl text-[var(--color-ink)] mb-6">Tickets and prices</h2>
+          {renderStartCruisingHeader()}
           <BookingPanel {...bookingPanelProps} layout="inline" />
         </div>
 
@@ -174,7 +219,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
               description={data.description}
               serializedFood={data.serializedFood}
               serializedDrinks={data.serializedDrinks}
-              cancellationPolicy={data.cancellationPolicy}
+              cancellationTiers={data.cancellationTiers}
               listingBoats={data.listingBoats}
               serializedReviews={data.serializedReviews}
               listing={listing}
@@ -187,7 +232,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                 while only the booking panel card scrolls beneath it. */}
             <div className="hidden lg:block lg:col-span-1">
               <div className="sticky top-24">
-                <h3 className="font-briston text-[24px] text-[var(--color-primary)] uppercase mb-3">Book this cruise</h3>
+                {renderStartCruisingHeader()}
                 <div className="max-h-[calc(100vh-10rem)] overflow-y-auto pr-1">
                   <BookingPanel {...bookingPanelProps} layout="sidebar" />
                 </div>
@@ -202,33 +247,28 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
 
 
 /** Build a JSON-LD ImageObject from the optimised hero asset (or legacy URL). */
-async function getCruiseHeroImageObject(
-  listing: { id: string; hero_image_url: string | null; hero_image_asset_id?: string | null },
+// Build the hero ImageObject (JSON-LD) from the asset already fetched in
+// getCruisePageData — avoids a redundant image_assets query on every render.
+// Logic mirrors the previous getCruiseHeroImageObject exactly.
+function buildCruiseHeroImageObject(
+  heroAsset: ImageAsset | null,
+  heroImageUrl: string | null,
   alt: string,
 ) {
-  if (listing.hero_image_asset_id) {
-    const { createClient } = await import('@/lib/supabase/server')
-    const supabase = await createClient()
-    const { data: asset } = await supabase
-      .from('image_assets')
-      .select('variants, alt_text, original_width, original_height, status')
-      .eq('id', listing.hero_image_asset_id)
-      .maybeSingle()
-    if (asset && asset.status === 'complete') {
-      const variants = (asset.variants as Array<{ width: number; avif_url: string; webp_url: string }>) ?? []
-      const largest = variants[variants.length - 1]
-      const altText = (asset.alt_text as Record<string, string> | null)?.en ?? alt
-      return {
-        '@type': 'ImageObject',
-        url: largest?.webp_url ?? listing.hero_image_url,
-        width: asset.original_width ?? undefined,
-        height: asset.original_height ?? undefined,
-        name: altText,
-      }
+  if (heroAsset && heroAsset.status === 'complete') {
+    const variants = (heroAsset.variants as Array<{ width: number; avif_url: string; webp_url: string }>) ?? []
+    const largest = variants[variants.length - 1]
+    const altText = (heroAsset.alt_text as Record<string, string> | null)?.en ?? alt
+    return {
+      '@type': 'ImageObject',
+      url: largest?.webp_url ?? heroImageUrl,
+      width: heroAsset.original_width ?? undefined,
+      height: heroAsset.original_height ?? undefined,
+      name: altText,
     }
   }
-  return listing.hero_image_url
-    ? { '@type': 'ImageObject', url: listing.hero_image_url, name: alt }
+  return heroImageUrl
+    ? { '@type': 'ImageObject', url: heroImageUrl, name: alt }
     : null
 }
 

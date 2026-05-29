@@ -2,18 +2,30 @@ import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { Resend } from 'resend'
 import type { BookingSource } from '@/lib/constants'
 import { normalizePartnerCode } from '@/lib/partner-codes/generate'
 import { validatePartnerCode, reasonMessage } from '@/lib/partner-codes/validate'
+import { sendConfirmationEmail } from '@/lib/booking/send-confirmation-email'
+import { notifyCateringOrder } from '@/lib/catering/notify'
+import { notifyBookingFailure } from '@/lib/booking/notify-booking-failure'
+import { extractVat } from '@/lib/extras/calculate'
+import { postSlackText } from '@/lib/slack/send-notification'
+import type { Json } from '@/lib/supabase/types'
 
-let _resend: Resend | null = null
-function getResend(): Resend {
-  if (!_resend) {
-    _resend = new Resend(process.env.RESEND_API_KEY ?? '')
-  }
-  return _resend
-}
+// ── Constants ──────────────────────────────────────────────────────────────
+
+/** Amsterdam city tax per guest (€2.60). Charged on every booking; 0% VAT (municipal levy). */
+const CITY_TAX_CENTS_PER_GUEST = 260
+
+/** Standard NL cruise VAT rate (9% — tourism / transport). */
+const BASE_VAT_RATE_PERCENT = 9
+
+/** Fallback VAT rate for extras when not provided per-item (most are drinks at 21%). */
+const DEFAULT_EXTRAS_VAT_RATE_PERCENT = 21
+
+/** Booking sources that are paid third-party platforms — eligible for auto campaign attribution
+ *  via `resolveCampaignId` when no cookie-based attribution is present. */
+const PLATFORM_SOURCES = ['withlocals', 'clickandboat', 'getyourguide', 'tripadvisor'] as const
 
 /**
  * POST /api/admin/booking-flow/book
@@ -50,13 +62,11 @@ export async function POST(request: NextRequest) {
       listingId, listingTitle, departureLocation, date, startAt, endAt,
       amountCents, stripePaymentIntentId,
       baseAmountCents, extrasSelected, extrasAmountCents,
-      extrasVatAmountCents, baseVatAmountCents, totalVatAmountCents,
+      totalVatAmountCents,
       bookingSource = 'website' as BookingSource,
       depositAmountCents,
-      sessionId,
       partnerCode,
       promoCodeId,
-      discountAmountCents,
     } = body
 
     if (!availPk || !customerTypeRatePk || !guestCount || !contact?.name || !contact?.email || !contact?.phone) {
@@ -65,128 +75,34 @@ export async function POST(request: NextRequest) {
 
     const isInternal = bookingSource !== 'website'
     const isPartnerInvoice = bookingSource === 'partner_invoice'
+    const isStripeRecovery = bookingSource === 'stripe_recovery'
 
     // ── Partner-invoice branch ─────────────────────────────────────────────
     // Skip Stripe. Validate the listing is actually partner-invoice, validate
     // the partner code, and pull the commission % from the campaign linking
     // this listing + partner. (Webikeamsterdam pattern.)
-    let partnerInvoiceContext: {
-      partnerId: string
-      partnerName: string
-      campaignId: string
-      commissionPercent: number
-    } | null = null
-
-    if (isPartnerInvoice) {
-      if (!listingId) return apiError('listingId is required for partner-invoice bookings', 400)
-
-      const supabasePI = createAdminClient()
-      const { data: listing } = await supabasePI
-        .from('cruise_listings')
-        .select('id, payment_mode, required_partner_id')
-        .eq('id', listingId)
-        .single()
-
-      if (!listing) return apiError('Listing not found', 404)
-      if (listing.payment_mode !== 'partner_invoice' || !listing.required_partner_id) {
-        return apiError('This listing does not accept partner-invoice bookings', 400)
-      }
-
-      // New path: promo code already validated by client via /api/promo/validate.
-      // Legacy path: validate against partner_codes table.
-      if (!promoCodeId) {
-        const normalizedCode = normalizePartnerCode(String(partnerCode ?? ''))
-        const { data: codeRow } = await supabasePI
-          .from('partner_codes')
-          .select('id, partner_id, code, is_active, expires_at, revoked_at')
-          .eq('code', normalizedCode)
-          .maybeSingle()
-
-        const result = validatePartnerCode(normalizedCode, listing.required_partner_id, codeRow)
-        if (!result.ok) return apiError(reasonMessage(result.reason), 400)
-      }
-
-      // Find the campaign linking this listing + partner to get the commission %.
-      // Admin must have set this up (see admin/campaigns).
-      const { data: campaign } = await supabasePI
-        .from('campaigns')
-        .select('id, percentage_value, investment_type, partner_id')
-        .eq('listing_id', listingId)
-        .eq('partner_id', listing.required_partner_id)
-        .eq('is_active', true)
-        .maybeSingle()
-
-      if (!campaign) {
-        return apiError(
-          'No active campaign found for this partner + listing. An admin must create a campaign first.',
-          422,
-        )
-      }
-      if (campaign.investment_type !== 'percentage' || !campaign.percentage_value) {
-        return apiError(
-          'Partner-invoice campaigns must use a percentage commission. Fix the campaign config.',
-          422,
-        )
-      }
-
-      const { data: partner } = await supabasePI
-        .from('partners')
-        .select('id, name')
-        .eq('id', listing.required_partner_id)
-        .single()
-
-      partnerInvoiceContext = {
-        partnerId: listing.required_partner_id,
-        partnerName: partner?.name ?? 'Partner',
-        campaignId: campaign.id,
-        commissionPercent: Number(campaign.percentage_value),
-      }
+    const partnerInvoiceResult = await resolvePartnerInvoiceContext({
+      isPartnerInvoice,
+      listingId: listingId ?? null,
+      promoCodeId: promoCodeId ?? null,
+      partnerCode: partnerCode ?? null,
+    })
+    if (!partnerInvoiceResult.ok) {
+      return apiError(partnerInvoiceResult.error, partnerInvoiceResult.status)
     }
+    const partnerInvoiceContext = partnerInvoiceResult.context
 
     // ── Campaign attribution & commission ──────────────────────────────────
-    // Single cookie format: oc_attr (JSON, set by /api/t/[slug] or /api/track/visit).
-    // Both server entry points always include campaign_id, so no slug fallback needed.
-    let cookieCampaignId: string | null = null
-    let partnerId: string | null = null
-    let commissionAmountCents: number | null = null
-
-    try {
-      const attrCookie = request.cookies.get('oc_attr')?.value
-      if (attrCookie) {
-        const attr = JSON.parse(attrCookie)
-        if (attr.campaign_id) {
-          const supabaseAttrib = createAdminClient()
-          const { data: campaign } = await supabaseAttrib
-            .from('campaigns')
-            .select('percentage_value, investment_type')
-            .eq('id', attr.campaign_id)
-            .maybeSingle()
-
-          if (campaign) {
-            cookieCampaignId = attr.campaign_id
-            partnerId = attr.partner_id ?? null
-            if (campaign.percentage_value && campaign.investment_type === 'percentage') {
-              commissionAmountCents = Math.round(Number(baseAmountCents ?? 0) * campaign.percentage_value / 100)
-            } else if (campaign.percentage_value && campaign.investment_type === 'fixed_amount') {
-              commissionAmountCents = Math.round(campaign.percentage_value)
-            }
-          }
-        }
-      }
-    } catch {
-      // Attribution errors are non-fatal — booking still proceeds
-    }
-
-    // Partner-invoice bookings override any cookie-based attribution:
-    // the listing + partner code *is* the attribution, and the commission %
-    // comes from the campaign we just resolved.
-    if (partnerInvoiceContext) {
-      cookieCampaignId = partnerInvoiceContext.campaignId
-      partnerId = partnerInvoiceContext.partnerId
-      commissionAmountCents = Math.round(
-        Number(baseAmountCents ?? 0) * partnerInvoiceContext.commissionPercent / 100,
-      )
-    }
+    // Resolves to one of three sources, in this precedence (last wins):
+    //   1. Cookie (oc_attr) — passive attribution from a tracked visit
+    //   2. Promo code with campaign_id — explicit code-scoped attribution
+    //   3. Partner-invoice context — always wins when present
+    const { campaignId: cookieCampaignId, partnerId, commissionAmountCents } = await resolveAttribution({
+      attrCookie: request.cookies.get('oc_attr')?.value ?? null,
+      promoCodeId: promoCodeId ?? null,
+      partnerInvoiceContext,
+      baseAmountCents: Number(baseAmountCents ?? 0),
+    })
 
     // Idempotency: if a booking already exists for this payment intent, return it (website only)
     if (stripePaymentIntentId) {
@@ -222,48 +138,74 @@ export async function POST(request: NextRequest) {
       note: note ? String(note) : undefined,
     }
 
+    // Failure-alert context, reused for any FH error path below
+    const failureCtx = {
+      stripePaymentIntentId: stripePaymentIntentId ?? null,
+      amountCents: Number(amountCents ?? 0) || null,
+      customer: {
+        name: contact?.name,
+        email: contact?.email,
+        phone: contact?.phone,
+      },
+      cruise: {
+        listingTitle: String(listingTitle ?? ''),
+        date: String(date ?? ''),
+        startAt: startAt ?? null,
+        guestCount: Number(guestCount),
+        category: String(category ?? ''),
+      },
+      fareharbor: {
+        availPk: Number(availPk),
+        customerTypeRatePk: Number(customerTypeRatePk),
+      },
+    } as const
+
     // Step 1: Validate — FareHarbor always returns 200; is_bookable tells us if it's valid
     const validation = await fh.validateBooking(Number(availPk), bookingData)
     if (!validation.is_bookable) {
+      // Fire-and-forget alert. Especially critical when stripePaymentIntentId is set
+      // (customer already charged) — but also useful for ops visibility on internal failures.
+      await notifyBookingFailure({
+        ...failureCtx,
+        stage: 'fareharbor_validate',
+        reason: validation.error ?? 'Slot not bookable',
+      }).catch(err => console.error('[book] notifyBookingFailure (validate) failed:', err))
       return apiError(validation.error ?? 'Booking is not available', 422)
     }
 
     // Step 2: Create FareHarbor booking
-    const booking = await fh.createBooking(Number(availPk), bookingData)
+    let booking
+    try {
+      booking = await fh.createBooking(Number(availPk), bookingData)
+    } catch (fhErr) {
+      const msg = fhErr instanceof Error ? fhErr.message : String(fhErr)
+      await notifyBookingFailure({
+        ...failureCtx,
+        stage: 'fareharbor_create',
+        reason: msg,
+      }).catch(err => console.error('[book] notifyBookingFailure (create) failed:', err))
+      throw fhErr // Re-throw so the outer catch returns a proper 500 to the client
+    }
 
     // Step 3a: Save to Supabase — BLOCKING.
     // This is the money-path: customer paid, FareHarbor booked, we MUST record it.
     // If it fails, we alert loudly but still return success (the cruise is reserved).
-    const bookingPayload: BookingPayload = {
-      fhBookingUuid: booking?.uuid,
-      availPk: Number(availPk),
-      customerTypeRatePk: Number(customerTypeRatePk),
-      guestCount: Number(guestCount),
-      category: String(category ?? 'private'),
-      contact,
-      note,
-      listingId: listingId ?? null,
-      listingTitle: String(listingTitle ?? ''),
-      date: String(date ?? ''),
-      startAt: startAt ?? null,
-      endAt: endAt ?? null,
-      amountCents: Number(amountCents ?? 0),
-      baseAmountCents: Number(baseAmountCents ?? 0),
-      extrasSelected: extrasSelected ?? [],
-      extrasAmountCents: Number(extrasAmountCents ?? 0),
-      extrasVatAmountCents: Number(extrasVatAmountCents ?? 0),
-      baseVatAmountCents: Number(baseVatAmountCents ?? 0),
-      totalVatAmountCents: Number(totalVatAmountCents ?? 0),
-      stripePaymentIntentId: isInternal ? null : String(stripePaymentIntentId ?? ''),
-      bookingSource: String(bookingSource) as BookingSource,
-      depositAmountCents: isInternal ? Number(depositAmountCents ?? 0) : null,
-      sessionId: sessionId ?? null,
-      cookieCampaignId,
-      partnerId,
-      commissionAmountCents,
-      promoCodeId: promoCodeId ?? null,
-      discountAmountCents: Number(discountAmountCents ?? 0),
-    }
+    // Google Click ID (oc_gclid cookie) — stored on the booking for admin
+    // visibility into which bookings came from a Google ad. Card-payment
+    // bookings are created here; the webhook handles the iDEAL/async path.
+    const gclid = request.cookies.get('oc_gclid')?.value ?? null
+
+    const bookingPayload = buildBookingPayload(
+      body,
+      { uuid: booking?.uuid },
+      { isInternal, isStripeRecovery },
+      {
+        campaignId: cookieCampaignId,
+        partnerId,
+        commissionAmountCents,
+        gclid,
+      },
+    )
 
     const saveResult = await saveToSupabase(bookingPayload)
     if (!saveResult.ok) {
@@ -275,6 +217,13 @@ export async function POST(request: NextRequest) {
 
     // Step 3b: Non-critical notifications — run concurrently, fail quietly
     await Promise.allSettled([
+      notifyCateringOrder({
+        cruiseName: String(listingTitle ?? ''),
+        dateStr: String(date ?? ''),
+        startTimeStr: startAt ?? null,
+        guestCount: Number(guestCount),
+        extrasSelected: (extrasSelected ?? []) as never,
+      }),
       sendSlackNotification({
         listingTitle: String(listingTitle ?? ''),
         date: String(date ?? ''),
@@ -294,9 +243,11 @@ export async function POST(request: NextRequest) {
           ? {
               partnerName: partnerInvoiceContext.partnerName,
               baseAmountCents: Number(baseAmountCents ?? 0),
-              commissionAmountCents: Math.round(
-                Number(baseAmountCents ?? 0) * partnerInvoiceContext.commissionPercent / 100,
-              ),
+              // Same helper as the DB write above so the Slack figure can't drift if rounding changes.
+              commissionAmountCents: commissionForCampaign(
+                { percentage_value: partnerInvoiceContext.commissionPercent, investment_type: 'percentage' },
+                Number(baseAmountCents ?? 0),
+              ) ?? 0,
               commissionPercent: partnerInvoiceContext.commissionPercent,
             }
           : null,
@@ -312,6 +263,8 @@ export async function POST(request: NextRequest) {
         amountCents: Number(amountCents ?? 0),
         extrasSelected: (extrasSelected ?? []) as Array<{ name: string; amount_cents: number }>,
         fhBookingUuid: booking?.uuid,
+        category: category ? String(category) : null,
+        fareharborCustomerTypeRatePk: customerTypeRatePk ? Number(customerTypeRatePk) : null,
       }),
     ])
 
@@ -348,16 +301,89 @@ interface BookingPayload {
   bookingSource: BookingSource
   depositAmountCents: number | null
   sessionId: string | null
-  // Partner commission attribution (from oc_campaign cookie)
+  // Partner commission attribution (from oc_attr cookie, promo code, or partner-invoice)
   cookieCampaignId: string | null
   partnerId: string | null
   commissionAmountCents: number | null
+  // Google Click ID (oc_gclid cookie) — for admin visibility into Google-ad bookings
+  gclid: string | null
   promoCodeId: string | null
   discountAmountCents: number
 }
 
-// Platform booking sources that auto-attribute to the Platforms channel
-const PLATFORM_SOURCES = ['withlocals', 'clickandboat'] as const
+/**
+ * Build the canonical `BookingPayload` from the raw request body + derived fields.
+ *
+ * Centralises all the `Number(... ?? 0)` coercions, the VAT fallback math, and the
+ * source-dependent rules for `stripePaymentIntentId` + `depositAmountCents`. The
+ * downstream `saveToSupabase` reads this shape directly into the bookings table.
+ *
+ * `attribution.campaignId` writes to the field named `cookieCampaignId` for legacy
+ * reasons — that field can now be set by cookie, promo code, OR partner-invoice.
+ * Renaming the field would couple to DB column meaning; the name stays.
+ *
+ * Pure (no I/O). Easy to unit-test if regressions show up here.
+ */
+function buildBookingPayload(
+  body: Record<string, unknown>,
+  fhBooking: { uuid?: string } | null,
+  flags: { isInternal: boolean; isStripeRecovery: boolean },
+  attribution: {
+    campaignId: string | null
+    partnerId: string | null
+    commissionAmountCents: number | null
+    gclid: string | null
+  },
+): BookingPayload {
+  const baseAmt = Number(body.baseAmountCents ?? 0)
+  const extrasAmt = Number(body.extrasAmountCents ?? 0)
+  const { isInternal, isStripeRecovery } = flags
+
+  return {
+    fhBookingUuid: fhBooking?.uuid,
+    availPk: Number(body.availPk),
+    customerTypeRatePk: Number(body.customerTypeRatePk),
+    guestCount: Number(body.guestCount),
+    category: String(body.category ?? 'private'),
+    contact: body.contact as BookingPayload['contact'],
+    note: body.note as string | undefined,
+    listingId: (body.listingId as string | null) ?? null,
+    listingTitle: String(body.listingTitle ?? ''),
+    date: String(body.date ?? ''),
+    startAt: (body.startAt as string | null) ?? null,
+    endAt: (body.endAt as string | null) ?? null,
+    amountCents: Number(body.amountCents ?? 0),
+    baseAmountCents: baseAmt,
+    extrasSelected: (body.extrasSelected as object[] | undefined) ?? [],
+    extrasAmountCents: extrasAmt,
+    // VAT fields: server-compute when missing/zero. The browser-side checkout
+    // (CheckoutFlow.tsx) doesn't always send these; the admin flow does. To
+    // avoid silently recording €0 VAT on website bookings, fall back to a
+    // 9%-of-base + 21%-default-on-extras calculation. City tax is 0% VAT
+    // (municipal levy, not included in base_amount_cents).
+    extrasVatAmountCents: Number(body.extrasVatAmountCents)
+      || extractVat(extrasAmt, DEFAULT_EXTRAS_VAT_RATE_PERCENT),
+    baseVatAmountCents: Number(body.baseVatAmountCents)
+      || extractVat(baseAmt, BASE_VAT_RATE_PERCENT),
+    totalVatAmountCents: Number(body.totalVatAmountCents)
+      || (extractVat(baseAmt, BASE_VAT_RATE_PERCENT)
+          + extractVat(extrasAmt, DEFAULT_EXTRAS_VAT_RATE_PERCENT)),
+    // For stripe_recovery: persist the admin-provided PI ID (cross-reference to original payment).
+    // For other internal sources: null. For website: the just-charged PI.
+    stripePaymentIntentId: isStripeRecovery
+      ? (body.recoveryStripePaymentIntentId ? String(body.recoveryStripePaymentIntentId) : null)
+      : isInternal ? null : String(body.stripePaymentIntentId ?? ''),
+    bookingSource: String(body.bookingSource) as BookingSource,
+    depositAmountCents: (isInternal && !isStripeRecovery) ? Number(body.depositAmountCents ?? 0) : null,
+    sessionId: (body.sessionId as string | null) ?? null,
+    cookieCampaignId: attribution.campaignId,
+    partnerId: attribution.partnerId,
+    commissionAmountCents: attribution.commissionAmountCents,
+    gclid: attribution.gclid,
+    promoCodeId: (body.promoCodeId as string | null) ?? null,
+    discountAmountCents: Number(body.discountAmountCents ?? 0),
+  }
+}
 
 async function resolveCampaignId(supabase: ReturnType<typeof createAdminClient>, bookingSource: string): Promise<string | null> {
   if (!PLATFORM_SOURCES.includes(bookingSource as typeof PLATFORM_SOURCES[number])) return null
@@ -369,6 +395,237 @@ async function resolveCampaignId(supabase: ReturnType<typeof createAdminClient>,
   return data?.id ?? null
 }
 
+/** The resolved partner-invoice context — null when the booking isn't partner-invoice. */
+interface PartnerInvoiceContext {
+  partnerId: string
+  partnerName: string
+  campaignId: string
+  commissionPercent: number
+}
+
+type PartnerInvoiceResolution =
+  | { ok: true; context: PartnerInvoiceContext | null }
+  | { ok: false; error: string; status: number }
+
+/**
+ * Resolve the partner-invoice booking context — the listing's required partner,
+ * the campaign linking them, and the commission % to charge.
+ *
+ * For non-partner-invoice bookings, immediately returns `{ ok: true, context: null }`
+ * so the caller can use the result unconditionally.
+ *
+ * Validation paths (in order):
+ *   1. `listingId` must be provided
+ *   2. Listing must exist + have `payment_mode === 'partner_invoice'` + a required_partner_id
+ *   3. If no `promoCodeId` is passed (legacy path), validate the `partnerCode` against partner_codes
+ *   4. An active campaign linking this listing + partner must exist
+ *   5. That campaign must use a percentage commission with a positive value
+ *
+ * Each failed validation returns `{ ok: false, error, status }` with a user-facing message.
+ *
+ * Side effects: 4 reads to Supabase (listing, optional partner_codes, campaign, partner).
+ * No writes.
+ */
+async function resolvePartnerInvoiceContext(params: {
+  isPartnerInvoice: boolean
+  listingId: string | null
+  promoCodeId: string | null
+  partnerCode: string | null
+}): Promise<PartnerInvoiceResolution> {
+  if (!params.isPartnerInvoice) return { ok: true, context: null }
+
+  const { listingId, promoCodeId, partnerCode } = params
+  if (!listingId) {
+    return { ok: false, error: 'listingId is required for partner-invoice bookings', status: 400 }
+  }
+
+  const supabase = createAdminClient()
+  const { data: listing } = await supabase
+    .from('cruise_listings')
+    .select('id, payment_mode, required_partner_id')
+    .eq('id', listingId)
+    .single()
+
+  if (!listing) return { ok: false, error: 'Listing not found', status: 404 }
+  if (listing.payment_mode !== 'partner_invoice' || !listing.required_partner_id) {
+    return { ok: false, error: 'This listing does not accept partner-invoice bookings', status: 400 }
+  }
+
+  // New path: promo code already validated by client via /api/promo/validate.
+  // Legacy path: validate against partner_codes table.
+  if (!promoCodeId) {
+    const normalizedCode = normalizePartnerCode(String(partnerCode ?? ''))
+    const { data: codeRow } = await supabase
+      .from('partner_codes')
+      .select('id, partner_id, code, is_active, expires_at, revoked_at')
+      .eq('code', normalizedCode)
+      .maybeSingle()
+
+    const result = validatePartnerCode(normalizedCode, listing.required_partner_id, codeRow)
+    if (!result.ok) return { ok: false, error: reasonMessage(result.reason), status: 400 }
+  }
+
+  // Find the campaign linking this listing + partner to get the commission %.
+  const { data: campaign } = await supabase
+    .from('campaigns')
+    .select('id, percentage_value, investment_type, partner_id')
+    .eq('listing_id', listingId)
+    .eq('partner_id', listing.required_partner_id)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (!campaign) {
+    return {
+      ok: false,
+      error: 'No active campaign found for this partner + listing. An admin must create a campaign first.',
+      status: 422,
+    }
+  }
+  if (campaign.investment_type !== 'percentage' || !campaign.percentage_value) {
+    return {
+      ok: false,
+      error: 'Partner-invoice campaigns must use a percentage commission. Fix the campaign config.',
+      status: 422,
+    }
+  }
+
+  const { data: partner } = await supabase
+    .from('partners')
+    .select('id, name')
+    .eq('id', listing.required_partner_id)
+    .single()
+
+  return {
+    ok: true,
+    context: {
+      partnerId: listing.required_partner_id,
+      partnerName: partner?.name ?? 'Partner',
+      campaignId: campaign.id,
+      commissionPercent: Number(campaign.percentage_value),
+    },
+  }
+}
+
+/**
+ * Compute the commission amount (in cents) for a campaign given a base price.
+ *
+ * Quirk: when `investment_type === 'fixed_amount'` the fixed cents amount is
+ * stored in the `percentage_value` column too (the column is reused). Preserve
+ * that semantic — it's not a bug, it's how the schema is.
+ *
+ * Returns `null` when the campaign has no valid commission setup (missing value,
+ * unknown investment_type) so the caller can leave `commission_amount_cents`
+ * NULL in the DB instead of writing 0.
+ *
+ * Exported for unit testing.
+ */
+export function commissionForCampaign(
+  campaign: { percentage_value: number | null; investment_type: string | null } | null | undefined,
+  baseAmountCents: number,
+): number | null {
+  if (!campaign?.percentage_value) return null
+  if (campaign.investment_type === 'percentage') {
+    return Math.round(baseAmountCents * campaign.percentage_value / 100)
+  }
+  if (campaign.investment_type === 'fixed_amount') {
+    return Math.round(campaign.percentage_value)
+  }
+  return null
+}
+
+/**
+ * Resolve campaign attribution + commission for this booking.
+ *
+ * Precedence (last-wins, matching pre-refactor behavior):
+ *   1. Cookie (`oc_attr` JSON, set by /api/t/[slug] or /api/track/visit)
+ *   2. Promo code with campaign_id (explicit code-scoped attribution)
+ *   3. Partner-invoice context (always wins when present)
+ *
+ * All errors during cookie/promo lookup are non-fatal — booking proceeds with
+ * whatever attribution resolved. The partner-invoice override never fails
+ * because the context was already validated before this is called.
+ *
+ * Returns `{ campaignId, partnerId, commissionAmountCents }` where each is
+ * either set by one of the sources or remains null.
+ *
+ * Side effects: up to 3 reads to Supabase (cookie campaign + promo row + promo campaign).
+ * No writes.
+ */
+async function resolveAttribution(params: {
+  attrCookie: string | null
+  promoCodeId: string | null
+  partnerInvoiceContext: PartnerInvoiceContext | null
+  baseAmountCents: number
+}): Promise<{ campaignId: string | null; partnerId: string | null; commissionAmountCents: number | null }> {
+  let campaignId: string | null = null
+  let partnerId: string | null = null
+  let commissionAmountCents: number | null = null
+
+  // Layer 1: cookie attribution
+  try {
+    if (params.attrCookie) {
+      const attr = JSON.parse(params.attrCookie)
+      if (attr.campaign_id) {
+        const supabase = createAdminClient()
+        const { data: campaign } = await supabase
+          .from('campaigns')
+          .select('percentage_value, investment_type')
+          .eq('id', attr.campaign_id)
+          .maybeSingle()
+        if (campaign) {
+          campaignId = attr.campaign_id
+          partnerId = attr.partner_id ?? null
+          commissionAmountCents = commissionForCampaign(campaign, params.baseAmountCents)
+        }
+      }
+    }
+  } catch {
+    // Attribution errors are non-fatal — booking still proceeds
+  }
+
+  // Layer 2: promo code with campaign_id overrides cookie
+  if (params.promoCodeId) {
+    try {
+      const supabase = createAdminClient()
+      const { data: promoRow } = await supabase
+        .from('promo_codes')
+        .select('campaign_id')
+        .eq('id', params.promoCodeId)
+        .maybeSingle()
+      if (promoRow?.campaign_id) {
+        const { data: campaign } = await supabase
+          .from('campaigns')
+          .select('id, partner_id, percentage_value, investment_type')
+          .eq('id', promoRow.campaign_id)
+          .maybeSingle()
+        if (campaign) {
+          campaignId = campaign.id
+          partnerId = campaign.partner_id ?? null
+          commissionAmountCents = commissionForCampaign(campaign, params.baseAmountCents)
+        }
+      }
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  // Layer 3: partner-invoice context (highest priority)
+  if (params.partnerInvoiceContext) {
+    campaignId = params.partnerInvoiceContext.campaignId
+    partnerId = params.partnerInvoiceContext.partnerId
+    // Partner-invoice campaigns are always percentage-based (validated upstream).
+    commissionAmountCents = commissionForCampaign(
+      {
+        percentage_value: params.partnerInvoiceContext.commissionPercent,
+        investment_type: 'percentage',
+      },
+      params.baseAmountCents,
+    )
+  }
+
+  return { campaignId, partnerId, commissionAmountCents }
+}
+
 /**
  * Save booking to Supabase. Returns success flag + error details.
  * Caller is responsible for alerting on failure — this is the money-path,
@@ -378,25 +635,37 @@ async function saveToSupabase(p: BookingPayload): Promise<{ ok: true } | { ok: f
   try {
     const supabase = createAdminClient()
     const isInternal = p.bookingSource !== 'website'
+    const isStripeRecovery = p.bookingSource === 'stripe_recovery'
     // Campaign attribution: cookie-based partner tracking takes priority,
     // then fall back to auto-attribution for platform booking sources.
     const campaignId = p.cookieCampaignId ?? await resolveCampaignId(supabase, p.bookingSource)
-    // booking_id: use Stripe PI for website bookings, FH UUID for internal
-    const bookingId = isInternal ? (p.fhBookingUuid ?? `internal_${Date.now()}`) : (p.stripePaymentIntentId ?? '')
+    // booking_id: use the provided Stripe PI for website OR recovery (when given),
+    // otherwise FH UUID for internal, with a recovery_ fallback when both are missing.
+    const bookingId = isStripeRecovery
+      ? (p.stripePaymentIntentId || p.fhBookingUuid || `recovery_${Date.now()}`)
+      : isInternal
+        ? (p.fhBookingUuid ?? `internal_${Date.now()}`)
+        : (p.stripePaymentIntentId ?? '')
     const { error } = await supabase.from('bookings').insert({
       booking_id: bookingId,
       booking_uuid: p.fhBookingUuid ?? null,
       fareharbor_availability_pk: p.availPk,
       fareharbor_customer_type_rate_pk: p.customerTypeRatePk,
       stripe_payment_intent_id: p.stripePaymentIntentId,
-      stripe_amount: isInternal ? 0 : p.baseAmountCents + p.extrasAmountCents + (p.guestCount * 260) - p.discountAmountCents,
+      // Stripe recovery: use the admin-entered amount (real revenue). Other internal: 0.
+      // Website: compute from base + extras + city tax − discount.
+      stripe_amount: isStripeRecovery
+        ? p.amountCents
+        : isInternal
+          ? 0
+          : p.baseAmountCents + p.extrasAmountCents + (p.guestCount * CITY_TAX_CENTS_PER_GUEST) - p.discountAmountCents,
       base_amount_cents: p.baseAmountCents,
-      base_vat_rate: 9,
+      base_vat_rate: BASE_VAT_RATE_PERCENT,
       base_vat_amount_cents: p.baseVatAmountCents,
       extras_amount_cents: p.extrasAmountCents,
       extras_vat_amount_cents: p.extrasVatAmountCents,
       total_vat_amount_cents: p.totalVatAmountCents,
-      extras_selected: p.extrasSelected as any,
+      extras_selected: p.extrasSelected as unknown as Json,
       listing_id: p.listingId,
       listing_title: p.listingTitle,
       category: p.category,
@@ -409,11 +678,19 @@ async function saveToSupabase(p: BookingPayload): Promise<{ ok: true } | { ok: f
       customer_phone: p.contact.phone,
       guest_note: p.note || null,
       status: 'confirmed',
+      // payment_status:
+      //   - partner_invoice: 'partner_invoice_pending' (awaiting partner payout)
+      //   - stripe_recovery: 'paid' (real money came in, just manually recorded)
+      //   - other internal:  'comp' (no money exchanged)
+      //   - website:         'paid'
       payment_status: p.bookingSource === 'partner_invoice'
         ? 'partner_invoice_pending'
-        : (isInternal ? 'comp' : 'paid'),
+        : isStripeRecovery
+          ? 'paid'
+          : (isInternal ? 'comp' : 'paid'),
       currency: 'eur',
       booking_source: p.bookingSource,
+      gclid: p.gclid,
       deposit_amount_cents: p.depositAmountCents,
       session_id: p.sessionId,
       campaign_id: campaignId,
@@ -428,48 +705,9 @@ async function saveToSupabase(p: BookingPayload): Promise<{ ok: true } | { ok: f
       return { ok: false, error: error.message ?? 'Unknown Supabase error' }
     }
 
-    // Increment uses_count on the promo code (non-fatal)
+    // Non-fatal: increment uses_count + rotate if max reached.
     if (p.promoCodeId) {
-      const { data: codeRow } = await supabase
-        .from('promo_codes')
-        .select('*')
-        .eq('id', p.promoCodeId)
-        .single()
-      if (codeRow) {
-        const newCount = codeRow.uses_count + 1
-        await supabase
-          .from('promo_codes')
-          .update({ uses_count: newCount })
-          .eq('id', p.promoCodeId)
-
-        // Auto-rotate: when max_uses is hit, deactivate old code and create a new one
-        if (codeRow.max_uses != null && newCount >= codeRow.max_uses) {
-          await supabase
-            .from('promo_codes')
-            .update({ is_active: false })
-            .eq('id', p.promoCodeId)
-
-          const newCode = generatePromoCode()
-          const { data: rotated } = await supabase
-            .from('promo_codes')
-            .insert({
-              code: newCode,
-              label: codeRow.label,
-              discount_type: codeRow.discount_type,
-              discount_value: codeRow.discount_value,
-              fixed_discount_cents: codeRow.fixed_discount_cents,
-              max_uses: codeRow.max_uses,
-              notes: codeRow.notes,
-              partner_id: codeRow.partner_id,
-            })
-            .select()
-            .single()
-
-          if (rotated) {
-            await notifyPromoRotation(codeRow.code, newCode, codeRow.label, codeRow.max_uses)
-          }
-        }
-      }
+      await applyPromoCodeUsage(supabase, p.promoCodeId)
     }
 
     return { ok: true }
@@ -477,6 +715,65 @@ async function saveToSupabase(p: BookingPayload): Promise<{ ok: true } | { ok: f
     const msg = err instanceof Error ? err.message : 'Unknown error'
     console.error('[book] saveToSupabase exception:', err)
     return { ok: false, error: msg }
+  }
+}
+
+/**
+ * Bump a promo code's `uses_count` after a successful booking save, and
+ * auto-rotate the code (deactivate + create a successor) when `max_uses` is hit.
+ *
+ * Non-fatal — caller's already saved the booking, so a failure here just means
+ * the rotation didn't happen. Logged but not surfaced.
+ *
+ * Known limitation: the SELECT → UPDATE → maybe-INSERT sequence is NOT
+ * transactional. Two simultaneous bookings using the last slot of a promo code
+ * could each see `uses_count = 9`, both increment to 10, and both trigger
+ * rotation — creating two successor codes. This race exists pre-refactor.
+ * Fixing properly requires a Supabase RPC with row-level lock; out of scope here.
+ */
+async function applyPromoCodeUsage(
+  supabase: ReturnType<typeof createAdminClient>,
+  promoCodeId: string,
+): Promise<void> {
+  const { data: codeRow } = await supabase
+    .from('promo_codes')
+    .select('*')
+    .eq('id', promoCodeId)
+    .single()
+  if (!codeRow) return
+
+  const newCount = codeRow.uses_count + 1
+  await supabase
+    .from('promo_codes')
+    .update({ uses_count: newCount })
+    .eq('id', promoCodeId)
+
+  // Auto-rotate when max_uses reached
+  if (codeRow.max_uses == null || newCount < codeRow.max_uses) return
+
+  await supabase
+    .from('promo_codes')
+    .update({ is_active: false })
+    .eq('id', promoCodeId)
+
+  const newCode = generatePromoCode()
+  const { data: rotated } = await supabase
+    .from('promo_codes')
+    .insert({
+      code: newCode,
+      label: codeRow.label,
+      discount_type: codeRow.discount_type,
+      discount_value: codeRow.discount_value,
+      fixed_discount_cents: codeRow.fixed_discount_cents,
+      max_uses: codeRow.max_uses,
+      notes: codeRow.notes,
+      partner_id: codeRow.partner_id,
+    })
+    .select()
+    .single()
+
+  if (rotated) {
+    await notifyPromoRotation(codeRow.code, newCode, codeRow.label, codeRow.max_uses)
   }
 }
 
@@ -514,26 +811,11 @@ async function alertBookingSaveFailure(p: BookingPayload, dbError: string) {
     '```',
   ].filter(Boolean).join('\n')
 
-  try {
-    await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-    })
-  } catch (err) {
-    // If even Slack fails, at least we logged it above
-    console.error('[book] CRITICAL: Failed to alert Slack about save failure:', err)
-  }
+  await postSlackText(text)
 }
 
 function fmtAmountEur(cents: number) {
   return `€${(cents / 100).toFixed(0)}`
-}
-
-function fmtDatetime(isoDate: string, isoTime: string | null) {
-  if (!isoTime) return isoDate
-  const d = new Date(isoTime)
-  return `${isoDate} ${d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' })}`
 }
 
 interface SlackPayload {
@@ -595,145 +877,7 @@ async function sendSlackNotification(p: SlackPayload) {
     !isInternal && p.stripePaymentIntentId ? `💳 PI: ${p.stripePaymentIntentId}` : '',
   ].filter(Boolean).join('\n')
 
-  try {
-    await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-    })
-  } catch (err) {
-    console.error('[book] sendSlackNotification error:', err)
-  }
-}
-
-interface EmailPayload {
-  contact: { name: string; email: string; phone: string }
-  listingTitle: string
-  departureLocation: string
-  date: string
-  startAt: string | null
-  endAt: string | null
-  guestCount: number
-  amountCents: number
-  extrasSelected: Array<{ name: string; amount_cents: number }>
-  fhBookingUuid?: string
-}
-
-async function sendConfirmationEmail(p: EmailPayload) {
-  if (!process.env.RESEND_API_KEY) return // not configured
-
-  const resend = getResend()
-
-  const startTime = p.startAt ? new Date(p.startAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' }) : ''
-  const endTime = p.endAt ? new Date(p.endAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' }) : ''
-  const timeRange = startTime && endTime ? `${startTime} – ${endTime}` : startTime
-
-  const extrasRows = p.extrasSelected.length > 0
-    ? p.extrasSelected.map(e => `
-        <div class="detail-row">
-          <span class="detail-label">${e.name}</span>
-          <span class="detail-value">${fmtAmountEur(e.amount_cents)}</span>
-        </div>`).join('')
-    : ''
-
-  const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Booking confirmed — Off Course Amsterdam</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f4f4f5; margin: 0; padding: 32px 16px; }
-    .container { max-width: 560px; margin: 0 auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
-    .header { background: #18181b; color: #fff; padding: 32px 32px 24px; }
-    .header h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; }
-    .header p { margin: 0; font-size: 14px; color: #a1a1aa; }
-    .body { padding: 32px; }
-    .greeting { font-size: 16px; color: #18181b; margin: 0 0 20px; }
-    .detail-block { background: #f4f4f5; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
-    .detail-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; font-size: 14px; }
-    .detail-row:last-child { margin-bottom: 0; }
-    .detail-label { color: #71717a; flex-shrink: 0; margin-right: 12px; }
-    .detail-value { color: #18181b; font-weight: 500; text-align: right; }
-    .amount-row { border-top: 1px solid #e4e4e7; margin-top: 14px; padding-top: 14px; }
-    .amount-row .detail-value { font-size: 18px; font-weight: 700; }
-    .notice-block { background: #fefce8; border: 1px solid #fde047; border-radius: 8px; padding: 16px 20px; margin-bottom: 24px; font-size: 14px; color: #713f12; line-height: 1.5; }
-    .notice-block strong { display: block; margin-bottom: 4px; color: #713f12; }
-    .footer-text { font-size: 13px; color: #71717a; line-height: 1.6; margin-bottom: 24px; }
-    .footer { background: #f4f4f5; padding: 20px 32px; text-align: center; font-size: 12px; color: #a1a1aa; }
-    .footer a { color: #52525b; text-decoration: none; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>Off Course Amsterdam</h1>
-      <p>we're down to water</p>
-    </div>
-    <div class="body">
-      <p class="greeting">Hi ${p.contact.name.split(' ')[0]}, your booking is confirmed!</p>
-
-      <div class="detail-block">
-        <div class="detail-row">
-          <span class="detail-label">Cruise</span>
-          <span class="detail-value">${p.listingTitle}</span>
-        </div>
-        <div class="detail-row">
-          <span class="detail-label">Date</span>
-          <span class="detail-value">${p.date}</span>
-        </div>
-        ${timeRange ? `<div class="detail-row">
-          <span class="detail-label">Time</span>
-          <span class="detail-value">${timeRange}</span>
-        </div>` : ''}
-        <div class="detail-row">
-          <span class="detail-label">Guests</span>
-          <span class="detail-value">${p.guestCount} guest${p.guestCount !== 1 ? 's' : ''}</span>
-        </div>
-        ${extrasRows}
-        ${p.fhBookingUuid ? `<div class="detail-row">
-          <span class="detail-label">Booking ref</span>
-          <span class="detail-value" style="font-family: monospace; font-size: 12px;">${p.fhBookingUuid}</span>
-        </div>` : ''}
-        <div class="detail-row amount-row">
-          <span class="detail-label">Paid</span>
-          <span class="detail-value">${fmtAmountEur(p.amountCents)}</span>
-        </div>
-      </div>
-
-      <div class="notice-block">
-        <strong>📍 Where to meet us</strong>
-        ${p.departureLocation} — look for the big pier/jetty on the waterfront.<br/>
-        Please be there <strong>10 minutes before</strong> your departure time — your skipper will be ready and waiting.<br/>
-        <a href="https://maps.app.goo.gl/UR1tijSgfdMVfgLi6" style="color:#92400e;">Open in Google Maps →</a>
-      </div>
-
-      <p class="footer-text">
-        Questions? Reply to this email or reach us at
-        <a href="mailto:cruise@offcourseamsterdam.com">cruise@offcourseamsterdam.com</a>.
-        See you on the water!
-      </p>
-    </div>
-    <div class="footer">
-      <a href="https://offcourseamsterdam.com">offcourseamsterdam.com</a> &nbsp;·&nbsp;
-      Amsterdam, Netherlands
-    </div>
-  </div>
-</body>
-</html>
-  `.trim()
-
-  try {
-    await resend.emails.send({
-      from: 'Off Course Amsterdam <cruise@offcourseamsterdam.com>',
-      to: [p.contact.email],
-      subject: `Booking confirmed — ${p.listingTitle}`,
-      html,
-    })
-  } catch (err) {
-    console.error('[book] sendConfirmationEmail error:', err)
-  }
+  await postSlackText(text)
 }
 
 // ── Promo code rotation ────────────────────────────────────────────────────
@@ -757,13 +901,5 @@ async function notifyPromoRotation(oldCode: string, newCode: string, label: stri
     '_Share the new code with your partners._',
   ].join('\n')
 
-  try {
-    await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-    })
-  } catch (err) {
-    console.error('[book] notifyPromoRotation error:', err)
-  }
+  await postSlackText(text)
 }
