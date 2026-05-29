@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { processAsset } from '@/lib/images/processor'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -10,6 +11,8 @@ export const maxDuration = 60
  * Useful after pipeline updates (new keywords, better Gemini prompt, etc.).
  */
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ assetId: string }> }) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const { assetId } = await params
     const supabase = createAdminClient()

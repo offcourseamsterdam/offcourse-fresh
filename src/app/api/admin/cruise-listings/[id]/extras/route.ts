@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
@@ -11,6 +12,11 @@ import { createAdminClient } from '@/lib/supabase/admin'
  *
  * Informational extras are included (shown as text cards in checkout, no price impact).
  */
+// NOTE: GET is intentionally PUBLIC. The customer checkout (ExtrasStep) calls it
+// to render the add-on menu + prices, so it must NOT require admin auth. It only
+// returns public product data (active extras catalogue + listing category/hero).
+// The PATCH below is the admin mutation and stays guarded. Do not add requireAdmin
+// to GET — it would break the public booking flow's extras step.
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const guestCount = Number(request.nextUrl.searchParams.get('guestCount') ?? 1)
@@ -58,6 +64,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
  * Creates or updates a listing_extras override/link record.
  */
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   const { id } = await params
   const { extraId, isEnabled } = await request.json()
   if (!extraId || typeof isEnabled !== 'boolean') {

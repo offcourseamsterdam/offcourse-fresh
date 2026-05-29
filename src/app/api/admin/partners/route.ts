@@ -1,9 +1,12 @@
 import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 // GET /api/admin/partners — list all partners with campaign count + commission totals
 export async function GET() {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const supabase = createAdminClient()
 
@@ -53,6 +56,8 @@ export async function GET() {
 
 // POST /api/admin/partners — create a new partner
 export async function POST(request: NextRequest) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const { name } = await request.json()
 

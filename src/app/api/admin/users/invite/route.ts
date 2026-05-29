@@ -1,11 +1,14 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireRole } from '@/lib/auth/server'
 import { VALID_ROLES } from '@/lib/auth/types'
 
 // POST /api/admin/users/invite — invite a new user with a specific role (admin only)
 export async function POST(request: NextRequest) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     await requireRole(['admin'])
   } catch {

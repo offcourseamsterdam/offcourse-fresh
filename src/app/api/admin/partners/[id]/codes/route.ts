@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { generatePartnerCode, threeMonthsFromNow } from '@/lib/partner-codes/generate'
 
 /**
@@ -11,6 +12,8 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const { id } = await params
     const supabase = createAdminClient()
@@ -38,6 +41,8 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const { id } = await params
     const supabase = createAdminClient()

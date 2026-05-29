@@ -1,8 +1,11 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export async function GET() {
+  const denied = await requireAdmin()
+  if (denied) return denied
   const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('extras')
@@ -13,6 +16,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   const supabase = createAdminClient()
   const body = await request.json()
 

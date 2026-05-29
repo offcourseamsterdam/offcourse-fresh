@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireRole } from '@/lib/auth/server'
 import { getValidAccessToken } from '@/lib/google-reviews/oauth'
@@ -16,6 +17,8 @@ interface Ctx {
  * Body: { reply_text: string }
  */
 export async function PUT(request: NextRequest, ctx: Ctx) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     await requireRole(['admin'])
   } catch {
@@ -110,6 +113,8 @@ export async function PUT(request: NextRequest, ctx: Ctx) {
  * Remove a reply from a Google review.
  */
 export async function DELETE(_request: NextRequest, ctx: Ctx) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     await requireRole(['admin'])
   } catch {

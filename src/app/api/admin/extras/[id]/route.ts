@@ -1,8 +1,11 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   const { id } = await params
   const supabase = createAdminClient()
   const { data, error } = await supabase.from('extras').select('*').eq('id', id).single()
@@ -14,6 +17,8 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   const { id } = await params
   const supabase = createAdminClient()
   const body = await request.json()
@@ -36,6 +41,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 }
 
 export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   const { id } = await params
   const supabase = createAdminClient()
   const { error } = await supabase.from('extras').delete().eq('id', id)

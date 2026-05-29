@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { processAsset } from '@/lib/images/processor'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -23,6 +24,8 @@ interface BatchBody {
  * result array. Frontend can poll /list to see status updates.
  */
 export async function POST(req: NextRequest) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const body = (await req.json().catch(() => ({}))) as BatchBody
 

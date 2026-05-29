@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { requireRole } from '@/lib/auth/server'
 import { getGoogleAuthUrl } from '@/lib/google-reviews/oauth'
 
@@ -15,6 +16,8 @@ import { getGoogleAuthUrl } from '@/lib/google-reviews/oauth'
  * uses the same redirect_uri (required by Google OAuth).
  */
 export async function GET(request: Request) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     await requireRole(['admin'])
   } catch {

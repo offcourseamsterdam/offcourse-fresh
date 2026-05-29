@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireRole } from '@/lib/auth/server'
 
@@ -34,6 +35,8 @@ EXAMPLES of good tone:
 You MUST write a unique reply that doesn't repeat phrases from previous replies. Output ONLY the reply text, nothing else.`
 
 export async function POST(request: Request) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     await requireRole(['admin'])
   } catch {

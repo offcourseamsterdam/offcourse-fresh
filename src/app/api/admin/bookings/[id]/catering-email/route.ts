@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { filterCateringItems } from '@/lib/catering/filter'
 import { buildCateringEmailText, buildCateringEmailSubject } from '@/lib/catering/email-template'
@@ -32,6 +33,8 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const { id } = await params
     const { booking, error } = await fetchBookingForCatering(id)
@@ -60,6 +63,8 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const { id } = await params
     const { booking, error: fetchErr } = await fetchBookingForCatering(id)

@@ -1,11 +1,14 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireRole } from '@/lib/auth/server'
 import { VALID_ROLES } from '@/lib/auth/types'
 
 // GET /api/admin/users — list all user profiles (admin only)
 export async function GET() {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     await requireRole(['admin'])
   } catch {
@@ -27,6 +30,8 @@ export async function GET() {
 
 // PATCH /api/admin/users — update role or is_active for a user (admin only)
 export async function PATCH(request: NextRequest) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     await requireRole(['admin'])
   } catch {

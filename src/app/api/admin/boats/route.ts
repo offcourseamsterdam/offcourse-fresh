@@ -1,5 +1,6 @@
 import { apiOk, apiError } from '@/lib/api/response'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 /**
  * GET /api/admin/boats
@@ -9,6 +10,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
  * when a boat is selected.
  */
 export async function GET() {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const supabase = createAdminClient()
     const { data, error } = await supabase

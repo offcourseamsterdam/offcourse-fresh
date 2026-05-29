@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { applyAllFilters } from '@/lib/fareharbor/filters'
@@ -7,6 +8,8 @@ import { buildTypeMapFromAvailabilities } from '@/lib/fareharbor/config'
 import type { FHMinimalAvailability } from '@/lib/fareharbor/types'
 
 export async function GET(request: NextRequest) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   const date = request.nextUrl.searchParams.get('date')
   if (!date) {
     return apiError('date required (YYYY-MM-DD)', 400)

@@ -1,8 +1,11 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { validateUpload, createPendingAsset } from '@/lib/images/upload-helper'
 
 export async function POST(req: NextRequest) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const formData = await req.formData()
     const file = formData.get('file') as File | null

@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { Resend } from 'resend'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { apiOk, apiError } from '@/lib/api/response'
@@ -20,6 +21,8 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const { id } = await params
     const supabase = createAdminClient()

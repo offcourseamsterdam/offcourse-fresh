@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireRole } from '@/lib/auth/server'
 
@@ -9,6 +10,8 @@ interface Ctx {
 
 /** PATCH /api/admin/reviews/:id — update a review (admin only) */
 export async function PATCH(request: NextRequest, ctx: Ctx) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     await requireRole(['admin'])
   } catch {
@@ -49,6 +52,8 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
 
 /** DELETE /api/admin/reviews/:id — delete a review (admin only) */
 export async function DELETE(_request: NextRequest, ctx: Ctx) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     await requireRole(['admin'])
   } catch {

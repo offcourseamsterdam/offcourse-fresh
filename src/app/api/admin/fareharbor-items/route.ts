@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 /**
  * GET /api/admin/fareharbor-items
@@ -10,6 +11,8 @@ import { apiOk, apiError } from '@/lib/api/response'
  * Tiny payload — usually < 10 rows — so we return everything in one call.
  */
 export async function GET() {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const supabase = createAdminClient()
     const { data, error } = await supabase

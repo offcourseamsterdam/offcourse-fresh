@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
@@ -8,6 +9,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
  * Without ids, resets all 'failed' AND 'processing' (stuck/timed-out) assets.
  */
 export async function POST(req: NextRequest) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const body = await req.json().catch(() => ({})) as { ids?: string[] }
     const supabase = createAdminClient()

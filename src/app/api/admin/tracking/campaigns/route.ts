@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { slugify } from '@/lib/utils'
 
@@ -8,6 +9,8 @@ import { slugify } from '@/lib/utils'
  * POST /api/admin/tracking/campaigns
  */
 export async function GET(request: NextRequest) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const { searchParams } = request.nextUrl
     const partnerId = searchParams.get('partner_id')
@@ -29,6 +32,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const body = await request.json()
     const { name, channel_id, partner_id, category, investment_type, investment_amount, percentage_value, notes, listing_id, settlement_model } = body

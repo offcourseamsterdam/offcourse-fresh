@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
@@ -10,6 +11,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
  * Creates a new partner/affiliate.
  */
 export async function GET(request: NextRequest) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const { searchParams } = request.nextUrl
     const from = searchParams.get('from')
@@ -85,6 +88,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const body = await request.json()
     const { name, email, contact_name, phone, website, notes, channel_id } = body

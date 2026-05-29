@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import crypto from 'node:crypto'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { linkAssetToSource } from '@/lib/images/processor'
 
@@ -23,6 +24,8 @@ interface ScanResult {
  * Idempotent: skips URLs already linked to an asset (via SHA-256 dedup).
  */
 export async function POST(_req: NextRequest) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const supabase = createAdminClient()
 

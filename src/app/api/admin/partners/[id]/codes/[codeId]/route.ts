@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 /**
  * PATCH /api/admin/partners/[id]/codes/[codeId] — revoke a partner code.
@@ -10,6 +11,8 @@ export async function PATCH(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string; codeId: string }> }
 ) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const { id, codeId } = await params
     const supabase = createAdminClient()

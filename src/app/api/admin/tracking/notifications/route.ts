@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
@@ -10,6 +11,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
  * Creates or updates notification settings.
  */
 export async function GET(request: NextRequest) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const { searchParams } = request.nextUrl
     const channel_id = searchParams.get('channel_id')
@@ -30,6 +33,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const body = await request.json()
     const { channel_id, partner_id, notify_per_booking, notify_weekly, notify_monthly, notify_quarterly, email_recipients } = body

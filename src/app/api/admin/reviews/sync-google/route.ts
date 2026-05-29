@@ -1,4 +1,5 @@
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireRole } from '@/lib/auth/server'
 import { fetchGoogleReviews, searchPlace } from '@/lib/google-reviews/client'
@@ -21,6 +22,8 @@ const STAR_TO_NUM: Record<string, number> = {
  * which is identical whether the record was first synced via Places or GBP.
  */
 export async function POST(request: Request) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     await requireRole(['admin'])
   } catch {
@@ -261,6 +264,8 @@ async function findExistingReview(
 // ── GET: place search ────────────────────────────────────────────────────────
 
 export async function GET(request: Request) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     await requireRole(['admin'])
   } catch {

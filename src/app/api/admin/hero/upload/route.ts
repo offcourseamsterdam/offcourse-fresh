@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import crypto from 'node:crypto'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { validateUpload, createPendingAsset } from '@/lib/images/upload-helper'
 
@@ -10,6 +11,8 @@ const VIDEO_EXTENSIONS = ['mp4', 'webm']
 const MAX_VIDEO_SIZE = 50 * 1024 * 1024 // 50MB
 
 export async function POST(request: NextRequest) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const formData = await request.formData()
     const file = formData.get('file') as File | null

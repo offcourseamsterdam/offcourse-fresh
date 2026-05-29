@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { quarterFromDate, currentQuarter } from '@/lib/quarters'
 
@@ -36,6 +37,8 @@ interface SettlementSummary {
  * Quarter is computed from booking_date (cruise date), not created_at.
  */
 export async function GET(_req: NextRequest, { params }: RouteParams) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   const { id } = await params
   const supabase = createAdminClient()
 

@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { getCustomerTypeMap } from '@/lib/fareharbor/config'
 import { syncFareHarborItems, loadSyncedItems } from '@/lib/fareharbor/sync'
@@ -7,6 +8,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 
 // v2
 export async function GET(request: NextRequest) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   const { searchParams } = request.nextUrl
   const action = searchParams.get('action')
 

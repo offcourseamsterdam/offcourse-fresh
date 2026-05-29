@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 interface RouteParams {
@@ -8,6 +9,8 @@ interface RouteParams {
 
 // GET /api/admin/cruise-listings/[id]
 export async function GET(_req: NextRequest, { params }: RouteParams) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   const { id } = await params
   const supabase = createAdminClient()
   const { data, error } = await supabase
@@ -21,6 +24,8 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 
 // PATCH /api/admin/cruise-listings/[id]
 export async function PATCH(req: NextRequest, { params }: RouteParams) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   const { id } = await params
   const body = await req.json()
 

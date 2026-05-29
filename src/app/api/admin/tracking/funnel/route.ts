@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getFunnelData } from '@/lib/tracking/queries'
 
@@ -9,6 +10,8 @@ import { getFunnelData } from '@/lib/tracking/queries'
  * Returns funnel step data with drop-off rates.
  */
 export async function GET(request: NextRequest) {
+  const denied = await requireAdmin()
+  if (denied) return denied
   try {
     const { searchParams } = request.nextUrl
     const from = searchParams.get('from')
