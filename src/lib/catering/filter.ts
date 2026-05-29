@@ -11,6 +11,9 @@ export interface ExtrasLineItem {
   category?: string
   extra_id?: string
   quantity?: number
+  /** When true, `quantity` represents people-count for this item (e.g. Charcuterie
+   *  for 4 people), not number of items. Renderers should show "for N people". */
+  is_per_person_pick?: boolean
 }
 
 export const CATERING_CATEGORIES = ['food'] as const

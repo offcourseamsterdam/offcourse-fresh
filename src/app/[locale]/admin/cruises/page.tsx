@@ -7,9 +7,9 @@ import { ItemRow, type FHItem } from './ItemRow'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
+
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Loader2, RefreshCw, Database, Plus, Check, Globe, Home, Pencil, Clock, Copy } from 'lucide-react'
+import { Loader2, RefreshCw, Database, Plus, Check, Globe, Home, Pencil, Clock, Copy, ExternalLink } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────
 
@@ -194,7 +194,7 @@ export default function AdminCruisesPage() {
 
         {fhItems?.length === 0 && !loadingItems && (
           <CardContent>
-            <p className="text-sm text-zinc-500">Download the FareHarbor items first to see the available boats and duration options. You'll need these PKs to configure cruise listings.</p>
+            <p className="text-sm text-zinc-500">Download the FareHarbor items first to see the available boats and duration options. You&apos;ll need these PKs to configure cruise listings.</p>
           </CardContent>
         )}
       </Card>
@@ -456,9 +456,18 @@ export default function AdminCruisesPage() {
                         )}
                       </div>
                     </TableCell>
-                    {/* Edit + Duplicate buttons */}
+                    {/* Visit + Edit + Duplicate buttons */}
                     <TableCell onClick={e => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
+                        <a
+                          href={`/${locale}/cruises/${l.slug}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-1.5 rounded hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 transition-colors"
+                          title="View public cruise page (opens in new tab)"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
                         <button
                           onClick={() => router.push(`/${locale}/admin/cruises/${l.id}`)}
                           className="p-1.5 rounded hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 transition-colors"

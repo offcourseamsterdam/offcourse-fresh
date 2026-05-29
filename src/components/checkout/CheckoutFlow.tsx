@@ -7,12 +7,14 @@ import { Loader2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { GuestInfoForm } from './GuestInfoForm'
 import { BookingSummary } from './BookingSummary'
+import { CancellationCutoff } from './CancellationCutoff'
 import { trackEvent, getSessionId } from '@/lib/tracking/client'
 import { BOATS } from '@/lib/fareharbor/config'
 import { SESSION_BOOKING_KEY, SESSION_CONTACT_KEY } from '@/lib/constants'
 import { getErrorMessage, fmtEuros } from '@/lib/utils'
 import type { CustomerDetails, AvailabilitySlot, AvailabilityCustomerType } from '@/types'
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
+import type { CancellationTier } from '@/lib/cancellation/policy'
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
 
@@ -65,7 +67,8 @@ interface PromoResult {
 
 interface CheckoutFlowProps {
   listingSlug: string
-  cancellationPolicy?: string | null
+  /** Tiered cancellation policy from the parent FareHarbor item. */
+  cancellationTiers?: CancellationTier[] | null
   initialCode?: string
   paymentMode?: 'stripe' | 'partner_invoice'
   partnerName?: string | null
@@ -116,18 +119,26 @@ function CheckoutProgress({ step, hidePayment = false }: { step: 'details' | 'pa
 
 function PromoCodeInput({
   grandTotalCents,
+  baseAmountCents,
+  cityTaxCents,
   initialCode,
   onApplied,
   onRemoved,
   applied,
   required,
+  listingId,
 }: {
   grandTotalCents: number
+  /** Cruise base (no extras). Used so promos discount cruise + city tax only, not extras. */
+  baseAmountCents: number
+  cityTaxCents: number
   initialCode?: string
   onApplied: (result: PromoResult) => void
   onRemoved: () => void
   applied: PromoResult | null
   required?: boolean
+  /** When provided, the server uses this to reject codes scoped to a different cruise. */
+  listingId?: string | null
 }) {
   const [open, setOpen] = useState(!!initialCode || !!required)
   const [value, setValue] = useState(initialCode ?? '')
@@ -151,7 +162,13 @@ function PromoCodeInput({
       const res = await fetch('/api/promo/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: codeToApply, amountCents: grandTotalCents }),
+        body: JSON.stringify({
+          code: codeToApply,
+          amountCents: grandTotalCents,
+          baseAmountCents,
+          cityTaxCents,
+          listingId,
+        }),
       })
       const json = await res.json()
       if (!json.ok) {
@@ -212,7 +229,7 @@ function PromoCodeInput({
             value={value}
             onChange={e => setValue(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleApply()}
-            placeholder="XXXX-XXXX"
+            placeholder="XXXX"
             autoFocus
             spellCheck={false}
             autoComplete="off"
@@ -313,7 +330,7 @@ function PaymentForm({
 
 export function CheckoutFlow({
   listingSlug,
-  cancellationPolicy,
+  cancellationTiers,
   initialCode,
   paymentMode = 'stripe',
   partnerName,
@@ -323,7 +340,7 @@ export function CheckoutFlow({
   const [contact, setContact] = useState<CustomerDetails | null>(null)
   const [clientSecret, setClientSecret] = useState<string | null>(null)
   const [creatingIntent, setCreatingIntent] = useState(false)
-  const [submittingPartnerBooking, setSubmittingPartnerBooking] = useState(false)
+  const [submittingPartnerBooking, _setSubmittingPartnerBooking] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [promoResult, setPromoResult] = useState<PromoResult | null>(null)
   // Server-canonical price quote — single source of truth for what's displayed and charged
@@ -449,72 +466,6 @@ export function CheckoutFlow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [promoResult?.promoCodeId, promoResult?.discountAmountCents])
 
-  // Partner-invoice flow: skip Stripe, post straight to /book with bookingSource + partnerCode
-  async function handlePartnerInvoiceSubmit(details: CustomerDetails & { partnerCode?: string }) {
-    if (!bookingData) return
-    setContact(details)
-    setSubmittingPartnerBooking(true)
-    setError(null)
-
-    try {
-      // Refresh quote first so our recorded amounts match the canonical math.
-      const fresh = await refreshQuote(bookingData, promoResult)
-      const customerTypeRatePk = bookingData.category === 'private'
-        ? bookingData.selectedCustomerType?.pk
-        : bookingData.selectedSlot.customerTypes[0]?.pk
-
-      const extrasTotalCents = fresh?.extrasCalculation.extras_amount_cents
-        ?? bookingData.extrasCalculation?.extras_amount_cents
-        ?? 0
-      const totalAmount = fresh?.totalCents
-        ?? (bookingData.basePriceCents + extrasTotalCents)
-
-      const res = await fetch('/api/booking-flow/book', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          availPk: bookingData.selectedSlot.pk,
-          customerTypeRatePk,
-          guestCount: bookingData.guests,
-          category: bookingData.category,
-          contact: { name: details.name, email: details.email, phone: details.phone },
-          note: details.specialRequests || undefined,
-          listingId: bookingData.listingId,
-          listingTitle: bookingData.listingTitle,
-          date: bookingData.date,
-          startAt: bookingData.selectedSlot.startAt,
-          endAt: bookingData.selectedSlot.endAt,
-          amountCents: totalAmount,
-          baseAmountCents: bookingData.basePriceCents,
-          selectedExtraIds: bookingData.selectedExtraIds,
-          extrasSelected: bookingData.extrasCalculation?.line_items ?? [],
-          extrasAmountCents: extrasTotalCents,
-          sessionId: getSessionId(),
-          // Partner-invoice specific
-          bookingSource: 'partner_invoice',
-          partnerCode: details.partnerCode,
-          stripePaymentIntentId: null,
-        }),
-      })
-
-      const json = await res.json()
-      if (!json.ok) {
-        setError(json.error ?? 'Booking could not be completed. Please try again.')
-        return
-      }
-
-      trackEvent('booking_completed', { listing: bookingData.listingSlug, source: 'partner_invoice' })
-      sessionStorage.removeItem(SESSION_BOOKING_KEY)
-      sessionStorage.removeItem(SESSION_CONTACT_KEY)
-      const fhUuid = json?.data?.booking?.uuid ?? ''
-      window.location.href = `/book/${bookingData.listingSlug}/confirmation?fh=${encodeURIComponent(fhUuid)}`
-    } catch (err) {
-      setError(getErrorMessage(err))
-    } finally {
-      setSubmittingPartnerBooking(false)
-    }
-  }
-
   // Create PaymentIntent after guest info is submitted
   async function handleGuestInfoSubmit(details: CustomerDetails & { partnerCode?: string }) {
     if (isPartnerInvoice) {
@@ -559,6 +510,8 @@ export function CheckoutFlow({
           quoteId: currentQuote.quoteId,
           listingTitle: bookingData.listingTitle,
           date: bookingData.date,
+          startAt: bookingData.selectedSlot?.startAt ?? null,
+          endAt: bookingData.selectedSlot?.endAt ?? null,
           contact: { name: details.name, email: details.email, phone: details.phone },
         }),
       })
@@ -631,9 +584,14 @@ export function CheckoutFlow({
 
   // After Stripe payment success, create the FareHarbor booking
   async function handlePaymentSuccess(paymentIntentId: string) {
-    if (!bookingData) return
+    // Read booking data from sessionStorage FIRST — React state (bookingData) is not
+    // yet populated when this is called from the mount useEffect after an iDEAL redirect.
     const stored = sessionStorage.getItem(SESSION_BOOKING_KEY)
-    const data: BookingData = stored ? JSON.parse(stored) : bookingData
+    const data: BookingData | null = stored ? JSON.parse(stored) : bookingData
+    if (!data || !data.selectedSlot) {
+      setError('Booking data was lost during payment redirect. Your payment was received — please contact us at info@offcourseamsterdam.com')
+      return
+    }
 
     // Recover contact from sessionStorage (survives iDEAL redirect where React state is lost)
     let contactData = contact
@@ -745,8 +703,6 @@ export function CheckoutFlow({
   const totalAmountCents = quote?.totalCents ?? Math.max(0, grossTotalCents - discountAmountCents)
 
   const currentStep = clientSecret ? 'payment' : 'details'
-  const isFull = promoResult?.isFull ?? false
-
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
       {/* Back link */}
@@ -774,11 +730,14 @@ export function CheckoutFlow({
               <div className="mb-6">
                 <PromoCodeInput
                   grandTotalCents={grossTotalCents}
+                  baseAmountCents={bookingData?.basePriceCents ?? 0}
+                  cityTaxCents={bookingData?.cityTaxCents ?? 0}
                   initialCode={initialCode}
                   applied={promoResult}
                   onApplied={setPromoResult}
                   onRemoved={() => setPromoResult(null)}
                   required={isPartnerInvoice}
+                  listingId={bookingData?.listingId}
                 />
               </div>
             )}
@@ -858,10 +817,19 @@ export function CheckoutFlow({
                 basePriceCents={quoteBasePriceCents}
                 extrasCalculation={quoteExtrasCalc}
                 cityTaxCents={cityTaxCents > 0 ? cityTaxCents : undefined}
-                cancellationPolicy={cancellationPolicy}
                 cruiseLabel={cruiseLabel}
                 discountAmountCents={discountAmountCents > 0 ? discountAmountCents : undefined}
               />
+              {/* Cancellation cutoff card — only shown when there's a useful upcoming deadline (full or 50% refund). */}
+              {cancellationTiers && cancellationTiers.length > 0 && bookingData.selectedSlot.startAt && (
+                <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm p-4 mt-3">
+                  <CancellationCutoff
+                    departureAt={new Date(bookingData.selectedSlot.startAt)}
+                    tiers={cancellationTiers}
+                    bordered={false}
+                  />
+                </div>
+              )}
               {quoteLoading && (
                 <p className="text-xs text-zinc-400 mt-2 text-center">Refreshing your total…</p>
               )}

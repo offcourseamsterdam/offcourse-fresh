@@ -119,7 +119,7 @@ export function OptimizedImage({
     <picture>
       <source type="image/avif" srcSet={avifSrcSet} sizes={sizes} />
       <source type="image/webp" srcSet={webpSrcSet} sizes={sizes} />
-      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {/* eslint-disable-next-line jsx-a11y/alt-text -- alt is provided via baseImgProps */}
       <img src={fallback.webp_url} {...baseImgProps} />
     </picture>
   )

@@ -41,6 +41,7 @@ const navSections: NavSection[] = [
     label: 'Performance',
     items: [
       { href: '/admin/statistics', label: 'Statistics', icon: 'statistics' },
+      { href: '/admin/finance',    label: 'Finance',    icon: 'finance' },
     ],
   },
   {

@@ -49,8 +49,11 @@ export const BOOKING_SOURCES = [
   { value: 'complimentary', label: 'Complimentary' },
   { value: 'withlocals', label: 'Withlocals' },
   { value: 'clickandboat', label: 'Click&Boat' },
+  { value: 'getyourguide', label: 'GetYourGuide' },
+  { value: 'tripadvisor', label: 'TripAdvisor' },
   { value: 'partner_invoice', label: 'Partner invoice' },
   { value: 'payment_link', label: 'Betaallink' },
+  { value: 'stripe_recovery', label: 'Stripe recovery (already paid)' },
 ] as const
 
 export type BookingSource = typeof BOOKING_SOURCES[number]['value']

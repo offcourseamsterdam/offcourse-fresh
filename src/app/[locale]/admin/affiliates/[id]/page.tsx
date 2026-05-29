@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useParams } from 'next/navigation'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { Loader2, ArrowLeft, Copy, Check, ExternalLink, Plus, Pencil, Ban } from 'lucide-react'
-import { KPICard } from '@/components/admin/tracking/KPICard'
+
 import { CampaignModal } from '@/components/admin/tracking/CampaignModal'
 import { PartnerModal } from '@/components/admin/tracking/PartnerModal'
 

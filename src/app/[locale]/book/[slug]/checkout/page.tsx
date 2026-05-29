@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { CheckoutFlow } from '@/components/checkout/CheckoutFlow'
+import { normalizeTiers } from '@/lib/cancellation/policy'
 import type { Database } from '@/lib/supabase/types'
 
 type CruiseListing = Database['public']['Tables']['cruise_listings']['Row']
@@ -22,7 +24,7 @@ export default async function CheckoutPage({ params, searchParams }: Props) {
 
   const { data: listingData } = await supabase
     .from('cruise_listings')
-    .select('slug, cancellation_policy, payment_mode, required_partner_id')
+    .select('slug, fareharbor_item_pk, payment_mode, required_partner_id')
     .eq('slug', slug)
     .eq('is_published', true)
     .single()
@@ -30,10 +32,15 @@ export default async function CheckoutPage({ params, searchParams }: Props) {
   if (!listingData) notFound()
 
   const listing = listingData as CruiseListing
-  const cancellationPolicy =
-    typeof listing.cancellation_policy === 'string'
-      ? listing.cancellation_policy
-      : (listing.cancellation_policy as { text?: string } | null)?.text ?? null
+
+  // Cancellation policy is owned by the parent FH item — falls back to DEFAULT_TIERS when null.
+  // Admin client matches the convention used everywhere else for fareharbor_items reads.
+  const { data: fhItem } = await createAdminClient()
+    .from('fareharbor_items')
+    .select('cancellation_tiers')
+    .eq('fareharbor_pk', listing.fareharbor_item_pk)
+    .maybeSingle()
+  const cancellationTiers = normalizeTiers(fhItem?.cancellation_tiers)
 
   const paymentMode = (listing.payment_mode ?? 'stripe') as 'stripe' | 'partner_invoice'
 
@@ -51,7 +58,7 @@ export default async function CheckoutPage({ params, searchParams }: Props) {
     <div className="min-h-screen bg-texture-teal">
       <CheckoutFlow
         listingSlug={slug}
-        cancellationPolicy={cancellationPolicy}
+        cancellationTiers={cancellationTiers}
         initialCode={code}
         paymentMode={paymentMode}
         partnerName={partnerName}

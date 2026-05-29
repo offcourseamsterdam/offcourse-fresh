@@ -1,11 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { Pencil, Ban, CalendarDays, UtensilsCrossed } from 'lucide-react'
+import { Pencil, Ban, CalendarDays, UtensilsCrossed, Megaphone, Tag } from 'lucide-react'
 import { EXTRAS_CATEGORIES } from '@/lib/constants'
 import { fmtAdminAmount } from '@/lib/admin/format'
 import { BookingSourceBadge } from '@/components/admin/BookingSourceBadge'
-import type { BookingSource } from '@/lib/constants'
+
 import { CancelBookingModal } from '@/components/admin/booking-actions/CancelBookingModal'
 import { EditBookingModal } from '@/components/admin/booking-actions/EditBookingModal'
 import { RescheduleBookingModal } from '@/components/admin/booking-actions/RescheduleBookingModal'
@@ -37,6 +37,10 @@ interface BookingDetailRowProps {
   depositAmountCents: number | null
   extrasSelected: AdminExtraLineItem[] | null
   bookingSource: string | null
+  campaignName: string | null
+  promoCode: string | null
+  discountAmountCents: number | null
+  partnerName: string | null
   className?: string
 }
 
@@ -44,7 +48,7 @@ interface BookingDetailRowProps {
 
 export function BookingDetailRow({
   bookingId,
-  bookingUuid,
+  bookingUuid: _bookingUuid,
   listingId,
   status,
   stripePaymentIntentId: _stripePaymentIntentId,
@@ -64,6 +68,10 @@ export function BookingDetailRow({
   depositAmountCents,
   extrasSelected,
   bookingSource,
+  campaignName,
+  promoCode,
+  discountAmountCents,
+  partnerName,
   className = '',
 }: BookingDetailRowProps) {
   const [showCancel, setShowCancel] = useState(false)
@@ -74,6 +82,11 @@ export function BookingDetailRow({
   const isCancelled = status === 'cancelled'
   const isInternal = bookingSource && bookingSource !== 'website'
   const isWebsiteBooking = !bookingSource || bookingSource === 'website'
+  // Stripe recovery is "internal" in that the admin entered it manually,
+  // but the money DID come in. Display it like a paid booking (Base, City tax,
+  // Total charged) rather than the deposit-style block used for complimentary etc.
+  const isStripeRecovery = bookingSource === 'stripe_recovery'
+  const isDepositStyle = isInternal && !isStripeRecovery
   const extras = (extrasSelected ?? []) as AdminExtraLineItem[]
 
   // Group extras by category
@@ -85,7 +98,11 @@ export function BookingDetailRow({
   // Items with no category go last
   const uncategorized = extras.filter(e => !e.category || !EXTRAS_CATEGORIES.includes(e.category as never))
 
-  const grandTotal = isInternal ? depositAmountCents : stripeAmount
+  const grandTotal = isDepositStyle ? depositAmountCents : stripeAmount
+  // City tax: €2.60 per guest. Stored only implicitly (it's the gap between
+  // base + extras and stripe_amount). Show it as an explicit line so the math
+  // is transparent to the admin.
+  const cityTaxCents = (guestCount ?? 0) * 260
 
   // Catering revenue breakdown
   const cateringCents = cateringAmountCents(extras)
@@ -101,11 +118,38 @@ export function BookingDetailRow({
           {customerEmail && <p className="text-sm text-zinc-500">{customerEmail}</p>}
           {customerPhone && <p className="text-sm text-zinc-500">{customerPhone}</p>}
           {guestNote && (
-            <p className="text-sm text-zinc-400 italic mt-1">"{guestNote}"</p>
+            <p className="text-sm text-zinc-400 italic mt-1">&quot;{guestNote}&quot;</p>
           )}
-          {isInternal && (
-            <div className="mt-2">
-              <BookingSourceBadge source={bookingSource} hideIfWebsite />
+
+          {/* Source — always shown */}
+          <div className="mt-2">
+            <BookingSourceBadge source={bookingSource} />
+          </div>
+
+          {/* Partner */}
+          {partnerName && (
+            <div className="flex items-center gap-1.5 mt-1.5">
+              <span className="text-xs text-zinc-500">Partner:</span>
+              <span className="text-xs text-zinc-900 font-medium">{partnerName}</span>
+            </div>
+          )}
+
+          {/* Campaign */}
+          {campaignName && (
+            <div className="flex items-center gap-1.5 mt-1">
+              <Megaphone className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              <span className="text-xs text-indigo-700 font-medium">{campaignName}</span>
+            </div>
+          )}
+
+          {/* Promo code */}
+          {promoCode && (
+            <div className="flex items-center gap-1.5 mt-1">
+              <Tag className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              <span className="text-xs text-emerald-700 font-medium">{promoCode}</span>
+              {discountAmountCents != null && discountAmountCents > 0 && (
+                <span className="text-xs text-zinc-400">−€{(discountAmountCents / 100).toFixed(0)}</span>
+              )}
             </div>
           )}
         </div>
@@ -120,19 +164,26 @@ export function BookingDetailRow({
               {Object.entries(byCategory).map(([cat, items]) => (
                 <div key={cat}>
                   <p className="text-xs text-zinc-400 capitalize mb-1">{cat}</p>
-                  {items.map((item, i) => (
-                    <div key={i} className="flex justify-between text-sm">
-                      <span className="text-zinc-700">
-                        {item.name}
-                        {item.quantity && item.quantity > 1 ? ` ×${item.quantity}` : ''}
-                      </span>
-                      <span className={`font-medium ${isInternal ? 'text-zinc-400' : 'text-zinc-900'}`}>
-                        {isInternal
-                          ? <span className="line-through text-zinc-300">{fmtAdminAmount(item.amount_cents)}</span>
-                          : fmtAdminAmount(item.amount_cents)}
-                      </span>
-                    </div>
-                  ))}
+                  {items.map((item, i) => {
+                    const qty = item.quantity ?? 1
+                    const suffix = item.is_per_person_pick && qty > 0
+                      ? ` — for ${qty} ${qty === 1 ? 'person' : 'people'}`
+                      : qty > 1
+                        ? ` ×${qty}`
+                        : ''
+                    return (
+                      <div key={i} className="flex justify-between text-sm">
+                        <span className="text-zinc-700">
+                          {item.name}{suffix}
+                        </span>
+                        <span className={`font-medium ${isDepositStyle ? 'text-zinc-400' : 'text-zinc-900'}`}>
+                          {isDepositStyle
+                            ? <span className="line-through text-zinc-300">{fmtAdminAmount(item.amount_cents)}</span>
+                            : fmtAdminAmount(item.amount_cents)}
+                        </span>
+                      </div>
+                    )
+                  })}
                 </div>
               ))}
               {uncategorized.length > 0 && uncategorized.map((item, i) => (
@@ -148,15 +199,21 @@ export function BookingDetailRow({
         {/* Price breakdown */}
         <div>
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
-            {isInternal ? 'Deposit' : 'Price'}
+            {isDepositStyle ? 'Deposit' : 'Price'}
           </p>
           <div className="space-y-1 text-sm">
-            {!isInternal && (
+            {!isDepositStyle && (
               <>
                 {baseAmountCents != null && (
                   <div className="flex justify-between">
                     <span className="text-zinc-500">Base</span>
                     <span className="text-zinc-900">{fmtAdminAmount(baseAmountCents)}</span>
+                  </div>
+                )}
+                {cityTaxCents > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">City tax · €2.60 × {guestCount}</span>
+                    <span className="text-zinc-900">{fmtAdminAmount(cityTaxCents)}</span>
                   </div>
                 )}
                 {extrasAmountCents != null && extrasAmountCents > 0 && (
@@ -184,9 +241,14 @@ export function BookingDetailRow({
                   <span className="text-zinc-900">Total charged</span>
                   <span className="text-zinc-900">{grandTotal != null ? fmtAdminAmount(grandTotal) : '—'}</span>
                 </div>
+                {isStripeRecovery && (
+                  <p className="text-[10px] text-zinc-400 mt-2 italic">
+                    Manually recorded via Stripe recovery — actual Stripe charge may differ if refunded.
+                  </p>
+                )}
               </>
             )}
-            {isInternal && (
+            {isDepositStyle && (
               <>
                 <div className="flex justify-between">
                   <span className="text-zinc-500">Platform deposit</span>

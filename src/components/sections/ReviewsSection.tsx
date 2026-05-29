@@ -8,13 +8,16 @@ type Review = Database['public']['Tables']['social_proof_reviews']['Row']
 
 interface ReviewsSectionProps {
   reviews: Review[]
+  /** Total Google review count — defaults to the synced review count when not provided. */
+  totalReviewCount?: number
   locale: Locale
 }
 
-export async function ReviewsSection({ reviews, locale }: ReviewsSectionProps) {
+export async function ReviewsSection({ reviews, totalReviewCount, locale }: ReviewsSectionProps) {
   const t = await getTranslations('home.reviews')
 
   if (reviews.length === 0) return null
+  const displayCount = totalReviewCount ?? reviews.length
 
   // Shape reviews for the client slider (localize text + pick only needed fields)
   const sliderReviews = reviews.map(r => ({
@@ -37,7 +40,7 @@ export async function ReviewsSection({ reviews, locale }: ReviewsSectionProps) {
             {t('title')}
           </h2>
           <p className="font-avenir text-sm text-[var(--color-muted)]">
-            {reviews.length}+ verified reviews
+            {displayCount}+ verified reviews
           </p>
         </div>
 

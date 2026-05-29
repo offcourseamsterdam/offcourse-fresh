@@ -12,18 +12,12 @@ interface TicketStepProps {
   onConfirm: () => void
 }
 
-// Try to derive a human label from customer type data
+// Try to derive a human label from customer type data.
+// Prefer FH's actual name (e.g. "Adult (13+)" / "Child (0-12)") so the age range is visible.
 function getCustomerTypeLabel(ct: AvailabilityCustomerType, index: number): string {
+  if (ct.name) return ct.name
   if (ct.minimumParty >= 18 || index === 0) return 'Adult'
   return 'Child'
-}
-
-/** Format duration as "1h30" or "2h" */
-function formatDuration(minutes: number): string {
-  const h = Math.floor(minutes / 60)
-  const m = minutes % 60
-  if (m === 0) return `${h}h`
-  return `${h}h${m.toString().padStart(2, '0')}`
 }
 
 export function TicketStep({
@@ -31,7 +25,7 @@ export function TicketStep({
   ticketCounts,
   maxCapacity,
   onUpdateCount,
-  onConfirm,
+  onConfirm: _onConfirm,
 }: TicketStepProps) {
   const totalTickets = Object.values(ticketCounts).reduce((sum, c) => sum + c, 0)
   return (
@@ -51,7 +45,7 @@ export function TicketStep({
             <div>
               <div className="text-sm font-semibold text-zinc-800">{label}</div>
               <div className="text-xs text-zinc-500">
-                {fmtEuros(ct.priceCents)} per person{ct.durationMinutes ? ` · ${formatDuration(ct.durationMinutes)}` : ''}
+                {fmtEuros(ct.priceCents)} per person
               </div>
             </div>
             <div className="flex items-center gap-3">

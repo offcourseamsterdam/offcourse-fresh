@@ -6,13 +6,32 @@ import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { Loader2, Plus, RefreshCw } from 'lucide-react'
 import type { AdminPromoCode } from '@/lib/admin/types'
 import { CodesTable } from './CodesTable'
-import { PromoCodeFormModal, blankForm, type FormState } from './PromoCodeFormModal'
+import { PromoCodeFormModal, blankForm, type FormState, type CampaignOption } from './PromoCodeFormModal'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
+
+/** Raw campaign row shape from /api/admin/tracking/campaigns (returns array directly). */
+type CampaignRow = {
+  id: string
+  name: string
+  listing_id: string | null
+  partner_id: string | null
+}
 
 export default function AdminPromoCodesPage() {
   const { data: codesData, isLoading: loading, error, refresh: fetchCodes, mutate: mutateCodes } =
     useAdminFetch<{ codes: AdminPromoCode[] }>('/api/admin/promo-codes')
   const codes = codesData?.codes ?? []
+
+  // Campaign options for the "lock to campaign" dropdown.
+  // The campaigns API returns the array directly (apiOk(data) where data is array),
+  // so useAdminFetch<CampaignRow[]> unpacks the data field for us.
+  const { data: campaignsData } = useAdminFetch<CampaignRow[]>('/api/admin/tracking/campaigns')
+  const campaigns: CampaignOption[] = (campaignsData ?? []).map(c => ({
+    id: c.id,
+    name: c.name,
+    listing_title: null, // could add via separate lookup later; campaign name is usually self-explanatory
+    partner_name: null,
+  }))
 
   const [showForm, setShowForm] = useState(false)
   const [editingCode, setEditingCode] = useState<AdminPromoCode | null>(null)
@@ -41,6 +60,8 @@ export default function AdminPromoCodesPage() {
       valid_from: c.valid_from ? c.valid_from.slice(0, 10) : '',
       valid_until: c.valid_until ? c.valid_until.slice(0, 10) : '',
       notes: c.notes ?? '',
+      campaign_id: c.campaign_id ?? '',
+      discount_scope: (c.discount_scope ?? 'cruise') as 'cruise' | 'all',
     })
     setSaveError(null)
     setShowForm(true)
@@ -78,6 +99,8 @@ export default function AdminPromoCodesPage() {
         valid_from: form.valid_from || null,
         valid_until: form.valid_until || null,
         notes: form.notes.trim() || null,
+        campaign_id: form.campaign_id || null,
+        discount_scope: form.discount_scope,
       }
 
       const isEdit = !!editingCode
@@ -209,6 +232,7 @@ export default function AdminPromoCodesPage() {
               onClose={closeForm}
               saving={saving}
               saveError={saveError}
+              campaigns={campaigns}
             />
           </div>
         </div>

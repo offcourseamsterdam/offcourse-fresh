@@ -6,5 +6,6 @@ import { useState } from 'react'
 export function SafeImage(props: ImageProps) {
   const [errored, setErrored] = useState(false)
   if (errored) return null
-  return <Image {...props} onError={() => setErrored(true)} />
+  const { alt, ...rest } = props
+  return <Image alt={alt} {...rest} onError={() => setErrored(true)} />
 }

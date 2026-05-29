@@ -37,6 +37,13 @@ export async function PUT(
       ...(body.percentage_value !== undefined && { percentage_value: body.percentage_value }),
       ...(body.notes !== undefined && { notes: body.notes }),
       ...(body.is_active !== undefined && { is_active: body.is_active }),
+      // Destination repointing — enables the "create placeholder campaign first,
+      // assign cruise after it's created" workflow for partner-invoice listings.
+      ...(body.listing_id !== undefined && { listing_id: body.listing_id }),
+      // Settlement direction: 'affiliate' (we owe partner) or 'reseller' (partner owes us).
+      ...(body.settlement_model !== undefined && {
+        settlement_model: body.settlement_model === 'reseller' ? 'reseller' : 'affiliate',
+      }),
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)

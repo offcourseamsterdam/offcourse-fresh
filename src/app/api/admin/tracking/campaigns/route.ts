@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, channel_id, partner_id, category, investment_type, investment_amount, percentage_value, notes, listing_id } = body
+    const { name, channel_id, partner_id, category, investment_type, investment_amount, percentage_value, notes, listing_id, settlement_model } = body
 
     if (!name) {
       return apiError('Name is required', 400)
@@ -60,6 +60,9 @@ export async function POST(request: NextRequest) {
         percentage_value: percentage_value ?? null,
         notes: notes ?? null,
         listing_id: listing_id ?? null,
+        // Default 'affiliate' (Off Course collected, we owe partner). Set to 'reseller'
+        // when the partner collects at their location (Front Desk model).
+        settlement_model: settlement_model === 'reseller' ? 'reseller' : 'affiliate',
       })
       .select()
       .single()

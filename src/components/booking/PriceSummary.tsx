@@ -68,9 +68,15 @@ export function PriceSummary({
       )}
 
       {/* Extras line items */}
-      {extrasCalculation?.line_items.map(li => (
-        <Row key={li.extra_id} label={li.quantity > 1 ? `${li.name} ×${li.quantity}` : li.name} value={li.amount_cents} />
-      ))}
+      {extrasCalculation?.line_items.map(li => {
+        const qty = li.quantity
+        const label = li.is_per_person_pick && qty > 0
+          ? `${li.name} — for ${qty} ${qty === 1 ? 'person' : 'people'}`
+          : qty > 1
+            ? `${li.name} ×${qty}`
+            : li.name
+        return <Row key={li.extra_id} label={label} value={li.amount_cents} />
+      })}
 
       {/* Divider + total */}
       <div className="border-t border-zinc-200 pt-2 mt-2">

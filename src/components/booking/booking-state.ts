@@ -1,5 +1,6 @@
 import type { AvailabilitySlot, AvailabilityCustomerType } from '@/types'
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
+import type { CancellationTier } from '@/lib/cancellation/policy'
 
 // ── Step types ──────────────────────────────────────────────────────────────
 
@@ -148,6 +149,8 @@ export interface BookingPanelProps {
   infoPills?: InfoPill[]
   layout?: 'sidebar' | 'inline'
   cancellationPolicy?: string | null
+  /** Tiered cancellation policy from the parent FH item — drives the live cutoff line. */
+  cancellationTiers?: CancellationTier[] | null
   /** Starting price in whole euros (e.g. 35 = €35). Used for "starting from" display. */
   startingPrice?: number | null
 }

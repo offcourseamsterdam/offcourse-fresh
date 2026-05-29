@@ -41,9 +41,10 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 
   // Pull all bookings attributed to this partner (either via partner_id or via
   // a partner-invoice listing's required_partner_id resolved at booking time).
+  // Join campaigns so we can read the settlement_model that determines bucket direction.
   const { data: bookings, error } = await supabase
     .from('bookings')
-    .select('booking_date, base_amount_cents, commission_amount_cents, booking_source')
+    .select('booking_date, base_amount_cents, commission_amount_cents, booking_source, campaign_id, campaigns ( settlement_model )')
     .eq('partner_id', id)
 
   if (error) return apiError(error.message)
@@ -53,12 +54,24 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     .select('id, quarter, settlement_type, amount_cents, paid_at')
     .eq('partner_id', id)
 
+  // Determine bucket direction:
+  //  - If the booking has a linked campaign, trust its settlement_model.
+  //    'reseller' → partner_invoice direction (partner collected, owes us)
+  //    'affiliate' → affiliate direction (we collected, owe partner)
+  //  - Fallback (no campaign on the booking): use booking_source as the legacy signal.
+  function directionFor(b: { booking_source: string | null; campaigns: { settlement_model?: string } | null }): 'partner_invoice' | 'affiliate' {
+    const campaignModel = b.campaigns?.settlement_model
+    if (campaignModel === 'reseller') return 'partner_invoice'
+    if (campaignModel === 'affiliate') return 'affiliate'
+    return b.booking_source === 'partner_invoice' ? 'partner_invoice' : 'affiliate'
+  }
+
   // Bucket bookings by (quarter, type)
   const buckets: Record<string, { quarter: string; type: 'partner_invoice' | 'affiliate'; count: number; base: number; commission: number }> = {}
   for (const b of bookings ?? []) {
     if (!b.booking_date) continue
     const quarter = quarterFromDate(b.booking_date)
-    const type: 'partner_invoice' | 'affiliate' = b.booking_source === 'partner_invoice' ? 'partner_invoice' : 'affiliate'
+    const type = directionFor(b as never)
     const key = `${quarter}::${type}`
     const bucket = buckets[key] ?? { quarter, type, count: 0, base: 0, commission: 0 }
     bucket.count += 1

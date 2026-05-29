@@ -35,6 +35,8 @@ function getFoodSubCategory(name: string): FoodSubCategory {
 // ── Props ──────────────────────────────────────────────────────────────────
 
 export interface ExtraCategoryGroupProps {
+  /** Adults among guests — caps the counter on adults_only extras. */
+  adultCount?: number
   category: string
   extras: ApiExtra[]
   selectedIds: Set<string>
@@ -54,6 +56,7 @@ export function ExtraCategoryGroup({
   selectedIds,
   onToggle,
   guestCount,
+  adultCount,
   baseAmountCents,
   durationMinutes,
   quantities,
@@ -64,14 +67,16 @@ export function ExtraCategoryGroup({
 
   return (
     <div className="space-y-2">
-      {/* Category header */}
-      <div className="flex items-center gap-2">
-        <span className="text-sm" aria-hidden>{CATEGORY_EMOJI[category] ?? '🎁'}</span>
-        <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
-          {CATEGORY_LABEL[category] ?? category}
-        </span>
-        <div className="flex-1 h-px bg-zinc-100" />
-      </div>
+      {/* Category header — hidden for food/drinks since the Food/Drinks tab pill above already indicates the section */}
+      {!isFood && !isDrinks && (
+        <div className="flex items-center gap-2">
+          <span className="text-sm" aria-hidden>{CATEGORY_EMOJI[category] ?? '🎁'}</span>
+          <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+            {CATEGORY_LABEL[category] ?? category}
+          </span>
+          <div className="flex-1 h-px bg-zinc-100" />
+        </div>
+      )}
 
       {/* Food → sub-category tabs + list rows */}
       {isFood ? (
@@ -80,6 +85,7 @@ export function ExtraCategoryGroup({
           selectedIds={selectedIds}
           onToggle={onToggle}
           guestCount={guestCount}
+          adultCount={adultCount}
           baseAmountCents={baseAmountCents}
           durationMinutes={durationMinutes}
           quantities={quantities}
@@ -95,6 +101,7 @@ export function ExtraCategoryGroup({
               selected={selectedIds.has(extra.id)}
               onToggle={onToggle}
               guestCount={guestCount}
+              adultCount={adultCount}
               baseAmountCents={baseAmountCents}
               durationMinutes={durationMinutes}
               quantity={quantities.get(extra.id) ?? 0}
@@ -113,6 +120,7 @@ export function ExtraCategoryGroup({
               selected={selectedIds.has(extra.id)}
               onToggle={onToggle}
               guestCount={guestCount}
+              adultCount={adultCount}
               baseAmountCents={baseAmountCents}
               durationMinutes={durationMinutes}
               quantity={quantities.get(extra.id) ?? 0}
@@ -132,6 +140,7 @@ function FoodWithTabs({
   selectedIds,
   onToggle,
   guestCount,
+  adultCount,
   baseAmountCents,
   durationMinutes,
   quantities,
@@ -169,6 +178,7 @@ function FoodWithTabs({
             selected={selectedIds.has(extra.id)}
             onToggle={onToggle}
             guestCount={guestCount}
+            adultCount={adultCount}
             baseAmountCents={baseAmountCents}
             durationMinutes={durationMinutes}
             quantity={quantities.get(extra.id) ?? 0}
@@ -211,6 +221,7 @@ function FoodWithTabs({
             selected={selectedIds.has(extra.id)}
             onToggle={onToggle}
             guestCount={guestCount}
+            adultCount={adultCount}
             baseAmountCents={baseAmountCents}
             durationMinutes={durationMinutes}
             quantity={quantities.get(extra.id) ?? 0}

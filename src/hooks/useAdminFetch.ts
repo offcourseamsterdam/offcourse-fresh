@@ -12,6 +12,7 @@ export async function adminFetcher<T>(url: string): Promise<T> {
 
 export interface UseAdminFetchResult<T> {
   data: T | undefined
+  /** True during initial load (no cached data) OR during a manual refresh. */
   isLoading: boolean
   error: string | null
   refresh: () => void
@@ -19,7 +20,7 @@ export interface UseAdminFetchResult<T> {
 }
 
 export function useAdminFetch<T>(url: string | null): UseAdminFetchResult<T> {
-  const { data, error, isLoading, mutate } = useSWR<T>(url, adminFetcher, {
+  const { data, error, isLoading, isValidating, mutate } = useSWR<T>(url, adminFetcher, {
     keepPreviousData: true,
     dedupingInterval: 30_000,
     revalidateOnFocus: false,
@@ -28,7 +29,8 @@ export function useAdminFetch<T>(url: string | null): UseAdminFetchResult<T> {
 
   return {
     data,
-    isLoading,
+    // isValidating covers manual refresh (when cached data exists isLoading stays false)
+    isLoading: isLoading || isValidating,
     error: error instanceof Error ? error.message : error ? String(error) : null,
     refresh: () => { mutate() },
     mutate: (updater, opts) => {

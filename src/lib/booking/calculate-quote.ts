@@ -122,6 +122,18 @@ export async function calculateQuote(input: QuoteInput): Promise<QuoteResult> {
 
   // 3. Calculate extras — same function the frontend uses for live UI feedback.
   const quantities = new Map(Object.entries(extraQuantities))
+
+  // Enforce min_people on per-person-pick extras: qty must satisfy qty ≥ min_people.
+  // No upper cap — customers/admin can over-order (e.g. 8 portions on a 6-guest booking).
+  for (const extra of extras) {
+    if (extra.price_type !== 'per_person_cents') continue
+    if (!extra.min_people || extra.min_people <= 0) continue
+    const qty = quantities.get(extra.id) ?? 0
+    if (qty < extra.min_people) {
+      throw new Error(`${extra.name} requires a minimum of ${extra.min_people} people`)
+    }
+  }
+
   const extrasCalculation = calculateExtras(
     serverBaseAmount,
     guestCount,

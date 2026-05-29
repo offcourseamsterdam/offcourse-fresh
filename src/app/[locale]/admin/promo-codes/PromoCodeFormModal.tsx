@@ -14,6 +14,10 @@ export interface FormState {
   valid_from: string
   valid_until: string
   notes: string
+  /** Empty string = global (no scope). Otherwise the campaign UUID to lock to. */
+  campaign_id: string
+  /** 'cruise' = base + city tax only (extras pay full); 'all' = grand total incl. extras. */
+  discount_scope: 'cruise' | 'all'
 }
 
 export function blankForm(): FormState {
@@ -27,7 +31,18 @@ export function blankForm(): FormState {
     valid_from: '',
     valid_until: '',
     notes: '',
+    campaign_id: '',
+    discount_scope: 'cruise',
   }
+}
+
+export interface CampaignOption {
+  id: string
+  name: string
+  /** Listing this campaign points to (or null = Homepage). Shown in UI for context. */
+  listing_title: string | null
+  /** Partner this campaign is for (null = direct). */
+  partner_name: string | null
 }
 
 interface PromoCodeFormModalProps {
@@ -38,6 +53,8 @@ interface PromoCodeFormModalProps {
   onClose: () => void
   saving: boolean
   saveError: string | null
+  /** List of campaigns to choose from for code scoping. */
+  campaigns: CampaignOption[]
 }
 
 export function PromoCodeFormModal({
@@ -48,8 +65,9 @@ export function PromoCodeFormModal({
   onClose,
   saving,
   saveError,
+  campaigns,
 }: PromoCodeFormModalProps) {
-  function set(key: keyof FormState, value: string) {
+  function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     onChange({ ...form, [key]: value })
   }
 
@@ -90,7 +108,7 @@ export function PromoCodeFormModal({
               type="text"
               value={form.code}
               onChange={e => set('code', e.target.value.toUpperCase())}
-              placeholder="XXXX-XXXX"
+              placeholder="XXXX"
               className="flex-1 text-sm font-mono border border-zinc-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
             />
             {isEdit && (
@@ -126,6 +144,32 @@ export function PromoCodeFormModal({
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Discount scope */}
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-zinc-700">Discount applies to</label>
+          <div className="flex gap-2">
+            {(['cruise', 'all'] as const).map(s => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => set('discount_scope', s)}
+                className={`flex-1 text-xs py-2 rounded-lg border transition-colors ${
+                  form.discount_scope === s
+                    ? 'border-zinc-900 bg-zinc-900 text-white'
+                    : 'border-zinc-200 text-zinc-600 hover:border-zinc-400'
+                }`}
+              >
+                {s === 'cruise' ? 'Cruise only (excl. extras)' : 'Everything (incl. extras)'}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-zinc-500">
+            {form.discount_scope === 'cruise'
+              ? 'Discount covers cruise price + city tax. Extras (food, drinks) charged separately at full price.'
+              : 'Discount applies to the entire booking total including extras.'}
+          </p>
         </div>
 
         {/* Discount value */}
@@ -167,7 +211,9 @@ export function PromoCodeFormModal({
 
         {form.discount_type === 'full' && (
           <p className="text-xs text-violet-700 bg-violet-50 border border-violet-100 rounded-lg px-3 py-2">
-            Full discount — booking is free, bypasses Stripe entirely. Use for partner redemptions.
+            {form.discount_scope === 'cruise'
+              ? 'Full discount on the cruise price. If the customer adds extras (food/drinks), they pay for those via Stripe.'
+              : 'Full discount on the entire booking — including extras. Bypasses Stripe entirely.'}
           </p>
         )}
 
@@ -207,6 +253,33 @@ export function PromoCodeFormModal({
               className="w-full text-sm border border-zinc-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
             />
           </div>
+        </div>
+
+        {/* Campaign scoping */}
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-zinc-700">
+            Lock to campaign
+            <span className="ml-1 text-zinc-400 font-normal">(optional — restricts usage + attributes commission)</span>
+          </label>
+          <select
+            value={form.campaign_id}
+            onChange={e => set('campaign_id', e.target.value)}
+            className="w-full text-sm border border-zinc-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+          >
+            <option value="">— None (code works on any cruise) —</option>
+            {campaigns.map(c => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+                {c.partner_name ? ` · ${c.partner_name}` : ''}
+                {c.listing_title ? ` → ${c.listing_title}` : ' → Homepage'}
+              </option>
+            ))}
+          </select>
+          {form.campaign_id && (
+            <p className="text-xs text-zinc-500 mt-1">
+              Code will only validate on this campaign&apos;s destination cruise. Bookings auto-attribute commission to the partner.
+            </p>
+          )}
         </div>
 
         {/* Notes */}

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { resolveProfile } from './resolve-profile'
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -27,7 +28,7 @@ function mockAdmin({
         }),
       }),
     }),
-  } as any
+  } as unknown as SupabaseClient
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────
@@ -90,7 +91,7 @@ describe('resolveProfile', () => {
     const admin = mockAdmin({ selectResult: null, insertResult: newProfile })
     const noEmailUser = { id: 'user-789', email: undefined }
 
-    const result = await resolveProfile(admin, noEmailUser as any)
+    const result = await resolveProfile(admin, noEmailUser as unknown as { id: string; email?: string })
 
     expect(result.profile?.email).toBe('')
   })

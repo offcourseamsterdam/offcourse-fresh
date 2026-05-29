@@ -70,6 +70,8 @@ export function GoogleConfigBar({ config }: GoogleConfigBarProps) {
               One-time authorization — log in with the Google account that owns your business listing.
             </p>
           </div>
+          {/* OAuth initiation — must be a full navigation to the API route, not a client-side Link */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a href="/api/admin/reviews/google-auth">
             <Button size="sm" variant="outline">
               Connect Google

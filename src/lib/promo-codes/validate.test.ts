@@ -23,6 +23,12 @@ describe('normalizeCode', () => {
   it('returns stripped value as-is when not 8 chars', () => {
     expect(normalizeCode('ABC')).toBe('ABC')
   })
+
+  it('returns 4-char codes as-is (new shorter format)', () => {
+    expect(normalizeCode('fqhy')).toBe('FQHY')
+    expect(normalizeCode('FQHY')).toBe('FQHY')
+    expect(normalizeCode(' fq hy ')).toBe('FQHY')
+  })
 })
 
 // ── validatePromoCode ────────────────────────────────────────────────────────
@@ -44,6 +50,8 @@ function makeCode(overrides: Partial<PromoCodeRow> = {}): PromoCodeRow {
     valid_from: null,
     valid_until: null,
     is_active: true,
+    campaign_id: null,
+    discount_scope: 'cruise',
     ...overrides,
   }
 }

@@ -185,7 +185,7 @@ function BoatCard({ boat }: { boat: BoatData }) {
 
       {/* Description */}
       {boat.description && (
-        <p className="font-palmore text-primary/70 text-center text-sm leading-relaxed mt-3 max-w-xs italic">
+        <p className="font-palmore text-primary/70 text-center text-base leading-relaxed mt-3 max-w-xs italic">
           &ldquo;{boat.description.slice(0, 120)}{boat.description.length > 120 ? '…' : ''}&rdquo;
         </p>
       )}

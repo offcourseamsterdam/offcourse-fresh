@@ -20,6 +20,8 @@ const OTHER_CATEGORIES = ['protection', 'experience']
 interface ExtrasStepProps {
   listingId: string
   guestCount: number
+  /** Adults among the guests. Caps the counter on adults_only extras. */
+  adultCount?: number
   baseAmountCents: number
   /** Duration in minutes — used for per-person-per-hour pricing (e.g. unlimited drinks) */
   durationMinutes?: number
@@ -34,10 +36,13 @@ interface ExtrasStepProps {
 export function ExtrasStep({
   listingId,
   guestCount,
+  adultCount,
   baseAmountCents,
   durationMinutes = DEFAULT_DURATION_MINUTES,
   onExtrasChange,
 }: ExtrasStepProps) {
+  // Fallback: if adultCount wasn't provided (older callers), assume all are adults.
+  const adults = adultCount ?? guestCount
   const [extras, setExtras] = useState<ApiExtra[]>([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
@@ -244,6 +249,7 @@ export function ExtrasStep({
           selectedIds={selectedIds}
           onToggle={toggleExtra}
           guestCount={guestCount}
+          adultCount={adults}
           baseAmountCents={baseAmountCents}
           durationMinutes={durationMinutes}
           quantities={quantities}
@@ -251,15 +257,17 @@ export function ExtrasStep({
         />
       ))}
 
-      {/* Food → Drinks "Next" button */}
+      {/* Food → Drinks "Next" button — right-aligned with natural width to match other in-panel "Next" buttons */}
       {page === 'food' && hasFood && hasDrinks && (
-        <button
-          type="button"
-          onClick={() => setPage('drinks')}
-          className="w-full py-2.5 rounded-xl bg-[var(--color-primary)] text-white font-bold text-sm hover:opacity-90 transition-opacity"
-        >
-          Next — Drinks
-        </button>
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => setPage('drinks')}
+            className="px-8 py-2.5 rounded-xl bg-[var(--color-primary)] text-white font-bold text-sm hover:opacity-90 transition-opacity"
+          >
+            Next — Drinks
+          </button>
+        </div>
       )}
 
       {/* DRINKS page */}

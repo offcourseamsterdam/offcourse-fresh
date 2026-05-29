@@ -17,6 +17,8 @@ export interface Extra {
   sort_order: number
   quantity_mode: string
   min_quantity: number
+  min_people: number | null
+  adults_only: boolean
   created_at: string
 }
 
@@ -45,6 +47,8 @@ export interface FormState {
   sort_order: string
   quantity_mode: QuantityMode
   min_quantity: string
+  min_people_display: string
+  adults_only: boolean
 }
 
 export function blankForm(): FormState {
@@ -63,6 +67,8 @@ export function blankForm(): FormState {
     sort_order: '0',
     quantity_mode: 'toggle',
     min_quantity: '1',
+    min_people_display: '',
+    adults_only: false,
   }
 }
 
@@ -89,6 +95,8 @@ export function extraToForm(extra: Extra): FormState {
     sort_order: String(extra.sort_order),
     quantity_mode: (extra.quantity_mode ?? 'toggle') as QuantityMode,
     min_quantity: String(extra.min_quantity ?? 1),
+    min_people_display: extra.min_people ? String(extra.min_people) : '',
+    adults_only: !!extra.adults_only,
   }
 }
 
@@ -114,6 +122,12 @@ export function formToPayload(form: FormState) {
     sort_order: parseInt(form.sort_order) || 0,
     quantity_mode: form.quantity_mode,
     min_quantity: parseInt(form.min_quantity) || 1,
+    // min_people only meaningful on per_person_cents extras
+    min_people: form.price_type === 'per_person_cents' && form.min_people_display
+      ? parseInt(form.min_people_display) || null
+      : null,
+    // adults_only only meaningful on per_person_cents extras with min_people set
+    adults_only: form.price_type === 'per_person_cents' && form.adults_only,
   }
   if (payload.price_type !== 'per_person_cents') {
     payload.is_required = false

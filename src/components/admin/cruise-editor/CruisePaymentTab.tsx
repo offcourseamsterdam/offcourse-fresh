@@ -19,11 +19,13 @@ export function CruisePaymentTab({ listing, onSave }: CruiseTabProps) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    // The API returns { ok: true, data: { partners: [...] } } — not a bare array.
     fetch('/api/admin/partners')
       .then(r => r.json())
       .then(json => {
-        if (Array.isArray(json?.data)) {
-          setPartners(json.data.map((p: { id: string; name: string }) => ({ id: p.id, name: p.name })))
+        const list = json?.data?.partners
+        if (Array.isArray(list)) {
+          setPartners(list.map((p: { id: string; name: string }) => ({ id: p.id, name: p.name })))
         }
       })
       .catch(() => {})

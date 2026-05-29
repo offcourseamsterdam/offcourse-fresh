@@ -63,15 +63,35 @@ export function GuestInfoStep({
         </CardContent>
       </Card>
 
-      {/* Booking summary */}
+      {/* Booking summary — base + city tax + total */}
       <Card className="bg-zinc-50 border-zinc-200">
         <CardContent className="pt-4 text-sm space-y-1.5">
           <p className="font-semibold text-zinc-900">{selectedListing?.title}</p>
           <p className="text-zinc-500">{date} · {selectedSlot && fmtTime(selectedSlot.start_at)} – {selectedSlot && fmtTime(selectedSlot.end_at)}</p>
           <p className="text-zinc-500">{selectedRate?.customer_type.singular} · {guestCount} guest{guestCount !== 1 ? 's' : ''}</p>
-          {selectedRate && ratePrice(selectedRate) !== undefined && (
-            <p className="font-semibold text-zinc-900 pt-1">{fmtPrice(ratePrice(selectedRate)!)}</p>
-          )}
+          {(() => {
+            const baseCents = selectedRate ? ratePrice(selectedRate) : undefined
+            if (baseCents === undefined) return null
+            const cityTaxCents = guestCount * 260
+            const totalCents = baseCents + cityTaxCents
+            return (
+              <div className="pt-2 mt-1 border-t border-zinc-200 space-y-1">
+                <div className="flex justify-between text-xs text-zinc-500">
+                  <span>Base</span>
+                  <span>{fmtPrice(baseCents)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-zinc-500">
+                  <span>City tax · €2.60 × {guestCount}</span>
+                  <span>{fmtPrice(cityTaxCents)}</span>
+                </div>
+                <div className="flex justify-between font-semibold text-zinc-900 pt-1 border-t border-zinc-200">
+                  <span>Total</span>
+                  <span>{fmtPrice(totalCents)}</span>
+                </div>
+                <p className="text-[10px] text-zinc-400 mt-0.5">Extras added on the next step.</p>
+              </div>
+            )
+          })()}
         </CardContent>
       </Card>
 

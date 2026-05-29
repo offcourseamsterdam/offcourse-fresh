@@ -41,3 +41,15 @@ export function fmtAdminDatetime(iso: string | null): string {
     timeZone: 'Europe/Amsterdam',
   })
 }
+
+/**
+ * Format a `created_at` ISO timestamp as "5 jul, 14:30" (compact date + time).
+ * Used in the admin bookings table Date Created column.
+ */
+export function fmtAdminDateCreated(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  const date = d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', timeZone: 'Europe/Amsterdam' })
+  const time = d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' })
+  return `${date}, ${time}`
+}

@@ -120,7 +120,7 @@ export function GalleryModal({
                   </span>
                   <div>
                     <p className="text-sm font-bold text-[var(--color-primary)]">
-                      {avgRating >= 4.5 ? 'Excellent' : avgRating >= 4 ? 'Very good' : 'Good'}
+                      {avgRating >= 4.9 ? 'Exceptional' : avgRating >= 4.5 ? 'Excellent' : avgRating >= 4 ? 'Very good' : 'Good'}
                     </p>
                     <p className="text-xs text-[var(--color-muted)]">
                       {totalReviews} review{totalReviews !== 1 ? 's' : ''}

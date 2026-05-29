@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { filterSlotsByDagdeel, type Dagdeel } from './dagdeel'
+import { filterSlotsByDagdeel } from './dagdeel'
 
 const makeSlot = (startTime: string) => ({
   pk: 1, startTime, startAt: '', endAt: '', headline: '',

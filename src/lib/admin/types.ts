@@ -7,6 +7,10 @@ export interface AdminExtraLineItem {
   category?: string
   extra_id?: string
   quantity?: number
+  /** When true, the `quantity` field represents the number of people this item
+   *  was ordered for (not the number of items). Renderers should display
+   *  "for N people" rather than "× N". */
+  is_per_person_pick?: boolean
 }
 
 export interface AdminBooking {
@@ -37,6 +41,11 @@ export interface AdminBooking {
   extras_vat_amount_cents: number | null
   total_vat_amount_cents: number | null
   catering_email_sent_at: string | null
+  customer_type_name: string | null
+  campaign_name: string | null
+  promo_code: string | null
+  discount_amount_cents: number | null
+  partner_name: string | null
 }
 
 export interface AdminPromoCode {
@@ -53,6 +62,11 @@ export interface AdminPromoCode {
   is_active: boolean
   notes: string | null
   created_at: string
+  /** When set, code is locked to this campaign's destination listing AND
+   *  bookings using it auto-attribute commission to the campaign's partner. */
+  campaign_id: string | null
+  /** 'cruise' = base + city tax only (extras pay full); 'all' = grand total incl. extras. */
+  discount_scope: 'cruise' | 'all'
 }
 
 export interface AdminPartner {

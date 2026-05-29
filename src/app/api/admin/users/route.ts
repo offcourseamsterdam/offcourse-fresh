@@ -3,7 +3,6 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireRole } from '@/lib/auth/server'
 import { VALID_ROLES } from '@/lib/auth/types'
-import type { UserRole } from '@/lib/auth/types'
 
 // GET /api/admin/users — list all user profiles (admin only)
 export async function GET() {

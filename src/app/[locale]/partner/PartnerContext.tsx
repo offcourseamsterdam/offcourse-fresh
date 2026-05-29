@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import type { UserProfile } from '@/lib/auth/types'
+import Link from 'next/link'
 
 /**
  * When an admin visits the partner portal with ?pid=<partner_id>:
@@ -44,7 +44,7 @@ export function PartnerContext({ profile }: { profile: { role: string } }) {
   if (!partnerName && !pid) {
     return (
       <div className="bg-amber-50 border-b border-amber-200 px-6 py-2.5 text-sm text-amber-800 flex items-center justify-between">
-        <span>No partner selected — go to <a href="/en/admin/partners" className="underline font-medium">Partners</a> and click the 🔗 icon to view a specific partner&apos;s portal.</span>
+        <span>No partner selected — go to <Link href="/en/admin/partners" className="underline font-medium">Partners</Link> and click the 🔗 icon to view a specific partner&apos;s portal.</span>
       </div>
     )
   }
@@ -54,12 +54,12 @@ export function PartnerContext({ profile }: { profile: { role: string } }) {
       <span>
         Viewing as: <strong>{partnerName ?? 'Loading...'}</strong>
       </span>
-      <a
+      <Link
         href="/en/admin/partners"
         className="text-white/80 hover:text-white underline text-xs"
       >
         ← Back to admin
-      </a>
+      </Link>
     </div>
   )
 }

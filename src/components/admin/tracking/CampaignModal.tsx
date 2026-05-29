@@ -31,6 +31,7 @@ interface EditingCampaign {
   investment_amount?: number | null
   listing_id?: string | null
   notes?: string | null
+  settlement_model?: 'affiliate' | 'reseller' | string | null
 }
 
 interface CampaignModalProps {
@@ -60,6 +61,7 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId, defaul
   const [commissionValue, setCommissionValue] = useState('')
   const [investmentAmount, setInvestmentAmount] = useState('')
   const [notes, setNotes] = useState('')
+  const [settlementModel, setSettlementModel] = useState<'affiliate' | 'reseller'>('affiliate')
 
   // Load channels, partners, and listings on mount
   useEffect(() => {
@@ -86,6 +88,7 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId, defaul
       setCommissionValue(editing?.percentage_value?.toString() ?? '')
       setInvestmentAmount(editing?.investment_amount ? (editing.investment_amount / 100).toString() : '')
       setNotes(editing?.notes ?? '')
+      setSettlementModel(editing?.settlement_model === 'reseller' ? 'reseller' : 'affiliate')
       setError(null)
     }
   }, [open, defaultChannelId, defaultPartnerId, editing])
@@ -118,6 +121,7 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId, defaul
           percentage_value: commissionType === 'percentage' && commissionValue ? Number(commissionValue) : null,
           investment_amount: investmentAmount ? Number(investmentAmount) * 100 : null,
           notes: notes.trim() || null,
+          settlement_model: settlementModel,
         }),
       })
       const json = await res.json()
@@ -188,6 +192,43 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId, defaul
               ))}
             </select>
           </div>
+
+          {/* Settlement model — only meaningful when there's a partner */}
+          {partnerId && (
+            <div>
+              <label className="block text-xs font-medium text-zinc-600 mb-1">Settlement model</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSettlementModel('affiliate')}
+                  className={`px-3 py-2.5 rounded-lg text-xs font-medium transition-colors border text-left ${
+                    settlementModel === 'affiliate'
+                      ? 'bg-zinc-900 text-white border-zinc-900'
+                      : 'bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50'
+                  }`}
+                >
+                  Affiliate
+                  <span className={`block mt-0.5 text-[10px] ${settlementModel === 'affiliate' ? 'text-zinc-300' : 'text-zinc-400'}`}>
+                    We collect → we owe partner
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSettlementModel('reseller')}
+                  className={`px-3 py-2.5 rounded-lg text-xs font-medium transition-colors border text-left ${
+                    settlementModel === 'reseller'
+                      ? 'bg-zinc-900 text-white border-zinc-900'
+                      : 'bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50'
+                  }`}
+                >
+                  Reseller
+                  <span className={`block mt-0.5 text-[10px] ${settlementModel === 'reseller' ? 'text-zinc-300' : 'text-zinc-400'}`}>
+                    Partner collected → partner owes us
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Destination listing */}
           <div>

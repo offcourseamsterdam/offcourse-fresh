@@ -9,7 +9,11 @@ import { applyPromoCode } from '@/lib/promo-codes/apply'
  * Public endpoint — called from checkout UI when user applies a promo code.
  * No auth required; the code itself is the secret.
  *
- * Body: { code: string, amountCents: number }
+ * Body: { code: string, amountCents: number, baseAmountCents?, cityTaxCents?, listingId? }
+ *
+ * If baseAmountCents + cityTaxCents are provided, the discount is computed against
+ * only `base + cityTax` (cruise only) so extras like unlimited drinks are unaffected
+ * — matches partner deals where the cruise is gifted but extras are à la carte.
  *
  * Returns:
  *   ok:true  → { promoCodeId, discountType, discountAmountCents, label, newTotalCents, isFull }
@@ -17,7 +21,7 @@ import { applyPromoCode } from '@/lib/promo-codes/apply'
  */
 export async function POST(request: NextRequest) {
   try {
-    const { code, amountCents } = await request.json()
+    const { code, amountCents, baseAmountCents, cityTaxCents, listingId } = await request.json()
 
     if (!code || typeof code !== 'string') {
       return apiError('code is required', 400)
@@ -26,12 +30,30 @@ export async function POST(request: NextRequest) {
       return apiError('amountCents must be a non-negative number', 400)
     }
 
-    const validation = await validatePromoCode(code)
+    // Pass listingId so scoped codes (those tied to a campaign) are rejected
+    // when the customer is trying to use them on the wrong cruise.
+    const validation = await validatePromoCode(code, {
+      listingId: typeof listingId === 'string' ? listingId : null,
+    })
     if (!validation.ok) {
       return apiError(validation.message, 422)
     }
 
-    const { discountAmountCents, newTotalCents, isFull } = applyPromoCode(validation.code, amountCents)
+    // Discountable base depends on the code's discount_scope:
+    //   'cruise' → base + city tax only (extras excluded)
+    //   'all'    → grand total (amountCents — extras included)
+    // Falls back to amountCents when the breakdown isn't provided (back-compat).
+    const hasBreakdown =
+      typeof baseAmountCents === 'number' && typeof cityTaxCents === 'number'
+    const discountableBase = hasBreakdown && validation.code.discount_scope === 'cruise'
+      ? baseAmountCents + cityTaxCents
+      : undefined  // undefined → applyPromoCode uses grandTotal (covers 'all' scope)
+
+    const { discountAmountCents, newTotalCents, isFull } = applyPromoCode(
+      validation.code,
+      amountCents,
+      discountableBase,
+    )
 
     return apiOk({
       promoCodeId: validation.code.id,

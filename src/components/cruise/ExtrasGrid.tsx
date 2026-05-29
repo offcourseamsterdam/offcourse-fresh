@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import { X } from 'lucide-react'
+import { CancellationPolicyCard } from './CancellationPolicyCard'
+import type { CancellationTier } from '@/lib/cancellation/policy'
 
 export type ExtraItem = {
   id: string
@@ -11,15 +13,16 @@ export type ExtraItem = {
   image_url: string | null
   ingredients: string[] | null
   price_display: string
+  min_people: number | null
 }
 
 interface ExtrasGridProps {
   foodExtras: ExtraItem[]
   drinkExtras: ExtraItem[]
-  cancellationPolicy: string | null
+  cancellationTiers: CancellationTier[] | null
 }
 
-export function ExtrasGrid({ foodExtras, drinkExtras, cancellationPolicy }: ExtrasGridProps) {
+export function ExtrasGrid({ foodExtras, drinkExtras, cancellationTiers }: ExtrasGridProps) {
   const [modalExtra, setModalExtra] = useState<ExtraItem | null>(null)
 
   return (
@@ -54,15 +57,8 @@ export function ExtrasGrid({ foodExtras, drinkExtras, cancellationPolicy }: Extr
         )}
 
         {/* Cancellation policy — spans both columns */}
-        {cancellationPolicy && (
-          <div className="bg-white rounded-xl p-5 shadow-sm sm:col-span-2">
-            <h3 className="font-avenir font-bold text-[18px] text-[var(--color-primary)] mb-3">
-              Cancellation Policy
-            </h3>
-            <p className="text-sm text-[var(--color-muted)] leading-relaxed whitespace-pre-line">
-              {cancellationPolicy}
-            </p>
-          </div>
+        {cancellationTiers && cancellationTiers.length > 0 && (
+          <CancellationPolicyCard tiers={cancellationTiers} />
         )}
       </div>
 
@@ -100,8 +96,13 @@ function ExtraCard({
       )}
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline justify-between gap-2">
-          <p className="text-sm font-semibold text-[var(--color-ink)]">
-            {extra.name}
+          <p className="text-sm text-[var(--color-ink)] min-w-0">
+            <span className="font-semibold">{extra.name}</span>
+            {extra.min_people && extra.min_people > 0 && (
+              <span className="text-xs text-[var(--color-muted)] font-normal ml-1.5">
+                · min. {extra.min_people} people
+              </span>
+            )}
           </p>
           <span className="text-sm font-semibold text-[var(--color-primary)] flex-shrink-0">
             {extra.price_display}
@@ -196,7 +197,7 @@ function ExtraDetailModal({
 
         {/* Details */}
         <div className="p-6">
-          <div className="flex items-baseline justify-between gap-3 mb-3">
+          <div className="flex items-baseline justify-between gap-3 mb-1">
             <h3 className="font-palmore text-[22px] text-[var(--color-primary)]">
               {extra.name}
             </h3>
@@ -204,6 +205,11 @@ function ExtraDetailModal({
               {extra.price_display}
             </span>
           </div>
+          {extra.min_people && extra.min_people > 0 && (
+            <p className="text-xs text-[var(--color-muted)] mb-3">
+              Minimum {extra.min_people} people
+            </p>
+          )}
 
           {extra.description && (
             <p className="text-sm text-[var(--color-ink)] leading-relaxed mb-4">

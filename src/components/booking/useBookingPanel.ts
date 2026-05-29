@@ -117,9 +117,9 @@ export function useBookingPanel({
   // ── Derived values ──────────────────────────────────────────────────────
 
   const dateSummary = state.date
-    ? new Date(state.date + 'T12:00:00').toLocaleDateString('en-US', {
-        weekday: 'short', month: 'short', day: 'numeric'
-      })
+    ? new Date(state.date + 'T12:00:00').toLocaleDateString('en-GB', {
+        day: 'numeric', month: 'short'
+      }) // → "12 May"
     : undefined
 
   const guestsSummary = state.guests > 0
@@ -128,9 +128,19 @@ export function useBookingPanel({
 
   const timeSummary = state.selectedSlot?.startTime
 
-  const boatSummary = state.selectedBoat && state.selectedCustomerType
-    ? `${state.selectedBoat === 'diana' ? 'Diana' : 'Curaçao'} · ${formatDuration(state.selectedCustomerType.durationMinutes)}`
+  // Boat name on its own — duration becomes a tiny subline only for private cruises.
+  const boatSummary = state.selectedBoat
+    ? state.selectedBoat === 'diana' ? 'Diana' : 'Curaçao'
     : undefined
+
+  const boatDurationLabel =
+    category === 'private' && state.selectedCustomerType
+      ? formatDuration(state.selectedCustomerType.durationMinutes)
+      : undefined
+
+  // Combined "Diana · 2 hours" label used by PriceSummary + the slider's summary tabs.
+  const cruiseLabel =
+    boatSummary && boatDurationLabel ? `${boatSummary} · ${boatDurationLabel}` : boatSummary
 
   const ticketSummary = state.totalTickets > 0
     ? `${state.totalTickets} ${state.totalTickets === 1 ? 'ticket' : 'tickets'}`
@@ -156,11 +166,28 @@ export function useBookingPanel({
   const cityTaxCents = guestCount * 260
   const durationMinutes = state.selectedCustomerType?.durationMinutes
 
+  // Adult-count: used to cap extras flagged adults_only (e.g. Unlimited Drinks).
+  // Private cruises don't distinguish children — treat all guests as adults.
+  // Shared cruises: sum tickets whose customer-type name doesn't read as a child rate.
+  function isChildLabel(name: string): boolean {
+    const lower = (name ?? '').toLowerCase()
+    return lower.includes('child') || lower.includes('(0-')
+  }
+  const adultCount = category === 'private'
+    ? state.guests
+    : state.selectedSlot
+      ? state.selectedSlot.customerTypes
+          .filter(ct => !isChildLabel(ct.name))
+          .reduce((sum, ct) => sum + (state.ticketCounts[ct.customerTypePk] || 0), 0)
+      : 0
+
   const ticketBreakdown = category === 'shared' && state.selectedSlot
     ? state.selectedSlot.customerTypes
         .filter(ct => (state.ticketCounts[ct.customerTypePk] || 0) > 0)
         .map((ct, i) => ({
-          label: i === 0 ? 'Adult' : 'Child',
+          // Prefer the FH-provided name (e.g. "Adult (13+)" / "Child (0-12)") for clarity.
+          // Fall back to position-based label only if FH didn't supply one.
+          label: ct.name || (i === 0 ? 'Adult' : 'Child'),
           count: state.ticketCounts[ct.customerTypePk] || 0,
           priceCents: ct.priceCents,
         }))
@@ -215,9 +242,9 @@ export function useBookingPanel({
     // Step helpers
     steps, isStepCompleted, isStepActive, stepNumber,
     // Summaries
-    dateSummary, guestsSummary, timeSummary, boatSummary, ticketSummary, extrasSummary,
+    dateSummary, guestsSummary, timeSummary, boatSummary, boatDurationLabel, cruiseLabel, ticketSummary, extrasSummary,
     // Derived
-    basePriceCents, guestCount, cityTaxCents, ticketBreakdown,
+    basePriceCents, guestCount, adultCount, cityTaxCents, ticketBreakdown,
     // Props pass-through
     listingId, listingSlug,
   }

@@ -30,7 +30,6 @@ export async function POST(_req: NextRequest, { params }: RouteParams) {
     newSlug = `${source.slug}-copy-${i}`
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { id: _id, created_at: _ca, updated_at: _ua, ...rest } = source
 
   const { data: created, error: insertError } = await supabase

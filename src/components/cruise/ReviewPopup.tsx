@@ -13,6 +13,7 @@ interface ReviewPopupProps {
 }
 
 function getRatingLabel(avg: number): string {
+  if (avg >= 4.9) return 'Exceptional'
   if (avg >= 4.5) return 'Excellent'
   if (avg >= 4) return 'Very good'
   if (avg >= 3.5) return 'Good'

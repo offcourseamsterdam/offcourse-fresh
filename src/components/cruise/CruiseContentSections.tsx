@@ -5,15 +5,16 @@ import { BoatCard } from './BoatCard'
 import { TruncatedDescription } from './TruncatedDescription'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import type { Locale } from '@/lib/i18n/config'
+import type { CancellationTier } from '@/lib/cancellation/policy'
 
-type SerializedExtra = { id: string; name: string; description: string | null; image_url: string | null; ingredients: string[] | null; price_display: string }
+type SerializedExtra = { id: string; name: string; description: string | null; image_url: string | null; ingredients: string[] | null; price_display: string; min_people: number | null }
 
 interface ContentProps {
   highlights: { text: string }[]
   description: string | null
   serializedFood: SerializedExtra[]
   serializedDrinks: SerializedExtra[]
-  cancellationPolicy: string | null
+  cancellationTiers: CancellationTier[]
   listingBoats: { id: string; name: string; max_capacity: number | null; is_electric: boolean | null; description: string | null; photo_url: string | null; photo_covered_url: string | null; photo_interior_url: string | null }[]
   serializedReviews: { id: string; reviewer_name: string; review_text: string; rating: number; source: string | null; author_photo_url: string | null; publish_time: string | null }[]
   listing: { departure_location: string | null }
@@ -24,7 +25,7 @@ interface ContentProps {
 
 export function CruiseContentSections({
   highlights, description, serializedFood, serializedDrinks,
-  cancellationPolicy, listingBoats, serializedReviews,
+  cancellationTiers, listingBoats, serializedReviews,
   listing, faqs, loc, faqLabel,
 }: ContentProps) {
   return (
@@ -52,12 +53,12 @@ export function CruiseContentSections({
       )}
 
       {/* Things you need to know */}
-      {(serializedFood.length > 0 || serializedDrinks.length > 0 || cancellationPolicy) && (
+      {(serializedFood.length > 0 || serializedDrinks.length > 0 || cancellationTiers.length > 0) && (
         <section>
           <h2 className="font-briston text-[28px] sm:text-[36px] text-[var(--color-accent)] uppercase mb-6">
             Things you need to know
           </h2>
-          <ExtrasGrid foodExtras={serializedFood} drinkExtras={serializedDrinks} cancellationPolicy={cancellationPolicy} />
+          <ExtrasGrid foodExtras={serializedFood} drinkExtras={serializedDrinks} cancellationTiers={cancellationTiers} />
         </section>
       )}
 

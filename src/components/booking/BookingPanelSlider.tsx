@@ -9,6 +9,7 @@ import { TicketStep } from './TicketStep'
 import { ExtrasStep } from './ExtrasStep'
 import { PriceSummary } from './PriceSummary'
 import { BookingSummaryTabs } from './BookingSummaryTabs'
+import { CancellationCutoffRow } from './CancellationCutoffRow'
 import { Button } from '@/components/ui/button'
 import { fmtEuros, getToday, toDateStr } from '@/lib/utils'
 import { useBookingPanel } from './useBookingPanel'
@@ -104,7 +105,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
     timeSlotsRef, bookingCardRef, extrasRef,
     handleInlineDateSelect, handleExtrasChange, handleProceedToCheckout,
     fetchSlots,
-    basePriceCents, guestCount, cityTaxCents, ticketBreakdown, boatSummary,
+    basePriceCents, guestCount, adultCount, cityTaxCents, ticketBreakdown, cruiseLabel,
     dateSummary, guestsSummary, timeSummary, ticketSummary,
     listingId,
   } = useBookingPanel(props)
@@ -129,7 +130,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
       if (panelIndex > 0 && dateSummary) tabs.push({ label: dateSummary, panelIndex: 0 })
       if (panelIndex > 0 && guestsSummary) tabs.push({ label: guestsSummary, panelIndex: 0 })
       if (panelIndex > 1 && timeSummary) tabs.push({ label: timeSummary, panelIndex: 1 })
-      if (panelIndex > 2 && boatSummary) tabs.push({ label: boatSummary, panelIndex: 2 })
+      if (panelIndex > 2 && cruiseLabel) tabs.push({ label: cruiseLabel, panelIndex: 2 })
     } else {
       // Shared: 0=date+time, 1=tickets, 2=extras
       if (dateSummary) tabs.push({ label: dateSummary, panelIndex: 0 })
@@ -138,7 +139,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
     }
 
     return tabs
-  }, [category, panelIndex, dateSummary, guestsSummary, timeSummary, boatSummary, ticketSummary])
+  }, [category, panelIndex, dateSummary, guestsSummary, timeSummary, cruiseLabel, ticketSummary])
 
   // ── Navigation ────────────────────────────────────────────────────────────
 
@@ -189,6 +190,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
         <ExtrasStep
           listingId={listingId}
           guestCount={guestCount}
+          adultCount={adultCount}
           baseAmountCents={basePriceCents}
           durationMinutes={state.selectedCustomerType?.durationMinutes}
           onExtrasChange={handleExtrasChange}
@@ -201,10 +203,13 @@ export function BookingPanelSlider(props: BookingPanelProps) {
             basePriceCents={basePriceCents}
             extrasCalculation={state.extrasCalculation}
             mode={category}
-            cruiseLabel={boatSummary}
+            cruiseLabel={cruiseLabel}
             ticketBreakdown={ticketBreakdown}
             cityTaxCents={cityTaxCents}
           />
+          {/* Cancellation deadline above the proceed button — visible even when the button
+              gets cropped by the viewport. */}
+          <CancellationCutoffRow tiers={props.cancellationTiers} slot={state.selectedSlot} />
           <Button
             variant="primary"
             size="lg"
@@ -222,18 +227,10 @@ export function BookingPanelSlider(props: BookingPanelProps) {
 
   const isPrivate = category === 'private'
   const hasTickets = !isPrivate && state.totalTickets > 0
-  const startingPrice = props.startingPrice
 
   return (
     <div>
-      {/* Starting price — shown above the date/tab picker on mobile */}
-      {startingPrice != null && (
-        <div className="mb-4">
-          <p className="text-xs text-[var(--color-muted)] leading-none mb-1">starting from</p>
-          <p className="font-palmore text-3xl text-[var(--color-primary)] leading-none">€{startingPrice}</p>
-        </div>
-      )}
-
+      {/* Starting price + info pills moved to the section header above this card on the cruise page */}
       <BookingSummaryTabs tabs={summaryTabs} currentPanel={panelIndex} onTabClick={handleTabClick} />
 
       <AnimatePresence mode="wait" custom={direction}>

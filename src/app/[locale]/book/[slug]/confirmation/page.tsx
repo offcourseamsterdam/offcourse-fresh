@@ -13,7 +13,7 @@ export const metadata = {
 }
 
 export default async function ConfirmationPage({ params, searchParams }: Props) {
-  const { locale, slug } = await params
+  const { locale, slug: _slug } = await params
   const { payment_intent, fh } = await searchParams
 
   let booking = null
@@ -115,12 +115,20 @@ export default async function ConfirmationPage({ params, searchParams }: Props) 
                         <div className="border-t border-zinc-200 pt-2 mt-1">
                           <span className="text-zinc-500 text-xs font-medium uppercase tracking-wide">Extras</span>
                         </div>
-                        {(booking.extras_selected as Array<{ name: string; quantity: number; amount_cents: number }>).map((li, i) => (
-                          <div key={i} className="flex justify-between">
-                            <span className="text-zinc-600">{li.quantity > 1 ? `${li.name} ×${li.quantity}` : li.name}</span>
-                            <span className="font-medium text-zinc-800">€{(li.amount_cents / 100).toFixed(2)}</span>
-                          </div>
-                        ))}
+                        {(booking.extras_selected as Array<{ name: string; quantity: number; amount_cents: number; is_per_person_pick?: boolean }>).map((li, i) => {
+                          const qty = li.quantity ?? 1
+                          const label = li.is_per_person_pick && qty > 0
+                            ? `${li.name} — for ${qty} ${qty === 1 ? 'person' : 'people'}`
+                            : qty > 1
+                              ? `${li.name} ×${qty}`
+                              : li.name
+                          return (
+                            <div key={i} className="flex justify-between">
+                              <span className="text-zinc-600">{label}</span>
+                              <span className="font-medium text-zinc-800">€{(li.amount_cents / 100).toFixed(2)}</span>
+                            </div>
+                          )
+                        })}
                       </>
                     )}
                   </div>

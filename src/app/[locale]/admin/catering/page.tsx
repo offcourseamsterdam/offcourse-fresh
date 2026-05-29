@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Loader2, RefreshCw, UtensilsCrossed, Send, CheckCircle2 } from 'lucide-react'
+import { useState, Fragment, useEffect } from 'react'
+import { Loader2, RefreshCw, UtensilsCrossed, Send, CheckCircle2, ChevronDown, ChevronUp, Mail } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { BookingStatusBadge } from '@/components/admin/BookingStatusBadge'
@@ -20,6 +20,8 @@ interface CateringBooking {
   start_time: string | null
   guest_count: number | null
   status: string | null
+  category: string | null
+  customer_type_name: string | null
   extras_selected: AdminExtraLineItem[] | null
   catering_email_sent_at: string | null
   cateringItems: AdminExtraLineItem[]
@@ -30,18 +32,82 @@ interface CateringData {
   bookings: CateringBooking[]
 }
 
+// ── Toast ─────────────────────────────────────────────────────────────────
+
+function Toast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 5000)
+    return () => clearTimeout(t)
+  }, [onDismiss])
+
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 bg-zinc-900 text-white text-sm px-4 py-3 rounded-xl shadow-lg">
+      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+      {message}
+    </div>
+  )
+}
+
+// ── Email preview panel ────────────────────────────────────────────────────
+
+function EmailPreview({ bookingId }: { bookingId: string }) {
+  const { data, isLoading, error } =
+    useAdminFetch<{ text: string; alreadySent: boolean }>(`/api/admin/bookings/${bookingId}/catering-email`)
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-zinc-400 py-8 justify-center">
+        <Loader2 className="w-4 h-4 animate-spin" /> Loading preview…
+      </div>
+    )
+  }
+
+  if (error || !data?.text) {
+    return (
+      <div className="text-sm text-red-500 py-4 px-6">
+        Could not load email preview.
+      </div>
+    )
+  }
+
+  return (
+    <div className="border-t border-zinc-100 bg-zinc-50">
+      {/* Preview header */}
+      <div className="flex items-center gap-2 px-6 py-3 border-b border-zinc-100">
+        <Mail className="w-4 h-4 text-zinc-400" />
+        <span className="text-xs font-medium text-zinc-500">
+          {data.alreadySent ? 'Email sent to supplier — preview below' : 'Email preview (not yet sent)'}
+        </span>
+      </div>
+      {/* Plain text preview */}
+      <div className="px-6 py-4">
+        <pre className="whitespace-pre-wrap font-sans text-sm text-zinc-700 bg-white border border-zinc-200 rounded-lg p-5 leading-relaxed">
+          {data.text}
+        </pre>
+      </div>
+    </div>
+  )
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 
 export default function CateringPage() {
   const { data, isLoading, error, refresh } =
     useAdminFetch<CateringData>('/api/admin/catering')
 
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [sending, setSending] = useState<Record<string, boolean>>({})
   const [sendErrors, setSendErrors] = useState<Record<string, string>>({})
+  const [toast, setToast] = useState<string | null>(null)
 
   const bookings = data?.bookings ?? []
 
-  async function handleSendEmail(bookingId: string) {
+  function toggleRow(id: string) {
+    setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
+  }
+
+  async function handleSendEmail(e: React.MouseEvent, bookingId: string) {
+    e.stopPropagation()
     setSending(prev => ({ ...prev, [bookingId]: true }))
     setSendErrors(prev => { const n = { ...prev }; delete n[bookingId]; return n })
     try {
@@ -52,6 +118,10 @@ export default function CateringPage() {
         const json = await res.json().catch(() => ({}))
         throw new Error((json as Record<string, string>).error ?? 'Failed to send')
       }
+      const json = await res.json()
+      const recipient: string = json.data?.recipient ?? 'supplier'
+      const isResend: boolean = json.data?.resent ?? false
+      setToast(isResend ? `Order resent to ${recipient}` : `Email sent to ${recipient}`)
       refresh()
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Error'
@@ -72,7 +142,7 @@ export default function CateringPage() {
             Catering
           </h1>
           <p className="text-sm text-zinc-500 mt-1">
-            Bookings with food &amp; drink orders · send to supplier when ready
+            Bookings with food orders · send to supplier when ready · click a row to preview the email
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={refresh} disabled={isLoading}>
@@ -111,7 +181,8 @@ export default function CateringPage() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider min-w-[200px]">Items</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider w-28">Catering total</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider w-28">Status</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider w-32">Action</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider w-36">Action</th>
+                  <th className="px-4 py-3 w-10" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 bg-white">
@@ -119,76 +190,96 @@ export default function CateringPage() {
                   const isSent = !!b.catering_email_sent_at
                   const isSending = sending[b.id]
                   const sendError = sendErrors[b.id]
+                  const isExpanded = !!expanded[b.id]
+
+                  // Boat label: customer_type_name for private ("Diana 2h"),
+                  // category label for shared (no resource stored yet)
+                  const boatLabel = b.customer_type_name
+                    ?? (b.category ? b.category.charAt(0).toUpperCase() + b.category.slice(1) : null)
 
                   return (
-                    <tr key={b.id} className="hover:bg-zinc-50 transition-colors">
-                      {/* Date + time */}
-                      <td className="px-4 py-3 text-zinc-900 whitespace-nowrap">
-                        <p>{fmtAdminDate(b.booking_date)}</p>
-                        <p className="text-xs text-zinc-400">{fmtAdminTime(b.start_time)}</p>
-                      </td>
+                    <Fragment key={b.id}>
+                      <tr
+                        className="hover:bg-zinc-50 transition-colors cursor-pointer"
+                        onClick={() => toggleRow(b.id)}
+                      >
+                        {/* Date + time */}
+                        <td className="px-4 py-3 text-zinc-900 whitespace-nowrap">
+                          <p>{fmtAdminDate(b.booking_date)}</p>
+                          <p className="text-xs text-zinc-400">{fmtAdminTime(b.start_time)}</p>
+                        </td>
 
-                      {/* Cruise */}
-                      <td className="px-4 py-3 text-zinc-900">
-                        <p>{b.listing_title ?? b.tour_item_name ?? '—'}</p>
-                        {b.guest_count && (
-                          <p className="text-xs text-zinc-400">{b.guest_count} guests</p>
-                        )}
-                      </td>
+                        {/* Cruise + boat */}
+                        <td className="px-4 py-3 text-zinc-900">
+                          <p>{b.listing_title ?? b.tour_item_name ?? '—'}</p>
+                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                            {b.guest_count && (
+                              <p className="text-xs text-zinc-400">{b.guest_count} guests</p>
+                            )}
+                            {boatLabel && (
+                              <p className="text-xs text-amber-600 font-medium">{boatLabel}</p>
+                            )}
+                          </div>
+                        </td>
 
-                      {/* Guest */}
-                      <td className="px-4 py-3">
-                        <p className="text-zinc-900 font-medium">{b.customer_name ?? '—'}</p>
-                        <div className="mt-0.5">
-                          <BookingStatusBadge status={b.status} />
-                        </div>
-                      </td>
+                        {/* Guest */}
+                        <td className="px-4 py-3">
+                          <p className="text-zinc-900 font-medium">{b.customer_name ?? '—'}</p>
+                          <div className="mt-0.5">
+                            <BookingStatusBadge status={b.status} />
+                          </div>
+                        </td>
 
-                      {/* Catering items summary */}
-                      <td className="px-4 py-3">
-                        <div className="space-y-0.5">
-                          {b.cateringItems.map((item, i) => (
-                            <p key={i} className="text-xs text-zinc-600">
-                              {item.quantity && item.quantity > 1 ? `${item.quantity}× ` : ''}{item.name}
+                        {/* Catering items summary */}
+                        <td className="px-4 py-3">
+                          <div className="space-y-0.5">
+                            {b.cateringItems.map((item, i) => {
+                              const qty = item.quantity ?? 1
+                              const label = item.is_per_person_pick && qty > 0
+                                ? `${item.name} (for ${qty} ${qty === 1 ? 'person' : 'people'})`
+                                : qty > 1
+                                  ? `${qty}× ${item.name}`
+                                  : item.name
+                              return (
+                                <p key={i} className="text-xs text-zinc-600">{label}</p>
+                              )
+                            })}
+                          </div>
+                        </td>
+
+                        {/* Catering total */}
+                        <td className="px-4 py-3 text-zinc-900 font-semibold whitespace-nowrap">
+                          {fmtAdminAmountRounded(b.cateringAmountCents)}
+                        </td>
+
+                        {/* Status badge */}
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {isSent ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full">
+                              <CheckCircle2 className="w-3 h-3" />
+                              Sent
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center text-xs font-medium text-amber-700 bg-amber-50 px-2 py-1 rounded-full">
+                              Pending
+                            </span>
+                          )}
+                          {isSent && b.catering_email_sent_at && (
+                            <p className="text-[10px] text-zinc-400 mt-0.5">
+                              {fmtAdminDate(b.catering_email_sent_at.split('T')[0])}
                             </p>
-                          ))}
-                        </div>
-                      </td>
+                          )}
+                        </td>
 
-                      {/* Catering total */}
-                      <td className="px-4 py-3 text-zinc-900 font-semibold whitespace-nowrap">
-                        {fmtAdminAmountRounded(b.cateringAmountCents)}
-                      </td>
-
-                      {/* Status badge */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {isSent ? (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full">
-                            <CheckCircle2 className="w-3 h-3" />
-                            Sent
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center text-xs font-medium text-amber-700 bg-amber-50 px-2 py-1 rounded-full">
-                            Pending
-                          </span>
-                        )}
-                        {isSent && b.catering_email_sent_at && (
-                          <p className="text-[10px] text-zinc-400 mt-0.5">
-                            {fmtAdminDate(b.catering_email_sent_at.split('T')[0])}
-                          </p>
-                        )}
-                      </td>
-
-                      {/* Action */}
-                      <td className="px-4 py-3">
-                        {sendError && (
-                          <p className="text-xs text-red-600 mb-1">{sendError}</p>
-                        )}
-                        {!isSent ? (
+                        {/* Action */}
+                        <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                          {sendError && (
+                            <p className="text-xs text-red-600 mb-1">{sendError}</p>
+                          )}
                           <Button
-                            variant="primary"
+                            variant={isSent ? 'outline' : 'primary'}
                             size="sm"
-                            onClick={() => handleSendEmail(b.id)}
+                            onClick={(e) => handleSendEmail(e, b.id)}
                             disabled={isSending}
                             className="text-xs gap-1"
                           >
@@ -197,13 +288,28 @@ export default function CateringPage() {
                             ) : (
                               <Send className="w-3 h-3" />
                             )}
-                            {isSending ? 'Sending…' : 'Send to supplier'}
+                            {isSending ? 'Sending…' : isSent ? 'Resend' : 'Send to supplier'}
                           </Button>
-                        ) : (
-                          <span className="text-xs text-zinc-400">—</span>
-                        )}
-                      </td>
-                    </tr>
+                        </td>
+
+                        {/* Expand chevron */}
+                        <td className="px-4 py-3 text-zinc-400">
+                          {isExpanded
+                            ? <ChevronUp className="w-4 h-4" />
+                            : <ChevronDown className="w-4 h-4" />
+                          }
+                        </td>
+                      </tr>
+
+                      {/* Email preview panel */}
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={8} className="p-0">
+                            <EmailPreview bookingId={b.id} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   )
                 })}
               </tbody>
@@ -211,6 +317,9 @@ export default function CateringPage() {
           </div>
         </div>
       )}
+
+      {/* Toast */}
+      {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}
     </div>
   )
 }

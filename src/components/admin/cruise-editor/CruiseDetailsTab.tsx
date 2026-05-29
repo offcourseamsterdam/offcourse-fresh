@@ -1,13 +1,20 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { CruiseTabProps, patchListing, inputCls } from './shared'
 import { Field } from './Field'
 import { TabSaveButton } from './TabSaveButton'
+import { RichTextEditor } from '@/components/admin/RichTextEditor'
+
+interface FHItem {
+  fareharbor_pk: number
+  name: string
+}
 
 export function CruiseDetailsTab({ listing, onSave }: CruiseTabProps) {
   const [form, setForm] = useState({
     title: listing.title ?? '',
+    slug: listing.slug ?? '',
     tagline: listing.tagline ?? '',
     description: listing.description ?? '',
     category: listing.category ?? 'private',
@@ -20,6 +27,24 @@ export function CruiseDetailsTab({ listing, onSave }: CruiseTabProps) {
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [fhItems, setFhItems] = useState<FHItem[]>([])
+
+  // Load FH items once so we can show the item name next to its PK
+  useEffect(() => {
+    fetch('/api/admin/fareharbor-items')
+      .then(r => r.json())
+      .then(json => {
+        const list = json?.data?.items
+        if (Array.isArray(list)) setFhItems(list)
+      })
+      .catch(() => {})
+  }, [])
+
+  const fhItemName = (() => {
+    const pk = Number(form.fareharbor_item_pk)
+    if (!pk) return null
+    return fhItems.find(i => i.fareharbor_pk === pk)?.name ?? null
+  })()
 
   async function save() {
     setSaving(true)
@@ -44,6 +69,32 @@ export function CruiseDetailsTab({ listing, onSave }: CruiseTabProps) {
           onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
         />
       </Field>
+      <Field label="Slug (URL)">
+        <input
+          className={inputCls}
+          value={form.slug}
+          onChange={e => {
+            // Normalize on the fly: lowercase, replace whitespace with dashes,
+            // strip anything that isn't a-z, 0-9, or '-'.
+            const cleaned = e.target.value
+              .toLowerCase()
+              .replace(/\s+/g, '-')
+              .replace(/[^a-z0-9-]/g, '')
+            setForm(f => ({ ...f, slug: cleaned }))
+          }}
+          placeholder="e.g. private-hidden-gems-cruise"
+        />
+        <p className="text-xs text-amber-700 mt-1">
+          ⚠ Changing the slug breaks the existing URL. Old links and SEO rankings
+          will 404. Only change this before the page is published or if you can
+          set up a redirect.
+        </p>
+        {form.slug && (
+          <p className="text-xs text-zinc-400 mt-1">
+            URL: <span className="font-mono">offcourseamsterdam.com/cruises/{form.slug}</span>
+          </p>
+        )}
+      </Field>
       <Field label="Tagline">
         <input
           className={inputCls}
@@ -53,10 +104,10 @@ export function CruiseDetailsTab({ listing, onSave }: CruiseTabProps) {
         />
       </Field>
       <Field label="Description">
-        <textarea
-          className={`${inputCls} min-h-[140px] resize-y`}
+        <RichTextEditor
           value={form.description}
-          onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+          onChange={html => setForm(f => ({ ...f, description: html }))}
+          placeholder="The story behind this cruise…"
         />
       </Field>
       <Field label="Category">
@@ -122,6 +173,16 @@ export function CruiseDetailsTab({ listing, onSave }: CruiseTabProps) {
           onChange={e => setForm(f => ({ ...f, fareharbor_item_pk: e.target.value }))}
           placeholder="e.g. 12345"
         />
+        {form.fareharbor_item_pk && fhItemName && (
+          <p className="text-xs text-emerald-700 mt-1.5">
+            ✓ <span className="font-medium">{fhItemName}</span>
+          </p>
+        )}
+        {form.fareharbor_item_pk && fhItems.length > 0 && !fhItemName && (
+          <p className="text-xs text-amber-700 mt-1.5">
+            ⚠ No FareHarbor item with this PK in our database. Run the FH sync or double-check the ID.
+          </p>
+        )}
         <p className="text-xs text-zinc-400 mt-1">
           The FareHarbor product ID this listing connects to. Find it in your FareHarbor dashboard under Items.
         </p>

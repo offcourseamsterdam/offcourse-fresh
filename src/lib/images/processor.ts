@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Json } from '@/lib/supabase/types'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { processUploadedImage } from './process'
 import { generateImageMetadataFromBuffer } from '@/lib/ai/generate-image-metadata'
@@ -267,11 +268,9 @@ export async function linkAssetToSource(
         : img
     )
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await supabase
       .from('cruise_listings')
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .update({ images: updated as any })
+      .update({ images: updated as unknown as Json })
       .eq('id', contextId)
     if (error) throw new Error(`images JSONB update failed: ${error.message}`)
 

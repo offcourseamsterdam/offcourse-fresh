@@ -44,7 +44,7 @@ export function DateListingsStep({ date, onDateChange, onPickListing }: DateList
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm">Pick a date</CardTitle>
-          <CardDescription className="text-xs">We'll show all cruise listings available on this day</CardDescription>
+          <CardDescription className="text-xs">We&apos;ll show all cruise listings available on this day</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex gap-3 items-end">

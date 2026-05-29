@@ -23,7 +23,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     'description_pt','description_zh','image_url','category','scope',
     'applicable_categories','price_type','price_value','vat_rate',
     'is_required','is_active','sort_order','ingredients',
-    'quantity_mode','min_quantity']
+    'quantity_mode','min_quantity','min_people','adults_only']
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
   for (const key of WRITABLE) {

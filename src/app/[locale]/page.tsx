@@ -1,6 +1,7 @@
 import { getTranslations } from 'next-intl/server'
 import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { HeroSection } from '@/components/sections/HeroSection'
 import { FeaturedCruises } from '@/components/sections/FeaturedCruises'
 import { ReviewsSection } from '@/components/sections/ReviewsSection'
@@ -35,8 +36,10 @@ export async function generateMetadata({ params }: Props) {
 export default async function HomePage({ params }: Props) {
   const { locale } = await params
   const supabase = await createClient()
+  // google_reviews_config is RLS-protected (holds OAuth tokens). Service-role bypass for the safe stats fields.
+  const adminSupabase = createAdminClient()
 
-  const [listingsResult, reviewsResult, slidesResult, boatsResult, prioritiesResult] = await Promise.all([
+  const [listingsResult, reviewsResult, slidesResult, boatsResult, prioritiesResult, googleConfigResult] = await Promise.all([
     supabase
       .from('cruise_listings')
       .select('id, slug, category, hero_image_url, title, tagline, price_display, duration_display')
@@ -64,6 +67,11 @@ export default async function HomePage({ params }: Props) {
       .from('priorities_cards')
       .select('image_url, alt_text, title, body, rotate')
       .order('sort_order', { ascending: true }),
+    adminSupabase
+      .from('google_reviews_config')
+      .select('total_reviews')
+      .limit(1)
+      .maybeSingle(),
   ])
 
   const listings = listingsResult.data
@@ -72,13 +80,14 @@ export default async function HomePage({ params }: Props) {
   const slides = rawSlides.map(s => ({ src: s.image_url, alt: s.alt_text ?? '', caption: s.caption ?? '' }))
   const boats = boatsResult.data ?? []
   const priorities = prioritiesResult.data ?? []
+  const totalReviewCount = googleConfigResult.data?.total_reviews ?? (reviews?.length ?? 0)
 
   return (
     <>
       <TrackPageView event="view_homepage" />
       <HeroSection slides={slides.length > 0 ? slides : undefined} />
       <FeaturedCruises listings={listings ?? []} />
-      <ReviewsSection reviews={reviews ?? []} locale={locale as Locale} />
+      <ReviewsSection reviews={reviews ?? []} totalReviewCount={totalReviewCount} locale={locale as Locale} />
       <PrioritiesSection cards={priorities} />
       <FleetSection boats={boats.length > 0 ? boats : undefined} />
       <LocationSection />

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { checkRateLimit, getRateLimitHeaders } from './rate-limit'
 
 // The rate limiter uses module-level state (a Map). Each test uses a unique

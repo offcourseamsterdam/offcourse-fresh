@@ -20,7 +20,7 @@ export function DateStep({ mode, initialDate = '', initialGuests = 2, onConfirm 
   const tomorrowStr = toDateStr(tomorrow)
 
   const [date, setDate] = useState(initialDate)
-  const [guests, setGuests] = useState(initialGuests)
+  const [guests, _setGuests] = useState(initialGuests)
   const [calYear, setCalYear] = useState(initialDate ? Number(initialDate.split('-')[0]) : today.getFullYear())
   const [calMonth, setCalMonth] = useState(initialDate ? Number(initialDate.split('-')[1]) - 1 : today.getMonth())
 

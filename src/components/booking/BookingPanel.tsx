@@ -8,6 +8,7 @@ import { BoatDurationStep } from './BoatDurationStep'
 import { TicketStep } from './TicketStep'
 import { ExtrasStep } from './ExtrasStep'
 import { PriceSummary } from './PriceSummary'
+import { CancellationCutoffRow } from './CancellationCutoffRow'
 import { Button } from '@/components/ui/button'
 import { BookingPanelSlider } from './BookingPanelSlider'
 import { useBookingPanel } from './useBookingPanel'
@@ -27,42 +28,15 @@ function BookingPanelSidebar(props: BookingPanelProps) {
     state, dispatch, category, steps,
     handleDateConfirm, handleGuestsConfirm, handleExtrasChange, handleProceedToCheckout,
     isStepCompleted,
-    dateSummary, guestsSummary, timeSummary, boatSummary, ticketSummary, extrasSummary,
-    basePriceCents, guestCount, cityTaxCents, ticketBreakdown,
+    dateSummary, guestsSummary, timeSummary, boatSummary, boatDurationLabel, cruiseLabel,
+    ticketSummary, extrasSummary,
+    basePriceCents, guestCount, adultCount, cityTaxCents, ticketBreakdown,
     listingId,
   } = useBookingPanel(props)
 
-  const infoPills = props.infoPills ?? []
-  const startingPrice = props.startingPrice
-
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-zinc-100 p-4">
-      {/* Info pills */}
-      {infoPills.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mb-3">
-          {infoPills.map((pill, i) => (
-            <span key={i} className="inline-flex items-center gap-1 text-[11px] text-[var(--color-muted)] bg-[var(--color-sand)] px-2 py-0.5 rounded-full">
-              {pill.icon === 'duration' && (
-                <svg viewBox="0 0 24 24" className="w-3 h-3" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z" /></svg>
-              )}
-              {pill.icon === 'guests' && (
-                <svg viewBox="0 0 24 24" className="w-3 h-3" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" /></svg>
-              )}
-              {pill.label}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Starting price */}
-      {startingPrice != null && (
-        <div className="mb-4 pb-3 border-b border-zinc-100">
-          <p className="text-xs text-[var(--color-muted)] leading-none mb-1">starting from</p>
-          <p className="font-palmore text-3xl text-[var(--color-primary)] leading-none">€{startingPrice}</p>
-        </div>
-      )}
-
-      {/* Step tabs — replaces the previous vertical accordion */}
+      {/* Step tabs — pills + starting-price moved to the section header above this card */}
       <BookingStepTabs
         steps={steps}
         currentStep={state.step}
@@ -71,7 +45,11 @@ function BookingPanelSidebar(props: BookingPanelProps) {
           date: dateSummary,
           guests: guestsSummary,
           time: timeSummary,
-          boat: boatSummary,
+          boat: boatSummary
+            ? boatDurationLabel
+              ? { value: boatSummary, subline: boatDurationLabel }
+              : boatSummary
+            : undefined,
           tickets: ticketSummary,
           extras: extrasSummary,
         }}
@@ -147,6 +125,7 @@ function BookingPanelSidebar(props: BookingPanelProps) {
           <ExtrasStep
             listingId={listingId}
             guestCount={guestCount}
+            adultCount={adultCount}
             baseAmountCents={basePriceCents}
             durationMinutes={state.selectedCustomerType?.durationMinutes}
             onExtrasChange={handleExtrasChange}
@@ -155,11 +134,21 @@ function BookingPanelSidebar(props: BookingPanelProps) {
       </div>
 
       {basePriceCents > 0 && (
-        <PriceSummary basePriceCents={basePriceCents} extrasCalculation={state.extrasCalculation} mode={category} cruiseLabel={boatSummary} ticketBreakdown={ticketBreakdown} cityTaxCents={cityTaxCents} />
+        <PriceSummary
+          basePriceCents={basePriceCents}
+          extrasCalculation={state.extrasCalculation}
+          mode={category}
+          cruiseLabel={cruiseLabel}
+          ticketBreakdown={ticketBreakdown}
+          cityTaxCents={cityTaxCents}
+        />
       )}
 
       {state.step === 'extras' && (
-        <div className="mt-5">
+        <div className="mt-5 space-y-3">
+          {/* Cancellation deadline above the proceed button — visible even when the button
+              gets cropped by the viewport. */}
+          <CancellationCutoffRow tiers={props.cancellationTiers} slot={state.selectedSlot} />
           <Button variant="primary" size="lg" className="w-full rounded-xl text-base font-bold" onClick={handleProceedToCheckout}>
             Proceed to booking
           </Button>

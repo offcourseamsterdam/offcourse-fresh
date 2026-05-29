@@ -126,7 +126,7 @@ export default function PartnersPage() {
 
   // ── Invite ────────────────────────────────────────────────────────────
 
-  async function handleInvite(id: string, name: string) {
+  async function handleInvite(id: string, _name: string) {
     setInviting(id)
     setInviteMsg(null)
     try {

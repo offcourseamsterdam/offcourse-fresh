@@ -36,6 +36,8 @@ export async function POST(request: NextRequest) {
       valid_from,
       valid_until,
       partner_id,
+      campaign_id,
+      discount_scope,
       notes,
     } = body
 
@@ -50,6 +52,9 @@ export async function POST(request: NextRequest) {
     }
     if (discount_type === 'fixed_amount' && !fixed_discount_cents) {
       return apiError('fixed_discount_cents is required for fixed_amount codes', 400)
+    }
+    if (discount_scope && !['cruise', 'all'].includes(discount_scope)) {
+      return apiError('discount_scope must be cruise or all', 400)
     }
 
     // Auto-generate code if not provided
@@ -70,6 +75,8 @@ export async function POST(request: NextRequest) {
         valid_from: valid_from ?? null,
         valid_until: valid_until ?? null,
         partner_id: partner_id ?? null,
+        campaign_id: campaign_id ?? null,
+        discount_scope: discount_scope ?? 'cruise',
         notes: notes ?? null,
       })
       .select()
@@ -84,7 +91,14 @@ export async function POST(request: NextRequest) {
 
 const ALPHABET = 'ACDEFGHJKLMNPQRTUVWXY3469'
 
+/**
+ * Short 4-char promo code, e.g. "FQHY". Compact enough to write on a partner's
+ * desk reminder card and dictate over the phone. Uses an alphabet with no
+ * lookalike characters.
+ *
+ * Older 8-char dashed codes like "RUU4-XL3N" still validate via normalizeCode's
+ * backward-compat branch — no migration needed for existing codes.
+ */
 function generateCode(): string {
-  const chars = Array.from({ length: 8 }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)])
-  return `${chars.slice(0, 4).join('')}-${chars.slice(4).join('')}`
+  return Array.from({ length: 4 }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join('')
 }

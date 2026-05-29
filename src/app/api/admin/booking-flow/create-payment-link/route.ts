@@ -6,6 +6,7 @@ import { getStripe } from '@/lib/stripe/server'
 import { Resend } from 'resend'
 import { paymentLinkEmailHtml } from '@/emails/PaymentLinkEmail'
 import { format } from 'date-fns'
+import { extractVat } from '@/lib/extras/calculate'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://offcourseamsterdam.com'
 
@@ -94,8 +95,15 @@ export async function POST(request: NextRequest) {
     })
 
     // Step 4: Save booking to Supabase
+    //
+    // VAT model: the override amount is treated as the final VAT-inclusive total
+    // (what the customer actually pays). VAT is back-calculated at 9% — same
+    // convention as the rest of the codebase (see extractVat in calculate.ts).
+    // Without this, payment-link bookings would record €0 VAT collected and
+    // throw off accounting reports.
     const supabase = createAdminClient()
     const bookingId = fhBooking?.uuid ?? `pl_${Date.now()}`
+    const baseVatAmountCents = extractVat(Number(overrideAmountCents), 9)
     const { data: savedBooking, error: dbError } = await supabase
       .from('bookings')
       .insert({
@@ -107,10 +115,10 @@ export async function POST(request: NextRequest) {
         stripe_amount: Number(overrideAmountCents),
         base_amount_cents: Number(overrideAmountCents),
         base_vat_rate: 9,
-        base_vat_amount_cents: 0,
+        base_vat_amount_cents: baseVatAmountCents,
         extras_amount_cents: 0,
         extras_vat_amount_cents: 0,
-        total_vat_amount_cents: 0,
+        total_vat_amount_cents: baseVatAmountCents,
         extras_selected: (extrasSelected ?? []) as never,
         listing_id: listingId ?? null,
         listing_title: String(listingTitle ?? ''),

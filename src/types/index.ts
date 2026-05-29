@@ -18,6 +18,8 @@ export interface AvailabilityCustomerType {
   pk: number
   totalCapacity: number
   customerTypePk: number
+  /** FH-provided name e.g. "Adult (13+)" / "Child (0-12)". May be empty if FH didn't supply one. */
+  name: string
   boatId: 'diana' | 'curacao'
   minimumParty: number
   maximumParty: number

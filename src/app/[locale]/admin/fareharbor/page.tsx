@@ -34,6 +34,9 @@ export default function BookingFlowPage() {
   const [bookingSource, setBookingSource] = useState<BookingSource>('website')
   const [depositAmountCents, setDepositAmountCents] = useState(0)
   const [depositInput, setDepositInput] = useState('0')
+  // Stripe recovery: real amount paid + optional PI ID to cross-reference
+  const [recoveryAmountInput, setRecoveryAmountInput] = useState('')
+  const [recoveryStripePiInput, setRecoveryStripePiInput] = useState('')
 
   // Step 1
   const [date, setDate] = useState(today)
@@ -67,6 +70,7 @@ export default function BookingFlowPage() {
   const [paymentLinkUrl, setPaymentLinkUrl] = useState<string | null>(null)
 
   const isInternal = bookingSource !== 'website'
+  const isStripeRecovery = bookingSource === 'stripe_recovery'
 
   // Sync deposit input when source changes
   useEffect(() => {
@@ -74,7 +78,26 @@ export default function BookingFlowPage() {
       setDepositAmountCents(0)
       setDepositInput('0')
     }
+    // Reset recovery fields when leaving stripe_recovery
+    if (bookingSource !== 'stripe_recovery') {
+      setRecoveryAmountInput('')
+      setRecoveryStripePiInput('')
+    }
   }, [bookingSource])
+
+  // Pre-fill recovery amount with the calculated grand total when entering step 5
+  useEffect(() => {
+    if (step === 5 && isStripeRecovery && !recoveryAmountInput) {
+      const calc = extrasStep?.calculation
+      const baseCents = selectedRate ? (ratePrice(selectedRate) ?? 0) : 0
+      const totalCents = calc
+        ? calc.grand_total_cents + (guestCount * 260) // include city tax
+        : baseCents + (guestCount * 260)
+      if (totalCents > 0) {
+        setRecoveryAmountInput((totalCents / 100).toFixed(2))
+      }
+    }
+  }, [step, isStripeRecovery, recoveryAmountInput, extrasStep, selectedRate, guestCount])
 
   // ── Handle return from redirect-based payment (iDEAL, Bancontact etc.) ──
   useEffect(() => {
@@ -108,7 +131,6 @@ export default function BookingFlowPage() {
         }
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // ── Step 1 → 2: Pick listing ────────────────────────────────────────────
@@ -205,6 +227,10 @@ export default function BookingFlowPage() {
     const calc = extrasStep?.calculation ?? null
     const baseAmountCents = ratePrice(selectedRate) ?? 0
 
+    // For Stripe recovery: amount paid = admin-entered (defaults to computed total).
+    // For all other internal sources: amount is 0 (no Stripe charge).
+    const recoveryCents = Math.round((parseFloat(recoveryAmountInput) || 0) * 100)
+
     setBookingLoading(true)
     setBookingError(null)
     setStep(6)
@@ -230,7 +256,7 @@ export default function BookingFlowPage() {
           date,
           startAt: selectedSlot.start_at,
           endAt: selectedSlot.end_at,
-          amountCents: 0,
+          amountCents: isStripeRecovery ? recoveryCents : 0,
           baseAmountCents: calc?.base_amount_cents ?? baseAmountCents,
           extrasSelected: calc?.line_items ?? [],
           extrasAmountCents: calc?.extras_amount_cents ?? 0,
@@ -239,6 +265,10 @@ export default function BookingFlowPage() {
           totalVatAmountCents: calc?.total_vat_amount_cents ?? 0,
           bookingSource,
           depositAmountCents,
+          // Stripe recovery only — links the manually-entered booking to the original PI
+          recoveryStripePaymentIntentId: isStripeRecovery
+            ? (recoveryStripePiInput.trim() || null)
+            : null,
         }),
       })
       const json = await res.json()
@@ -478,18 +508,62 @@ export default function BookingFlowPage() {
       {step === 5 && isInternal && bookingSource !== 'payment_link' && (
         <div className="space-y-6">
           <div className="rounded-lg border border-zinc-200 bg-white p-6 space-y-4">
-            <h3 className="font-semibold text-zinc-900">Confirm internal booking</h3>
+            <h3 className="font-semibold text-zinc-900">
+              {isStripeRecovery ? 'Confirm booking — already paid' : 'Confirm internal booking'}
+            </h3>
 
             {/* Source reminder */}
             <div className="flex items-center gap-2">
               <span className="text-sm text-zinc-500">Source:</span>
-              <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-purple-100 text-purple-700">
+              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                isStripeRecovery ? 'bg-amber-100 text-amber-700' : 'bg-purple-100 text-purple-700'
+              }`}>
                 {BOOKING_SOURCES.find(s => s.value === bookingSource)?.label ?? bookingSource}
               </span>
             </div>
 
-            {/* Deposit amount field — hidden for complimentary */}
-            {bookingSource !== 'complimentary' && (
+            {/* Stripe recovery fields */}
+            {isStripeRecovery && (
+              <>
+                <div className="rounded-md bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-900">
+                  Use this when Stripe took the payment but the booking flow failed.
+                  The amount below is recorded as paid revenue. No Stripe charge is made now.
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-zinc-700">
+                    Amount paid (€)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={recoveryAmountInput}
+                    onChange={e => setRecoveryAmountInput(e.target.value)}
+                    className="block w-48 rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+                    placeholder="0.00"
+                  />
+                  <p className="text-xs text-zinc-400">Pre-filled with the calculated total (incl. city tax + extras). Adjust if the actual amount paid differs.</p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-zinc-700">
+                    Stripe Payment Intent ID <span className="text-zinc-400">(optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={recoveryStripePiInput}
+                    onChange={e => setRecoveryStripePiInput(e.target.value)}
+                    className="block w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-zinc-900"
+                    placeholder="pi_3O…"
+                  />
+                  <p className="text-xs text-zinc-400">Paste the original Stripe PI ID to cross-reference. Leave empty if unknown.</p>
+                </div>
+              </>
+            )}
+
+            {/* Deposit amount field — hidden for complimentary and stripe_recovery */}
+            {bookingSource !== 'complimentary' && !isStripeRecovery && (
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-zinc-700">
                   Deposit amount (€)
@@ -538,9 +612,10 @@ export default function BookingFlowPage() {
             </button>
             <button
               onClick={handleInternalConfirm}
-              className="flex-1 px-4 py-2 rounded-lg bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 transition-colors"
+              disabled={isStripeRecovery && !recoveryAmountInput}
+              className="flex-1 px-4 py-2 rounded-lg bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              Confirm Booking
+              {isStripeRecovery ? 'Confirm — already paid' : 'Confirm Booking'}
             </button>
           </div>
         </div>

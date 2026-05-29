@@ -314,3 +314,65 @@ describe('calculateExtras — per_person_per_hour_cents', () => {
     expect(result.line_items[0].vat_amount_cents).toBe(Math.round(6000 * 21 / 121))
   })
 })
+
+// ── Per-person extras WITH min_people (customer picks people count) ────────
+
+describe('calculateExtras — per_person_cents with min_people', () => {
+  it('prices = qty × price_value (decoupled from booking guestCount)', () => {
+    const charcuterie = makeExtra({
+      name: 'Charcuterie Platter',
+      price_type: 'per_person_cents',
+      price_value: 920,        // €9.20 per person
+      vat_rate: 9,
+      quantity_mode: 'counter',
+      min_people: 2,
+    })
+    // Booking has 6 guests, customer orders charcuterie for 4 people
+    const qty = new Map([[charcuterie.id, 4]])
+    const result = calculateExtras(20000, 6, [charcuterie], 90, qty)
+
+    // 4 × 920 = 3680 (NOT 6 × 920 × 4 = 22080)
+    expect(result.line_items[0].amount_cents).toBe(3680)
+    expect(result.line_items[0].quantity).toBe(4)
+    expect(result.line_items[0].guest_count).toBe(4)   // = qty for per-person-pick
+    expect(result.line_items[0].is_per_person_pick).toBe(true)
+  })
+
+  it('legacy per-person items (no min_people) keep "applies to all guests" semantic', () => {
+    const drinksPkg = makeExtra({
+      name: 'Drinks package',
+      price_type: 'per_person_cents',
+      price_value: 1500,       // €15 per person
+      vat_rate: 21,
+      // min_people NOT set — legacy behavior
+    })
+    const result = calculateExtras(20000, 4, [drinksPkg])
+
+    // 4 × 1500 × 1 = 6000
+    expect(result.line_items[0].amount_cents).toBe(6000)
+    expect(result.line_items[0].guest_count).toBe(4)
+    expect(result.line_items[0].is_per_person_pick).toBeUndefined()
+  })
+
+  it('min_people = 0 or null are both treated as legacy', () => {
+    const a = makeExtra({
+      price_type: 'per_person_cents',
+      price_value: 500,
+      vat_rate: 9,
+      min_people: 0,
+    })
+    const b = makeExtra({
+      price_type: 'per_person_cents',
+      price_value: 500,
+      vat_rate: 9,
+      min_people: null,
+    })
+    const r1 = calculateExtras(0, 3, [a])
+    const r2 = calculateExtras(0, 3, [b])
+    expect(r1.line_items[0].is_per_person_pick).toBeUndefined()
+    expect(r2.line_items[0].is_per_person_pick).toBeUndefined()
+    // both = 3 × 500
+    expect(r1.line_items[0].amount_cents).toBe(1500)
+    expect(r2.line_items[0].amount_cents).toBe(1500)
+  })
+})

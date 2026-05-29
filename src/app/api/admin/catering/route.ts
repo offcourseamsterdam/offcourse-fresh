@@ -6,24 +6,37 @@ export async function GET() {
   try {
     const supabase = createAdminClient()
 
-    const { data, error } = await supabase
-      .from('bookings')
-      .select(`
-        id, booking_uuid, listing_id, listing_title, tour_item_name,
-        customer_name, customer_email, booking_date, start_time,
-        guest_count, category, status, booking_source,
-        extras_selected, base_amount_cents, extras_amount_cents,
-        stripe_amount, deposit_amount_cents, catering_email_sent_at,
-        created_at
-      `)
-      .in('status', ['confirmed', 'booked'])
-      .order('booking_date', { ascending: false })
+    const [bookingsResult, itemsResult] = await Promise.all([
+      supabase
+        .from('bookings')
+        .select(`
+          id, booking_uuid, listing_id, listing_title, tour_item_name,
+          customer_name, customer_email, booking_date, start_time,
+          guest_count, category, status, booking_source,
+          extras_selected, base_amount_cents, extras_amount_cents,
+          stripe_amount, deposit_amount_cents, catering_email_sent_at,
+          created_at, fareharbor_customer_type_rate_pk
+        `)
+        .in('status', ['confirmed', 'booked'])
+        .order('booking_date', { ascending: false }),
+      supabase
+        .from('fareharbor_items')
+        .select('customer_types'),
+    ])
 
-    if (error) return apiError(error.message)
+    if (bookingsResult.error) return apiError(bookingsResult.error.message)
 
-    // Filter to bookings that have at least one food/drinks extra
-    // Dataset is small so JS filtering is fine
-    const cateringBookings = (data ?? []).filter(b =>
+    // Build lookup: rate_pk → name (e.g. "Diana 2h")
+    type CtRow = { fareharbor_pk: number; name: string }
+    const ctMap = new Map<number, string>()
+    for (const item of itemsResult.data ?? []) {
+      for (const ct of ((item.customer_types ?? []) as CtRow[])) {
+        if (ct.fareharbor_pk && ct.name) ctMap.set(ct.fareharbor_pk, ct.name)
+      }
+    }
+
+    // Filter to bookings that have at least one food extra
+    const cateringBookings = (bookingsResult.data ?? []).filter(b =>
       hasCatering(b.extras_selected as never)
     )
 
@@ -36,6 +49,9 @@ export async function GET() {
     return apiOk({
       bookings: cateringBookings.map(b => ({
         ...b,
+        customer_type_name: b.fareharbor_customer_type_rate_pk
+          ? (ctMap.get(b.fareharbor_customer_type_rate_pk) ?? null)
+          : null,
         cateringItems: filterCateringItems(b.extras_selected as never),
         cateringAmountCents: cateringAmountCents(b.extras_selected as never),
       })),

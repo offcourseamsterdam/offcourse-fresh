@@ -41,7 +41,6 @@ function NavLinks({
   profile,
   isLoading,
   signOut,
-  locale,
   t,
 }: {
   onClose: () => void
@@ -51,7 +50,6 @@ function NavLinks({
   profile: ReturnType<typeof useAuth>['profile']
   isLoading: boolean
   signOut: () => void
-  locale: string
   t: (key: string) => string
 }) {
   return (
@@ -132,7 +130,7 @@ export function Navbar({ navListings = [] }: NavbarProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [langOpen, setLangOpen] = useState(false)
   const [mobileCruisesOpen, setMobileCruisesOpen] = useState(false)
-  const [scrolled, setScrolled] = useState(false)
+  const [_scrolled, setScrolled] = useState(false)
   const { heroSearchVisible, triggerNavbarSearch } = useSearch()
   const showNavSearch = !heroSearchVisible
 
@@ -272,7 +270,6 @@ export function Navbar({ navListings = [] }: NavbarProps) {
               profile={profile}
               isLoading={isLoading}
               signOut={signOut}
-              locale={locale}
               t={t}
             />
 

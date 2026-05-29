@@ -17,7 +17,6 @@ interface BookingSummaryProps {
   basePriceCents: number
   extrasCalculation: ExtrasCalculation | null
   cityTaxCents?: number
-  cancellationPolicy?: string | null
   cruiseLabel?: string
   discountAmountCents?: number
 }
@@ -41,7 +40,6 @@ export function BookingSummary({
   basePriceCents,
   extrasCalculation,
   cityTaxCents,
-  cancellationPolicy,
   cruiseLabel,
   discountAmountCents,
 }: BookingSummaryProps) {
@@ -106,12 +104,20 @@ export function BookingSummary({
             <span>{fmtEuros(basePriceCents)}</span>
           </div>
 
-          {extrasCalculation?.line_items.map(li => (
-            <div key={li.extra_id} className="flex justify-between text-zinc-600">
-              <span>{li.quantity > 1 ? `${li.name} ×${li.quantity}` : li.name}</span>
-              <span>{fmtEuros(li.amount_cents)}</span>
-            </div>
-          ))}
+          {extrasCalculation?.line_items.map(li => {
+            const qty = li.quantity
+            const label = li.is_per_person_pick && qty > 0
+              ? `${li.name} — for ${qty} ${qty === 1 ? 'person' : 'people'}`
+              : qty > 1
+                ? `${li.name} ×${qty}`
+                : li.name
+            return (
+              <div key={li.extra_id} className="flex justify-between text-zinc-600">
+                <span>{label}</span>
+                <span>{fmtEuros(li.amount_cents)}</span>
+              </div>
+            )
+          })}
 
           {cityTaxCents && cityTaxCents > 0 && (
             <div className="flex justify-between text-zinc-600">
@@ -122,7 +128,7 @@ export function BookingSummary({
 
           {discountAmountCents && discountAmountCents > 0 && (
             <div className="flex justify-between text-emerald-700 font-medium">
-              <span>Promo discount</span>
+              <span>Prepaid</span>
               <span>−{fmtEuros(discountAmountCents)}</span>
             </div>
           )}
@@ -138,15 +144,6 @@ export function BookingSummary({
           </div>
         </div>
 
-        {/* Cancellation policy */}
-        {cancellationPolicy && (
-          <div className="border-t border-zinc-100 pt-3">
-            <h4 className="text-xs font-semibold text-zinc-700 mb-1">Cancellation policy</h4>
-            <p className="text-xs text-zinc-500 leading-relaxed line-clamp-3">
-              {cancellationPolicy}
-            </p>
-          </div>
-        )}
       </div>
     </div>
   )

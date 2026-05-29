@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { Loader2, Clock, Users } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { CancellationTiersEditor } from '@/components/admin/CancellationTiersEditor'
+import { normalizeTiers, type CancellationTier } from '@/lib/cancellation/policy'
 
 interface FHItem {
   id: string
@@ -12,6 +14,7 @@ interface FHItem {
   is_active: boolean
   booking_cutoff_hours: number | null
   max_slot_capacity: number | null
+  cancellation_tiers: CancellationTier[] | null
 }
 
 export default function FareHarborSettingsPage() {
@@ -28,10 +31,17 @@ export default function FareHarborSettingsPage() {
     const supabase = createAdminClient()
     const { data, error } = await supabase
       .from('fareharbor_items')
-      .select('id, name, fareharbor_pk, item_type, is_active, booking_cutoff_hours, max_slot_capacity')
+      .select('id, name, fareharbor_pk, item_type, is_active, booking_cutoff_hours, max_slot_capacity, cancellation_tiers')
       .order('name')
     if (error) console.error('FH items load error:', error)
-    setItems((data ?? []) as FHItem[])
+    setItems(
+      (data ?? []).map(d => ({
+        ...d,
+        cancellation_tiers: Array.isArray(d.cancellation_tiers)
+          ? (d.cancellation_tiers as unknown as CancellationTier[])
+          : null,
+      })) as FHItem[]
+    )
     setLoading(false)
   }
 
@@ -45,6 +55,24 @@ export default function FareHarborSettingsPage() {
       .eq('id', id)
     if (error) console.error('FH item update error:', error)
     setItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item))
+    setSaving(null)
+  }
+
+  async function updateCancellationTiers(id: string, tiers: CancellationTier[]) {
+    setSaving(id)
+    const supabase = createAdminClient()
+    const normalized = normalizeTiers(tiers)
+    const { error } = await supabase
+      .from('fareharbor_items')
+      // CancellationTier[] is JSON-shaped but the typed Update accepts Json — cast through unknown.
+      .update({ cancellation_tiers: normalized as unknown as never })
+      .eq('id', id)
+    if (error) {
+      console.error('FH item cancellation_tiers update error:', error)
+      setSaving(null)
+      throw error
+    }
+    setItems(prev => prev.map(item => item.id === id ? { ...item, cancellation_tiers: normalized } : item))
     setSaving(null)
   }
 
@@ -62,9 +90,8 @@ export default function FareHarborSettingsPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-zinc-900">FareHarbor Settings</h1>
         <p className="text-sm text-zinc-500 mt-1">
-          Configure booking cutoff windows per FareHarbor item. Slots within the cutoff window
-          show a <strong>"Chat to book"</strong> button that opens WhatsApp instead of the
-          normal checkout — unless a shared cruise already has at least one booking.
+          Configure booking cutoff windows and cancellation policy per FareHarbor item.
+          Each setting applies to every virtual cruise listing linked to that item.
         </p>
       </div>
 
@@ -113,7 +140,7 @@ export default function FareHarborSettingsPage() {
                     className="w-full text-sm border border-zinc-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-zinc-300"
                   />
                   <p className="text-[10px] text-zinc-400 mt-1">
-                    Slots within this many hours of departure show "Chat to book". Empty = no cutoff.
+                    Slots within this many hours of departure show &quot;Chat to book&quot;. Empty = no cutoff.
                   </p>
                 </div>
 
@@ -139,6 +166,18 @@ export default function FareHarborSettingsPage() {
                     </p>
                   </div>
                 )}
+              </div>
+
+              {/* Cancellation policy editor — applies to every virtual cruise listing on this FH item */}
+              <div className="mt-6 pt-6 border-t border-zinc-100">
+                <CancellationTiersEditor
+                  value={item.cancellation_tiers}
+                  saving={saving === item.id}
+                  onSave={tiers => updateCancellationTiers(item.id, tiers)}
+                />
+                <p className="text-[10px] text-zinc-400 mt-2">
+                  Applies to every virtual cruise listing linked to this FareHarbor item.
+                </p>
               </div>
             </div>
           ))}

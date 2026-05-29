@@ -3,7 +3,6 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireRole } from '@/lib/auth/server'
 import { VALID_ROLES } from '@/lib/auth/types'
-import type { UserRole } from '@/lib/auth/types'
 
 // POST /api/admin/users/invite — invite a new user with a specific role (admin only)
 export async function POST(request: NextRequest) {

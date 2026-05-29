@@ -20,7 +20,7 @@ export async function generateMetadata({ params }: Props) {
   }
 }
 
-export default async function CrewPage({ params }: Props) {
+export default async function CrewPage({ params: _params }: Props) {
   const t = await getTranslations('crew')
   const supabase = await createClient()
 

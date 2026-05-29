@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { FHMinimalAvailability, FHCustomerTypeRate } from './types'
-import type { CustomerTypeConfig, BoatConfig } from './config'
+import type { CustomerTypeConfig } from './config'
 import { BOATS } from './config'
 import { getSunsetTime } from './sunset'
 

@@ -74,20 +74,6 @@ export async function GET(request: Request) {
     // Use the first location (Off Course Amsterdam has one location)
     const location = locations[0]
 
-    // Get the user's email for display in admin
-    let email: string | null = null
-    try {
-      const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-        headers: { Authorization: `Bearer ${tokens.access_token}` },
-      })
-      if (userInfoRes.ok) {
-        const userInfo = await userInfoRes.json() as { email?: string }
-        email = userInfo.email ?? null
-      }
-    } catch {
-      // Not critical — email is just for display
-    }
-
     // Store tokens and account info using admin client (bypasses RLS)
     const supabase = createAdminClient()
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString()

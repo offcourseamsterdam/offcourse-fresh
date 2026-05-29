@@ -16,6 +16,11 @@ interface CatalogExtra {
   is_active: boolean
   image_url: string | null
   quantity_mode?: string | null
+  min_people?: number | null
+}
+
+function isPerPersonPick(extra: CatalogExtra): boolean {
+  return extra.price_type === 'per_person_cents' && !!extra.min_people && extra.min_people > 0
 }
 
 interface AddCateringModalProps {
@@ -27,21 +32,27 @@ interface AddCateringModalProps {
   onSuccess: () => void
 }
 
-/** Compute the total amount for one catering extra at a given quantity. */
+/** Compute the total amount for one catering extra at a given quantity.
+ *  For per-person-pick items, qty = people-count for this item (decoupled from booking guestCount).
+ *  For legacy per-person items, qty multiplies the all-guests total. */
 function calcItemAmount(extra: CatalogExtra, guestCount: number, qty: number): number {
   if (qty === 0) return 0
-  let unitAmt = 0
   if (extra.price_type === 'fixed_cents') {
-    unitAmt = extra.price_value
-  } else if (extra.price_type === 'per_person_cents') {
-    unitAmt = Math.round(extra.price_value * guestCount)
-  } else if (extra.price_type === 'per_person_per_hour_cents') {
-    // default 1.5 h — a reasonable admin estimate
-    unitAmt = Math.round(extra.price_value * guestCount * 1.5)
-  } else {
-    unitAmt = extra.price_value
+    return extra.price_value * qty
   }
-  return unitAmt * qty
+  if (extra.price_type === 'per_person_cents') {
+    if (isPerPersonPick(extra)) {
+      // qty IS the people count for this item
+      return extra.price_value * qty
+    }
+    // legacy: each booking guest gets one
+    return Math.round(extra.price_value * guestCount) * qty
+  }
+  if (extra.price_type === 'per_person_per_hour_cents') {
+    // default 1.5 h — a reasonable admin estimate
+    return Math.round(extra.price_value * guestCount * 1.5) * qty
+  }
+  return extra.price_value * qty
 }
 
 /** Back-calculate inclusive VAT. */
@@ -54,7 +65,7 @@ export function AddCateringModal({
   bookingId,
   guestCount,
   existingExtras,
-  baseAmountCents,
+  baseAmountCents: _baseAmountCents,
   onClose,
   onSuccess,
 }: AddCateringModalProps) {
@@ -112,14 +123,29 @@ export function AddCateringModal({
       for (const extra of catalogItems) {
         const qty = quantities[extra.id] ?? 0
         if (qty <= 0) continue
+
+        // Validate min_people constraints for per-person-pick items
+        if (isPerPersonPick(extra)) {
+          if (qty < (extra.min_people ?? 1)) {
+            throw new Error(`${extra.name} requires a minimum of ${extra.min_people} people (current: ${qty})`)
+          }
+          if (qty > guestCount) {
+            throw new Error(`${extra.name} cannot exceed booking guest count (${guestCount})`)
+          }
+        }
+
         const amount = calcItemAmount(extra, guestCount, qty)
-        newCateringItems.push({
+        const lineItem: AdminExtraLineItem = {
           name: extra.name,
           amount_cents: amount,
           category: extra.category,
           extra_id: extra.id,
           quantity: qty,
-        })
+        }
+        if (isPerPersonPick(extra)) {
+          lineItem.is_per_person_pick = true
+        }
+        newCateringItems.push(lineItem)
       }
 
       const newExtras = [...nonCatering, ...newCateringItems]
@@ -218,17 +244,45 @@ export function AddCateringModal({
                       {items.map(extra => {
                         const qty = quantities[extra.id] ?? 0
                         const amount = calcItemAmount(extra, guestCount, qty)
-                        const unitLabel = extra.price_type === 'per_person_cents'
-                          ? `${fmtEuros(Math.round(extra.price_value * guestCount))} for ${guestCount} guests`
-                          : fmtEuros(extra.price_value)
+                        const perPersonPick = isPerPersonPick(extra)
+                        const minPeople = extra.min_people ?? 1
+                        const belowMinGuests = perPersonPick && guestCount < minPeople
+                        // No upper cap on per-person-pick items: customer/admin can over-order
+                        // (e.g. order Charcuterie for 8 people on a 6-guest booking).
+                        const maxQty = Number.POSITIVE_INFINITY
+
+                        const unitLabel = perPersonPick
+                          ? `${fmtEuros(extra.price_value)} per person · min. ${minPeople}`
+                          : extra.price_type === 'per_person_cents'
+                            ? `${fmtEuros(Math.round(extra.price_value * guestCount))} for ${guestCount} guests`
+                            : fmtEuros(extra.price_value)
+
+                        function handleMinus() {
+                          // For per-person-pick: drop to 0 when at minimum
+                          if (perPersonPick && qty <= minPeople) {
+                            setQty(extra.id, 0)
+                          } else {
+                            setQty(extra.id, qty - 1)
+                          }
+                        }
+                        function handlePlus() {
+                          if (belowMinGuests) return
+                          if (perPersonPick && qty === 0) {
+                            setQty(extra.id, minPeople)
+                          } else if (qty < maxQty) {
+                            setQty(extra.id, qty + 1)
+                          }
+                        }
 
                         return (
                           <div
                             key={extra.id}
                             className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
-                              qty > 0
-                                ? 'border-[var(--color-primary)]/30 bg-[var(--color-sand)]'
-                                : 'border-zinc-100 bg-zinc-50'
+                              belowMinGuests
+                                ? 'border-zinc-100 bg-zinc-50 opacity-60'
+                                : qty > 0
+                                  ? 'border-[var(--color-primary)]/30 bg-[var(--color-sand)]'
+                                  : 'border-zinc-100 bg-zinc-50'
                             }`}
                           >
                             {/* Thumbnail */}
@@ -248,13 +302,21 @@ export function AddCateringModal({
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium text-zinc-900 truncate">{extra.name}</p>
                               <p className="text-xs text-zinc-400">{unitLabel}</p>
+                              {belowMinGuests && (
+                                <p className="text-xs text-amber-700 mt-0.5">
+                                  Need at least {minPeople} guests on the boat
+                                </p>
+                              )}
+                              {perPersonPick && qty > 0 && (
+                                <p className="text-[10px] text-zinc-500 mt-0.5">For how many people?</p>
+                              )}
                             </div>
 
                             {/* Quantity stepper */}
                             <div className="flex items-center gap-1.5 flex-shrink-0">
                               <button
                                 type="button"
-                                onClick={() => setQty(extra.id, qty - 1)}
+                                onClick={handleMinus}
                                 disabled={qty === 0}
                                 className="w-7 h-7 rounded-full border border-zinc-200 text-zinc-600 flex items-center justify-center hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm font-bold"
                               >
@@ -265,8 +327,9 @@ export function AddCateringModal({
                               </span>
                               <button
                                 type="button"
-                                onClick={() => setQty(extra.id, qty + 1)}
-                                className="w-7 h-7 rounded-full border border-zinc-200 text-zinc-600 flex items-center justify-center hover:bg-white transition-colors text-sm font-bold"
+                                onClick={handlePlus}
+                                disabled={belowMinGuests || qty >= maxQty}
+                                className="w-7 h-7 rounded-full border border-zinc-200 text-zinc-600 flex items-center justify-center hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm font-bold"
                               >
                                 +
                               </button>
@@ -306,25 +369,42 @@ export function AddCateringModal({
             </div>
           )}
 
-          <div className="flex gap-2 justify-end">
-            <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleSave}
-              disabled={saving || loading}
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  Saving…
-                </>
-              ) : (
-                'Save catering order'
+          <div className="flex items-center justify-between gap-2">
+            {/* Left: remove all link — only shown when items are already selected */}
+            <div>
+              {selectedCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setQuantities({})}
+                  className="text-xs text-red-500 hover:text-red-700 transition-colors"
+                >
+                  Remove all catering
+                </button>
               )}
-            </Button>
+            </div>
+
+            {/* Right: cancel + save */}
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleSave}
+                disabled={saving || loading}
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Saving…
+                  </>
+                ) : selectedCount === 0
+                  ? 'Remove catering'
+                  : 'Save catering order'
+                }
+              </Button>
+            </div>
           </div>
         </div>
       </div>

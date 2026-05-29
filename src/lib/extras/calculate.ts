@@ -12,6 +12,14 @@ export interface Extra {
   is_required: boolean
   quantity_mode?: string
   min_quantity?: number
+  /** When set on a per_person_cents extra: qty represents people-count for this
+   *  item (decoupled from booking guestCount). Counter starts at this value;
+   *  pricing = qty × price_value. NULL = legacy behaviour (applies to all guests). */
+  min_people?: number | null
+  /** When true (only meaningful on per-person-pick extras), the booking-flow counter
+   *  caps at adult count rather than total guests. Use for items that can't be sold
+   *  to children, e.g. Unlimited Drinks. */
+  adults_only?: boolean
 }
 
 export interface ExtraLineItem {
@@ -25,6 +33,9 @@ export interface ExtraLineItem {
   quantity: number
   amount_cents: number
   vat_amount_cents: number
+  /** True when this is a per-person extra where the customer picked the people
+   *  count explicitly (price = quantity × price_value, not × booking guestCount). */
+  is_per_person_pick?: boolean
 }
 
 export interface ExtrasCalculation {
@@ -39,7 +50,7 @@ export interface ExtrasCalculation {
 }
 
 /** Back-calculate VAT from an inclusive price: vat = price × rate / (100 + rate) */
-function extractVat(amountInclVat: number, rate: number): number {
+export function extractVat(amountInclVat: number, rate: number): number {
   if (rate === 0) return 0
   return Math.round(amountInclVat * rate / (100 + rate))
 }
@@ -82,11 +93,19 @@ export function calculateExtras(
     return 1
   }
 
-  // 1. Per-person extras (city tax) — always first, required ones always included
+  // 1. Per-person extras (city tax, catering) — always first, required ones always included
+  //
+  // Two flavours:
+  //  - min_people set:   qty = people-count for this item (decoupled from booking guestCount).
+  //                      amount = price_value × qty. Counter UI in the booking flow.
+  //  - min_people NULL:  legacy "applies to all guests" semantic.
+  //                      amount = price_value × guestCount × qty.
   for (const extra of priced.filter(e => e.price_type === 'per_person_cents')) {
     const qty = getQty(extra)
-    const unitAmount = Math.round(extra.price_value * guestCount)
-    const amount = unitAmount * qty
+    const isPerPersonPick = extra.min_people != null && extra.min_people > 0
+    const amount = isPerPersonPick
+      ? extra.price_value * qty
+      : Math.round(extra.price_value * guestCount) * qty
     const vat = extractVat(amount, extra.vat_rate)
     lineItems.push({
       extra_id: extra.id,
@@ -95,10 +114,11 @@ export function calculateExtras(
       price_type: extra.price_type,
       price_value: extra.price_value,
       vat_rate: extra.vat_rate,
-      guest_count: guestCount,
+      guest_count: isPerPersonPick ? qty : guestCount,
       quantity: qty,
       amount_cents: amount,
       vat_amount_cents: vat,
+      ...(isPerPersonPick ? { is_per_person_pick: true } : {}),
     })
     subtotal += amount
   }

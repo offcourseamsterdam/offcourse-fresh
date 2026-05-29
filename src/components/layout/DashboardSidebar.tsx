@@ -29,6 +29,7 @@ import {
   Settings,
   Ticket,
   UtensilsCrossed,
+  Receipt,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -71,6 +72,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   affiliates: Handshake,
   settings: Settings,
   promocodes: Ticket,
+  finance: Receipt,
 }
 
 const PREFETCH_URLS: Record<string, string> = {
@@ -80,6 +82,7 @@ const PREFETCH_URLS: Record<string, string> = {
   '/admin/reviews':     '/api/admin/reviews',
   '/admin/cruises':     '/api/admin/cruise-listings',
   '/admin/promo-codes': '/api/admin/promo-codes',
+  '/admin/finance':     '/api/admin/finance/partners-summary',
 }
 
 export default function DashboardSidebar({

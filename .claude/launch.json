@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "Next.js Dev (webpack)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:local"],
+      "port": 3000
     }
   ]
 }

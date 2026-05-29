@@ -8,6 +8,7 @@ function makeCustomerType(
   return {
     pk: Math.floor(Math.random() * 1_000_000),
     customerTypePk: Math.floor(Math.random() * 1_000_000),
+    name: '',
     minimumParty: 1,
     maximumParty: 12,
     priceCents: 16500,

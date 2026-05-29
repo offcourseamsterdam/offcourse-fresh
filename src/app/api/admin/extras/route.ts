@@ -44,6 +44,8 @@ export async function POST(request: NextRequest) {
     ingredients: body.ingredients ?? null,
     quantity_mode: body.quantity_mode ?? 'toggle',
     min_quantity: body.min_quantity ?? 1,
+    min_people: body.min_people ?? null,
+    adults_only: !!body.adults_only,
   }
 
   const { data, error } = await supabase.from('extras').insert(allowed).select().single()

@@ -20,7 +20,7 @@ export default function AdminDashboardPage() {
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-semibold text-zinc-900 tracking-tight">Dashboard</h1>
-        <p className="text-sm text-zinc-500 mt-1">Welcome back — here's what's happening.</p>
+        <p className="text-sm text-zinc-500 mt-1">Welcome back — here&apos;s what&apos;s happening.</p>
       </div>
 
       {/* KPI cards */}

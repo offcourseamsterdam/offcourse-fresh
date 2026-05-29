@@ -280,6 +280,41 @@ export function ExtrasFormModal({
           </label>
         )}
 
+        {/* Minimum people (only for per_person_cents) */}
+        {form.price_type === 'per_person_cents' && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-zinc-600">Minimum people</label>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              placeholder="Leave empty for no minimum"
+              value={form.min_people_display}
+              onChange={e => onFormChange(f => ({ ...f, min_people_display: e.target.value }))}
+              className="w-full sm:w-48 px-3 py-2 rounded-md border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10 focus:border-zinc-400"
+            />
+            <p className="text-xs text-zinc-400">
+              When set, the customer picks how many people get this item (e.g. Charcuterie for 4 of 6 guests). Counter starts at this value; price = qty × per-person rate.
+            </p>
+
+            {/* Adults-only cap — only meaningful when min_people is also set */}
+            <label className="flex items-start gap-3 cursor-pointer pt-2">
+              <input
+                type="checkbox"
+                className="mt-0.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900"
+                checked={form.adults_only}
+                onChange={e => onFormChange(f => ({ ...f, adults_only: e.target.checked }))}
+              />
+              <div>
+                <p className="text-sm font-medium text-zinc-800">Adults only</p>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Counter is capped at the booking&apos;s adult count (not total guests). Use for items that can&apos;t be sold to children, e.g. Unlimited Drinks.
+                </p>
+              </div>
+            </label>
+          </div>
+        )}
+
         {/* Quantity mode */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">

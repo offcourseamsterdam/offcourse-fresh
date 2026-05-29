@@ -21,11 +21,18 @@ const STEP_LABELS: Record<Step, string> = {
   extras: 'Extras',
 }
 
+/**
+ * Per-step summary. Either a plain string (single-line tab) or
+ * `{ value, subline }` (two-line tab — only used for the boat tab on
+ * private cruises so the duration can sit under the boat name).
+ */
+type SummaryValue = string | { value: string; subline?: string }
+
 interface BookingStepTabsProps {
   steps: Step[]
   currentStep: Step
   /** Per-step display value once that step has been completed */
-  summaries: Partial<Record<Step, string | undefined>>
+  summaries: Partial<Record<Step, SummaryValue | undefined>>
   /** Returns true if the user has progressed past this step */
   isCompleted: (step: Step) => boolean
   onStepClick: (step: Step) => void
@@ -58,12 +65,12 @@ export function BookingStepTabs({
         const active = step === currentStep
         const done = isCompleted(step)
         const enabled = active || done
-        const summary = summaries[step]
-        const text = active
-          ? summary ?? STEP_LABELS[step]
-          : done
-            ? summary ?? STEP_LABELS[step]
-            : STEP_LABELS[step]
+        const raw = summaries[step]
+        const summaryValue = typeof raw === 'string' ? raw : raw?.value
+        const subline = typeof raw === 'string' ? undefined : raw?.subline
+        const text =
+          (active || done) ? (summaryValue ?? STEP_LABELS[step]) : STEP_LABELS[step]
+        const ariaSuffix = summaryValue ? `: ${summaryValue}${subline ? ` ${subline}` : ''}` : ''
 
         return (
           <button
@@ -72,8 +79,8 @@ export function BookingStepTabs({
             onClick={() => enabled && onStepClick(step)}
             disabled={!enabled}
             aria-current={active ? 'step' : undefined}
-            aria-label={`${STEP_LABELS[step]}${summary ? `: ${summary}` : ''}`}
-            className={`flex-1 min-w-0 flex flex-col items-center gap-1 py-2.5 px-1
+            aria-label={`${STEP_LABELS[step]}${ariaSuffix}`}
+            className={`flex-1 min-w-0 flex flex-col items-center gap-1 pt-0 pb-2.5 px-1
               border-b-2 transition-colors text-[10px] leading-tight text-center
               ${
                 active
@@ -92,6 +99,11 @@ export function BookingStepTabs({
               )}
             </span>
             <span className="truncate w-full px-0.5">{text}</span>
+            {subline && (active || done) && (
+              <span className="text-[9px] text-zinc-400 leading-tight font-normal truncate w-full px-0.5">
+                {subline}
+              </span>
+            )}
           </button>
         )
       })}

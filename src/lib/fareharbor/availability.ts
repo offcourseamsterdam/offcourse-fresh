@@ -3,7 +3,6 @@ import { buildTypeMapFromAvailabilities } from './config'
 import {
   applyAllFilters,
   getValidTimeSlots,
-  getTimeFromISO,
   formatDisplayTime,
   getReasonCode,
   type ListingFilterConfig,
@@ -194,6 +193,9 @@ export function transformToSlot(
         pk: rate.pk,
         totalCapacity: rate.capacity,
         customerTypePk: rate.customer_type.pk,
+        // Preserve FH's customer type name (e.g. "Adult (13+)" / "Child (0-12)") so
+        // the booking UI can show it instead of a hardcoded "Adult"/"Child" label.
+        name: rate.customer_type.singular || rate.customer_type.plural || '',
         boatId: config?.boat ?? 'curacao',
         minimumParty: rate.minimum_party_size ?? 1,
         maximumParty: rate.maximum_party_size ?? (config?.maxGuests ?? 12),
