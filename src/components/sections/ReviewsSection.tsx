@@ -11,16 +11,12 @@ interface ReviewsSectionProps {
   /** Combined Google + TripAdvisor review count — defaults to the loaded review count when not provided. */
   totalReviewCount?: number
   locale: Locale
-  googlePlaceId?: string | null
-  tripadvisorUrl?: string | null
 }
 
 export async function ReviewsSection({
   reviews,
   totalReviewCount,
   locale,
-  googlePlaceId,
-  tripadvisorUrl,
 }: ReviewsSectionProps) {
   const t = await getTranslations('home.reviews')
 
@@ -42,11 +38,6 @@ export async function ReviewsSection({
   const hasGoogle = reviews.some(r => r.source === 'google')
   const hasTa = reviews.some(r => r.source === 'tripadvisor')
 
-  // "See all reviews" deep links to the real source profiles (the ones that actually rank).
-  const googleReviewsUrl = googlePlaceId
-    ? `https://search.google.com/local/reviews?placeid=${encodeURIComponent(googlePlaceId)}`
-    : null
-
   return (
     <section className="bg-[var(--color-sand)] py-16 sm:py-20 overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -63,32 +54,6 @@ export async function ReviewsSection({
 
         {/* Slider (client component) — shows source tabs only when both sources present */}
         <ReviewsSlider reviews={sliderReviews} showSourceTabs={hasGoogle && hasTa} />
-
-        {/* See all on the source platforms (the profiles that rank in search) */}
-        {(googleReviewsUrl || tripadvisorUrl) && (
-          <div className="text-center mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm font-avenir">
-            {googleReviewsUrl && (
-              <a
-                href={googleReviewsUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[var(--color-primary)] hover:underline"
-              >
-                See all reviews on Google →
-              </a>
-            )}
-            {tripadvisorUrl && (
-              <a
-                href={tripadvisorUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[var(--color-primary)] hover:underline"
-              >
-                See all on TripAdvisor →
-              </a>
-            )}
-          </div>
-        )}
       </div>
     </section>
   )

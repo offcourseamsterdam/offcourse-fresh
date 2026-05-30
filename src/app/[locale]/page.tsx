@@ -69,7 +69,7 @@ export default async function HomePage({ params }: Props) {
       .order('sort_order', { ascending: true }),
     adminSupabase
       .from('google_reviews_config')
-      .select('total_reviews, tripadvisor_total_reviews, place_id, tripadvisor_url')
+      .select('total_reviews, tripadvisor_total_reviews')
       .limit(1)
       .maybeSingle(),
   ])
@@ -85,15 +85,12 @@ export default async function HomePage({ params }: Props) {
   const googleTotal = googleConfigResult.data?.total_reviews ?? allReviews.filter(r => r.source === 'google').length
   const taTotal = googleConfigResult.data?.tripadvisor_total_reviews ?? allReviews.filter(r => r.source === 'tripadvisor').length
   const totalReviewCount = googleTotal + taTotal
-  const googlePlaceId = googleConfigResult.data?.place_id ?? null
-  const tripadvisorUrl = googleConfigResult.data?.tripadvisor_url ?? null
-
   return (
     <>
       <TrackPageView event="view_homepage" />
       <HeroSection slides={slides.length > 0 ? slides : undefined} />
       <FeaturedCruises listings={listings ?? []} />
-      <ReviewsSection reviews={reviews ?? []} totalReviewCount={totalReviewCount} locale={locale as Locale} googlePlaceId={googlePlaceId} tripadvisorUrl={tripadvisorUrl} />
+      <ReviewsSection reviews={reviews ?? []} totalReviewCount={totalReviewCount} locale={locale as Locale} />
       <PrioritiesSection cards={priorities} />
       <FleetSection boats={boats.length > 0 ? boats : undefined} />
       <LocationSection />
