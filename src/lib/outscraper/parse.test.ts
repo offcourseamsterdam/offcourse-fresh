@@ -13,7 +13,9 @@ const GOOGLE_PAYLOAD = {
       reviews: 183,
       reviews_data: [
         {
-          reviews_id: '-1403893626557371920',
+          // reviews_id is the place-level id (SAME on every review) — must NOT be used.
+          reviews_id: '2607333240279960583',
+          review_id: 'Ci9-unique-review-id-AAA', // the real per-review unique id
           author_title: 'Mohamed Alkhouri',
           author_image: 'https://lh3.googleusercontent.com/avatar',
           author_link: 'https://www.google.com/maps/contrib/104170839246363926920',
@@ -24,7 +26,8 @@ const GOOGLE_PAYLOAD = {
           owner_answer: null,
         },
         {
-          reviews_id: '-9876543210123456789',
+          reviews_id: '2607333240279960583', // same place-level id
+          review_id: 'Ci9-unique-review-id-BBB', // different per-review id
           author_title: 'Dong Kyu Kim',
           author_image: null,
           author_link: null,
@@ -78,7 +81,8 @@ describe('parseOutscraperPayload — Google', () => {
     expect(reviews).toHaveLength(2)
 
     const r = reviews[0]!
-    expect(r.external_review_id).toBe('-1403893626557371920')
+    expect(r.external_review_id).toBe('Ci9-unique-review-id-AAA') // review_id, NOT reviews_id
+    expect(reviews[1]!.external_review_id).toBe('Ci9-unique-review-id-BBB') // distinct per review
     expect(r.source).toBe('google')
     expect(r.reviewer_name).toBe('Mohamed Alkhouri')
     expect(r.rating).toBe(5)

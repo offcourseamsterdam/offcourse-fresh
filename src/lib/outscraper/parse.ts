@@ -83,7 +83,9 @@ function extractTaReviewId(reviewLink: string | null | undefined): string | null
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseGoogleReview(r: Record<string, any>): ReviewRow {
   return {
-    external_review_id: String(r.reviews_id ?? ''),
+    // `review_id` is the UNIQUE per-review id. (`reviews_id` is the place-level
+    // reviews-collection id — identical across all of a place's reviews.)
+    external_review_id: String(r.review_id ?? r.reviews_id ?? ''),
     source: 'google',
     reviewer_name: String(r.author_title ?? 'Anonymous'),
     rating: Number(r.review_rating ?? 0),

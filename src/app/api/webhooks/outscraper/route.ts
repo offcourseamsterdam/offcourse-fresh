@@ -88,11 +88,21 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient()
     const { reviews, placeMeta } = parseOutscraperPayload(payload as Record<string, unknown>, source)
 
-    if (reviews.length > 0) {
+    // Dedupe within the batch — Postgres rejects an ON CONFLICT upsert that targets
+    // the same (source, external_review_id) twice in one statement.
+    const seen = new Set<string>()
+    const uniqueReviews = reviews.filter(r => {
+      const key = `${r.source}:${r.external_review_id}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+
+    if (uniqueReviews.length > 0) {
       const { error } = await supabase
         .from('social_proof_reviews')
         .upsert(
-          reviews.map(r => ({
+          uniqueReviews.map(r => ({
             ...r,
             updated_at: new Date().toISOString(),
           })),
@@ -116,8 +126,8 @@ export async function POST(request: NextRequest) {
     // PostgREST requires a WHERE clause on UPDATE; there is a single config row.
     await supabase.from('google_reviews_config').update(configUpdate).not('id', 'is', null)
 
-    await postSlackText(`✅ Outscraper ${source}: imported ${reviews.length} review(s).`).catch(() => {})
-    return NextResponse.json({ received: true, upserted: reviews.length })
+    await postSlackText(`✅ Outscraper ${source}: imported ${uniqueReviews.length} review(s).`).catch(() => {})
+    return NextResponse.json({ received: true, upserted: uniqueReviews.length })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     await postSlackText(`🚨 Outscraper webhook error (${source}): ${msg}`).catch(() => {})
