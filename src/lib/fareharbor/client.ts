@@ -89,6 +89,12 @@ function setCache(key: string, data: unknown, ttlMs: number = 60_000) {
 
 const COMPANY = 'offcourse'
 const MAX_RETRIES = 3
+
+// Hard ceiling on a single FareHarbor HTTP call. Without this, a hung connection
+// blocks the booking request indefinitely — and inside the Stripe webhook that risks
+// a webhook timeout → Stripe retry → duplicate booking attempt. 8s leaves headroom
+// under Vercel's function limit while tolerating FareHarbor's normal latency.
+const FH_TIMEOUT_MS = 8000
 const EXTERNAL_API_BASE = 'https://fareharbor.com/api/external/v1'
 
 export class FareHarborClient {
@@ -244,15 +250,29 @@ export class FareHarborClient {
     await rateLimiter.acquire()
 
     const url = `${baseUrlOverride ?? this.baseUrl}${path}`
-    const res = await fetch(url, {
-      ...init,
-      headers: {
-        'X-FareHarbor-API-App': this.appKey,
-        'X-FareHarbor-API-User': this.userKey,
-        'Content-Type': 'application/json',
-        ...init?.headers,
-      },
-    })
+    let res: Response
+    try {
+      res = await fetch(url, {
+        ...init,
+        // Default an 8s timeout so a hung FareHarbor connection can never block the
+        // request (or the Stripe webhook) indefinitely. A caller-supplied signal wins.
+        signal: init?.signal ?? AbortSignal.timeout(FH_TIMEOUT_MS),
+        headers: {
+          'X-FareHarbor-API-App': this.appKey,
+          'X-FareHarbor-API-User': this.userKey,
+          'Content-Type': 'application/json',
+          ...init?.headers,
+        },
+      })
+    } catch (err) {
+      // AbortSignal.timeout fires a TimeoutError; surface it as a typed FareHarbor
+      // error (408) so callers' try/catch handle it like any other API failure
+      // instead of seeing a raw DOMException — and so it never hangs.
+      if (err instanceof DOMException && err.name === 'TimeoutError') {
+        throw new FareHarborError(`FareHarbor request timed out after ${FH_TIMEOUT_MS}ms: ${path}`, 408, '')
+      }
+      throw err
+    }
 
     if (res.ok) {
       // DELETE returns no body
