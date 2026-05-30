@@ -1,3 +1,8 @@
+// Build-time guardrail: importing this module from a Client Component ('use client')
+// or any browser bundle is now a BUILD ERROR. The service-role key is non-NEXT_PUBLIC
+// (undefined in the browser), so such imports were silently broken at runtime; this
+// turns that whole class of mistake into a compile-time failure.
+import 'server-only'
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from './types'
 

@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { ExternalLink, Loader2 } from 'lucide-react'
 import { CruiseTabProps } from './shared'
-import { createAdminClient } from '@/lib/supabase/admin'
 import {
   formatTierLines,
   normalizeTiers,
@@ -22,17 +21,24 @@ export function CruiseCancellationTab({ listing }: CruiseTabProps) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const supabase = createAdminClient()
-    supabase
-      .from('fareharbor_items')
-      .select('name, cancellation_tiers')
-      .eq('fareharbor_pk', listing.fareharbor_item_pk)
-      .maybeSingle()
-      .then(({ data }) => {
-        setTiers(normalizeTiers(data?.cancellation_tiers))
-        setFhItemName(data?.name ?? null)
+    let cancelled = false
+    fetch('/api/admin/fareharbor-items')
+      .then(res => res.json())
+      .then(json => {
+        if (cancelled) return
+        const items: Array<{ fareharbor_pk: number; name: string; cancellation_tiers: unknown }> =
+          json.ok ? json.data?.items ?? [] : []
+        const item = items.find(i => i.fareharbor_pk === listing.fareharbor_item_pk)
+        setTiers(normalizeTiers(item?.cancellation_tiers))
+        setFhItemName(item?.name ?? null)
         setLoading(false)
       })
+      .catch(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [listing.fareharbor_item_pk])
 
   if (loading) {

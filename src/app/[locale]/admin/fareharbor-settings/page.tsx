@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { Loader2, Clock, Users } from 'lucide-react'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { CancellationTiersEditor } from '@/components/admin/CancellationTiersEditor'
 import { normalizeTiers, type CancellationTier } from '@/lib/cancellation/policy'
 
@@ -28,49 +27,50 @@ export default function FareHarborSettingsPage() {
 
   async function load() {
     setLoading(true)
-    const supabase = createAdminClient()
-    const { data, error } = await supabase
-      .from('fareharbor_items')
-      .select('id, name, fareharbor_pk, item_type, is_active, booking_cutoff_hours, max_slot_capacity, cancellation_tiers')
-      .order('name')
-    if (error) console.error('FH items load error:', error)
-    setItems(
-      (data ?? []).map(d => ({
-        ...d,
-        cancellation_tiers: Array.isArray(d.cancellation_tiers)
-          ? (d.cancellation_tiers as unknown as CancellationTier[])
-          : null,
-      })) as FHItem[]
-    )
+    try {
+      const res = await fetch('/api/admin/fareharbor-items')
+      const json = await res.json()
+      const data: Array<Record<string, unknown>> = json.ok ? json.data?.items ?? [] : []
+      setItems(
+        data.map(d => ({
+          ...d,
+          cancellation_tiers: Array.isArray(d.cancellation_tiers)
+            ? (d.cancellation_tiers as unknown as CancellationTier[])
+            : null,
+        })) as FHItem[]
+      )
+    } catch (err) {
+      console.error('FH items load error:', err)
+    }
     setLoading(false)
+  }
+
+  async function patchItem(id: string, body: Record<string, unknown>): Promise<boolean> {
+    const res = await fetch(`/api/admin/fareharbor-items/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    return res.ok
   }
 
   async function updateItem(id: string, field: 'booking_cutoff_hours' | 'max_slot_capacity', rawValue: string) {
     const value = rawValue === '' ? null : Number(rawValue)
     setSaving(id)
-    const supabase = createAdminClient()
-    const { error } = await supabase
-      .from('fareharbor_items')
-      .update({ [field]: value })
-      .eq('id', id)
-    if (error) console.error('FH item update error:', error)
+    const ok = await patchItem(id, { [field]: value })
+    if (!ok) console.error('FH item update error:', field)
     setItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item))
     setSaving(null)
   }
 
   async function updateCancellationTiers(id: string, tiers: CancellationTier[]) {
     setSaving(id)
-    const supabase = createAdminClient()
     const normalized = normalizeTiers(tiers)
-    const { error } = await supabase
-      .from('fareharbor_items')
-      // CancellationTier[] is JSON-shaped but the typed Update accepts Json — cast through unknown.
-      .update({ cancellation_tiers: normalized as unknown as never })
-      .eq('id', id)
-    if (error) {
-      console.error('FH item cancellation_tiers update error:', error)
+    const ok = await patchItem(id, { cancellation_tiers: normalized })
+    if (!ok) {
+      console.error('FH item cancellation_tiers update error')
       setSaving(null)
-      throw error
+      throw new Error('Failed to update cancellation tiers')
     }
     setItems(prev => prev.map(item => item.id === id ? { ...item, cancellation_tiers: normalized } : item))
     setSaving(null)
