@@ -1,37 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createHmac, timingSafeEqual } from 'crypto'
+import { createHmac } from 'crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { parseOutscraperPayload } from '@/lib/outscraper/parse'
+import { outscraperWebhookToken } from '@/lib/outscraper/webhook-token'
 import { postSlackText } from '@/lib/slack/send-notification'
 
 /**
  * POST /api/webhooks/outscraper
  *
- * Single webhook endpoint for both Outscraper sources:
- *   - Google Maps Reviews Scraper results (from our manual Sync button)
- *   - TripAdvisor Reviews Scraper results
- *   - Outscraper Scheduler runs (the "Monitoring" automated daily jobs)
+ * Single webhook endpoint for both Outscraper sources (manual Sync + the daily
+ * Scheduler/"Monitoring" runs).
  *
- * Security: every Outscraper webhook is signed with HMAC-SHA256 using the API key.
- * Header: X-Hub-Signature-256: sha256=<hex>
+ * Auth: a `?token=` derived from the API key (see webhook-token.ts) — works
+ * regardless of whether Outscraper signs the request. A valid X-Hub-Signature-256
+ * HMAC is also accepted as an alternative.
  *
- * Always returns 200 after signature check so Outscraper doesn't retry-storm.
+ * Always returns 200 after the auth check so Outscraper doesn't retry-storm.
  */
 export async function POST(request: NextRequest) {
-  // ── Verify HMAC signature ───────────────────────────────────────────────────
   const apiKey = process.env.OUTSCRAPER_API_KEY ?? ''
-  const sigHeader = request.headers.get('x-hub-signature-256') ?? ''
   const rawBody = await request.text()
 
-  try {
+  // ── Auth: URL token (primary) OR valid HMAC (fallback) ──────────────────────
+  const expectedToken = outscraperWebhookToken(apiKey)
+  const tokenOk = request.nextUrl.searchParams.get('token') === expectedToken
+
+  let hmacOk = false
+  const sigHeader = request.headers.get('x-hub-signature-256')
+  if (sigHeader) {
     const computed = `sha256=${createHmac('sha256', apiKey).update(rawBody).digest('hex')}`
-    const receivedBuf = Buffer.from(sigHeader.padEnd(computed.length, ' '))
-    const computedBuf = Buffer.from(computed)
-    if (receivedBuf.length !== computedBuf.length || !timingSafeEqual(receivedBuf, computedBuf)) {
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
-    }
-  } catch {
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    hmacOk = sigHeader === computed
+  }
+
+  if (!tokenOk && !hmacOk) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   // ── Determine source from query param ───────────────────────────────────────
@@ -114,6 +116,7 @@ export async function POST(request: NextRequest) {
     // PostgREST requires a WHERE clause on UPDATE; there is a single config row.
     await supabase.from('google_reviews_config').update(configUpdate).not('id', 'is', null)
 
+    await postSlackText(`✅ Outscraper ${source}: imported ${reviews.length} review(s).`).catch(() => {})
     return NextResponse.json({ received: true, upserted: reviews.length })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

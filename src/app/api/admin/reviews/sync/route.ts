@@ -3,6 +3,7 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { scrapeGoogleReviews, scrapeTripadvisorReviews } from '@/lib/outscraper/client'
+import { outscraperWebhookToken } from '@/lib/outscraper/webhook-token'
 import { env } from '@/env'
 
 /**
@@ -35,13 +36,14 @@ export async function POST(request: NextRequest) {
   // webhook POST does NOT follow redirects, so the apex would silently drop results.
   const host = request.headers.get('host')
   const siteUrl = host ? `https://${host}` : env.NEXT_PUBLIC_SITE_URL
+  const token = outscraperWebhookToken(apiKey)
   const started: string[] = []
   const errors: string[] = []
 
   // ── Google ──────────────────────────────────────────────────────────────────
   if (config.place_id) {
     try {
-      const webhookUrl = `${siteUrl}/api/webhooks/outscraper?source=google`
+      const webhookUrl = `${siteUrl}/api/webhooks/outscraper?source=google&token=${token}`
       await scrapeGoogleReviews({ placeId: config.place_id, webhookUrl })
       started.push('google')
     } catch (err) {
@@ -52,7 +54,7 @@ export async function POST(request: NextRequest) {
   // ── TripAdvisor ─────────────────────────────────────────────────────────────
   if (config.tripadvisor_url) {
     try {
-      const webhookUrl = `${siteUrl}/api/webhooks/outscraper?source=tripadvisor`
+      const webhookUrl = `${siteUrl}/api/webhooks/outscraper?source=tripadvisor&token=${token}`
       await scrapeTripadvisorReviews({ listingUrl: config.tripadvisor_url, webhookUrl })
       started.push('tripadvisor')
     } catch (err) {

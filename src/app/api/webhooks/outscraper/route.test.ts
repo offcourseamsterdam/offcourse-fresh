@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createHmac } from 'crypto'
+import { outscraperWebhookToken } from '@/lib/outscraper/webhook-token'
 import type { NextRequest } from 'next/server'
 
 /**
- * Tests the Outscraper webhook's security + idempotency invariants:
- *   1. Valid HMAC signature → processes + upserts
- *   2. Bad signature → 401, no DB work
+ * Tests the Outscraper webhook's auth + idempotency invariants:
+ *   1. Valid URL token → processes + upserts
+ *   2. Bad token (no HMAC) → 401, no DB work
  *   3. Unknown source → 200 no-op
+ *   4. Duplicate request id → 200, no upsert
  */
 
 const h = vi.hoisted(() => ({
@@ -22,7 +23,6 @@ vi.mock('@/lib/supabase/admin', () => ({
       if (table === 'social_proof_reviews') {
         return { upsert: h.upsert }
       }
-      // google_reviews_config: support both the dedup read and the stats update
       return {
         select: () => ({ limit: () => ({ single: h.maybeSingle, maybeSingle: h.maybeSingle }) }),
         update: () => ({ eq: h.configUpdate, limit: h.configUpdate, not: h.configUpdate }),
@@ -35,16 +35,19 @@ vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText
 import { POST } from './route'
 
 const API_KEY = 'test-outscraper-key'
+const TOKEN = outscraperWebhookToken(API_KEY)
 
-function sign(body: string): string {
-  return `sha256=${createHmac('sha256', API_KEY).update(body).digest('hex')}`
-}
-
-function mockReq(body: string, signature: string, source = 'google'): NextRequest {
+function mockReq(
+  body: string,
+  { source = 'google', token = TOKEN as string }: { source?: string; token?: string } = {}
+): NextRequest {
+  const params = new URLSearchParams()
+  params.set('source', source)
+  if (token) params.set('token', token)
   return {
     text: async () => body,
-    headers: { get: (k: string) => (k.toLowerCase() === 'x-hub-signature-256' ? signature : null) },
-    nextUrl: { searchParams: new URLSearchParams(`source=${source}`) },
+    headers: { get: () => null }, // token auth, no HMAC header
+    nextUrl: { searchParams: params },
   } as unknown as NextRequest
 }
 
@@ -76,30 +79,30 @@ describe('outscraper webhook', () => {
     h.maybeSingle.mockResolvedValue({ data: { id: 'cfg-1', outscraper_processed_ids: [] } })
   })
 
-  it('accepts a valid signature and upserts reviews', async () => {
-    const res = await POST(mockReq(VALID_PAYLOAD, sign(VALID_PAYLOAD), 'google'))
+  it('accepts a valid token and upserts reviews', async () => {
+    const res = await POST(mockReq(VALID_PAYLOAD))
     expect(res.status).toBe(200)
     expect(h.upsert).toHaveBeenCalledTimes(1)
-    const upsertedRows = h.upsert.mock.calls[0]![0] as Array<{ external_review_id: string; source: string }>
-    expect(upsertedRows[0]!.external_review_id).toBe('rev-1')
-    expect(upsertedRows[0]!.source).toBe('google')
+    const rows = h.upsert.mock.calls[0]![0] as Array<{ external_review_id: string; source: string }>
+    expect(rows[0]!.external_review_id).toBe('rev-1')
+    expect(rows[0]!.source).toBe('google')
   })
 
-  it('rejects an invalid signature with 401 and does no DB work', async () => {
-    const res = await POST(mockReq(VALID_PAYLOAD, 'sha256=wrong', 'google'))
+  it('rejects a bad token with 401 and does no DB work', async () => {
+    const res = await POST(mockReq(VALID_PAYLOAD, { token: 'wrong-token' }))
     expect(res.status).toBe(401)
     expect(h.upsert).not.toHaveBeenCalled()
   })
 
   it('skips an unknown source with 200 no-op', async () => {
-    const res = await POST(mockReq(VALID_PAYLOAD, sign(VALID_PAYLOAD), 'yelp'))
+    const res = await POST(mockReq(VALID_PAYLOAD, { source: 'yelp' }))
     expect(res.status).toBe(200)
     expect(h.upsert).not.toHaveBeenCalled()
   })
 
   it('skips a duplicate request id without upserting', async () => {
     h.maybeSingle.mockResolvedValue({ data: { id: 'cfg-1', outscraper_processed_ids: ['req-abc'] } })
-    const res = await POST(mockReq(VALID_PAYLOAD, sign(VALID_PAYLOAD), 'google'))
+    const res = await POST(mockReq(VALID_PAYLOAD))
     expect(res.status).toBe(200)
     expect(h.upsert).not.toHaveBeenCalled()
   })
