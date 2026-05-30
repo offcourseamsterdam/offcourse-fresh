@@ -4,6 +4,7 @@ import { useRef, useState, useEffect } from 'react'
 import Image from 'next/image'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { StarRating } from '@/components/ui/StarRating'
+import { ReviewsModal } from '@/components/sections/ReviewsModal'
 
 export type SliderReview = {
   id: string
@@ -12,16 +13,23 @@ export type SliderReview = {
   rating: number
   source: string | null
   author_photo_url: string | null
+  review_image_url: string | null
   publish_time: string | null
 }
 
+type SourceFilter = 'all' | 'google' | 'tripadvisor'
+
 interface ReviewSliderProps {
   reviews: SliderReview[]
+  /** Combined Google + TripAdvisor total (for the headline count); defaults to the loaded count. */
+  totalReviews?: number
 }
 
-export function ReviewSlider({ reviews }: ReviewSliderProps) {
+export function ReviewSlider({ reviews, totalReviews }: ReviewSliderProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [modalReview, setModalReview] = useState<SliderReview | null>(null)
+  const [showAll, setShowAll] = useState(false)
+  const [filter, setFilter] = useState<SourceFilter>('all')
 
   if (reviews.length === 0) return null
 
@@ -34,9 +42,22 @@ export function ReviewSlider({ reviews }: ReviewSliderProps) {
     })
   }
 
+  const googleCount = reviews.filter((r) => r.source === 'google').length
+  const taCount = reviews.filter((r) => r.source === 'tripadvisor').length
+  const showSourceTabs = googleCount > 0 && taCount > 0
+  const headlineCount = totalReviews ?? reviews.length
+  const filtered = filter === 'all' ? reviews : reviews.filter((r) => r.source === filter)
+
+  const tab = (active: boolean) =>
+    `px-3 py-1.5 rounded-full text-xs font-avenir font-medium transition-colors whitespace-nowrap ${
+      active
+        ? 'bg-[var(--color-primary)] text-white'
+        : 'bg-white text-[var(--color-muted)] hover:text-[var(--color-primary)] border border-gray-200'
+    }`
+
   return (
     <section>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-1">
         <h2 className="font-briston text-[28px] sm:text-[36px] text-[var(--color-accent)] uppercase">
           What people say
         </h2>
@@ -60,13 +81,42 @@ export function ReviewSlider({ reviews }: ReviewSliderProps) {
         </div>
       </div>
 
+      {/* Count + source tabs + See all */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
+        <span className="text-sm font-avenir text-[var(--color-muted)]">
+          {headlineCount} review{headlineCount !== 1 ? 's' : ''}
+        </span>
+
+        {showSourceTabs && (
+          <div className="flex gap-1">
+            {([
+              ['all', `All (${reviews.length})`],
+              ['google', `Google (${googleCount})`],
+              ['tripadvisor', `TripAdvisor (${taCount})`],
+            ] as [SourceFilter, string][]).map(([f, label]) => (
+              <button key={f} type="button" onClick={() => setFilter(f)} className={tab(filter === f)}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setShowAll(true)}
+          className="ml-auto text-sm font-avenir font-semibold text-[var(--color-primary)] hover:underline"
+        >
+          See all reviews →
+        </button>
+      </div>
+
       {/* Horizontal scroll container */}
       <div
         ref={scrollRef}
         className="flex gap-4 overflow-x-auto scrollbar-hide pb-2 -mx-1 px-1 snap-x snap-mandatory"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
-        {reviews.map((review) => (
+        {filtered.map((review) => (
           <button
             type="button"
             key={review.id}
@@ -122,10 +172,13 @@ export function ReviewSlider({ reviews }: ReviewSliderProps) {
         ))}
       </div>
 
-      {/* Review detail modal */}
+      {/* Single-review detail modal (card click) */}
       {modalReview && (
         <ReviewModal review={modalReview} onClose={() => setModalReview(null)} />
       )}
+
+      {/* Full reviews modal — filter by source + stars, sort, scroll all */}
+      {showAll && <ReviewsModal reviews={reviews} onClose={() => setShowAll(false)} />}
     </section>
   )
 }

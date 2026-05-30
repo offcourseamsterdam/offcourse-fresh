@@ -134,6 +134,7 @@ export async function getCruisePageData(listing: CruiseListing, locale: Locale) 
     rating: r.rating,
     source: r.source,
     author_photo_url: r.author_photo_url,
+    review_image_url: r.review_image_url,
     publish_time: r.publish_time,
   }))
 

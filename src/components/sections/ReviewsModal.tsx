@@ -4,12 +4,23 @@ import { useEffect, useState, useMemo } from 'react'
 import { X } from 'lucide-react'
 import { StarRating } from '@/components/ui/StarRating'
 import { ReviewPhoto } from '@/components/ui/ReviewPhoto'
-import type { SliderReview } from './ReviewsSlider'
+
+/** Minimal review shape the modal renders. Shared by the homepage + cruise sliders. */
+export interface ReviewsModalReview {
+  id: string
+  reviewer_name: string
+  review_text: string
+  rating: number
+  source: string | null
+  author_photo_url: string | null
+  review_image_url: string | null
+  publish_time: string | null
+}
 
 type SourceFilter = 'all' | 'google' | 'tripadvisor'
 type SortOrder = 'newest' | 'oldest'
 
-function sourceLabel(source: string): string {
+function sourceLabel(source: string | null): string {
   if (source === 'tripadvisor') return 'via TripAdvisor'
   if (source === 'google') return 'via Google'
   return ''
@@ -28,7 +39,7 @@ function formatDate(publishTime: string | null): string {
  * "See all reviews" modal — filter by source + star rating, sort newest/oldest,
  * scroll through every review. Mirrors GalleryModal (overlay + scroll-lock + Escape).
  */
-export function ReviewsModal({ reviews, onClose }: { reviews: SliderReview[]; onClose: () => void }) {
+export function ReviewsModal({ reviews, onClose }: { reviews: ReviewsModalReview[]; onClose: () => void }) {
   const [source, setSource] = useState<SourceFilter>('all')
   const [stars, setStars] = useState<number>(0) // 0 = all ratings
   const [sort, setSort] = useState<SortOrder>('newest')

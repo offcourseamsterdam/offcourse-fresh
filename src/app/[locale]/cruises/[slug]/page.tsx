@@ -222,6 +222,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
               cancellationTiers={data.cancellationTiers}
               listingBoats={data.listingBoats}
               serializedReviews={data.serializedReviews}
+              totalReviews={data.totalReviews}
               listing={listing}
               faqs={data.faqs}
               loc={data.loc}

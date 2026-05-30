@@ -16,7 +16,8 @@ interface ContentProps {
   serializedDrinks: SerializedExtra[]
   cancellationTiers: CancellationTier[]
   listingBoats: { id: string; name: string; max_capacity: number | null; is_electric: boolean | null; description: string | null; photo_url: string | null; photo_covered_url: string | null; photo_interior_url: string | null }[]
-  serializedReviews: { id: string; reviewer_name: string; review_text: string; rating: number; source: string | null; author_photo_url: string | null; publish_time: string | null }[]
+  serializedReviews: { id: string; reviewer_name: string; review_text: string; rating: number; source: string | null; author_photo_url: string | null; review_image_url: string | null; publish_time: string | null }[]
+  totalReviews?: number
   listing: { departure_location: string | null }
   faqs: { question: string; answer: string }[]
   loc: Locale
@@ -25,7 +26,7 @@ interface ContentProps {
 
 export function CruiseContentSections({
   highlights, description, serializedFood, serializedDrinks,
-  cancellationTiers, listingBoats, serializedReviews,
+  cancellationTiers, listingBoats, serializedReviews, totalReviews,
   listing, faqs, loc, faqLabel,
 }: ContentProps) {
   return (
@@ -86,7 +87,7 @@ export function CruiseContentSections({
       {/* Reviews */}
       {serializedReviews.length > 0 && (
         <section id="reviews">
-          <ReviewSlider reviews={serializedReviews} />
+          <ReviewSlider reviews={serializedReviews} totalReviews={totalReviews} />
         </section>
       )}
 
