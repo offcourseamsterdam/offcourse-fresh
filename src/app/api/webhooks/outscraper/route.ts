@@ -111,7 +111,8 @@ export async function POST(request: NextRequest) {
       if (placeMeta.overall_rating != null) configUpdate.tripadvisor_rating = placeMeta.overall_rating
     }
 
-    await supabase.from('google_reviews_config').update(configUpdate).limit(1)
+    // PostgREST requires a WHERE clause on UPDATE; there is a single config row.
+    await supabase.from('google_reviews_config').update(configUpdate).not('id', 'is', null)
 
     return NextResponse.json({ received: true, upserted: reviews.length })
   } catch (err) {

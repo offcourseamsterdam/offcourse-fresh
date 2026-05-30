@@ -30,7 +30,11 @@ export async function POST(request: NextRequest) {
 
   if (!config) return apiError('Reviews not configured — set place_id first', 422)
 
-  const siteUrl = env.NEXT_PUBLIC_SITE_URL
+  // Build the webhook callback from the host the admin is actually on (e.g. www.…).
+  // NEXT_PUBLIC_SITE_URL is the apex, which 308-redirects to www — and Outscraper's
+  // webhook POST does NOT follow redirects, so the apex would silently drop results.
+  const host = request.headers.get('host')
+  const siteUrl = host ? `https://${host}` : env.NEXT_PUBLIC_SITE_URL
   const started: string[] = []
   const errors: string[] = []
 

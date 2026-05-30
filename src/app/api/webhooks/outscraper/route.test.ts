@@ -25,7 +25,7 @@ vi.mock('@/lib/supabase/admin', () => ({
       // google_reviews_config: support both the dedup read and the stats update
       return {
         select: () => ({ limit: () => ({ single: h.maybeSingle, maybeSingle: h.maybeSingle }) }),
-        update: () => ({ eq: h.configUpdate, limit: h.configUpdate }),
+        update: () => ({ eq: h.configUpdate, limit: h.configUpdate, not: h.configUpdate }),
       }
     },
   }),
