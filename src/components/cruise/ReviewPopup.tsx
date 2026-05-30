@@ -8,6 +8,8 @@ import type { GalleryReview } from './ImageGallery'
 interface ReviewPopupProps {
   reviews: GalleryReview[]
   totalReviews: number
+  /** Combined (Google + TripAdvisor) average — falls back to the teaser rows' average. */
+  avgRating?: number | null
   visible: boolean
   onHoverChange: (hovering: boolean) => void
 }
@@ -20,7 +22,7 @@ function getRatingLabel(avg: number): string {
   return 'Nice'
 }
 
-export function ReviewPopup({ reviews, totalReviews, visible, onHoverChange }: ReviewPopupProps) {
+export function ReviewPopup({ reviews, totalReviews, avgRating: avgRatingProp, visible, onHoverChange }: ReviewPopupProps) {
   const [activeIndex, setActiveIndex] = useState(0)
   const [isHovering, setIsHovering] = useState(false)
 
@@ -36,7 +38,10 @@ export function ReviewPopup({ reviews, totalReviews, visible, onHoverChange }: R
 
   if (reviews.length === 0) return null
 
-  const avgRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
+  const avgRating =
+    avgRatingProp != null
+      ? avgRatingProp
+      : reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
 
   return (
     <div

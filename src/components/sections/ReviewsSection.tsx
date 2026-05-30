@@ -8,7 +8,7 @@ type Review = Database['public']['Tables']['social_proof_reviews']['Row']
 
 interface ReviewsSectionProps {
   reviews: Review[]
-  /** Total Google review count — defaults to the synced review count when not provided. */
+  /** Combined Google + TripAdvisor review count — defaults to the loaded review count when not provided. */
   totalReviewCount?: number
   locale: Locale
   googlePlaceId?: string | null

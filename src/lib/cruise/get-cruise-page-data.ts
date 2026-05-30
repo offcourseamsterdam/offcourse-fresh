@@ -57,12 +57,14 @@ export async function getCruisePageData(listing: CruiseListing, locale: Locale) 
   ].filter((id): id is string => Boolean(id))
 
   const [reviewsResult, reviewCountResult, allExtrasResult, listingExtrasResult, allBoatsResult, googleConfigResult, fhItemResult, assetsResult] = await Promise.all([
-    supabase.from('social_proof_reviews').select('*').eq('is_active', true).order('rating', { ascending: false }).limit(6),
+    // Fetch ALL active reviews, newest first — they feed the gallery modal's
+    // review sidebar (endless scroll) + the on-page ReviewSlider + the popup.
+    supabase.from('social_proof_reviews').select('*').eq('is_active', true).order('publish_time', { ascending: false, nullsFirst: false }),
     supabase.from('social_proof_reviews').select('*', { count: 'exact', head: true }).eq('is_active', true),
     adminSupabase.from('extras').select('*').eq('is_active', true).in('category', ['food', 'drinks']).order('sort_order', { ascending: true }),
     adminSupabase.from('listing_extras').select('extra_id, is_enabled').eq('listing_id', listing.id),
     supabase.from('boats').select('*').eq('is_active', true).order('display_order', { ascending: true }),
-    adminSupabase.from('google_reviews_config').select('total_reviews, overall_rating').limit(1).maybeSingle(),
+    adminSupabase.from('google_reviews_config').select('total_reviews, overall_rating, tripadvisor_total_reviews, tripadvisor_rating').limit(1).maybeSingle(),
     adminSupabase.from('fareharbor_items').select('cancellation_tiers').eq('fareharbor_pk', listing.fareharbor_item_pk).maybeSingle(),
     assetIdsToFetch.length > 0
       ? supabase.from('image_assets').select('*').in('id', assetIdsToFetch)
@@ -148,12 +150,34 @@ export async function getCruisePageData(listing: CruiseListing, locale: Locale) 
   const serializedFood = foodAndDrinkExtras.filter((e) => e.category === 'food').map(serializeExtra)
   const serializedDrinks = foodAndDrinkExtras.filter((e) => e.category === 'drinks').map(serializeExtra)
 
-  const avgRating = googleConfig?.overall_rating != null
-    ? Number(googleConfig.overall_rating).toFixed(1)
-    : reviews && reviews.length > 0
-      ? (reviews.reduce((sum, r) => sum + (r.rating ?? 0), 0) / reviews.length).toFixed(1)
-      : null
-  const totalReviews = googleConfig?.total_reviews ?? reviewCount ?? reviews?.length ?? 0
+  // ── Combined review stats (Google + TripAdvisor) ──────────────────────────
+  // The public count is the COMBINED total across both sources (e.g. 49 + 48 = 97),
+  // so every "X reviews" display on the page matches the homepage.
+  const googleTotal = googleConfig?.total_reviews ?? null
+  const taTotal = googleConfig?.tripadvisor_total_reviews ?? null
+  const combinedConfigTotal =
+    googleTotal != null || taTotal != null ? (googleTotal ?? 0) + (taTotal ?? 0) : null
+  const totalReviews = combinedConfigTotal ?? reviewCount ?? reviews?.length ?? 0
+
+  // Rating: weight each source's average by its review count when both exist;
+  // otherwise fall back to whichever single rating we have, then to row average.
+  const googleRating = googleConfig?.overall_rating != null ? Number(googleConfig.overall_rating) : null
+  const taRating = googleConfig?.tripadvisor_rating != null ? Number(googleConfig.tripadvisor_rating) : null
+  let avgRating: string | null = null
+  if (
+    googleRating != null && taRating != null &&
+    googleTotal != null && taTotal != null && googleTotal + taTotal > 0
+  ) {
+    avgRating = (
+      (googleRating * googleTotal + taRating * taTotal) / (googleTotal + taTotal)
+    ).toFixed(1)
+  } else if (googleRating != null) {
+    avgRating = googleRating.toFixed(1)
+  } else if (taRating != null) {
+    avgRating = taRating.toFixed(1)
+  } else if (reviews && reviews.length > 0) {
+    avgRating = (reviews.reduce((sum, r) => sum + (r.rating ?? 0), 0) / reviews.length).toFixed(1)
+  }
 
   return {
     listing, title, tagline, description, heroUrl, heroAsset, images, highlights, faqs,

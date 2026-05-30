@@ -12,6 +12,8 @@ interface GalleryModalProps {
   title: string
   reviews: GalleryReview[]
   reviewCount?: number
+  /** Combined (Google + TripAdvisor) average — falls back to the review rows' average. */
+  avgRating?: number | null
   onClose: () => void
 }
 
@@ -21,13 +23,16 @@ export function GalleryModal({
   title,
   reviews,
   reviewCount,
+  avgRating: avgRatingProp,
   onClose,
 }: GalleryModalProps) {
   const totalReviews = reviewCount ?? reviews.length
   const avgRating =
-    reviews.length > 0
-      ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
-      : 0
+    avgRatingProp != null
+      ? avgRatingProp
+      : reviews.length > 0
+        ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
+        : 0
 
   // Lock body scroll & close on Escape
   useEffect(() => {

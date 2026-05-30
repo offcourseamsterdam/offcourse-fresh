@@ -197,11 +197,11 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
         {/* ── Gallery ── */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/*
-            Use totalReviews (Google's count, e.g. 43) so the popover matches
-            the header "Exceptional · 43 reviews" — not data.reviewCount which
-            counts only the curated social_proof_reviews shown in the carousel.
+            Use totalReviews — the COMBINED Google + TripAdvisor count (e.g. 97) —
+            so the popover + gallery modal match the header "Exceptional · 97 reviews",
+            not data.reviewCount which only counts the rows we fetched.
           */}
-          <ImageGallery images={data.images} heroUrl={data.heroUrl} heroAsset={data.heroAsset} videoUrl={data.videoUrl} title={data.title} reviews={data.serializedReviews} reviewCount={data.totalReviews ?? undefined} />
+          <ImageGallery images={data.images} heroUrl={data.heroUrl} heroAsset={data.heroAsset} videoUrl={data.videoUrl} title={data.title} reviews={data.serializedReviews} reviewCount={data.totalReviews ?? undefined} avgRating={data.avgRating != null ? Number(data.avgRating) : undefined} />
         </div>
 
         {/* ── Inline booking (mobile/tablet) ── */}

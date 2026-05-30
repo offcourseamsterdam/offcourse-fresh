@@ -27,6 +27,8 @@ interface ImageGalleryProps {
   title: string
   reviews: GalleryReview[]
   reviewCount?: number
+  /** Combined (Google + TripAdvisor) average rating — keeps the popup/modal badge in sync with the page header. */
+  avgRating?: number | null
 }
 
 export function ImageGallery({
@@ -37,6 +39,7 @@ export function ImageGallery({
   title,
   reviews,
   reviewCount,
+  avgRating,
 }: ImageGalleryProps) {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isHoveringImages, setIsHoveringImages] = useState(false)
@@ -49,6 +52,10 @@ export function ImageGallery({
 
   const gridImages = allImages.slice(1)
   const totalReviews = reviewCount ?? reviews.length
+  // The floating popup is a teaser that rotates through a handful of reviews
+  // (one nav dot each) — cap it so the full set doesn't render 90+ dots.
+  // The modal sidebar still receives the complete list for endless scroll.
+  const popupReviews = reviews.slice(0, 6)
 
   // Review popup visible unless hovering images (but not when hovering the popup itself)
   const showReviewPopup = !isHoveringImages || isHoveringReview
@@ -71,8 +78,9 @@ export function ImageGallery({
         <MobileCarousel images={allImages} title={title} onTap={openModal} />
 
         <ReviewPopup
-          reviews={reviews}
+          reviews={popupReviews}
           totalReviews={totalReviews}
+          avgRating={avgRating}
           visible={showReviewPopup}
           onHoverChange={setIsHoveringReview}
         />
@@ -85,6 +93,7 @@ export function ImageGallery({
           title={title}
           reviews={reviews}
           reviewCount={totalReviews}
+          avgRating={avgRating}
           onClose={() => setIsModalOpen(false)}
         />
       )}
