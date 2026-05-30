@@ -21,10 +21,6 @@ export default function FareHarborSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
 
-  useEffect(() => {
-    load()
-  }, [])
-
   async function load() {
     setLoading(true)
     try {
@@ -44,6 +40,11 @@ export default function FareHarborSettingsPage() {
     }
     setLoading(false)
   }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load()
+  }, [])
 
   async function patchItem(id: string, body: Record<string, unknown>): Promise<boolean> {
     const res = await fetch(`/api/admin/fareharbor-items/${id}`, {

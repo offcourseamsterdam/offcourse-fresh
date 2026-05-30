@@ -76,8 +76,11 @@ function findHandlers(src: string): { method: string; guarded: boolean }[] {
 const adminFiles = walk(ADMIN_DIR)
 
 describe('admin route auth contract', () => {
-  it('discovers the admin route files', () => {
-    expect(adminFiles.length).toBeGreaterThan(50)
+  it('discovers the expected number of admin route files', () => {
+    // Snapshot so any change in route count (addition OR deletion) requires
+    // deliberate acknowledgement — update via `npx vitest run --update-snapshots`.
+    // Count at time of writing: 68. Update this when adding/removing admin routes.
+    expect(adminFiles.length).toMatchInlineSnapshot(`68`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {

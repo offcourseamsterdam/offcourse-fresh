@@ -63,11 +63,15 @@ export async function PATCH(
 
   const supabase = createAdminClient()
   // `update` holds only whitelisted columns; cast through never for the typed Update.
-  const { error } = await supabase
-    .from('fareharbor_items')
-    .update(update as never)
-    .eq('id', id)
+  try {
+    const { error } = await supabase
+      .from('fareharbor_items')
+      .update(update as never)
+      .eq('id', id)
 
-  if (error) return apiError(error.message)
-  return apiOk({})
+    if (error) return apiError(error.message)
+    return apiOk({})
+  } catch (err) {
+    return apiError(err instanceof Error ? err.message : 'Unknown error')
+  }
 }

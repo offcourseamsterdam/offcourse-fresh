@@ -64,8 +64,8 @@ export function CruiseCancellationTab({ listing }: CruiseTabProps) {
       </div>
 
       <ul className="space-y-2 bg-zinc-50 rounded-lg p-4 border border-zinc-100">
-        {lines.map((line, i) => (
-          <li key={i} className="flex items-start gap-3">
+        {lines.map((line) => (
+          <li key={line.label} className="flex items-start gap-3">
             <span
               className={`mt-1 flex-shrink-0 w-1.5 h-1.5 rounded-full ${
                 line.refundPercent === 100

@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect } from 'react'
+
 /**
  * Catastrophic fallback: catches errors thrown by the ROOT layout itself, where
  * there's no surrounding <html>/<body> to rely on. Uses inline styles only — it
@@ -15,6 +17,11 @@ export default function GlobalError({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  useEffect(() => {
+    // Hook point for a real error tracker (e.g. Sentry) — same as [locale]/error.tsx.
+    console.error('Root error boundary caught:', error)
+  }, [error])
+
   return (
     <html lang="en">
       <body
