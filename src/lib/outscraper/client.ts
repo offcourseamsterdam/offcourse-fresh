@@ -5,8 +5,10 @@ import { env } from '@/env'
 
 const BASE_URL = 'https://api.app.outscraper.com'
 
-/** Newest 40 reviews per on-demand scrape — plenty for Off Course's volume. */
-const REVIEWS_LIMIT = 40
+/** Google: 0 = unlimited (fetch every review). */
+const GOOGLE_REVIEWS_LIMIT = 0
+/** TripAdvisor has no "unlimited" flag — a high cap fetches everything at this volume. */
+const TRIPADVISOR_REVIEWS_LIMIT = 2000
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -55,7 +57,7 @@ export async function scrapeGoogleReviews({
 }): Promise<OutscraperJobResponse> {
   return request('/maps/reviews-v3', {
     query: placeId,
-    reviewsLimit: REVIEWS_LIMIT,
+    reviewsLimit: GOOGLE_REVIEWS_LIMIT,
     sort: 'newest',
     language: 'en',
     async: true,
@@ -79,7 +81,7 @@ export async function scrapeTripadvisorReviews({
 }): Promise<OutscraperJobResponse> {
   return request('/tripadvisor-reviews', {
     query: listingUrl,
-    limit: REVIEWS_LIMIT,
+    limit: TRIPADVISOR_REVIEWS_LIMIT,
     async: true,
     webhook: webhookUrl,
   })
