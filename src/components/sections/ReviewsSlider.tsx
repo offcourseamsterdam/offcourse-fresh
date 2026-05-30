@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import { ReviewPhoto } from '@/components/ui/ReviewPhoto'
+import { ReviewsModal } from './ReviewsModal'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -190,6 +191,7 @@ export function ReviewsSlider({
   showSourceTabs?: boolean
 }) {
   const [activeModal, setActiveModal] = useState<SliderReview | null>(null)
+  const [showAll, setShowAll] = useState(false)
   const [filter, setFilter] = useState<SourceFilter>('all')
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -200,6 +202,8 @@ export function ReviewsSlider({
   }, [])
 
   const filtered = filter === 'all' ? reviews : reviews.filter(r => r.source === filter)
+  // The slider is a preview; the full set lives in the "See all reviews" modal.
+  const preview = filtered.slice(0, 12)
 
   return (
     <div className="space-y-5">
@@ -242,7 +246,7 @@ export function ReviewsSlider({
         >
           <div className="flex-shrink-0 w-1 sm:w-5" />
 
-          {filtered.map(review => (
+          {preview.map(review => (
             <SliderCard key={review.id} review={review} onClick={() => setActiveModal(review)} />
           ))}
 
@@ -261,8 +265,21 @@ export function ReviewsSlider({
         </button>
       </div>
 
-      {/* Modal */}
+      {/* See all reviews → opens the filter modal */}
+      <div className="flex justify-center">
+        <button
+          onClick={() => setShowAll(true)}
+          className="px-6 py-2.5 rounded-full text-sm font-avenir font-medium bg-[var(--color-primary)] text-white hover:opacity-90 transition-opacity"
+        >
+          See all {reviews.length} reviews
+        </button>
+      </div>
+
+      {/* Single-review modal (card click) */}
       {activeModal && <ReviewModal review={activeModal} onClose={() => setActiveModal(null)} />}
+
+      {/* Full reviews modal (filter by source + stars, sort, scroll all) */}
+      {showAll && <ReviewsModal reviews={reviews} onClose={() => setShowAll(false)} />}
     </div>
   )
 }

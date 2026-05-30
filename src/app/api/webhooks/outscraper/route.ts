@@ -121,6 +121,7 @@ export async function POST(request: NextRequest) {
       if (placeMeta.total_reviews != null) configUpdate.total_reviews = placeMeta.total_reviews
     } else {
       if (placeMeta.overall_rating != null) configUpdate.tripadvisor_rating = placeMeta.overall_rating
+      if (placeMeta.total_reviews != null) configUpdate.tripadvisor_total_reviews = placeMeta.total_reviews
     }
 
     // PostgREST requires a WHERE clause on UPDATE; there is a single config row.

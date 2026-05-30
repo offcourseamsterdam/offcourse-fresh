@@ -111,7 +111,9 @@ function parseTaReview(r: Record<string, any>): ReviewRow {
     review_text: r.review_text ?? '',
     original_text: r.review_title ?? null, // TA has a title; store in original_text
     language: null,
-    author_photo_url: r.author_image ?? null,
+    // TripAdvisor avatars are generic placeholders, not personal photos — use the
+    // name/initials as the identifier instead (the UI falls back to an initial circle).
+    author_photo_url: null,
     review_image_url: Array.isArray(r.review_media) ? (r.review_media[0] ?? null) : (r.review_media ?? null),
     publish_time: parseTaDate(r.review_date),
     google_profile_url: r.review_link ?? null, // repurpose field as review permalink

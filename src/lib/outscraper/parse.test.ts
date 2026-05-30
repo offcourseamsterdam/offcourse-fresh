@@ -129,7 +129,7 @@ describe('parseOutscraperPayload — TripAdvisor', () => {
     expect(r.original_text).toBe('Fantastic boat trip') // review_title
     expect(r.review_image_url).toBe('https://media.tripadvisor.com/photo.jpg')
     expect(r.publish_time).toBe('2024-04-09T00:00:00.000Z')
-    expect(r.author_photo_url).toBe('https://dynamic-media-cdn.tripadvisor.com/avatar.jpg')
+    expect(r.author_photo_url).toBeNull() // TA avatars are generic — use name/initials instead
   })
 
   it('returns null review_image_url when review_media is null', () => {

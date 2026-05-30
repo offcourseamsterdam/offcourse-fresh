@@ -51,8 +51,8 @@ export default async function HomePage({ params }: Props) {
       .from('social_proof_reviews')
       .select('*')
       .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(6),
+      // Newest reviews first (by the review's own date, not our import time)
+      .order('publish_time', { ascending: false, nullsFirst: false }),
     supabase
       .from('hero_carousel_items')
       .select('image_url, alt_text, caption')
@@ -69,7 +69,7 @@ export default async function HomePage({ params }: Props) {
       .order('sort_order', { ascending: true }),
     adminSupabase
       .from('google_reviews_config')
-      .select('total_reviews, place_id, tripadvisor_url')
+      .select('total_reviews, tripadvisor_total_reviews, place_id, tripadvisor_url')
       .limit(1)
       .maybeSingle(),
   ])
@@ -80,7 +80,11 @@ export default async function HomePage({ params }: Props) {
   const slides = rawSlides.map(s => ({ src: s.image_url, alt: s.alt_text ?? '', caption: s.caption ?? '' }))
   const boats = boatsResult.data ?? []
   const priorities = prioritiesResult.data ?? []
-  const totalReviewCount = googleConfigResult.data?.total_reviews ?? (reviews?.length ?? 0)
+  // Combined total across both sources (fall back to actual loaded counts per source).
+  const allReviews = reviews ?? []
+  const googleTotal = googleConfigResult.data?.total_reviews ?? allReviews.filter(r => r.source === 'google').length
+  const taTotal = googleConfigResult.data?.tripadvisor_total_reviews ?? allReviews.filter(r => r.source === 'tripadvisor').length
+  const totalReviewCount = googleTotal + taTotal
   const googlePlaceId = googleConfigResult.data?.place_id ?? null
   const tripadvisorUrl = googleConfigResult.data?.tripadvisor_url ?? null
 
