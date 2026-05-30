@@ -19,6 +19,7 @@ import {
   FHRateLimitError,
   FHValidationError,
 } from './types'
+import { env } from '@/env'
 
 // ── Rate limiter (module-level singleton) ───────────────────────────────────
 
@@ -103,13 +104,11 @@ export class FareHarborClient {
   private userKey: string
 
   constructor() {
-    this.baseUrl = process.env.FAREHARBOR_API_BASE || 'https://fareharbor.com/api/v1'
-    this.appKey = process.env.FAREHARBOR_API_APP || ''
-    this.userKey = process.env.FAREHARBOR_API_USER || ''
-
-    if (!this.appKey || !this.userKey) {
-      console.warn('FareHarbor API keys not set — client will fail on requests')
-    }
+    // Use validated env values — env.ts throws at cold-start if these are absent,
+    // so missing keys surface immediately rather than deep in a booking request.
+    this.baseUrl = env.FAREHARBOR_API_BASE
+    this.appKey = env.FAREHARBOR_API_APP
+    this.userKey = env.FAREHARBOR_API_USER
   }
 
   // ── Public methods ──────────────────────────────────────────────────────

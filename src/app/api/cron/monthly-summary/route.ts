@@ -3,16 +3,15 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { periodicSummaryHtml } from '@/emails/PeriodicSummary'
 import { getNotificationSettings, buildSummaryForRecipient } from '@/lib/tracking/cron-queries'
 import { Resend } from 'resend'
+import { requireCronSecret } from '@/lib/auth/require-cron-secret'
 
 /**
  * GET /api/cron/monthly-summary
  * Vercel Cron: runs on 1st of each month at 6:00 UTC
  */
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const denied = requireCronSecret(request)
+  if (denied) return denied
 
   try {
     const supabase = createAdminClient()

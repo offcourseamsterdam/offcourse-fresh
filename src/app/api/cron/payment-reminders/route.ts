@@ -4,6 +4,7 @@ import { getStripe } from '@/lib/stripe/server'
 import { Resend } from 'resend'
 import { paymentReminderEmailHtml } from '@/emails/PaymentReminderEmail'
 import { format } from 'date-fns'
+import { requireCronSecret } from '@/lib/auth/require-cron-secret'
 
 /**
  * GET /api/cron/payment-reminders
@@ -12,10 +13,8 @@ import { format } from 'date-fns'
  * and is still unpaid (and not yet expired).
  */
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const denied = requireCronSecret(request)
+  if (denied) return denied
 
   const supabase = createAdminClient()
   const resend = new Resend(process.env.RESEND_API_KEY!)

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { postSlackText } from '@/lib/slack/send-notification'
+import { requireCronSecret } from '@/lib/auth/require-cron-secret'
 
 /**
  * GET /api/cron/partner-code-expiry
@@ -11,10 +12,8 @@ import { postSlackText } from '@/lib/slack/send-notification'
  * existing one lapses.
  */
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const denied = requireCronSecret(request)
+  if (denied) return denied
 
   try {
     const supabase = createAdminClient()
