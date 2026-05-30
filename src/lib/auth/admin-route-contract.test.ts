@@ -41,9 +41,6 @@ const PUBLIC_EXCEPTIONS: Record<string, string[]> = {
   // The public add-on menu the checkout's ExtrasStep reads (public product data).
   // Its PATCH (admin toggle) stays guarded.
   'cruise-listings/[id]/extras/route.ts': ['GET'],
-  // Google OAuth callback — protected by a state-cookie CSRF check, receives
-  // Google's redirect (no admin session present at that moment).
-  'reviews/google-auth/callback/route.ts': ['GET'],
 }
 
 function walk(dir: string): string[] {
@@ -83,7 +80,7 @@ describe('admin route auth contract', () => {
     // Snapshot so any change in route count (addition OR deletion) requires
     // deliberate acknowledgement — update via `npx vitest run --update-snapshots`.
     // Count at time of writing: 68. Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`68`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`64`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {

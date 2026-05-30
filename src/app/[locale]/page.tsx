@@ -36,7 +36,7 @@ export async function generateMetadata({ params }: Props) {
 export default async function HomePage({ params }: Props) {
   const { locale } = await params
   const supabase = await createClient()
-  // google_reviews_config is RLS-protected (holds OAuth tokens). Service-role bypass for the safe stats fields.
+  // google_reviews_config is RLS-protected (service-role only). Bypass for the public stats + source URLs.
   const adminSupabase = createAdminClient()
 
   const [listingsResult, reviewsResult, slidesResult, boatsResult, prioritiesResult, googleConfigResult] = await Promise.all([
@@ -69,7 +69,7 @@ export default async function HomePage({ params }: Props) {
       .order('sort_order', { ascending: true }),
     adminSupabase
       .from('google_reviews_config')
-      .select('total_reviews')
+      .select('total_reviews, place_id, tripadvisor_url')
       .limit(1)
       .maybeSingle(),
   ])
@@ -81,13 +81,15 @@ export default async function HomePage({ params }: Props) {
   const boats = boatsResult.data ?? []
   const priorities = prioritiesResult.data ?? []
   const totalReviewCount = googleConfigResult.data?.total_reviews ?? (reviews?.length ?? 0)
+  const googlePlaceId = googleConfigResult.data?.place_id ?? null
+  const tripadvisorUrl = googleConfigResult.data?.tripadvisor_url ?? null
 
   return (
     <>
       <TrackPageView event="view_homepage" />
       <HeroSection slides={slides.length > 0 ? slides : undefined} />
       <FeaturedCruises listings={listings ?? []} />
-      <ReviewsSection reviews={reviews ?? []} totalReviewCount={totalReviewCount} locale={locale as Locale} />
+      <ReviewsSection reviews={reviews ?? []} totalReviewCount={totalReviewCount} locale={locale as Locale} googlePlaceId={googlePlaceId} tripadvisorUrl={tripadvisorUrl} />
       <PrioritiesSection cards={priorities} />
       <FleetSection boats={boats.length > 0 ? boats : undefined} />
       <LocationSection />

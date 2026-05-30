@@ -6,7 +6,8 @@ One file per track or major feature. Written before every PR and kept up to date
 |---------|------|-------|--------|
 | Core setup + infrastructure | [track-a-core-setup.md](track-a-core-setup.md) | A | done |
 | Public pages + SEO | [track-b-public-pages.md](track-b-public-pages.md) | B | done |
-| Google Reviews integration | [google-reviews.md](google-reviews.md) | — | done |
+| Outscraper Reviews (Google + TripAdvisor) | [outscraper-reviews.md](outscraper-reviews.md) | — | done |
+| ~~Google Reviews (OAuth)~~ — replaced by Outscraper | [google-reviews.md](google-reviews.md) | — | superseded |
 | Partner-invoiced listings (Webikeamsterdam) | [partner-invoiced-listings.md](partner-invoiced-listings.md) | — | done |
 | Image optimization pipeline (Sharp + AVIF + Gemini) | [image-optimization.md](image-optimization.md) | — | done |
 | Google Ads conversion tracking (server-side) | [google-ads-conversion-tracking.md](google-ads-conversion-tracking.md) | — | done |

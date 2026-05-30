@@ -1,13 +1,14 @@
 'use client'
 
+import { useState } from 'react'
 import { Star, RefreshCw, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ReviewItem } from '@/components/admin/ReviewItem'
 import { GoogleConfigBar } from '@/components/admin/GoogleConfigBar'
-import { PlaceSearch } from '@/components/admin/PlaceSearch'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { useReviews } from './useReviews'
-import { useReplyEditor } from './useReplyEditor'
+
+type SourceFilter = 'all' | 'google' | 'tripadvisor'
 
 export default function AdminReviewsPage() {
   const {
@@ -15,37 +16,27 @@ export default function AdminReviewsPage() {
     loading,
     error,
     config,
-    setConfig,
     syncing,
     syncResult,
     handleSync,
     fetchReviews,
-    searchQuery,
-    setSearchQuery,
-    searching,
-    searchResult,
-    handlePlaceSearch,
+    saveConfig,
     toggleActive,
     handleDelete,
-    updateReview,
     googleReviews,
+    taReviews,
     activeReviews,
-    isGbpConnected,
   } = useReviews()
 
-  const {
-    replyingTo,
-    replyText,
-    setReplyText,
-    replyError,
-    replySubmitting,
-    generatingFor,
-    openReply,
-    closeReply,
-    submitReply,
-    deleteReply,
-    generateAiReply,
-  } = useReplyEditor(updateReview)
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
+
+  const hasGoogle = googleReviews.length > 0
+  const hasTa = taReviews.length > 0
+  const showTabs = hasGoogle && hasTa
+
+  const filteredReviews = sourceFilter === 'all'
+    ? reviews
+    : reviews.filter(r => r.source === (sourceFilter === 'google' ? 'google' : 'tripadvisor'))
 
   return (
     <div className="p-4 sm:p-8 max-w-5xl space-y-6">
@@ -55,7 +46,7 @@ export default function AdminReviewsPage() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-900">Reviews</h1>
           <p className="text-sm text-zinc-500 mt-1">
-            Manage customer reviews from Google and other sources.
+            Manage customer reviews from Google and TripAdvisor.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -63,30 +54,24 @@ export default function AdminReviewsPage() {
             {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">Refresh</span>
           </Button>
-          <Button size="sm" onClick={handleSync} disabled={syncing}>
+          <Button size="sm" onClick={handleSync} disabled={syncing || !config?.place_id}>
             {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-            Sync Google
+            Sync
           </Button>
         </div>
       </div>
 
-      {/* Google stats bar + GBP connection */}
-      {config && <GoogleConfigBar config={config} />}
+      {/* Config bar */}
+      {config && <GoogleConfigBar config={config} onSave={saveConfig} />}
 
-      {/* Place search (for initial setup) */}
-      {!config?.place_id && (
-        <PlaceSearch
-          searchQuery={searchQuery}
-          onSearchQueryChange={setSearchQuery}
-          searching={searching}
-          searchResult={searchResult}
-          onSearch={handlePlaceSearch}
-          onSelectPlace={setConfig}
-          onSync={handleSync}
-        />
+      {/* No config yet */}
+      {!config && !loading && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-6 py-4 text-sm text-amber-800">
+          No reviews config yet. Click <strong>Edit config</strong> above to add your Google place ID.
+        </div>
       )}
 
-      {/* Sync result message */}
+      {/* Sync result */}
       {syncResult && (
         <div className={`rounded-lg border px-4 py-3 text-sm ${
           syncResult.startsWith('Error')
@@ -103,8 +88,28 @@ export default function AdminReviewsPage() {
       <div className="flex gap-4 text-sm text-zinc-500">
         <span>{reviews.length} total</span>
         <span>{activeReviews.length} active</span>
-        <span>{googleReviews.length} from Google</span>
+        {googleReviews.length > 0 && <span>{googleReviews.length} Google</span>}
+        {taReviews.length > 0 && <span>{taReviews.length} TripAdvisor</span>}
       </div>
+
+      {/* Source filter tabs */}
+      {showTabs && (
+        <div className="flex gap-1 border-b border-zinc-200">
+          {(['all', 'google', 'tripadvisor'] as SourceFilter[]).map(f => (
+            <button
+              key={f}
+              onClick={() => setSourceFilter(f)}
+              className={`px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2 -mb-px ${
+                sourceFilter === f
+                  ? 'border-zinc-900 text-zinc-900'
+                  : 'border-transparent text-zinc-400 hover:text-zinc-600'
+              }`}
+            >
+              {f === 'all' ? 'All' : f === 'google' ? '⭐ Google' : '🦉 TripAdvisor'}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Loading */}
       {loading && reviews.length === 0 && (
@@ -117,32 +122,20 @@ export default function AdminReviewsPage() {
       {!loading && reviews.length === 0 && !error && (
         <div className="text-center py-16 text-zinc-400 text-sm space-y-2">
           <Star className="w-8 h-8 mx-auto text-zinc-200" />
-          <p>No reviews yet. Click &quot;Sync Google&quot; to import reviews.</p>
+          <p>No reviews yet. Click <strong>Sync</strong> to import reviews from Outscraper.</p>
         </div>
       )}
 
       {/* Reviews list */}
-      {reviews.length > 0 && (
+      {filteredReviews.length > 0 && (
         <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
           <ul className="divide-y divide-zinc-100">
-            {reviews.map(review => (
+            {filteredReviews.map(review => (
               <ReviewItem
                 key={review.id}
                 review={review}
-                isGbpConnected={isGbpConnected}
-                replyingTo={replyingTo}
-                replyText={replyText}
-                replyError={replyError}
-                replySubmitting={replySubmitting}
-                generatingFor={generatingFor}
                 onToggleActive={toggleActive}
                 onDelete={handleDelete}
-                onOpenReply={openReply}
-                onCloseReply={closeReply}
-                onReplyTextChange={setReplyText}
-                onSubmitReply={submitReply}
-                onDeleteReply={deleteReply}
-                onGenerateReply={generateAiReply}
               />
             ))}
           </ul>

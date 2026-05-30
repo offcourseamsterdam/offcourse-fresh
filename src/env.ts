@@ -41,10 +41,12 @@ const envSchema = z.object({
 
   ANTHROPIC_API_KEY: z.string().optional(),
   GOOGLE_AI_API_KEY: z.string().optional(),
+  // Reused by Google Ads (see lib/google-ads/auth.ts); kept after reviews moved to Outscraper.
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
-  GOOGLE_PLACES_API_KEY: z.string().optional(),
-  GOOGLE_PLACE_ID: z.string().optional(),
+
+  // Outscraper — reviews scraping (Google Maps + TripAdvisor). Same key verifies webhook HMAC.
+  OUTSCRAPER_API_KEY: z.string().optional(),
 
   // Cron job bearer token (Vercel Cron → /api/cron/* routes)
   CRON_SECRET: z.string().optional(),

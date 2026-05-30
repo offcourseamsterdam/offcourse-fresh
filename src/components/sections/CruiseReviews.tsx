@@ -31,6 +31,7 @@ export async function CruiseReviews({ reviews, locale }: CruiseReviewsProps) {
             rating={review.rating}
             source={review.source}
             authorPhotoUrl={review.author_photo_url}
+            reviewImageUrl={review.review_image_url}
           />
         ))}
       </div>

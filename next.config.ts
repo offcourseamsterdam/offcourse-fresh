@@ -49,7 +49,8 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
-        hostname: 'lh3.googleusercontent.com',
+        // Google author avatars come from lh3/lh4/lh5/lh6.googleusercontent.com
+        hostname: '*.googleusercontent.com',
       },
       {
         protocol: 'https',

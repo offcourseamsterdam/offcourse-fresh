@@ -2,7 +2,6 @@ import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { requireRole } from '@/lib/auth/server'
 
 interface Ctx {
   params: Promise<{ id: string }>
@@ -12,11 +11,6 @@ interface Ctx {
 export async function PATCH(request: NextRequest, ctx: Ctx) {
   const denied = await requireAdmin()
   if (denied) return denied
-  try {
-    await requireRole(['admin'])
-  } catch {
-    return apiError('Unauthorized', 403)
-  }
 
   const { id } = await ctx.params
   const supabase = createAdminClient()
@@ -29,7 +23,6 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
     'is_active', 'sort_order', 'author_photo_url',
     'review_text_nl', 'review_text_de', 'review_text_fr',
     'review_text_es', 'review_text_pt', 'review_text_zh',
-    'owner_reply_text', 'owner_reply_time', 'reply_synced_at',
   ] as const
   for (const key of allowed) {
     if (key in body) updates[key] = body[key]
@@ -54,11 +47,6 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
 export async function DELETE(_request: NextRequest, ctx: Ctx) {
   const denied = await requireAdmin()
   if (denied) return denied
-  try {
-    await requireRole(['admin'])
-  } catch {
-    return apiError('Unauthorized', 403)
-  }
 
   const { id } = await ctx.params
   const supabase = createAdminClient()

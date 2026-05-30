@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import Image from 'next/image'
+import { ReviewPhoto } from '@/components/ui/ReviewPhoto'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -13,10 +14,20 @@ export interface SliderReview {
   rating: number
   source: string
   author_photo_url: string | null
+  review_image_url: string | null
   publish_time: string | null
 }
 
+type SourceFilter = 'all' | 'google' | 'tripadvisor'
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Honest source attribution (per SEO decision — cite the third-party source). */
+function sourceLabel(source: string): string {
+  if (source === 'tripadvisor') return 'via TripAdvisor'
+  if (source === 'google') return 'via Google'
+  return ''
+}
 
 function Stars({ rating }: { rating: number }) {
   return (
@@ -80,19 +91,13 @@ function ReviewModal({ review, onClose }: { review: SliderReview; onClose: () =>
   }, [onClose])
 
   return createPortal(
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      {/* Backdrop */}
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
 
-      {/* Modal card */}
       <div
         className="relative bg-white rounded-3xl shadow-2xl max-w-lg w-full p-8 max-h-[85vh] overflow-y-auto animate-modal-in"
         onClick={e => e.stopPropagation()}
       >
-        {/* Close button */}
         <button
           onClick={onClose}
           className="absolute top-4 right-4 w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
@@ -103,15 +108,17 @@ function ReviewModal({ review, onClose }: { review: SliderReview; onClose: () =>
           </svg>
         </button>
 
-        {/* Stars */}
         <Stars rating={review.rating} />
 
-        {/* Full review text */}
         <blockquote className="mt-4 text-[var(--color-foreground)] leading-relaxed text-base">
           &ldquo;{review.review_text}&rdquo;
         </blockquote>
 
-        {/* Author footer */}
+        {/* Review photo (gracefully hidden if it fails to load / expired) */}
+        {review.review_image_url && (
+          <ReviewPhoto src={review.review_image_url} className="mt-4 rounded-xl object-cover w-full max-h-72" />
+        )}
+
         <footer className="mt-6 flex items-center gap-3 pt-5 border-t border-gray-100">
           <AuthorPhoto url={review.author_photo_url} name={review.reviewer_name} />
           <div className="flex-1 min-w-0">
@@ -120,8 +127,8 @@ function ReviewModal({ review, onClose }: { review: SliderReview; onClose: () =>
               <p className="text-xs text-[var(--color-muted)]">{formatDate(review.publish_time)}</p>
             )}
           </div>
-          {review.source && (
-            <span className="text-xs text-[var(--color-muted)] capitalize">{review.source}</span>
+          {sourceLabel(review.source) && (
+            <span className="text-xs text-[var(--color-muted)]">{sourceLabel(review.source)}</span>
           )}
         </footer>
       </div>
@@ -165,8 +172,8 @@ function SliderCard({ review, onClick }: { review: SliderReview; onClick: () => 
             <p className="text-[10px] text-[var(--color-muted)]">{formatDate(review.publish_time)}</p>
           )}
         </div>
-        {review.source && (
-          <span className="text-[10px] text-[var(--color-muted)] capitalize flex-shrink-0">{review.source}</span>
+        {sourceLabel(review.source) && (
+          <span className="text-[10px] text-[var(--color-muted)] flex-shrink-0">{sourceLabel(review.source)}</span>
         )}
       </footer>
     </article>
@@ -175,8 +182,15 @@ function SliderCard({ review, onClick }: { review: SliderReview; onClick: () => 
 
 // ── Main slider ──────────────────────────────────────────────────────────────
 
-export function ReviewsSlider({ reviews }: { reviews: SliderReview[] }) {
+export function ReviewsSlider({
+  reviews,
+  showSourceTabs = false,
+}: {
+  reviews: SliderReview[]
+  showSourceTabs?: boolean
+}) {
   const [activeModal, setActiveModal] = useState<SliderReview | null>(null)
+  const [filter, setFilter] = useState<SourceFilter>('all')
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const scrollBy = useCallback((dir: 'left' | 'right') => {
@@ -185,55 +199,70 @@ export function ReviewsSlider({ reviews }: { reviews: SliderReview[] }) {
     el.scrollBy({ left: dir === 'right' ? 340 : -340, behavior: 'smooth' })
   }, [])
 
+  const filtered = filter === 'all' ? reviews : reviews.filter(r => r.source === filter)
+
   return (
-    <div className="relative">
-      {/* Left arrow */}
-      <button
-        onClick={() => scrollBy('left')}
-        className="hidden sm:flex absolute -left-5 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white border border-gray-200 shadow-md items-center justify-center hover:bg-gray-50 transition-colors"
-        aria-label="Scroll left"
-      >
-        <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-        </svg>
-      </button>
+    <div className="space-y-5">
+      {/* Source filter tabs */}
+      {showSourceTabs && (
+        <div className="flex items-center justify-center gap-1">
+          {(['all', 'google', 'tripadvisor'] as SourceFilter[]).map(f => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-4 py-1.5 rounded-full text-xs font-avenir font-medium transition-colors ${
+                filter === f
+                  ? 'bg-[var(--color-primary)] text-white'
+                  : 'bg-white text-[var(--color-muted)] hover:text-[var(--color-primary)] border border-gray-200'
+              }`}
+            >
+              {f === 'all' ? 'All' : f === 'google' ? 'Google' : 'TripAdvisor'}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {/* Scrollable track */}
-      <div
-        ref={scrollRef}
-        className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide"
-        style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
-      >
-        {/* Left fade spacer */}
-        <div className="flex-shrink-0 w-1 sm:w-5" />
+      <div className="relative">
+        {/* Left arrow */}
+        <button
+          onClick={() => scrollBy('left')}
+          className="hidden sm:flex absolute -left-5 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white border border-gray-200 shadow-md items-center justify-center hover:bg-gray-50 transition-colors"
+          aria-label="Scroll left"
+        >
+          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
 
-        {reviews.map(review => (
-          <SliderCard
-            key={review.id}
-            review={review}
-            onClick={() => setActiveModal(review)}
-          />
-        ))}
+        {/* Scrollable track */}
+        <div
+          ref={scrollRef}
+          className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide"
+          style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
+        >
+          <div className="flex-shrink-0 w-1 sm:w-5" />
 
-        {/* Right fade spacer */}
-        <div className="flex-shrink-0 w-1 sm:w-5" />
+          {filtered.map(review => (
+            <SliderCard key={review.id} review={review} onClick={() => setActiveModal(review)} />
+          ))}
+
+          <div className="flex-shrink-0 w-1 sm:w-5" />
+        </div>
+
+        {/* Right arrow */}
+        <button
+          onClick={() => scrollBy('right')}
+          className="hidden sm:flex absolute -right-5 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white border border-gray-200 shadow-md items-center justify-center hover:bg-gray-50 transition-colors"
+          aria-label="Scroll right"
+        >
+          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
       </div>
 
-      {/* Right arrow */}
-      <button
-        onClick={() => scrollBy('right')}
-        className="hidden sm:flex absolute -right-5 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white border border-gray-200 shadow-md items-center justify-center hover:bg-gray-50 transition-colors"
-        aria-label="Scroll right"
-      >
-        <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-        </svg>
-      </button>
-
       {/* Modal */}
-      {activeModal && (
-        <ReviewModal review={activeModal} onClose={() => setActiveModal(null)} />
-      )}
+      {activeModal && <ReviewModal review={activeModal} onClose={() => setActiveModal(null)} />}
     </div>
   )
 }
