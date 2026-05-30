@@ -74,7 +74,8 @@ function parseTaDate(raw: string | null | undefined): string | null {
  */
 function extractTaReviewId(reviewLink: string | null | undefined): string | null {
   if (!reviewLink) return null
-  const match = reviewLink.match(/-r(\d+)-/)
+  // TripAdvisor review URLs contain "-r<digits>-" (e.g. …-r1035421993-Off_The_…)
+  const match = reviewLink.match(/-r(\d+)/)
   return match?.[1] ?? reviewLink
 }
 
@@ -110,7 +111,7 @@ function parseTaReview(r: Record<string, any>): ReviewRow {
     review_text: r.review_text ?? '',
     original_text: r.review_title ?? null, // TA has a title; store in original_text
     language: null,
-    author_photo_url: null, // TripAdvisor doesn't provide reviewer avatar
+    author_photo_url: r.author_image ?? null,
     review_image_url: Array.isArray(r.review_media) ? (r.review_media[0] ?? null) : (r.review_media ?? null),
     publish_time: parseTaDate(r.review_date),
     google_profile_url: r.review_link ?? null, // repurpose field as review permalink
@@ -143,17 +144,23 @@ export function parseOutscraperPayload(payload: Record<string, any>, source: 'go
     }
   }
 
-  // TripAdvisor: data[] = review objects directly
-  const reviews = data.map(parseTaReview).filter(r => r.external_review_id)
-  // Compute aggregates from fetched rows (TA doesn't return place-level totals)
+  // TripAdvisor: data is nested as [[review, review, …]] — flatten to the review array.
+  // (Defensive: .flat() also handles an already-flat [review, …] shape.)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const flat = (data as any[]).flat() as Record<string, any>[]
+  const reviews = flat.map(parseTaReview).filter(r => r.external_review_id)
+
+  // Place-level rating isn't in the payload (per-review `rating` is null), so derive an
+  // average from the fetched rows. The place-level `reviews` field gives the real total.
   const rated = reviews.filter(r => r.rating > 0)
   const avgRating = rated.length > 0 ? rated.reduce((s, r) => s + r.rating, 0) / rated.length : null
+  const total = flat[0]?.reviews != null ? Number(flat[0].reviews) : null
 
   return {
     reviews,
     placeMeta: {
       overall_rating: avgRating != null ? Math.round(avgRating * 10) / 10 : null,
-      total_reviews: null, // can't know total from a limited fetch
+      total_reviews: total,
     },
   }
 }
