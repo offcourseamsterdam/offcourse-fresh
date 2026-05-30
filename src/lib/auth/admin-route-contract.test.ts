@@ -33,8 +33,11 @@ const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
  * everything NOT listed must be guarded; everything listed must NOT be guarded.
  */
 const PUBLIC_EXCEPTIONS: Record<string, string[]> = {
-  // Re-exported to the public /api/booking-flow/book — the customer checkout.
-  'booking-flow/book/route.ts': ['POST'],
+  // booking-flow/book/route.ts was previously excepted here. It now has
+  // requireAdmin() for internal booking sources (partner_invoice, stripe_recovery,
+  // platform sources) while website=customer-checkout remains open. The handler
+  // body contains the guard, so the contract test correctly sees it as guarded.
+  //
   // The public add-on menu the checkout's ExtrasStep reads (public product data).
   // Its PATCH (admin toggle) stays guarded.
   'cruise-listings/[id]/extras/route.ts': ['GET'],

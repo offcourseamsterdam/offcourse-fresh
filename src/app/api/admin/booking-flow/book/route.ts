@@ -3,6 +3,7 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { BookingSource } from '@/lib/constants'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { normalizePartnerCode } from '@/lib/partner-codes/generate'
 import { validatePartnerCode, reasonMessage } from '@/lib/partner-codes/validate'
 import { sendConfirmationEmail } from '@/lib/booking/send-confirmation-email'
@@ -76,6 +77,16 @@ export async function POST(request: NextRequest) {
     const isInternal = bookingSource !== 'website'
     const isPartnerInvoice = bookingSource === 'partner_invoice'
     const isStripeRecovery = bookingSource === 'stripe_recovery'
+
+    // Internal booking sources (partner_invoice, stripe_recovery, withlocals, etc.)
+    // bypass Stripe payment verification and create real FareHarbor bookings and
+    // consume boat capacity. Gate them behind admin auth so only authenticated admin
+    // users can trigger them. Website bookings stay unauthenticated — that's the
+    // public customer checkout path.
+    if (isInternal) {
+      const denied = await requireAdmin()
+      if (denied) return denied
+    }
 
     // ── Partner-invoice branch ─────────────────────────────────────────────
     // Skip Stripe. Validate the listing is actually partner-invoice, validate
