@@ -7,7 +7,7 @@ import { getAccessToken } from './auth'
 // The Google Ads API version is sunset ~yearly. Keep it in an env var so it can
 // be bumped without a code change — set it to the current version shown in your
 // Google Ads API Center. Falls back to a recent default.
-const API_VERSION = process.env.GOOGLE_ADS_API_VERSION || 'v18'
+const API_VERSION = process.env.GOOGLE_ADS_API_VERSION || 'v20'
 const TIMEOUT_MS = 10_000
 
 export interface GoogleAdsConfig {
