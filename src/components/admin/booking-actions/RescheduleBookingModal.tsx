@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Loader2, CalendarDays } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { fmtAdminTime } from '@/lib/admin/format'
@@ -45,6 +45,13 @@ export function RescheduleBookingModal({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [slotsFetched, setSlotsFetched] = useState(false)
+
+  // Lock background scroll while modal is open
+  useEffect(() => {
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [])
 
   async function fetchSlots(selectedDate: string) {
     if (!listingId) {
@@ -174,23 +181,29 @@ export function RescheduleBookingModal({
         )}
 
         {slots.length > 0 && (
-          <div className="space-y-1.5">
-            <p className="text-xs font-medium text-zinc-500">Available slots</p>
-            {slots.map(slot => (
-              <label
-                key={slot.pk}
-                className="flex items-center gap-2.5 cursor-pointer"
-              >
-                <input
-                  type="radio"
-                  name="slot"
-                  checked={selectedSlot?.pk === slot.pk}
-                  onChange={() => setSelectedSlot(slot)}
-                  className="accent-zinc-900"
-                />
-                <span className="text-sm text-zinc-700">{slot.label}</span>
-              </label>
-            ))}
+          <div>
+            <p className="text-xs font-medium text-zinc-500 mb-2">Available slots</p>
+            <div className="grid grid-cols-3 gap-1.5">
+              {slots.map(slot => (
+                <label
+                  key={slot.pk}
+                  className={`flex items-center gap-1.5 cursor-pointer rounded-md border px-2 py-1.5 text-xs transition-colors ${
+                    selectedSlot?.pk === slot.pk
+                      ? 'border-zinc-900 bg-zinc-900 text-white'
+                      : 'border-zinc-200 text-zinc-700 hover:border-zinc-400'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="slot"
+                    checked={selectedSlot?.pk === slot.pk}
+                    onChange={() => setSelectedSlot(slot)}
+                    className="sr-only"
+                  />
+                  {slot.label.split(' – ')[0]}
+                </label>
+              ))}
+            </div>
           </div>
         )}
 
