@@ -123,8 +123,10 @@ export function RescheduleBookingModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6 space-y-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md flex flex-col max-h-[90vh]">
+        {/* Scrollable body */}
+        <div className="overflow-y-auto flex-1 p-6 space-y-5">
         <div className="flex items-start gap-3">
           <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
             <CalendarDays className="w-5 h-5 text-blue-600" />
@@ -193,8 +195,10 @@ export function RescheduleBookingModal({
         )}
 
         {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+        </div>{/* end scrollable body */}
 
-        <div className="flex gap-2 justify-end pt-1">
+        {/* Footer — always visible, never scrolls away */}
+        <div className="flex gap-2 justify-end px-6 py-4 border-t border-zinc-100 flex-shrink-0">
           <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>Go back</Button>
           <Button size="sm" onClick={handleConfirm} disabled={saving || !selectedSlot}>
             {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
