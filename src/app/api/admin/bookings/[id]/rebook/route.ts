@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { FHNotFoundError } from '@/lib/fareharbor/types'
+import { sendRescheduleEmail } from '@/lib/booking/send-confirmation-email'
 
 export async function POST(
   request: NextRequest,
@@ -29,7 +30,7 @@ export async function POST(
     const supabase = createAdminClient()
     const { data: booking } = await supabase
       .from('bookings')
-      .select('id, booking_uuid, status, customer_name, customer_email, customer_phone, guest_note, category, guest_count')
+      .select('id, booking_uuid, status, customer_name, customer_email, customer_phone, guest_note, category, guest_count, listing_title, base_amount_cents')
       .eq('id', id)
       .single()
 
@@ -91,6 +92,23 @@ export async function POST(
       .eq('id', id)
 
     if (updateError) return apiError(updateError.message)
+
+    // Send reschedule confirmation email — fire-and-forget, never blocks the response
+    sendRescheduleEmail({
+      contact: {
+        name: booking.customer_name ?? '',
+        email: booking.customer_email ?? '',
+      },
+      listingTitle:  booking.listing_title ?? 'Canal Cruise',
+      newDate:       newDate,
+      newStartAt:    newStartAt ?? null,
+      newEndAt:      newEndAt ?? null,
+      guestCount:    Number(booking.guest_count ?? 1),
+      amountCents:   Number(booking.base_amount_cents ?? 0),
+      fhBookingUuid: newFhBooking.uuid,
+      category:      booking.category,
+      fareharborCustomerTypeRatePk: newCustomerTypeRatePk,
+    }).catch(err => console.error('[rebook] reschedule email error (ignored):', err))
 
     return apiOk({ rebooked: true, newBookingUuid: newFhBooking.uuid })
   } catch (err) {
