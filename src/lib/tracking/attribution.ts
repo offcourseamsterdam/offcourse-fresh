@@ -68,6 +68,56 @@ export function getOrCreateSessionId(): string {
   return id
 }
 
+// ── Anonymous session/visitor IDs (no consent required) ──
+//
+// Session-scoped IDs stored in sessionStorage — NOT cookies. They live only
+// until the tab closes, never persist across visits, and never leave first-party
+// scope, so they don't carry the consent obligations of tracking cookies. We
+// already record anonymous sessions server-side without consent; this just makes
+// the id stable within a single visit so (a) analytics rows de-duplicate per tab
+// and (b) a resulting booking can be linked back to the visit that produced it.
+
+const ANON_SESSION_KEY = 'oc_anon_session'
+const ANON_VISITOR_KEY = 'oc_anon_visitor'
+
+function getOrCreateFromSessionStorage(key: string): string {
+  if (typeof window === 'undefined') return generateAnonId()
+  try {
+    const existing = window.sessionStorage.getItem(key)
+    if (existing) return existing
+    const id = generateAnonId()
+    window.sessionStorage.setItem(key, id)
+    return id
+  } catch {
+    // sessionStorage blocked (private mode / strict settings) — fall back to throwaway
+    return generateAnonId()
+  }
+}
+
+function generateAnonId(): string {
+  return `anon_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+/** Stable-per-tab anonymous session id (sessionStorage). */
+export function getOrCreateAnonSessionId(): string {
+  return getOrCreateFromSessionStorage(ANON_SESSION_KEY)
+}
+
+/** Stable-per-tab anonymous visitor id (sessionStorage). */
+export function getOrCreateAnonVisitorId(): string {
+  return getOrCreateFromSessionStorage(ANON_VISITOR_KEY)
+}
+
+/** Read the anon session id without creating one (returns null if absent). */
+export function getAnonSessionId(): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    return window.sessionStorage.getItem(ANON_SESSION_KEY)
+  } catch {
+    return null
+  }
+}
+
 // ── UTM parsing ──
 
 export function parseUTMFromURL(url: string): UTMParams {

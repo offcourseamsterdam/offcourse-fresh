@@ -22,13 +22,21 @@ export function CookieBanner() {
   function handleAccept() {
     setCookie(COOKIE_CONSENT, 'yes', 365)
     setVisible(false)
-    // Start tracking immediately now that we have consent
+    // Start first-party tracking immediately
     initSession()
+    // Update Google Consent Mode v2 — enables remarketing + modelled conversions
+    if (typeof window !== 'undefined' && window.ocUpdateConsent) {
+      window.ocUpdateConsent(true)
+    }
   }
 
   function handleDecline() {
     setCookie(COOKIE_CONSENT, 'no', 365)
     setVisible(false)
+    // Explicitly confirm denied state to Google (already the default, but belt-and-braces)
+    if (typeof window !== 'undefined' && window.ocUpdateConsent) {
+      window.ocUpdateConsent(false)
+    }
   }
 
   if (!visible) return null

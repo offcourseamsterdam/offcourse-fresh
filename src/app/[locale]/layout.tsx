@@ -10,6 +10,7 @@ import AuthProvider from '@/components/auth/AuthProvider'
 import { SearchProvider } from '@/lib/search/SearchContext'
 import { TrackingScript } from '@/components/tracking/TrackingScript'
 import { CookieBanner } from '@/components/tracking/CookieBanner'
+import { GoogleTag } from '@/components/tracking/GoogleTag'
 import { createClient } from '@/lib/supabase/server'
 import type { Locale } from '@/lib/i18n/config'
 
@@ -104,6 +105,7 @@ export default async function LocaleLayout({ children, params }: Props) {
           {!isAdminRoute && <Footer />}
           {!isAdminRoute && <WhatsAppButton />}
           {!isAdminRoute && <CookieBanner />}
+          {!isAdminRoute && <GoogleTag />}
           <TrackingScript />
         </SearchProvider>
       </AuthProvider>

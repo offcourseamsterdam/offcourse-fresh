@@ -513,6 +513,7 @@ export function CheckoutFlow({
           startAt: bookingData.selectedSlot?.startAt ?? null,
           endAt: bookingData.selectedSlot?.endAt ?? null,
           contact: { name: details.name, email: details.email, phone: details.phone },
+          sessionId: getSessionId(),
         }),
       })
 

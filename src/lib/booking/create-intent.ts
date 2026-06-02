@@ -25,6 +25,9 @@ interface CreateIntentInput {
   clickType?: string | null
   /** Whether the visitor accepted the tracking banner — gates send-to-Google. */
   marketingConsent?: boolean
+  /** Analytics session id (cookie or stable-per-tab anon). Stored in PI metadata
+   *  so the webhook can link the booking to its originating visit (device, channel). */
+  sessionId?: string | null
 }
 
 interface CreateIntentResult {
@@ -45,7 +48,7 @@ interface CreateIntentResult {
  *   5. Mark the quote consumed.
  */
 export async function createPaymentIntent(input: CreateIntentInput): Promise<CreateIntentResult> {
-  const { quoteId, listingTitle, date, startAt, endAt, contact, gclid, clickType, marketingConsent } = input
+  const { quoteId, listingTitle, date, startAt, endAt, contact, gclid, clickType, marketingConsent, sessionId } = input
 
   if (!quoteId) {
     throw new Error('Missing quoteId — please refresh your booking and try again.')
@@ -139,6 +142,7 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
       // Google Ads attribution: gclid is the conversion key; consent_marketing
       // gates whether the Stripe webhook may forward the conversion to Google.
       consent_marketing: marketingConsent ? 'yes' : 'no',
+      ...(sessionId ? { session_id: String(sessionId) } : {}),
       ...(gclid ? { gclid: String(gclid), click_type: toClickType(clickType) } : {}),
       ...(quoteRow.promo_code_id
         ? {

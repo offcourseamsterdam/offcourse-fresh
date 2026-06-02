@@ -52,7 +52,12 @@ export async function POST(request: NextRequest) {
       campaign_slug,
     } = body as Record<string, string | number | undefined>
 
-    if (!session_id || !visitor_id) {
+    // Close beacons (exit_page set) only carry session_id — they update an
+    // existing row, so visitor_id isn't required. Init requires both.
+    if (!session_id) {
+      return NextResponse.json({ ok: false }, { status: 400 })
+    }
+    if (!exit_page && !visitor_id) {
       return NextResponse.json({ ok: false }, { status: 400 })
     }
 
@@ -108,16 +113,35 @@ export async function POST(request: NextRequest) {
 
     // Upsert session
     if (exit_page) {
-      // Session close — just update exit info
+      // Session close — update exit info + compute duration from started_at.
+      const endedAt = new Date()
+      // Fetch the session start so we can record a real duration (seconds).
+      const { data: existing } = await supabase
+        .from('analytics_sessions')
+        .select('started_at')
+        .eq('id', session_id as string)
+        .maybeSingle()
+
+      let durationSeconds: number | undefined
+      if (existing?.started_at) {
+        const startedMs = new Date(existing.started_at).getTime()
+        const diffSec = Math.round((endedAt.getTime() - startedMs) / 1000)
+        // Guard against clock skew / negative values; cap at 2h (beyond that the
+        // tab was almost certainly idle, not engaged).
+        if (diffSec >= 0) durationSeconds = Math.min(diffSec, 7200)
+      }
+
       await supabase
         .from('analytics_sessions')
         .update({
           exit_page: exit_page as string,
           page_count: (page_count as number) ?? undefined,
-          ended_at: new Date().toISOString(),
-          session_duration: undefined, // computed later if needed
-          is_bounce: ((page_count as number) ?? 1) <= 1,
-          updated_at: new Date().toISOString(),
+          ended_at: endedAt.toISOString(),
+          session_duration: durationSeconds,
+          // Bounce = single page AND under 10s engagement. A visitor who read one
+          // page for 90s isn't a bounce in any useful sense.
+          is_bounce: ((page_count as number) ?? 1) <= 1 && (durationSeconds ?? 0) < 10,
+          updated_at: endedAt.toISOString(),
         })
         .eq('id', session_id as string)
     } else {

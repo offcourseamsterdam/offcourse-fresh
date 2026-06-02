@@ -1355,6 +1355,48 @@ export type Database = {
         }
         Relationships: []
       }
+      google_ads_campaign_listings: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          listing_id: string | null
+          listing_slug: string | null
+          marketing_campaign_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          listing_id?: string | null
+          listing_slug?: string | null
+          marketing_campaign_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          listing_id?: string | null
+          listing_slug?: string | null
+          marketing_campaign_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "google_ads_campaign_listings_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "cruise_listings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "google_ads_campaign_listings_marketing_campaign_id_fkey"
+            columns: ["marketing_campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       google_ads_conversions: {
         Row: {
           adjusted_at: string | null

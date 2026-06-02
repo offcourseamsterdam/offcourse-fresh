@@ -40,6 +40,10 @@ yarn-error.log*
 env-local-backup.txt
 *-backup.txt
 
+# Local credential handoff files — NEVER commit (contain live secrets)
+*credentials*.md
+*.secrets.md
+
 # vercel
 .vercel
 

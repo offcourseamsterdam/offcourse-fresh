@@ -1,0 +1,92 @@
+{
+  "_comment": "Off Course — Private Canal Cruise (English). One tight Search campaign, AI Max OFF, all phrase match. Keyword + copy revised with Beer June 2026. Dry-run: npm run gads -- create --config scripts/google-ads/campaigns/private-cruise-en.json ; go live: add --live --listing off-beaten-path-hidden-gems-canal-cruise (the listing flag records the mapping; the /t/ tracking finalUrl below is preserved).",
+  "campaignName": "Off Course — Private Cruise (EN)",
+  "dailyBudgetEuros": 40,
+  "adGroupName": "Private Boat — Amsterdam",
+  "matchType": "PHRASE",
+  "keywords": [
+    "private boat tour amsterdam",
+    "private canal cruise amsterdam",
+    "private canal tour amsterdam",
+    "private boat amsterdam",
+    "private cruise amsterdam",
+    "private boat cruise amsterdam",
+    "private boat ride amsterdam",
+    "private boat hire amsterdam",
+    "private canal boat amsterdam",
+    "private boat trip amsterdam",
+    "private canal boat tour amsterdam",
+    "amsterdam private boat tour",
+    "private boat tour for 2 amsterdam",
+    "private boat amsterdam with drinks",
+    "small private boat tour amsterdam",
+    "private boat with skipper amsterdam",
+    "private sunset cruise amsterdam",
+    "private sunset boat tour amsterdam",
+    "private evening cruise amsterdam"
+  ],
+  "negativeKeywords": [
+    "self drive", "self-drive", "drive your own", "drive yourself", "without skipper", "no skipper",
+    "no license", "vaarbewijs", "boats4rent", "sloepdelen", "boaty",
+    "free", "cheap", "budget", "discount code", "coupon", "groupon",
+    "job", "jobs", "vacancy", "vacancies", "career", "careers", "salary", "hiring", "internship", "schipper gezocht",
+    "for sale", "buy a boat", "second hand", "used boat", "te koop", "owning a boat", "own a boat",
+    "how to", "what is", "what are", "wikipedia", "history of", "tips", "reddit", "youtube", "images", "weather", "map",
+    "houseboat", "house boat", "ferry", "water taxi", "pedal boat", "pedalo", "kayak", "canoe", "paddle", "paddle board",
+    "jet ski", "speed boat", "yacht charter", "sailing", "sailboat", "barge", "cruise ship", "ocean cruise", "river cruise",
+    "hop on hop off", "hop-on", "party boat", "booze cruise", "stag", "hen", "bachelor", "bachelorette", "pizza", "wine and cheese",
+    "viator", "getyourguide", "tiqets", "airbnb", "tripadvisor",
+    "lovers", "blue boat", "stromma", "flagship", "mokumboot", "boatnow", "those dam boat", "thosedamboatguys", "pure boats", "eco boats", "canal motorboats", "rederij",
+    "rotterdam", "utrecht", "den haag", "the hague", "giethoorn", "leiden", "delft", "haarlem", "groningen", "bruges", "venice", "paris", "london"
+  ],
+  "locations": ["Netherlands", "United Kingdom", "United States", "Germany"],
+  "languages": ["English"],
+  "ad": {
+    "finalUrl": "https://offcourseamsterdam.com/t/first-private-cruise-campaign",
+    "path1": "private",
+    "path2": "cruise",
+    "headlines": [
+      "Your Friend With a Boat",
+      "Private Cruise Amsterdam",
+      "Not a Tour. Your Own Boat.",
+      "Just Your Group, No Strangers",
+      "Electric Boat, Real Amsterdam",
+      "Hidden Gems of the Canals",
+      "Local Skipper, No Script",
+      "Private Boat From €310",
+      "The Real Amsterdam by Water",
+      "Drinks On the Water",
+      "Off Course Amsterdam",
+      "You, Your Crew, Good Spots",
+      "We Bring the Boat",
+      "You Bring the Vibes",
+      "Off The Beaten Path"
+    ],
+    "descriptions": [
+      "Local-born hosts Jannah & Beer take your crew through the Amsterdam only locals know.",
+      "Other tours pack 50+ with megaphones. You get our historic boat to yourselves.",
+      "Hidden swimming spots, quiet canals, real stories — no script, no tourist traps.",
+      "Friends, family or team — covered boat, rain or shine, plus a Polaroid to keep."
+    ]
+  },
+  "extensions": {
+    "sitelinks": [
+      { "text": "Private Boat Cruises", "description1": "Saloon Boat (8) or Open Boat (12)", "description2": "Your own boat & skipper", "finalUrl": "https://offcourseamsterdam.com/cruises/off-beaten-path-hidden-gems-canal-cruise" },
+      { "text": "Check a Date", "description1": "Pick date & guest count", "description2": "See live availability", "finalUrl": "https://offcourseamsterdam.com/cruises/off-beaten-path-hidden-gems-canal-cruise" },
+      { "text": "Book Last Minute", "description1": "Up to 6 hrs in advance", "description2": "Same-day cruises welcome", "finalUrl": "https://offcourseamsterdam.com/cruises/off-beaten-path-hidden-gems-canal-cruise" },
+      { "text": "All Our Cruises", "description1": "Private & shared options", "description2": "Hidden gems, local route", "finalUrl": "https://offcourseamsterdam.com/cruises" },
+      { "text": "About Off Course", "description1": "Your friend with a boat", "description2": "Electric, local, no fuss", "finalUrl": "https://offcourseamsterdam.com" }
+    ],
+    "callouts": [
+      "Electric & silent boats",
+      "Local skippers",
+      "Up to 8 or 12 guests",
+      "Drinks on board",
+      "Off the tourist routes",
+      "Your own private boat"
+    ],
+    "snippets": [
+      { "header": "Amenities", "values": ["Electric boat", "Local skipper", "Drinks on board", "Up to 12 guests"] }
+    ]
+  }
+}

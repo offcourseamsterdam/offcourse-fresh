@@ -4,7 +4,7 @@
 
 Off Course Amsterdam is "your friend with a boat" — an electric boat company in Amsterdam offering private and shared canal cruises through the city's hidden gems. Not a tour company, not luxury — the sweet spot between taste and zero pretension. This is a full rebuild from Lovable (React) to Next.js, with a search-first booking flow, native Stripe checkout, and an admin backend.
 
-**Stack:** Next.js 16 (App Router, Turbopack) · TypeScript · Tailwind CSS v4 · Supabase · Stripe · FareHarbor External API v1 · Claude Sonnet (text AI) · Google Gemini (vision AI) · Vercel
+**Stack:** Next.js 16 (App Router; webpack dev server) · TypeScript · Tailwind CSS v4 · Supabase · Stripe · FareHarbor External API v1 · Claude Sonnet (text AI) · Google Gemini (vision AI) · Vercel
 
 ## Key Architecture Concepts
 
@@ -67,6 +67,12 @@ Using Payment Intents (NOT Checkout Sessions) for Google Ads conversion tracking
 - **Google Gemini**: all vision — image analysis, labeling, scene detection, SEO filenames
 - Both use the company context from `src/lib/ai/context.ts`
 - Translations: admin writes English → AI generates 6 other languages automatically
+
+### Google Ads (conversion tracking + campaign management)
+Two server-side subsystems in `src/lib/google-ads/`, sharing one OAuth (`auth.ts`):
+- **Conversion tracking** — the Stripe webhook reports each paid booking to Google as an Offline Conversion at its **net ex-VAT value** (never the gross total). See `report-conversion.ts` + `conversion-value.ts`.
+- **Campaign management** — create/read/control Search campaigns from code via the CLI: `npm run gads -- <command>` (`accounts`, `campaigns`, `create`, `performance`, `pause`/`enable`, `add-negatives`…). Campaigns are defined as JSON in `scripts/google-ads/campaigns/`. `create` is **dry-run by default** (Google `validateOnly`); needs `--live`, and new campaigns start **PAUSED**.
+- Full docs: `docs/features/google-ads-conversion-tracking.md` and `docs/features/google-ads-campaign-management.md`.
 
 ### i18n
 7 locales: `en` (default), `nl`, `de`, `fr`, `es`, `pt`, `zh`
@@ -133,7 +139,7 @@ Do NOT spawn `next dev` directly from Bash — use `preview_start` if you want C
 
 **Why:** Turbopack uses RocksDB for persistent caching. RocksDB only allows one write at a time. This project (21 pages × 7 locales) generates enough concurrent compilation to overwhelm RocksDB's single-writer lock. When writes collide, `.next/dev/build/postcss.js` fails to persist, PostCSS workers crash, `globals.css` can't compile, and the entire dev server dies.
 
-**The `package.json` dev script auto-cleans `.next` on startup** (`rm -rf .next && next dev`) to prevent corrupted cache state from previous sessions. Do not remove the `rm -rf .next` part.
+**`npm run dev` uses `--webpack` by default** (`rm -rf .next && next dev --webpack`) and auto-cleans `.next` on startup to avoid corrupted cache from previous sessions. `npm run dev:turbo` opts into Turbopack — and the crash risk above. Keep both the `rm -rf .next` and the `--webpack`.
 
 **Trade-off:** Cold starts are slightly slower (no cache to restore). But the server won't crash mid-session.
 
@@ -166,11 +172,12 @@ If you need to modify request handling (auth, i18n, redirects), edit `src/proxy.
 6. **What NOT to test** — don't test React component rendering or Tailwind classes. Test the logic, not the UI.
 
 ### Current Test Coverage
-| Module | Tests | File |
-|--------|-------|------|
-| FareHarbor 3-layer filters | 30 | `src/lib/fareharbor/filters.test.ts` |
-| Extras pricing math | 14 | `src/lib/extras/calculate.test.ts` |
-| Formatting utilities | 18 | `src/lib/utils.test.ts` |
+Run `npm test` for the live count (currently **484 tests across 44 files**). Key areas:
+- FareHarbor 3-layer filters — `src/lib/fareharbor/filters.test.ts`
+- Extras pricing / VAT math — `src/lib/extras/calculate.test.ts`
+- Formatting utilities — `src/lib/utils.test.ts`
+- Google Ads (conversion value, campaign builders, reporting, transport) — `src/lib/google-ads/*.test.ts`
+- Stripe webhook — `src/app/api/webhooks/stripe/route.test.ts`
 
 ## Responsive Design (MANDATORY)
 
@@ -250,35 +257,59 @@ curl -s "https://api.supabase.com/v1/projects/fkylzllxvepmrtqxisrn/types/typescr
 
 ## Environment Variables
 
-```
+```bash
+# Supabase
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_MANAGEMENT_TOKEN=          # migrations + type regen via Management API
+
+# FareHarbor
 FAREHARBOR_API_APP=
 FAREHARBOR_API_USER=
 FAREHARBOR_API_BASE=https://fareharbor.com/api/v1
+
+# Stripe
 STRIPE_SECRET_KEY=
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
 STRIPE_WEBHOOK_SECRET=
-ANTHROPIC_API_KEY=
-GOOGLE_AI_API_KEY=
-GOOGLE_PLACES_API_KEY=
-GOOGLE_PLACE_ID=
+
+# AI
+ANTHROPIC_API_KEY=                  # Claude Sonnet (text)
+GOOGLE_AI_API_KEY=                  # Gemini (vision)
+
+# Google Ads — conversion tracking + campaign management (share the OAuth below)
+GOOGLE_ADS_DEVELOPER_TOKEN=
+GOOGLE_ADS_CLIENT_ID=
+GOOGLE_ADS_CLIENT_SECRET=
+GOOGLE_ADS_REFRESH_TOKEN=
+GOOGLE_ADS_CUSTOMER_ID=             # advertiser account (10 digits, no dashes)
+GOOGLE_ADS_LOGIN_CUSTOMER_ID=       # manager / MCC account
+GOOGLE_ADS_CONVERSION_ACTION_ID=
+GOOGLE_ADS_API_VERSION=v20          # bump when Google sunsets a version
+GOOGLE_ADS_REQUIRE_CONSENT=true
+
+# Google — reviews / OAuth (GOOGLE_OAUTH_* is reused by Google Ads auth)
 GOOGLE_OAUTH_CLIENT_ID=
 GOOGLE_OAUTH_CLIENT_SECRET=
+GOOGLE_PLACES_API_KEY=
+GOOGLE_PLACE_ID=
+
+# Reviews
+OUTSCRAPER_API_KEY=
+
+# Email / Slack
+RESEND_API_KEY=
+CATERING_EMAIL_RECIPIENT=
+SLACK_WEBHOOK_URL=
+
+# Site / deploy
 NEXT_PUBLIC_SITE_URL=https://offcourseamsterdam.com
 REVALIDATION_SECRET=
-SLACK ACCESS TOKEN: 
-SLACK REFRESH TOKEN:
-SLACK_WEBHOOK_URL=
-RESEND_API_KEY=
-SUPABASE_MANAGEMENT_TOKEN=
-VERCEL_API_KEY:
-GOOGLE_API_KEY:
-OAUTH_CLIENT_ID:
+VERCEL_API_KEY=
 ```
 
-> Keys live in `.env.local` (gitignored). See `.env.example` for the full list.
+> Keys live in `.env.local` (gitignored); **`.env.example` is the source-of-truth list** — keep them in sync. (Removed stray non-keys `GOOGLE_API_KEY`, `OAUTH_CLIENT_ID`, and the malformed `SLACK …` lines; `VERCEL_OIDC_TOKEN` is auto-injected by the Vercel CLI and isn't configured here.)
 
 ## Brand Identity & Content Guidelines
 

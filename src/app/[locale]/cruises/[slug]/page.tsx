@@ -125,13 +125,18 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
   )
 
   // Shared booking panel props
+  // Default the booking widget to today (Amsterdam tz) for direct landings, so the
+  // widget loads with a date pre-selected and an immediate CTA instead of a passive
+  // date picker. Search arrivals (?date=) keep their chosen date. en-CA → YYYY-MM-DD.
+  const amsterdamToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Amsterdam' }).format(new Date())
+
   const bookingPanelProps = {
     listingId: listing.id,
     listingSlug: listing.slug,
     listingTitle: data.title,
     listingHeroImageUrl: data.heroUrl,
     category: listing.category as 'private' | 'shared',
-    initialDate: date,
+    initialDate: date ?? amsterdamToday,
     initialGuests: guests ? Number(guests) : undefined,
     initialTime: time,
     cancellationPolicy: data.cancellationPolicy,

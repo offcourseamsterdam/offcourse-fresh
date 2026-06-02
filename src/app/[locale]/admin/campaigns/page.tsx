@@ -7,6 +7,7 @@ import { PeriodSelector, getDateRange, type PeriodKey } from '@/components/admin
 import { CampaignModal } from '@/components/admin/tracking/CampaignModal'
 import { CategoryTabs, type CategoryFilter } from '@/components/admin/tracking/CategoryTabs'
 import { ChannelSection, type ChannelWithMetrics, type Campaign, type CampaignMetrics, type CampaignBooking } from './ChannelSection'
+import { AiReferralsSection } from './AiReferralsSection'
 
 export default function CampaignsPage() {
   const [period, setPeriod] = useState<PeriodKey>('30d')
@@ -155,6 +156,8 @@ export default function CampaignsPage() {
           <PeriodSelector value={period} onChange={handlePeriodChange} />
         </div>
       </div>
+
+      <AiReferralsSection from={dateRange.from} to={dateRange.to} />
 
       {loading ? (
         <div className="flex items-center justify-center py-20">

@@ -141,7 +141,9 @@ export async function getOverviewKPIs(
     anonymous_sessions: anonymousSessions,
     bookings: bookingCount,
     revenue_cents: revenueCents,
-    conversion_rate: sessionCount > 0 ? bookingCount / sessionCount : 0,
+    // Bookings per unique visitor — a person who visits twice and books once counts as one converted visitor,
+    // not 50% of two sessions. Industry-standard "conversion rate" for booking platforms.
+    conversion_rate: uniqueVisitors > 0 ? bookingCount / uniqueVisitors : 0,
     prev_sessions: prevSessions?.length ?? 0,
     prev_bookings: prevBookingCount,
     prev_revenue_cents: prevRevenueCents,
@@ -313,4 +315,217 @@ export async function getFunnelData(
       drop_off_rate: prevCount > 0 && i > 0 ? 1 - count / prevCount : 0,
     }
   })
+}
+
+// ── Conversion by listing ──
+//
+// Server-side reliable: attributes each unique visitor to a listing by the
+// cruise/book page they LANDED on (entry_page), then divides bookings (by
+// listing_id) by those visitors. This is "direct-landing conversion" — visitors
+// who arrived straight on a cruise page. Visitors who entered via the homepage
+// and navigated to a cruise are counted under the homepage, not here (see
+// getEntryFunnel for the macro homepage→cruise leak).
+
+export interface ListingConversion {
+  listing_id: string
+  slug: string
+  title: string
+  category: string
+  visitors: number
+  bookings: number
+  conversion_rate: number
+}
+
+/** Extract a listing slug from a path like /en/cruises/{slug} or /en/book/{slug}/checkout. */
+function slugFromPath(path: string | null): string | null {
+  if (!path) return null
+  const m = path.match(/^\/[a-z]{2}\/(?:cruises|book)\/([^/?]+)/)
+  return m ? m[1] : null
+}
+
+export async function getConversionByListing(
+  supabase: SupabaseClient,
+  range: DateRange,
+): Promise<ListingConversion[]> {
+  const { data: listings } = await supabase
+    .from('cruise_listings')
+    .select('id, slug, title, category')
+    .eq('is_archived', false)
+
+  if (!listings?.length) return []
+
+  // Map slug → listing meta
+  const bySlug = new Map(listings.map((l) => [l.slug, l]))
+
+  // Unique visitors per landed-on slug
+  const { data: sessions } = await supabase
+    .from('analytics_sessions')
+    .select('visitor_id, entry_page')
+    .gte('started_at', range.from)
+    .lte('started_at', range.to)
+
+  const visitorsBySlug = new Map<string, Set<string>>()
+  for (const s of sessions ?? []) {
+    const slug = slugFromPath(s.entry_page)
+    if (!slug || !bySlug.has(slug)) continue
+    const set = visitorsBySlug.get(slug) ?? new Set<string>()
+    if (s.visitor_id) set.add(s.visitor_id)
+    visitorsBySlug.set(slug, set)
+  }
+
+  // Bookings per listing_id (website + stripe_recovery, confirmed, in range)
+  const { data: bookings } = await supabase
+    .from('bookings')
+    .select('listing_id')
+    .eq('status', 'confirmed')
+    .in('booking_source', ['website', 'stripe_recovery'])
+    .gte('created_at', range.from)
+    .lte('created_at', range.to)
+
+  const bookingsByListingId = new Map<string, number>()
+  for (const b of bookings ?? []) {
+    if (!b.listing_id) continue
+    bookingsByListingId.set(b.listing_id, (bookingsByListingId.get(b.listing_id) ?? 0) + 1)
+  }
+
+  const rows: ListingConversion[] = listings
+    .map((l) => {
+      const visitors = visitorsBySlug.get(l.slug)?.size ?? 0
+      const bookingCount = bookingsByListingId.get(l.id) ?? 0
+      return {
+        listing_id: l.id,
+        slug: l.slug,
+        title: l.title ?? l.slug,
+        category: l.category ?? '—',
+        visitors,
+        bookings: bookingCount,
+        conversion_rate: visitors > 0 ? bookingCount / visitors : 0,
+      }
+    })
+    // Only show listings with some signal — hide dead test listings
+    .filter((r) => r.visitors > 0 || r.bookings > 0)
+    .sort((a, b) => b.visitors - a.visitors)
+
+  return rows
+}
+
+// ── Entry funnel (homepage leak) ──
+//
+// The macro funnel that answers "where do we lose people before booking":
+//   all visitors → reached a cruise/book page → reached checkout → booked
+// All stages are server-side reliable (analytics_sessions entry/exit pages +
+// the bookings table), so absolute numbers are trustworthy — unlike the
+// client-side tracking_events funnel which is heavily under-counted by ad blockers.
+
+export interface EntryFunnelStage {
+  key: string
+  label: string
+  visitors: number
+  /** Fraction of the all-visitors stage (0..1). */
+  pct_of_total: number
+  /** Fraction lost vs the PREVIOUS stage (0..1). 0 for the first stage. */
+  drop_from_prev: number
+}
+
+export async function getEntryFunnel(
+  supabase: SupabaseClient,
+  range: DateRange,
+): Promise<EntryFunnelStage[]> {
+  const { data: sessions } = await supabase
+    .from('analytics_sessions')
+    .select('visitor_id, entry_page, exit_page')
+    .gte('started_at', range.from)
+    .lte('started_at', range.to)
+
+  const all = new Set<string>()
+  const reachedCruise = new Set<string>()
+  const reachedCheckout = new Set<string>()
+
+  const touchesCruise = (p: string | null) => !!p && (/\/cruises\//.test(p) || /\/book\//.test(p))
+  const touchesCheckout = (p: string | null) => !!p && /\/book\/.+\/checkout/.test(p)
+
+  for (const s of sessions ?? []) {
+    if (!s.visitor_id) continue
+    all.add(s.visitor_id)
+    if (touchesCruise(s.entry_page) || touchesCruise(s.exit_page)) reachedCruise.add(s.visitor_id)
+    if (touchesCheckout(s.entry_page) || touchesCheckout(s.exit_page)) reachedCheckout.add(s.visitor_id)
+  }
+
+  // Booked stage from the source-of-truth bookings table (count, not visitors).
+  const { count: bookedCount } = await supabase
+    .from('bookings')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'confirmed')
+    .in('booking_source', ['website', 'stripe_recovery'])
+    .gte('created_at', range.from)
+    .lte('created_at', range.to)
+
+  const total = all.size
+  const stages = [
+    { key: 'visitors', label: 'All visitors', visitors: total },
+    { key: 'reached_cruise', label: 'Reached a cruise page', visitors: reachedCruise.size },
+    { key: 'reached_checkout', label: 'Reached checkout', visitors: reachedCheckout.size },
+    { key: 'booked', label: 'Booked', visitors: bookedCount ?? 0 },
+  ]
+
+  return stages.map((s, i) => ({
+    ...s,
+    pct_of_total: total > 0 ? s.visitors / total : 0,
+    drop_from_prev: i > 0 && stages[i - 1].visitors > 0
+      ? 1 - s.visitors / stages[i - 1].visitors
+      : 0,
+  }))
+}
+
+// ── Device breakdown ──
+//
+// Mobile vs desktop vs tablet, with each device's funnel-to-checkout rate.
+// Server-side reliable (device_type set at session init from user-agent).
+// "reached_checkout" is a per-visitor flag derived from entry/exit pages.
+
+export interface DeviceMetrics {
+  device: string
+  visitors: number
+  reached_cruise: number
+  reached_checkout: number
+  /** reached_checkout / reached_cruise (0..1) — the booking-intent rate per device. */
+  checkout_rate: number
+}
+
+export async function getDeviceMetrics(
+  supabase: SupabaseClient,
+  range: DateRange,
+): Promise<DeviceMetrics[]> {
+  const { data: sessions } = await supabase
+    .from('analytics_sessions')
+    .select('visitor_id, device_type, entry_page, exit_page')
+    .gte('started_at', range.from)
+    .lte('started_at', range.to)
+
+  const touchesCruise = (p: string | null) => !!p && (/\/cruises\//.test(p) || /\/book\//.test(p))
+  const touchesCheckout = (p: string | null) => !!p && /\/book\/.+\/checkout/.test(p)
+
+  // Per device → sets of unique visitors at each stage
+  type Stage = { all: Set<string>; cruise: Set<string>; checkout: Set<string> }
+  const byDevice = new Map<string, Stage>()
+
+  for (const s of sessions ?? []) {
+    if (!s.visitor_id) continue
+    const device = s.device_type ?? 'unknown'
+    const stage = byDevice.get(device) ?? { all: new Set(), cruise: new Set(), checkout: new Set() }
+    stage.all.add(s.visitor_id)
+    if (touchesCruise(s.entry_page) || touchesCruise(s.exit_page)) stage.cruise.add(s.visitor_id)
+    if (touchesCheckout(s.entry_page) || touchesCheckout(s.exit_page)) stage.checkout.add(s.visitor_id)
+    byDevice.set(device, stage)
+  }
+
+  return Array.from(byDevice.entries())
+    .map(([device, s]) => ({
+      device,
+      visitors: s.all.size,
+      reached_cruise: s.cruise.size,
+      reached_checkout: s.checkout.size,
+      checkout_rate: s.cruise.size > 0 ? s.checkout.size / s.cruise.size : 0,
+    }))
+    .sort((a, b) => b.visitors - a.visitors)
 }

@@ -8,6 +8,9 @@ import {
   getCookie,
   getOrCreateVisitorId,
   getOrCreateSessionId,
+  getOrCreateAnonSessionId,
+  getOrCreateAnonVisitorId,
+  getAnonSessionId,
   parseUTMFromURL,
   getAttribution,
 } from './attribution'
@@ -75,6 +78,7 @@ export function initSession() {
         const blob = new Blob(
           [JSON.stringify({
             session_id: sessionId,
+            visitor_id: visitorId,
             exit_page: window.location.pathname,
             page_count: pageViewCount,
           })],
@@ -103,9 +107,11 @@ export function initAnonymousSession() {
   // Read server-set attribution cookie so campaign is captured even without consent
   const attr = getAttribution()
 
-  // Generate throwaway IDs (not stored in cookies)
-  const anonVisitorId = `anon_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-  const anonSessionId = `anon_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  // Stable-per-tab IDs (sessionStorage, not cookies). Consistent across page
+  // views within the visit so analytics rows de-duplicate and a resulting
+  // booking can be linked back to this session.
+  const anonVisitorId = getOrCreateAnonVisitorId()
+  const anonSessionId = getOrCreateAnonSessionId()
 
   fetch('/api/tracking/session', {
     method: 'POST',
@@ -152,9 +158,11 @@ export function trackEvent(name: TrackingEventName, metadata?: Record<string, un
   navigator.sendBeacon('/api/tracking/event', blob)
 }
 
-/** Get the current session ID (for passing into booking requests). */
+/** Get the current session ID (for passing into booking requests).
+ *  Prefers the consented cookie session; falls back to the stable-per-tab
+ *  anonymous session id so non-consented bookings still link to their visit. */
 export function getSessionId(): string | null {
-  return getCookie(COOKIE_SESSION_ID)
+  return getCookie(COOKIE_SESSION_ID) ?? getAnonSessionId()
 }
 
 /** Get the current visitor ID. */

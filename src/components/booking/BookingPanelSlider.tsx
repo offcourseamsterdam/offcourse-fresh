@@ -245,17 +245,15 @@ export function BookingPanelSlider(props: BookingPanelProps) {
               <GuestCounter guests={state.guests} onSet={(n) => dispatch({ type: 'SET_GUESTS', guests: n })} />
 
               {state.date && (
-                <div className="flex justify-end">
-                  <Button variant="primary" size="md" className="rounded-xl font-bold px-10" onClick={async () => {
-                    dispatch({ type: 'SLOTS_LOADING' })
-                    goToPanel(1)
-                    if (state.date) {
-                      await fetchSlots(state.date, state.guests)
-                    }
-                  }}>
-                    Next
-                  </Button>
-                </div>
+                <Button variant="primary" size="md" className="w-full rounded-xl font-bold" onClick={async () => {
+                  dispatch({ type: 'SLOTS_LOADING' })
+                  goToPanel(1)
+                  if (state.date) {
+                    await fetchSlots(state.date, state.guests)
+                  }
+                }}>
+                  Next
+                </Button>
               )}
             </SlidePanel>
           )}
@@ -371,17 +369,15 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                     </div>
                     <p className="text-xs text-[var(--color-muted)] mb-4">Includes taxes and charges</p>
 
-                    <div className="flex justify-end">
-                      <Button
-                        variant="primary"
-                        size="md"
-                        className="rounded-xl font-bold px-10"
-                        onClick={() => { dispatch({ type: 'CONFIRM_TICKETS' }); goToPanel(2) }}
-                        disabled={!hasTickets}
-                      >
-                        Next
-                      </Button>
-                    </div>
+                    <Button
+                      variant="primary"
+                      size="md"
+                      className="w-full rounded-xl font-bold"
+                      onClick={() => { dispatch({ type: 'CONFIRM_TICKETS' }); goToPanel(2) }}
+                      disabled={!hasTickets}
+                    >
+                      Next
+                    </Button>
                   </div>
                 )}
               </div>

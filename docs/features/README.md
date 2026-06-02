@@ -12,4 +12,7 @@ One file per track or major feature. Written before every PR and kept up to date
 | Image optimization pipeline (Sharp + AVIF + Gemini) | [image-optimization.md](image-optimization.md) | — | done |
 | Google Ads conversion tracking (server-side) | [google-ads-conversion-tracking.md](google-ads-conversion-tracking.md) | — | done |
 | Google Ads architecture overview (handoff/blueprint) | [google-ads-architecture-overview.md](google-ads-architecture-overview.md) | — | done |
+| Google Ads campaign management (create + control) | [google-ads-campaign-management.md](google-ads-campaign-management.md) | — | done |
+| Google Ads admin dashboard (monitor & maintain) | [google-ads-dashboard.md](google-ads-dashboard.md) | — | done |
+| AI referrals tracking (ChatGPT/Perplexity/Gemini citations) | [ai-referrals-tracking.md](ai-referrals-tracking.md) | — | done |
 | Codebase refactoring plan | [codebase-refactoring-plan.md](codebase-refactoring-plan.md) | — | planned |

@@ -25,6 +25,29 @@ interface OverviewData {
   }
   trafficByDay: { date: string; sessions: number; bookings: number }[]
   channels: { id: string; name: string; slug: string; color: string | null; sessions: number; bookings: number; revenue_cents: number }[]
+  conversionByListing: {
+    listing_id: string
+    slug: string
+    title: string
+    category: string
+    visitors: number
+    bookings: number
+    conversion_rate: number
+  }[]
+  entryFunnel: {
+    key: string
+    label: string
+    visitors: number
+    pct_of_total: number
+    drop_from_prev: number
+  }[]
+  deviceMetrics: {
+    device: string
+    visitors: number
+    reached_cruise: number
+    reached_checkout: number
+    checkout_rate: number
+  }[]
 }
 
 interface FunnelStep {
@@ -120,7 +143,7 @@ export default function StatisticsPage() {
       ) : data ? (
         <>
           {/* KPI Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             <KPICard
               label="Sessions"
               value={data.kpis.sessions.toLocaleString()}
@@ -139,10 +162,15 @@ export default function StatisticsPage() {
               subtitle="vs prev period"
             />
             <KPICard
+              label="Conversion"
+              value={`${(data.kpis.conversion_rate * 100).toFixed(2)}%`}
+              subtitle={`${data.kpis.bookings} bookings / ${data.kpis.unique_visitors.toLocaleString()} visitors`}
+            />
+            <KPICard
               label="Revenue"
               value={`€${(data.kpis.revenue_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 0 })}`}
               delta={pctDelta(data.kpis.revenue_cents, data.kpis.prev_revenue_cents)}
-              subtitle={`${(data.kpis.conversion_rate * 100).toFixed(1)}% CR`}
+              subtitle="vs prev period"
             />
           </div>
 
@@ -158,9 +186,110 @@ export default function StatisticsPage() {
             </div>
           </div>
 
+          {/* Homepage leak funnel + Conversion by listing */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Entry funnel — where visitors drop off before booking */}
+            <div className="bg-white rounded-xl border border-zinc-200 p-5">
+              <h2 className="text-sm font-semibold text-zinc-900 mb-1">Visitor Journey</h2>
+              <p className="text-xs text-zinc-400 mb-4">Where people drop off on the way to booking</p>
+              <div className="space-y-2">
+                {data.entryFunnel.map((stage, i) => {
+                  const widthPct = Math.max(stage.pct_of_total * 100, 2)
+                  return (
+                    <div key={stage.key}>
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="font-medium text-zinc-700">{stage.label}</span>
+                        <span className="text-zinc-500 tabular-nums">
+                          {stage.visitors.toLocaleString()}
+                          <span className="text-zinc-300 ml-1.5">
+                            {(stage.pct_of_total * 100).toFixed(0)}%
+                          </span>
+                        </span>
+                      </div>
+                      <div className="h-6 bg-zinc-100 rounded-md overflow-hidden">
+                        <div
+                          className="h-full bg-[var(--color-primary)] rounded-md transition-all"
+                          style={{ width: `${widthPct}%` }}
+                        />
+                      </div>
+                      {/* Drop-off note between stages */}
+                      {i > 0 && stage.drop_from_prev > 0 && (
+                        <p className="text-[10px] text-red-400 mt-0.5">
+                          −{(stage.drop_from_prev * 100).toFixed(0)}% from previous step
+                        </p>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Conversion by listing */}
+            <div className="bg-white rounded-xl border border-zinc-200 p-5">
+              <h2 className="text-sm font-semibold text-zinc-900 mb-1">Conversion by Cruise</h2>
+              <p className="text-xs text-zinc-400 mb-4">Direct landings → bookings, per listing</p>
+              {data.conversionByListing.length === 0 ? (
+                <p className="text-sm text-zinc-400 py-6 text-center">No data for this period.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-xs text-zinc-400 border-b border-zinc-100">
+                        <th className="text-left font-medium py-2">Cruise</th>
+                        <th className="text-right font-medium py-2 w-20">Visitors</th>
+                        <th className="text-right font-medium py-2 w-16">Booked</th>
+                        <th className="text-right font-medium py-2 w-16">Conv.</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-50">
+                      {data.conversionByListing.map((row) => (
+                        <tr key={row.listing_id}>
+                          <td className="py-2.5 pr-2">
+                            <p className="text-zinc-900 leading-tight">{row.title}</p>
+                            <span className="text-[10px] text-zinc-400 capitalize">{row.category}</span>
+                          </td>
+                          <td className="text-right tabular-nums text-zinc-600">{row.visitors.toLocaleString()}</td>
+                          <td className="text-right tabular-nums text-zinc-600">{row.bookings}</td>
+                          <td className="text-right tabular-nums font-semibold text-zinc-900">
+                            {(row.conversion_rate * 100).toFixed(1)}%
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Device split — booking intent by device */}
+          {data.deviceMetrics.length > 0 && (
+            <div className="bg-white rounded-xl border border-zinc-200 p-5">
+              <h2 className="text-sm font-semibold text-zinc-900 mb-1">Conversion by Device</h2>
+              <p className="text-xs text-zinc-400 mb-4">Cruise-page visitors who reached checkout, per device</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {data.deviceMetrics
+                  .filter((d) => d.reached_cruise > 0)
+                  .map((d) => (
+                    <div key={d.device} className="rounded-lg border border-zinc-100 p-4">
+                      <p className="text-xs font-medium text-zinc-400 uppercase tracking-wide capitalize">{d.device}</p>
+                      <p className="text-2xl font-semibold text-zinc-900 mt-1">
+                        {(d.checkout_rate * 100).toFixed(1)}%
+                      </p>
+                      <p className="text-xs text-zinc-400 mt-1">
+                        {d.reached_checkout} of {d.reached_cruise} cruise visitors reached checkout
+                      </p>
+                      <p className="text-[10px] text-zinc-300 mt-0.5">{d.visitors.toLocaleString()} total visitors</p>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
           {/* Funnel */}
           <div className="bg-white rounded-xl border border-zinc-200 p-5">
-            <h2 className="text-sm font-semibold text-zinc-900 mb-4">Booking Funnel</h2>
+            <h2 className="text-sm font-semibold text-zinc-900 mb-1">Booking Funnel (tracked events)</h2>
+            <p className="text-xs text-zinc-400 mb-4">In-flow step completion · client-side, under-counts vs server traffic</p>
             <FunnelChart steps={funnel} />
           </div>
 

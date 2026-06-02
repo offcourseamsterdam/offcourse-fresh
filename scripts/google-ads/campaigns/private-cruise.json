@@ -1,0 +1,70 @@
+{
+  "_comment": "Off Course — Private Canal Cruise search campaign. Phrase-match, private-intent only. Edit freely; `gads.ts create` reads this. Headlines <=30 chars, descriptions <=90 chars.",
+  "campaignName": "Off Course — Private Canal Cruise",
+  "dailyBudgetEuros": 30,
+  "adGroupName": "Private Boat — Amsterdam",
+  "matchType": "PHRASE",
+  "keywords": [
+    "private canal cruise amsterdam",
+    "private boat tour amsterdam",
+    "private boat amsterdam",
+    "private canal tour amsterdam",
+    "private boat hire amsterdam",
+    "private boat rental amsterdam",
+    "private canal boat amsterdam",
+    "private boat with skipper amsterdam",
+    "private electric boat amsterdam",
+    "amsterdam private boat tour",
+    "rent a private boat amsterdam",
+    "private canal cruise"
+  ],
+  "negativeKeywords": [
+    "self drive",
+    "self-drive",
+    "houseboat",
+    "ferry",
+    "free",
+    "cheap",
+    "budget",
+    "for sale",
+    "buy",
+    "job",
+    "jobs",
+    "license",
+    "party boat",
+    "booze",
+    "stag",
+    "hen",
+    "pizza"
+  ],
+  "locations": ["Netherlands", "Germany", "United Kingdom", "United States"],
+  "languages": ["English", "Dutch"],
+  "ad": {
+    "finalUrl": "https://offcourseamsterdam.com/cruises/off-beaten-path-hidden-gems-canal-cruise",
+    "path1": "private",
+    "path2": "cruise",
+    "headlines": [
+      "Your Friend With a Boat",
+      "Private Cruise Amsterdam",
+      "Not a Tour. Your Own Boat.",
+      "Electric Boat, Real Amsterdam",
+      "Hidden Gems of the Canals",
+      "Book a Private Boat Today",
+      "Diana or Curaçao — You Pick",
+      "Local Skippers. No Scripts.",
+      "Private Boat From €165",
+      "The Real Amsterdam by Water",
+      "No Tourist Routes",
+      "Electric, Silent, Effortless",
+      "Up to 8 or 12 Guests",
+      "Off Course Amsterdam",
+      "Canals Like a Local"
+    ],
+    "descriptions": [
+      "Not a tour company — your friend with a boat. Private canal cruises through hidden gems.",
+      "Electric boats, local skippers, zero pretension. Diana seats 8, Curaçao seats 12.",
+      "Pick your date and guests. We handle the route, the drinks, and the vibe.",
+      "Off the beaten path, on the water. Amsterdam the way locals actually know it."
+    ]
+  }
+}

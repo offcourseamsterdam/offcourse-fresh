@@ -189,6 +189,7 @@ export async function POST(request: NextRequest) {
       payment_status: 'paid',
       currency: 'eur',
       booking_source: 'website',
+      session_id: meta.session_id || null,
       gclid: meta.gclid || null,
       promo_code_id: meta.promo_code_id || null,
       discount_amount_cents: Number(meta.discount_amount_cents ?? 0),

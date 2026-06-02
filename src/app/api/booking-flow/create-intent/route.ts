@@ -12,7 +12,7 @@ import { createPaymentIntent } from '@/lib/booking/create-intent'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { quoteId, listingTitle, date, startAt, endAt, contact } = body
+    const { quoteId, listingTitle, date, startAt, endAt, contact, sessionId } = body
 
     if (!quoteId) {
       return apiError('Missing quoteId — please refresh your booking and try again.', 400)
@@ -38,6 +38,9 @@ export async function POST(request: NextRequest) {
       gclid,
       clickType,
       marketingConsent,
+      // Cookie session (consented) takes priority; else the client-sent stable
+      // anon session id from sessionStorage.
+      sessionId: request.cookies.get('oc_sid')?.value ?? (sessionId ? String(sessionId) : null),
     })
 
     return apiOk(result)

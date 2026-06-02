@@ -63,6 +63,22 @@ export function useBookingPanel({
     autoAdvance()
   }, [initialDate, initialTime, initialGuests, category, fetchSlots])
 
+  // ── Pre-select a date (no specific time) ──────────────────────────────────
+  // Direct cruise-page landings default initialDate to today (see cruise page).
+  // Advance past the date step on mount so the guest/time CTA is immediately
+  // visible — otherwise the widget loads with date cards but no call-to-action.
+  // Skips when initialTime is set (that's the search auto-advance path above).
+  const hasPreselectedDate = useRef(false)
+  useEffect(() => {
+    if (hasPreselectedDate.current) return
+    if (!initialDate || initialTime) return
+    hasPreselectedDate.current = true
+    dispatch({ type: 'SET_DATE', date: initialDate, guests: initialGuests, category })
+    if (category === 'shared') {
+      fetchSlots(initialDate, 1)
+    }
+  }, [initialDate, initialTime, initialGuests, category, fetchSlots])
+
   // ── Handlers ────────────────────────────────────────────────────────────
 
   const handleDateConfirm = useCallback(async (date: string, guests: number) => {
