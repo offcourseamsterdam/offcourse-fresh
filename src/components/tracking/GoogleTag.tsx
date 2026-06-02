@@ -4,8 +4,12 @@ import Script from 'next/script'
 import { useEffect } from 'react'
 import { getCookie } from '@/lib/tracking/attribution'
 import { COOKIE_CONSENT } from '@/lib/tracking/constants'
+import { cleanTagId } from '@/lib/tracking/tag-id'
 
-const ADS_TAG_ID = process.env.NEXT_PUBLIC_GOOGLE_ADS_TAG_ID
+// Trimmed: a trailing newline/space in the env var would otherwise be interpolated
+// into the inline gtag <script> as a literal newline inside a JS string and throw
+// "Invalid or unexpected token" (seen on the checkout page). cleanTagId guards it.
+const ADS_TAG_ID = cleanTagId(process.env.NEXT_PUBLIC_GOOGLE_ADS_TAG_ID)
 
 /**
  * Google Ads tag (gtag.js) with Consent Mode v2.
