@@ -60,6 +60,7 @@
     "eslint-config-next": "16.2.2",
     "jsdom": "^29.1.0",
     "tailwindcss": "^4",
+    "ttf2woff2": "^8.0.1",
     "typescript": "^5",
     "vercel": "^50.38.3",
     "vitest": "^4.1.2"

@@ -1,5 +1,6 @@
 'use client'
 
+import { useRef, useEffect } from 'react'
 import { Camera } from 'lucide-react'
 import { OptimizedImage } from '@/components/ui/OptimizedImage'
 import type { GalleryImage } from './ImageGallery'
@@ -23,6 +24,18 @@ export function DesktopGalleryGrid({
   onOpenModal,
   onHoverImages,
 }: DesktopGalleryGridProps) {
+  // Defer video autoplay until after mount so it doesn't compete with the hero
+  // image fetch on the critical path. preload="none" prevents any download at
+  // page load time; useEffect triggers play once the hero is already painted.
+  const videoRef = useRef<HTMLVideoElement>(null)
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.play().catch(() => {
+        // Silently ignore autoplay policy blocks (common on mobile)
+      })
+    }
+  }, [])
+
   return (
     <div
       className="hidden sm:grid gap-1.5 rounded-2xl overflow-hidden"
@@ -61,7 +74,21 @@ export function DesktopGalleryGrid({
             onMouseEnter={() => onHoverImages(true)}
             onMouseLeave={() => onHoverImages(false)}
           >
-            <video src={videoUrl!} className="w-full h-full object-cover" muted loop playsInline autoPlay />
+            {/* preload="none" keeps the video out of the critical-path network queue.
+                The poster shows the first gallery image while the video loads.
+                Since Chrome 116, poster images count as LCP candidates — so this
+                gives LCP a fast static image to latch onto instead of waiting for
+                the first video frame. autoPlay is triggered via useEffect after mount. */}
+            <video
+              ref={videoRef}
+              src={videoUrl!}
+              className="w-full h-full object-cover"
+              muted
+              loop
+              playsInline
+              preload="none"
+              poster={gridImages[0]?.url ?? allImages[0]?.url ?? undefined}
+            />
           </div>
 
           {gridImages.slice(0, 3).map((img, i) => (

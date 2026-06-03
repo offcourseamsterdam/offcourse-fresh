@@ -1,37 +1,13 @@
 @import "tailwindcss";
 
 /* ── Custom Fonts ──────────────────────────────────── */
-@font-face {
-  font-family: 'Briston_Regular';
-  src: url('/fonts/Briston_Regular.ttf') format('truetype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Palmore_Regular';
-  src: url('/fonts/Palmore_Regular.ttf') format('truetype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Avenir_Next';
-  src: url('/fonts/AvenirNext_Bold.ttf') format('truetype');
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Avenir_Next';
-  src: url('/fonts/AvenirNext_Light.ttf') format('truetype');
-  font-weight: 300;
-  font-style: normal;
-  font-display: swap;
-}
+/* Fonts are now managed by next/font/local in src/app/layout.tsx.
+   next/font automatically preloads Briston + Avenir (above-fold fonts),
+   injects optimal cache headers, and sets these CSS variables on <html>:
+     --font-briston   (Briston_Regular WOFF2 — headings)
+     --font-palmore   (Palmore_Regular WOFF2 — price display)
+     --font-avenir    (AvenirNext Bold/Light WOFF2 — body/UI text)
+   The @font-face blocks that were here are no longer needed. */
 
 @theme {
   /* ── Brand Colors ─────────────────────────────────── */
@@ -56,9 +32,10 @@
   --color-border:        #e5e7eb;
 
   /* ── Typography ───────────────────────────────────── */
-  --font-sans:    'Avenir_Next', ui-sans-serif, system-ui, sans-serif;
-  --font-display: 'Briston_Regular', Georgia, serif;
-  --font-accent:  'Palmore_Regular', Georgia, serif;
+  /* CSS variables are set on <html> by next/font/local in src/app/layout.tsx */
+  --font-sans:    var(--font-avenir), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-briston), Georgia, serif;
+  --font-accent:  var(--font-palmore), Georgia, serif;
 
   /* ── Spacing ──────────────────────────────────────── */
   --spacing-section: 5rem;
@@ -73,6 +50,7 @@
   html {
     color: var(--color-ink);
     background-color: var(--color-sand);
+    scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -158,6 +136,19 @@
   animation: slide-in-right 0.3s ease-out;
 }
 
+/* "Electric" spec — on hover the bolt jitters like it's crackling with current
+   and the whole label turns electric-yellow. A little Pikachu energy. */
+@keyframes electric-shake {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  20% { transform: translate(-1.5px, 1px) rotate(-10deg); }
+  40% { transform: translate(1.5px, -1px) rotate(10deg); }
+  60% { transform: translate(-1px, -1.5px) rotate(-7deg); }
+  80% { transform: translate(1px, 1.5px) rotate(7deg); }
+}
+.electric-hover { transition: color 0.15s ease; cursor: default; }
+.electric-hover:hover { color: #fec200; }
+.electric-hover:hover svg { animation: electric-shake 0.16s linear infinite; }
+
 @keyframes slideDown {
   from { opacity: 0; transform: translateY(-20px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -201,9 +192,13 @@
     box-shadow: 4px 4px 16px rgba(0, 0, 0, 0.15);
   }
 
-  /* Section texture backgrounds */
+  /* Section texture backgrounds.
+     Fallback uses WebP (97%+ browser support) instead of the original PNG.
+     PNG sizes ranged from 167 KB to 2.7 MB — the WebP equivalents are 3.5–60 KB.
+     Browsers that support image-set() use AVIF (where available) or WebP from the set;
+     browsers that don't (iOS Safari < 14) fall back to the WebP url() — not the PNG. */
   .bg-texture-sand {
-    background-image: url('/textures/bg-sand.png');
+    background-image: url('/textures/bg-sand.webp');
     background-image: image-set(
       url('/textures/bg-sand.avif') type('image/avif'),
       url('/textures/bg-sand.webp') type('image/webp')
@@ -213,7 +208,7 @@
   }
 
   .bg-texture-lavender {
-    background-image: url('/textures/bg-lavender.png');
+    background-image: url('/textures/bg-lavender.webp');
     background-image: image-set(
       url('/textures/bg-lavender.avif') type('image/avif'),
       url('/textures/bg-lavender.webp') type('image/webp')
@@ -223,7 +218,7 @@
   }
 
   .bg-texture-purple {
-    background-image: url('/textures/bg-purple.png');
+    background-image: url('/textures/bg-purple.webp');
     background-image: image-set(
       url('/textures/bg-purple.avif') type('image/avif'),
       url('/textures/bg-purple.webp') type('image/webp')
@@ -232,8 +227,21 @@
     background-position: center;
   }
 
+  /* Deep royal-indigo grain — the hero background. Same tactile texture treatment
+     as the others, just dark so the carousel photos pop (Squarespace-style). */
+  .bg-texture-purple-dark {
+    background-color: #31308a; /* solid fallback (texture's average) before it paints */
+    background-image: url('/textures/bg-purple-dark.webp');
+    background-image: image-set(
+      url('/textures/bg-purple-dark.avif') type('image/avif'),
+      url('/textures/bg-purple-dark.webp') type('image/webp')
+    );
+    background-size: cover;
+    background-position: center;
+  }
+
   .bg-texture-pink {
-    background-image: url('/textures/bg-purple.png');
+    background-image: url('/textures/bg-purple.webp');
     background-image: image-set(
       url('/textures/bg-purple.avif') type('image/avif'),
       url('/textures/bg-purple.webp') type('image/webp')
@@ -246,8 +254,28 @@
     background-color: #8cc63f;
   }
 
+  /* Light-green grain — the checkout / booking page background. */
+  /* Gallery modal photo area — the actual purple texture PNG, not a flat colour. */
+  .bg-texture-gallery {
+    background-image: url('/textures/bg-gallery.webp');
+    background-size: cover;
+    background-position: center;
+    background-attachment: local;
+  }
+
+  .bg-texture-lightgreen {
+    background-color: #98cf6f; /* solid fallback (texture's average) */
+    background-image: url('/textures/bg-lightgreen.webp');
+    background-image: image-set(
+      url('/textures/bg-lightgreen.webp') type('image/webp')
+    );
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+  }
+
   .bg-texture-periwinkle {
-    background-image: url('/textures/bg-lavender.png');
+    background-image: url('/textures/bg-lavender.webp');
     background-image: image-set(
       url('/textures/bg-lavender.avif') type('image/avif'),
       url('/textures/bg-lavender.webp') type('image/webp')
@@ -257,7 +285,7 @@
   }
 
   .bg-texture-yellow {
-    background-image: url('/textures/bg-yellow.png');
+    background-image: url('/textures/bg-yellow.webp');
     background-image: image-set(
       url('/textures/bg-yellow.avif') type('image/avif'),
       url('/textures/bg-yellow.webp') type('image/webp')
@@ -266,17 +294,17 @@
     background-position: center;
   }
 
-  /* Font shorthand utilities */
+  /* Font shorthand utilities — reference the CSS variables injected by next/font */
   .font-briston {
-    font-family: 'Briston_Regular', Georgia, serif;
+    font-family: var(--font-briston), Georgia, serif;
   }
 
   .font-palmore {
-    font-family: 'Palmore_Regular', Georgia, serif;
+    font-family: var(--font-palmore), Georgia, serif;
   }
 
   .font-avenir {
-    font-family: 'Avenir_Next', ui-sans-serif, system-ui, sans-serif;
+    font-family: var(--font-avenir), ui-sans-serif, system-ui, sans-serif;
   }
 
   /* Hide scrollbar while keeping scroll functionality */

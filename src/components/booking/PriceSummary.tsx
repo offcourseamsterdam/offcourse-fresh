@@ -1,6 +1,8 @@
 'use client'
 
-import { motion, AnimatePresence } from 'framer-motion'
+import { LazyMotion, m, AnimatePresence } from 'framer-motion'
+
+const loadFeatures = () => import('framer-motion').then(res => res.domAnimation)
 import { fmtEuros } from '@/lib/utils'
 import { vatSummaryText } from '@/lib/extras/format'
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
@@ -20,7 +22,7 @@ interface PriceSummaryProps {
 function AnimatedPrice({ value }: { value: number }) {
   return (
     <AnimatePresence mode="popLayout">
-      <motion.span
+      <m.span
         key={value}
         initial={{ y: -8, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
@@ -29,7 +31,7 @@ function AnimatedPrice({ value }: { value: number }) {
         className="inline-block tabular-nums"
       >
         {fmtEuros(value)}
-      </motion.span>
+      </m.span>
     </AnimatePresence>
   )
 }
@@ -48,7 +50,8 @@ export function PriceSummary({
   if (basePriceCents === 0) return null
 
   return (
-    <motion.div
+    <LazyMotion features={loadFeatures} strict>
+    <m.div
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       className="border-t border-zinc-100 pt-4 mt-4 space-y-2"
@@ -90,7 +93,8 @@ export function PriceSummary({
           incl. {vatSummaryText(basePriceCents, extrasCalculation)}
         </div>
       </div>
-    </motion.div>
+    </m.div>
+    </LazyMotion>
   )
 }
 

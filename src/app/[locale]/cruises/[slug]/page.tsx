@@ -21,15 +21,17 @@ interface Props {
 
 export async function generateMetadata({ params }: Props) {
   const { locale, slug } = await params
-  const meta = await getListingBySlug(slug)
-  if (!meta) return {}
+  const listing = await getListingBySlug(slug)
+  if (!listing) return {}
   const loc = locale as Locale
-  const title = getLocalizedField(meta, 'seo_title', loc) ?? meta.title
-  const description = getLocalizedField(meta, 'seo_meta_description', loc) ?? meta.tagline ?? undefined
-  const isPartnerInvoice = meta.payment_mode === 'partner_invoice'
+  const title = getLocalizedField(listing, 'seo_title', loc) ?? listing.title
+  const description = getLocalizedField(listing, 'seo_meta_description', loc) ?? listing.tagline ?? undefined
+  const isPartnerInvoice = listing.payment_mode === 'partner_invoice'
 
-  // Open Graph image — pick the optimised 1080px variant if available, else legacy hero
-  const ogImageUrl = await getCruiseOgImage(meta)
+  // getCruisePageData is wrapped with React cache() and already fetches the hero asset
+  // in its parallel batch — so calling it here derives the OG image URL for free,
+  // eliminating the separate serial DB query (getCruiseOgImage) that used to run here.
+  const data = await getCruisePageData(listing, loc)
 
   return {
     title: `${title} — Off Course Amsterdam`,
@@ -37,32 +39,15 @@ export async function generateMetadata({ params }: Props) {
     openGraph: {
       title,
       description: description ?? undefined,
-      ...(ogImageUrl ? { images: [{ url: ogImageUrl, alt: title }] } : {}),
+      ...(data.ogImageUrl ? { images: [{ url: data.ogImageUrl, alt: title }] } : {}),
     },
-    twitter: ogImageUrl
-      ? { card: 'summary_large_image', images: [ogImageUrl] }
+    twitter: data.ogImageUrl
+      ? { card: 'summary_large_image', images: [data.ogImageUrl] }
       : undefined,
     // Partner-invoice listings are distributed only via physical QR codes.
     // Keep them out of search engines so the URL can't be found by accident.
     ...(isPartnerInvoice ? { robots: { index: false, follow: false } } : {}),
   }
-}
-
-/** Pick the best image URL for Open Graph cards — prefer optimised 1080px AVIF variant. */
-async function getCruiseOgImage(listing: { id: string; hero_image_url: string | null; hero_image_asset_id?: string | null }): Promise<string | null> {
-  if (!listing.hero_image_asset_id) return listing.hero_image_url
-  const { createClient } = await import('@/lib/supabase/server')
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('image_assets')
-    .select('variants, status')
-    .eq('id', listing.hero_image_asset_id)
-    .maybeSingle()
-  if (!data || data.status !== 'complete') return listing.hero_image_url
-  const variants = (data.variants as Array<{ width: number; webp_url: string; avif_url: string }>) ?? []
-  // OG / Twitter cards prefer JPEG/WebP — pick 1080px WebP for max compatibility
-  const ideal = variants.find(v => v.width === 1080) ?? variants[variants.length - 1]
-  return ideal?.webp_url ?? listing.hero_image_url
 }
 
 export default async function CruiseListingPage({ params, searchParams }: Props) {
@@ -234,15 +219,15 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
               faqLabel={t('faq')}
             />
 
-            {/* Desktop sidebar — sticky wrapper so the heading stays pinned
-                while only the booking panel card scrolls beneath it. */}
+            {/* Desktop sidebar — date/guests card scrolls with the page;
+                the time/booking card (+ the "Start Cruising" heading) sticks
+                together as one unified block once the top card scrolls off. */}
             <div className="hidden lg:block lg:col-span-1">
-              <div className="sticky top-24">
-                {renderStartCruisingHeader()}
-                <div className="max-h-[calc(100vh-10rem)] overflow-y-auto pr-1">
-                  <BookingPanel {...bookingPanelProps} layout="sidebar" />
-                </div>
-              </div>
+              <BookingPanel
+                {...bookingPanelProps}
+                layout="sidebar"
+                sidebarHeader={renderStartCruisingHeader()}
+              />
             </div>
           </div>
         </div>

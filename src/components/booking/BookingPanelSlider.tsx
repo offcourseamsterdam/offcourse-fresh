@@ -1,7 +1,12 @@
 'use client'
 
 import { useState, useCallback, useMemo, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { LazyMotion, m, AnimatePresence } from 'framer-motion'
+
+// Load animation features lazily — cuts the initial framer-motion JS from ~34 KB
+// down to ~4.6 KB. The domAnimation bundle (~15 KB) is fetched after first render,
+// so slide animations degrade gracefully on the very first paint.
+const loadFeatures = () => import('framer-motion').then(res => res.domAnimation)
 import { DateCardPicker } from './DateCardPicker'
 import { TimeSlotStep } from './TimeSlotStep'
 import { BoatDurationStep } from './BoatDurationStep'
@@ -84,7 +89,7 @@ function SlidePanel({ panelKey, direction, initial = 'enter', className, childre
   children: React.ReactNode
 }) {
   return (
-    <motion.div
+    <m.div
       key={panelKey}
       custom={direction}
       variants={slideVariants}
@@ -95,7 +100,7 @@ function SlidePanel({ panelKey, direction, initial = 'enter', className, childre
       className={className}
     >
       {children}
-    </motion.div>
+    </m.div>
   )
 }
 
@@ -229,6 +234,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
   const hasTickets = !isPrivate && state.totalTickets > 0
 
   return (
+    <LazyMotion features={loadFeatures} strict>
     <div>
       {/* Starting price + info pills moved to the section header above this card on the cruise page */}
       <BookingSummaryTabs tabs={summaryTabs} currentPanel={panelIndex} onTabClick={handleTabClick} />
@@ -389,5 +395,6 @@ export function BookingPanelSlider(props: BookingPanelProps) {
       {/* Extras — kept mounted once visited, hidden when not on extras panel */}
       {extrasBlock}
     </div>
+    </LazyMotion>
   )
 }

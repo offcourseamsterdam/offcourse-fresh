@@ -1,10 +1,17 @@
 'use client'
 
 import { useState } from 'react'
-import { GalleryModal } from './GalleryModal'
+import dynamic from 'next/dynamic'
 import { DesktopGalleryGrid } from './DesktopGalleryGrid'
 import { MobileCarousel } from './MobileCarousel'
 import { ReviewPopup } from './ReviewPopup'
+
+// Lazy-load the gallery lightbox — it's a large JS chunk (swiper, video player,
+// review sidebar) that most visitors never trigger. Downloaded only on first open.
+const GalleryModal = dynamic(
+  () => import('./GalleryModal').then(m => m.GalleryModal),
+  { ssr: false },
+)
 
 import type { ImageAsset } from '@/lib/images/types'
 
