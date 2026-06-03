@@ -4,7 +4,12 @@ import { useState } from 'react'
 import dynamic from 'next/dynamic'
 import { DesktopGalleryGrid } from './DesktopGalleryGrid'
 import { MobileCarousel } from './MobileCarousel'
-import { ReviewPopup } from './ReviewPopup'
+// Lazy-load ReviewPopup — it runs a setInterval (review rotation) even when
+// hidden. Deferring it keeps that timer out of the critical-path JS budget.
+const ReviewPopup = dynamic(
+  () => import('./ReviewPopup').then(m => m.ReviewPopup),
+  { ssr: false },
+)
 
 // Lazy-load the gallery lightbox — it's a large JS chunk (swiper, video player,
 // review sidebar) that most visitors never trigger. Downloaded only on first open.

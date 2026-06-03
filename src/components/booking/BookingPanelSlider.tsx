@@ -60,18 +60,24 @@ function GuestCounter({ guests, onSet }: { guests: number; onSet: (n: number) =>
             type="button"
             onClick={() => onSet(Math.max(1, guests - 1))}
             disabled={guests <= 1}
+            aria-label="Remove one guest"
             className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center text-zinc-600 hover:border-zinc-500 disabled:opacity-30 transition-colors"
           >
-            <span className="text-lg leading-none">−</span>
+            <span className="text-lg leading-none" aria-hidden="true">−</span>
           </button>
-          <span className="w-6 text-center font-semibold text-zinc-800 tabular-nums">{guests}</span>
+          <span
+            className="w-6 text-center font-semibold text-zinc-800 tabular-nums"
+            aria-live="polite"
+            aria-label={`${guests} guest${guests !== 1 ? 's' : ''}`}
+          >{guests}</span>
           <button
             type="button"
             onClick={() => onSet(Math.min(12, guests + 1))}
             disabled={guests >= 12}
+            aria-label="Add one guest"
             className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center text-zinc-600 hover:border-zinc-500 disabled:opacity-30 transition-colors"
           >
-            <span className="text-lg leading-none">+</span>
+            <span className="text-lg leading-none" aria-hidden="true">+</span>
           </button>
         </div>
       </div>

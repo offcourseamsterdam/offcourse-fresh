@@ -99,13 +99,20 @@ export function MobileCarousel({ images, title, onTap }: MobileCarouselProps) {
       )}
 
       {images.length > 1 && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-black/20 backdrop-blur-sm">
+        <div
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-black/20 backdrop-blur-sm"
+          role="tablist"
+          aria-label={`Photo ${activeIndex + 1} of ${images.length}`}
+        >
           {pageDots(activeIndex, images.length).map(({ idx, scale }) => {
             const isActive = idx === activeIndex
             const px = Math.round((isActive ? 8 : 6) * scale)
             return (
               <span
                 key={idx}
+                role="tab"
+                aria-selected={isActive}
+                aria-label={`Photo ${idx + 1}`}
                 style={{ width: px, height: px }}
                 className={`block rounded-full transition-all duration-200 ${isActive ? 'bg-white' : 'bg-white/60'}`}
               />

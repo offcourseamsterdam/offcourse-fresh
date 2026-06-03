@@ -152,6 +152,10 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
           imageSrcSet={heroPreload.srcSet}
           imageSizes={heroPreload.sizes}
           type="image/avif"
+          // fetchPriority="high" signals to the browser that this is the LCP
+          // resource and should be fetched at the highest network priority,
+          // ahead of other preloads (fonts, scripts).
+          fetchPriority="high"
         />
       )}
 

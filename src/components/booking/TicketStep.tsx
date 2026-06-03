@@ -53,18 +53,24 @@ export function TicketStep({
                 type="button"
                 onClick={() => onUpdateCount(ct.customerTypePk, Math.max(0, count - 1))}
                 disabled={count <= 0}
+                aria-label={`Remove one ${label} ticket`}
                 className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center text-zinc-600 hover:border-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
-                <Minus className="w-3.5 h-3.5" />
+                <Minus className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
-              <span className="w-6 text-center font-semibold text-zinc-800 tabular-nums">{count}</span>
+              <span
+                className="w-6 text-center font-semibold text-zinc-800 tabular-nums"
+                aria-live="polite"
+                aria-label={`${count} ${label} ticket${count !== 1 ? 's' : ''}`}
+              >{count}</span>
               <button
                 type="button"
                 onClick={() => onUpdateCount(ct.customerTypePk, count + 1)}
                 disabled={count >= remaining}
+                aria-label={`Add one ${label} ticket`}
                 className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center text-zinc-600 hover:border-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
-                <Plus className="w-3.5 h-3.5" />
+                <Plus className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             </div>
           </div>
