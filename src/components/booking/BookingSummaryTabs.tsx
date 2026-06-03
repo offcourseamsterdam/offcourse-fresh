@@ -1,8 +1,11 @@
 'use client'
 
+import type { LucideIcon } from 'lucide-react'
+
 interface Tab {
   label: string
   panelIndex: number
+  icon?: LucideIcon
 }
 
 interface BookingSummaryTabsProps {
@@ -16,20 +19,24 @@ export function BookingSummaryTabs({ tabs, currentPanel, onTabClick }: BookingSu
 
   return (
     <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2 mb-4">
-      {tabs.map((tab) => (
-        <button
-          key={tab.label}
-          type="button"
-          onClick={() => onTabClick(tab.panelIndex)}
-          className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 ${
-            tab.panelIndex === currentPanel
-              ? 'border-2 border-[var(--color-primary)] text-[var(--color-primary)] bg-white'
-              : 'border border-gray-200 text-[var(--color-ink)] bg-white hover:border-gray-400 cursor-pointer'
-          }`}
-        >
-          {tab.label}
-        </button>
-      ))}
+      {tabs.map((tab) => {
+        const Icon = tab.icon
+        return (
+          <button
+            key={tab.label}
+            type="button"
+            onClick={() => onTabClick(tab.panelIndex)}
+            className={`inline-flex items-center gap-1.5 flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 ${
+              tab.panelIndex === currentPanel
+                ? 'border-2 border-[var(--color-primary)] text-[var(--color-primary)] bg-white'
+                : 'border border-gray-200 text-[var(--color-ink)] bg-white hover:border-gray-400 cursor-pointer'
+            }`}
+          >
+            {Icon && <Icon className="w-3 h-3 flex-shrink-0" />}
+            {tab.label}
+          </button>
+        )
+      })}
     </div>
   )
 }

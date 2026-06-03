@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useMemo, useRef } from 'react'
+import { CalendarDays, Users, Clock, Ship, Ticket } from 'lucide-react'
 import { LazyMotion, m, AnimatePresence } from 'framer-motion'
 
 // Load animation features lazily — cuts the initial framer-motion JS from ~34 KB
@@ -135,18 +136,18 @@ export function BookingPanelSlider(props: BookingPanelProps) {
   // ── Summary tabs for completed steps ──────────────────────────────────────
 
   const summaryTabs = useMemo(() => {
-    const tabs: { label: string; panelIndex: number }[] = []
+    const tabs: { label: string; panelIndex: number; icon?: typeof CalendarDays }[] = []
 
     if (category === 'private') {
-      if (panelIndex > 0 && dateSummary) tabs.push({ label: dateSummary, panelIndex: 0 })
-      if (panelIndex > 0 && guestsSummary) tabs.push({ label: guestsSummary, panelIndex: 0 })
-      if (panelIndex > 1 && timeSummary) tabs.push({ label: timeSummary, panelIndex: 1 })
-      if (panelIndex > 2 && cruiseLabel) tabs.push({ label: cruiseLabel, panelIndex: 2 })
+      if (panelIndex > 0 && dateSummary) tabs.push({ label: dateSummary, panelIndex: 0, icon: CalendarDays })
+      if (panelIndex > 0 && guestsSummary) tabs.push({ label: guestsSummary, panelIndex: 0, icon: Users })
+      if (panelIndex > 1 && timeSummary) tabs.push({ label: timeSummary, panelIndex: 1, icon: Clock })
+      if (panelIndex > 2 && cruiseLabel) tabs.push({ label: cruiseLabel, panelIndex: 2, icon: Ship })
     } else {
       // Shared: 0=date+time, 1=tickets, 2=extras
-      if (dateSummary) tabs.push({ label: dateSummary, panelIndex: 0 })
-      if (timeSummary) tabs.push({ label: timeSummary, panelIndex: 0 })
-      if (panelIndex > 1 && ticketSummary) tabs.push({ label: ticketSummary, panelIndex: 1 })
+      if (dateSummary) tabs.push({ label: dateSummary, panelIndex: 0, icon: CalendarDays })
+      if (timeSummary) tabs.push({ label: timeSummary, panelIndex: 0, icon: Clock })
+      if (panelIndex > 1 && ticketSummary) tabs.push({ label: ticketSummary, panelIndex: 1, icon: Ticket })
     }
 
     return tabs
