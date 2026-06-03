@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import { getTranslations } from 'next-intl/server'
-import { Clock, Users } from 'lucide-react'
+import { Clock, Users, Umbrella } from 'lucide-react'
 import { BookingPanel } from '@/components/booking/BookingPanel'
 import { ImageGallery } from '@/components/cruise/ImageGallery'
 import { StickyBookingHeader } from '@/components/cruise/StickyBookingHeader'
@@ -83,22 +83,25 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
         <h2 className="font-briston text-[28px] sm:text-[36px] text-[var(--color-accent)] uppercase leading-none">
           Start Cruising
         </h2>
-        {(listing.duration_display || listing.max_guests) && (
-          <div className="flex flex-wrap gap-1.5 mt-3">
-            {listing.duration_display && (
-              <span className="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] bg-[var(--color-sand)] px-2.5 py-1 rounded-full">
-                <Clock className="w-3 h-3" />
-                {listing.duration_display}
-              </span>
-            )}
-            {listing.max_guests && (
-              <span className="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] bg-[var(--color-sand)] px-2.5 py-1 rounded-full">
-                <Users className="w-3 h-3" />
-                Up to {listing.max_guests} guests
-              </span>
-            )}
-          </div>
-        )}
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {listing.duration_display && (
+            <span className="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] bg-[var(--color-sand)] px-2.5 py-1 rounded-full">
+              <Clock className="w-3 h-3" />
+              {listing.duration_display}
+            </span>
+          )}
+          {listing.max_guests && (
+            <span className="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] bg-[var(--color-sand)] px-2.5 py-1 rounded-full">
+              <Users className="w-3 h-3" />
+              Up to {listing.max_guests} guests
+            </span>
+          )}
+          {/* Rain reassurance pill — all Off Course boats have a covered canopy */}
+          <span className="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] bg-[var(--color-sand)] px-2.5 py-1 rounded-full">
+            <Umbrella className="w-3 h-3" />
+            Rain or shine
+          </span>
+        </div>
       </div>
       {listing.starting_price != null && (
         <div className="text-right flex-shrink-0">
@@ -199,8 +202,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
         </div>
 
         {/* ── Inline booking (mobile/tablet) ── */}
-        <div id="booking" className="lg:hidden max-w-7xl mx-auto px-4 sm:px-6 py-8">
-          <div className="border-t border-gray-200 pt-6 mb-6" />
+        <div id="booking" className="lg:hidden max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-8">
           {renderStartCruisingHeader()}
           <BookingPanel {...bookingPanelProps} layout="inline" />
         </div>
