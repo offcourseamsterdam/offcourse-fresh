@@ -99,7 +99,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
           {/* Rain reassurance pill — all Off Course boats have a covered canopy */}
           <span className="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] bg-[var(--color-sand)] px-2.5 py-1 rounded-full">
             <Umbrella className="w-3 h-3" />
-            Rain or shine
+            Covered canopy
           </span>
         </div>
       </div>

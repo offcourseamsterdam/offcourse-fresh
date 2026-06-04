@@ -107,18 +107,15 @@ export function HeroSection({ slides = DEFAULT_SLIDES, reviewCount, sectionStyle
           style={{ transform: 'rotate(8deg)', opacity: 0.9 }}
         />
 
-        {/* Logo — SVG version (vector, 39 KB vs 99 KB PNG, crisp at all resolutions).
-            unoptimized skips the Next.js image optimizer since SVGs don't need
-            format conversion or resizing — they scale perfectly at any size.
-            priority keeps fetchpriority="high" since the logo is the mobile LCP. */}
+        {/* Logo — soft lavender/pink version with transparent background,
+            designed to sit on the dark purple hero. RGBA PNG, 1497×1080. */}
         <div className="mb-8">
           <Image
-            src="/logos/logo-vertical.svg"
+            src="/logos/offcourse-vertical-pink.png"
             alt="Off Course Amsterdam — Your Friend With A Boat"
             width={1497}
             height={1080}
             priority
-            unoptimized
             className="w-56 sm:w-64 lg:w-72 h-auto"
           />
         </div>
