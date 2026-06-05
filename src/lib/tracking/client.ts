@@ -133,17 +133,28 @@ export function initAnonymousSession() {
   }).catch(() => {})
 }
 
-/** Track a funnel event. Fire-and-forget via sendBeacon. */
-export function trackEvent(name: TrackingEventName, metadata?: Record<string, unknown>) {
+/**
+ * Track a funnel event. Fire-and-forget via sendBeacon.
+ *
+ * `dedupeKey` overrides the per-session dedup key (defaults to the event name).
+ * Pass a more specific key when the same event can fire for distinct things you
+ * want counted separately within one session — e.g. WhatsApp clicks per source.
+ */
+export function trackEvent(
+  name: TrackingEventName,
+  metadata?: Record<string, unknown>,
+  dedupeKey?: string,
+) {
   const visitorId = getCookie(COOKIE_VISITOR_ID)
   const sessionId = getCookie(COOKIE_SESSION_ID)
   if (!visitorId || !sessionId) return
 
-  // Dedup: skip if this funnel event already fired in this session.
+  // Dedup: skip if this event already fired in this session.
   // page_view is exempt (each navigation counts).
   if (name !== 'page_view') {
-    if (firedEvents.has(name)) return
-    firedEvents.add(name)
+    const key = dedupeKey ?? name
+    if (firedEvents.has(key)) return
+    firedEvents.add(key)
   }
 
   const blob = new Blob(
@@ -156,6 +167,22 @@ export function trackEvent(name: TrackingEventName, metadata?: Record<string, un
     { type: 'application/json' },
   )
   navigator.sendBeacon('/api/tracking/event', blob)
+}
+
+/** Where a WhatsApp click came from — kept in the event's metadata.source. */
+export type WhatsAppSource = 'floating_button' | 'footer' | 'chat_to_book'
+
+/**
+ * Track a tap on any WhatsApp button. Counted once per session per source
+ * (so a visitor who taps the floating bubble and the footer link counts once
+ * for each). Records the source and the page it happened on.
+ */
+export function trackWhatsAppClick(source: WhatsAppSource) {
+  trackEvent(
+    'whatsapp_click',
+    { source, path: window.location.pathname },
+    `whatsapp_click:${source}`,
+  )
 }
 
 /** Get the current session ID (for passing into booking requests).

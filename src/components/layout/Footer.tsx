@@ -1,5 +1,6 @@
 import { Link } from '@/i18n/navigation'
 import { Logo } from '@/components/ui/Logo'
+import { WhatsAppLink } from '@/components/layout/WhatsAppLink'
 import { Mail, Phone, MapPin } from 'lucide-react'
 
 export function Footer() {
@@ -76,11 +77,11 @@ export function Footer() {
                 </a>
               </li>
               <li>
-                <a href="https://wa.me/31645351618" target="_blank" rel="noopener noreferrer"
+                <WhatsAppLink source="footer"
                   className="font-avenir text-base text-primary hover:text-accent transition-colors flex items-center gap-2 md:justify-end">
                   <Phone size={16} className="shrink-0" />
                   +316 45 35 16 18
-                </a>
+                </WhatsAppLink>
               </li>
               <li>
                 <div className="font-avenir text-base text-primary flex items-start gap-2 md:justify-end">

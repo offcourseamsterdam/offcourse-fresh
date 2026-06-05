@@ -15,6 +15,7 @@ export const TRACKING_EVENTS = [
   'view_extras',
   'view_details',
   'booking_completed',
+  'whatsapp_click',     // outbound: visitor tapped a WhatsApp button (engagement, not a funnel step)
 ] as const
 
 export type TrackingEventName = (typeof TRACKING_EVENTS)[number]
