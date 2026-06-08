@@ -82,7 +82,7 @@ export function useBookingPanel({
   // ── Handlers ────────────────────────────────────────────────────────────
 
   const handleDateConfirm = useCallback(async (date: string, guests: number) => {
-    trackEvent('select_date', { date, guests: String(guests), category })
+    // select_date is tracked reactively below (fires for every date-set path).
     dispatch({ type: 'SET_DATE', date, guests, category })
     if (category === 'shared') {
       await fetchSlots(date, guests)
@@ -224,6 +224,19 @@ export function useBookingPanel({
       trackEvent('select_time', { listing: listingSlug, time: state.selectedSlot.startTime })
     }
   }, [state.selectedSlot, listingSlug])
+
+  // Track date selection — fire once when a date is set, no matter HOW it got set:
+  // manual pick, the homepage-search auto-advance, the preselect effect, or inline
+  // change. Previously only the manual handler fired this, so the primary
+  // search-first flow (date arrives pre-filled) never recorded select_date — which
+  // is why it badly under-counted vs select_time. Reactive, mirroring select_time.
+  const prevDateRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (state.date && state.date !== prevDateRef.current) {
+      prevDateRef.current = state.date
+      trackEvent('select_date', { date: state.date, guests: String(state.guests), category })
+    }
+  }, [state.date, state.guests, category])
 
   // ── Checkout ────────────────────────────────────────────────────────────
 
