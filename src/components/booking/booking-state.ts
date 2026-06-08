@@ -156,4 +156,11 @@ export interface BookingPanelProps {
   startingPrice?: number | null
   /** Optional header content rendered at the top of the sticky time card (desktop sidebar only). */
   sidebarHeader?: React.ReactNode
+  /**
+   * Maximum guests for this listing (from cruise_listings.max_guests).
+   * Used to detect whether a shared slot already has other bookings:
+   * if slot.capacity < maxGuests, the cruise is already "happening" and
+   * we don't enforce the FareHarbor minimum party size gate.
+   */
+  maxGuests?: number | null
 }

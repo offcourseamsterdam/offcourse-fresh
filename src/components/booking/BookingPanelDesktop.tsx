@@ -111,10 +111,15 @@ export function BookingPanelDesktop(props: BookingPanelProps) {
   // Enforce FareHarbor minimum party size for shared cruises — mirrors the
   // server-side check so the user can't proceed to checkout with fewer
   // tickets than FareHarbor will accept (avoids a charged-but-unbooked state).
+  //
+  // Exception: if the slot already has other bookings (remaining capacity <
+  // boat maximum), the cruise is already "happening" and a solo add-on is fine.
   const minParty = !isPrivate && state.selectedSlot
     ? Math.max(...state.selectedSlot.customerTypes.map(ct => ct.minimumParty ?? 1), 1)
     : 1
-  const belowMinParty = !isPrivate && state.totalTickets > 0 && state.totalTickets < minParty
+  const slotHasExistingBookings = !isPrivate && !!props.maxGuests && !!state.selectedSlot
+    && state.selectedSlot.capacity < props.maxGuests
+  const belowMinParty = !slotHasExistingBookings && !isPrivate && state.totalTickets > 0 && state.totalTickets < minParty
 
   // ── Fetch slots for private on mount (hook only auto-fetches for shared) ──
   const hasFetchedPrivate = useRef(false)
@@ -237,6 +242,7 @@ export function BookingPanelDesktop(props: BookingPanelProps) {
                       dispatch({ type: 'UPDATE_TICKET_COUNT', customerTypePk: pk, count })
                     }
                     onConfirm={() => {}}
+                    hasExistingBookings={slotHasExistingBookings}
                   />
                 </>
               )}

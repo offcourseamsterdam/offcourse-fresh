@@ -10,6 +10,12 @@ interface TicketStepProps {
   maxCapacity: number
   onUpdateCount: (customerTypePk: number, count: number) => void
   onConfirm: () => void
+  /**
+   * True when the slot already has at least one other booking (remaining
+   * capacity < boat maximum). In this case the cruise is already "happening"
+   * and we skip the minimum party size gate — a solo add-on is fine.
+   */
+  hasExistingBookings?: boolean
 }
 
 // Try to derive a human label from customer type data.
@@ -26,6 +32,7 @@ export function TicketStep({
   maxCapacity,
   onUpdateCount,
   onConfirm: _onConfirm,
+  hasExistingBookings = false,
 }: TicketStepProps) {
   const totalTickets = Object.values(ticketCounts).reduce((sum, c) => sum + c, 0)
 
@@ -33,14 +40,18 @@ export function TicketStep({
   // FareHarbor enforces this server-side — we mirror it in the UI so
   // the user knows before they try to proceed (avoids a paid booking
   // that can't be confirmed, which is what happened to Christine Hall).
+  //
+  // Exception: if the slot already has other bookings (hasExistingBookings),
+  // the cruise is already "happening" — a solo add-on is fine and we skip the gate.
   const minParty = Math.max(...customerTypes.map(ct => ct.minimumParty ?? 1), 1)
-  const belowMinimum = totalTickets > 0 && totalTickets < minParty
+  const enforceMinParty = !hasExistingBookings && minParty > 1
+  const belowMinimum = enforceMinParty && totalTickets > 0 && totalTickets < minParty
 
   return (
     <div className="space-y-3">
       <p className="text-xs text-zinc-500 mb-1">Select your tickets</p>
 
-      {minParty > 1 && (
+      {enforceMinParty && (
         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
           This cruise requires a minimum of <strong>{minParty} tickets</strong> per booking.
         </p>
@@ -96,6 +107,7 @@ export function TicketStep({
           Please add at least {minParty - totalTickets} more ticket{minParty - totalTickets !== 1 ? 's' : ''} to continue.
         </p>
       )}
+
     </div>
   )
 }

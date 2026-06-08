@@ -242,10 +242,15 @@ export function BookingPanelSlider(props: BookingPanelProps) {
 
   // Enforce FareHarbor minimum party size — prevents a solo booking on a
   // shared cruise that requires 2+ guests (mirrors the TicketStep warning).
+  //
+  // Exception: if the slot already has other bookings (remaining capacity <
+  // boat maximum), the cruise is already "happening" and a solo add-on is fine.
   const minParty = !isPrivate && state.selectedSlot
     ? Math.max(...state.selectedSlot.customerTypes.map(ct => ct.minimumParty ?? 1), 1)
     : 1
-  const belowMinParty = hasTickets && state.totalTickets < minParty
+  const slotHasExistingBookings = !isPrivate && !!props.maxGuests && !!state.selectedSlot
+    && state.selectedSlot.capacity < props.maxGuests
+  const belowMinParty = !slotHasExistingBookings && hasTickets && state.totalTickets < minParty
 
   return (
     <LazyMotion features={loadFeatures} strict>
@@ -379,6 +384,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                   maxCapacity={state.selectedSlot.capacity}
                   onUpdateCount={(pk, count) => dispatch({ type: 'UPDATE_TICKET_COUNT', customerTypePk: pk, count })}
                   onConfirm={() => dispatch({ type: 'CONFIRM_TICKETS' })}
+                  hasExistingBookings={slotHasExistingBookings}
                 />
 
                 {basePriceCents > 0 && (
