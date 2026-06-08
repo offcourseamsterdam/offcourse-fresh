@@ -28,9 +28,23 @@ export function TicketStep({
   onConfirm: _onConfirm,
 }: TicketStepProps) {
   const totalTickets = Object.values(ticketCounts).reduce((sum, c) => sum + c, 0)
+
+  // Derive the minimum party size from FareHarbor customer type data.
+  // FareHarbor enforces this server-side — we mirror it in the UI so
+  // the user knows before they try to proceed (avoids a paid booking
+  // that can't be confirmed, which is what happened to Christine Hall).
+  const minParty = Math.max(...customerTypes.map(ct => ct.minimumParty ?? 1), 1)
+  const belowMinimum = totalTickets > 0 && totalTickets < minParty
+
   return (
     <div className="space-y-3">
       <p className="text-xs text-zinc-500 mb-1">Select your tickets</p>
+
+      {minParty > 1 && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          This cruise requires a minimum of <strong>{minParty} tickets</strong> per booking.
+        </p>
+      )}
 
       {customerTypes.map((ct, index) => {
         const count = ticketCounts[ct.customerTypePk] || 0
@@ -77,6 +91,11 @@ export function TicketStep({
         )
       })}
 
+      {belowMinimum && (
+        <p className="text-xs text-amber-700 font-medium pt-1">
+          Please add at least {minParty - totalTickets} more ticket{minParty - totalTickets !== 1 ? 's' : ''} to continue.
+        </p>
+      )}
     </div>
   )
 }

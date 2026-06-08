@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { AvailabilitySlot, AvailabilityCustomerType } from '@/types'
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
 import type { CancellationTier } from '@/lib/cancellation/policy'
@@ -153,4 +154,6 @@ export interface BookingPanelProps {
   cancellationTiers?: CancellationTier[] | null
   /** Starting price in whole euros (e.g. 35 = €35). Used for "starting from" display. */
   startingPrice?: number | null
+  /** Optional header content rendered at the top of the sticky time card (desktop sidebar only). */
+  sidebarHeader?: React.ReactNode
 }

@@ -240,6 +240,13 @@ export function BookingPanelSlider(props: BookingPanelProps) {
   const isPrivate = category === 'private'
   const hasTickets = !isPrivate && state.totalTickets > 0
 
+  // Enforce FareHarbor minimum party size — prevents a solo booking on a
+  // shared cruise that requires 2+ guests (mirrors the TicketStep warning).
+  const minParty = !isPrivate && state.selectedSlot
+    ? Math.max(...state.selectedSlot.customerTypes.map(ct => ct.minimumParty ?? 1), 1)
+    : 1
+  const belowMinParty = hasTickets && state.totalTickets < minParty
+
   return (
     <LazyMotion features={loadFeatures} strict>
     <div>
@@ -387,9 +394,11 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                       size="md"
                       className="w-full rounded-xl font-bold"
                       onClick={() => { dispatch({ type: 'CONFIRM_TICKETS' }); goToPanel(2) }}
-                      disabled={!hasTickets}
+                      disabled={!hasTickets || belowMinParty}
                     >
-                      Next
+                      {belowMinParty
+                        ? `Add ${minParty - state.totalTickets} more ticket${minParty - state.totalTickets !== 1 ? 's' : ''} to continue`
+                        : 'Next'}
                     </Button>
                   </div>
                 )}

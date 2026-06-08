@@ -108,6 +108,14 @@ export function BookingPanelDesktop(props: BookingPanelProps) {
   const hasBoatSelected = isPrivate ? !!state.selectedCustomerType : state.totalTickets > 0
   const showExtras = state.step === 'extras'
 
+  // Enforce FareHarbor minimum party size for shared cruises — mirrors the
+  // server-side check so the user can't proceed to checkout with fewer
+  // tickets than FareHarbor will accept (avoids a charged-but-unbooked state).
+  const minParty = !isPrivate && state.selectedSlot
+    ? Math.max(...state.selectedSlot.customerTypes.map(ct => ct.minimumParty ?? 1), 1)
+    : 1
+  const belowMinParty = !isPrivate && state.totalTickets > 0 && state.totalTickets < minParty
+
   // ── Fetch slots for private on mount (hook only auto-fetches for shared) ──
   const hasFetchedPrivate = useRef(false)
   useEffect(() => {
@@ -255,8 +263,11 @@ export function BookingPanelDesktop(props: BookingPanelProps) {
               size="lg"
               className="w-full rounded-xl text-base font-bold"
               onClick={() => dispatch({ type: 'CONFIRM_TICKETS' })}
+              disabled={belowMinParty}
             >
-              Next: Add extras
+              {belowMinParty
+                ? `Add ${minParty - state.totalTickets} more ticket${minParty - state.totalTickets !== 1 ? 's' : ''} to continue`
+                : 'Next: Add extras'}
             </Button>
           )}
 
