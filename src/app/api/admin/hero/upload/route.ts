@@ -5,6 +5,11 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { validateUpload, createPendingAsset } from '@/lib/images/upload-helper'
 
+// sharp + storage upload can take a few seconds; give it headroom so it never
+// times out mid-upload on Vercel.
+export const runtime = 'nodejs'
+export const maxDuration = 60
+
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']
 const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm']
 const VIDEO_EXTENSIONS = ['mp4', 'webm']

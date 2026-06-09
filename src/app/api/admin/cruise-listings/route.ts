@@ -14,7 +14,7 @@ export async function GET() {
     const supabase = createAdminClient()
     const { data, error } = await supabase
       .from('cruise_listings')
-      .select('id, title, slug, category, is_published')
+      .select('id, title, slug, category, is_published, images, hero_image_url, hero_image_asset_id')
       .eq('is_published', true)
       .order('display_order', { ascending: true })
 

@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
-import { Loader2, GripVertical } from 'lucide-react'
+import { useState, useRef, useCallback, useEffect } from 'react'
+import { Loader2, GripVertical, Copy, ChevronDown, Check } from 'lucide-react'
+import { TabSaveButton } from './TabSaveButton'
 import {
   DndContext,
   closestCenter,
@@ -122,14 +123,39 @@ function ImageOverlayCard({ img }: { img: ImageItem }) {
 
 /* ── Main component ───────────────────────────────────────────────────────── */
 
+interface OtherListing {
+  id: string
+  title: string
+  images: ImageItem[] | null
+  hero_image_url: string | null
+  hero_image_asset_id: string | null
+}
+
 export function CruiseImagesSection({ listing, onSave }: CruiseTabProps) {
   const [images, setImages] = useState<ImageItem[]>(
     Array.isArray(listing.images) ? listing.images : []
   )
   const [uploading, setUploading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // Copy-from-listing state
+  const [otherListings, setOtherListings] = useState<OtherListing[]>([])
+  const [copyDropdownOpen, setCopyDropdownOpen] = useState(false)
+  const [copying, setCopying] = useState(false)
+  const [copySuccess, setCopySuccess] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/admin/cruise-listings')
+      .then(r => r.json())
+      .then(json => {
+        const all: OtherListing[] = json.data?.listings ?? json.data ?? []
+        setOtherListings(all.filter(l => l.id !== listing.id && Array.isArray(l.images) && l.images.length > 0))
+      })
+      .catch(() => {})
+  }, [listing.id])
 
   // Require 8px movement before dragging starts — prevents accidental drags on click
   const sensors = useSensors(
@@ -207,6 +233,19 @@ export function CruiseImagesSection({ listing, onSave }: CruiseTabProps) {
     if (json.ok && json.data) onSave(json.data)
   }
 
+  async function handleSave() {
+    setSaving(true)
+    setError(null)
+    const json = await patchListing(listing.id, {
+      images,
+      hero_image_url: listing.hero_image_url,
+      hero_image_asset_id: listing.hero_image_asset_id,
+    })
+    if (json.ok && json.data) onSave(json.data)
+    else setError(json.error ?? 'Save failed')
+    setSaving(false)
+  }
+
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveId(event.active.id as string)
   }, [])
@@ -234,10 +273,82 @@ export function CruiseImagesSection({ listing, onSave }: CruiseTabProps) {
     setActiveId(null)
   }, [])
 
+  async function copyFromListing(source: OtherListing) {
+    if (!source.images?.length) return
+    setCopyDropdownOpen(false)
+    setCopying(true)
+    setError(null)
+    const newImages = source.images
+    const heroUrl = source.hero_image_url ?? newImages[0]?.url ?? null
+    const heroAssetId = source.hero_image_asset_id ?? newImages[0]?.image_asset_id ?? null
+    setImages(newImages)
+    const json = await patchListing(listing.id, {
+      images: newImages,
+      hero_image_url: heroUrl,
+      hero_image_asset_id: heroAssetId,
+    })
+    if (json.ok && json.data) {
+      onSave(json.data)
+      setCopySuccess(true)
+      setTimeout(() => setCopySuccess(false), 2500)
+    } else {
+      setError(json.error ?? 'Copy failed')
+    }
+    setCopying(false)
+  }
+
   const activeImage = activeId ? images.find(i => i.url === activeId) : null
 
   return (
     <div className="space-y-6">
+
+      {/* Copy from another listing */}
+      {otherListings.length > 0 && (
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-zinc-400">Drag to reorder · first image is the hero</p>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setCopyDropdownOpen(v => !v)}
+              disabled={copying}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-200 text-xs font-medium text-zinc-600 hover:bg-zinc-50 transition-colors disabled:opacity-50"
+            >
+              {copying ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : copySuccess ? (
+                <Check className="w-3.5 h-3.5 text-emerald-500" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
+              {copySuccess ? 'Copied!' : 'Copy from listing'}
+              {!copying && !copySuccess && <ChevronDown className="w-3 h-3 text-zinc-400" />}
+            </button>
+
+            {copyDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setCopyDropdownOpen(false)} />
+                <div className="absolute right-0 top-full mt-1 z-20 bg-white border border-zinc-200 rounded-xl shadow-lg py-1 min-w-[220px]">
+                  <p className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-zinc-400 font-medium">
+                    Copy images + order from
+                  </p>
+                  {otherListings.map(l => (
+                    <button
+                      key={l.id}
+                      type="button"
+                      onClick={() => copyFromListing(l)}
+                      className="w-full text-left px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 transition-colors flex items-center justify-between gap-2"
+                    >
+                      <span className="truncate">{l.title}</span>
+                      <span className="text-zinc-400 shrink-0">{l.images?.length} photos</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* File upload drop zone */}
       <div
         onClick={() => inputRef.current?.click()}
@@ -299,6 +410,8 @@ export function CruiseImagesSection({ listing, onSave }: CruiseTabProps) {
       )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
+
+      <TabSaveButton saving={saving || uploading} onClick={handleSave} />
     </div>
   )
 }

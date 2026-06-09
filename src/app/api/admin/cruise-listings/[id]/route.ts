@@ -1,7 +1,9 @@
 import { NextRequest } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { locales } from '@/lib/i18n/config'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -42,7 +44,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     'allowed_resource_pks','allowed_customer_type_pks','availability_filters',
     'display_order','is_published','is_featured','category','departure_location',
     'google_maps_url','video_url',
-    'hero_image_url','benefits','highlights','inclusions','faqs','images',
+    'hero_image_url','hero_image_asset_id','benefits','highlights','inclusions','faqs','images',
     'cancellation_policy','duration_display','max_guests','slug',
     'payment_mode','required_partner_id',
     'booking_cutoff_hours',
@@ -76,5 +78,13 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     .select('*')
     .single()
   if (error) return apiError(error.message)
+
+  // Purge the Next.js page cache for this listing across all locales so the
+  // public-facing cruise page reflects the change immediately (no stale photo,
+  // price, or text showing up after an admin edit).
+  for (const locale of locales) {
+    revalidatePath(`/${locale}/cruises/${data.slug}`)
+  }
+
   return apiOk(data)
 }

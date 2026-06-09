@@ -18,7 +18,7 @@ export async function GET() {
           guest_count, category, status, booking_source,
           extras_selected, base_amount_cents, extras_amount_cents,
           stripe_amount, deposit_amount_cents, catering_email_sent_at,
-          created_at, fareharbor_customer_type_rate_pk
+          created_at, fareharbor_customer_type_rate_pk, customer_type_name
         `)
         .in('status', ['confirmed', 'booked'])
         .order('booking_date', { ascending: false }),
@@ -52,9 +52,8 @@ export async function GET() {
     return apiOk({
       bookings: cateringBookings.map(b => ({
         ...b,
-        customer_type_name: b.fareharbor_customer_type_rate_pk
-          ? (ctMap.get(b.fareharbor_customer_type_rate_pk) ?? null)
-          : null,
+        customer_type_name: b.customer_type_name
+          ?? (b.fareharbor_customer_type_rate_pk ? (ctMap.get(b.fareharbor_customer_type_rate_pk) ?? null) : null),
         cateringItems: filterCateringItems(b.extras_selected as never),
         cateringAmountCents: cateringAmountCents(b.extras_selected as never),
       })),
