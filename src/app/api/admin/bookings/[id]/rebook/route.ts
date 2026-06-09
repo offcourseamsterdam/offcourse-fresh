@@ -15,9 +15,10 @@ export async function POST(
   try {
     const { id } = await params
     const body = await request.json()
-    const { newAvailPk, newCustomerTypeRatePk, newDate, newStartAt, newEndAt } = body as {
+    const { newAvailPk, newCustomerTypeRatePk, newCustomerTypeName, newDate, newStartAt, newEndAt } = body as {
       newAvailPk: number
       newCustomerTypeRatePk: number
+      newCustomerTypeName?: string
       newDate: string
       newStartAt: string
       newEndAt: string
@@ -84,6 +85,7 @@ export async function POST(
         booking_uuid: newFhBooking.uuid,
         fareharbor_availability_pk: newAvailPk,
         fareharbor_customer_type_rate_pk: newCustomerTypeRatePk,
+        ...(newCustomerTypeName ? { customer_type_name: newCustomerTypeName } : {}),
         booking_date: newDate,
         start_time: newStartAt,
         end_time: newEndAt,

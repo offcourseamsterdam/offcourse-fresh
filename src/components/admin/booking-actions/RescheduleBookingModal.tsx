@@ -154,6 +154,7 @@ export function RescheduleBookingModal({
         body: JSON.stringify({
           newAvailPk: selectedSlot.pk,
           newCustomerTypeRatePk: selectedTypePk,
+          newCustomerTypeName: selectedTypeName ?? undefined,
           newDate: date,
           newStartAt: selectedSlot.start_at,
           newEndAt: selectedSlot.end_at,
