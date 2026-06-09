@@ -41,6 +41,8 @@ interface BookingDetailRowProps {
   promoCode: string | null
   discountAmountCents: number | null
   partnerName: string | null
+  category: string | null
+  customerTypeName: string | null
   className?: string
 }
 
@@ -72,6 +74,8 @@ export function BookingDetailRow({
   promoCode,
   discountAmountCents,
   partnerName,
+  category,
+  customerTypeName,
   className = '',
 }: BookingDetailRowProps) {
   const [showCancel, setShowCancel] = useState(false)
@@ -337,6 +341,8 @@ export function BookingDetailRow({
           currentStartAt={startTime}
           guestName={customerName}
           cruiseTitle={listingTitle}
+          category={category}
+          originalCustomerTypeName={customerTypeName}
           onClose={() => setShowReschedule(false)}
           onSuccess={() => { setShowReschedule(false); onRefresh() }}
         />

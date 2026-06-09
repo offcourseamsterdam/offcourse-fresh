@@ -279,6 +279,8 @@ export default function BookingsPage() {
                             promoCode={b.promo_code}
                             discountAmountCents={b.discount_amount_cents}
                             partnerName={b.partner_name}
+                            category={b.category}
+                            customerTypeName={b.customer_type_name}
                           />
                         </td>
                       </tr>
