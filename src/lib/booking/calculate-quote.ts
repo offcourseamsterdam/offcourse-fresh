@@ -49,6 +49,7 @@ export interface QuoteResult {
   discountAmountCents: number
   totalCents: number                  // final amount (≥50 cents)
   durationMinutes: number
+  customerTypeName: string | null     // FH customer-type label, e.g. "Diana - 2 Hours"
 }
 
 const CITY_TAX_PER_GUEST_CENTS = 260
@@ -78,6 +79,9 @@ export async function calculateQuote(input: QuoteInput): Promise<QuoteResult> {
   const matchingRate = availDetail.customer_type_rates?.find(
     (r: { pk: number }) => r.pk === customerTypeRatePk,
   )
+  // The human-readable label the guest picked (e.g. "Diana - 2 Hours"). Snapshotted
+  // onto the booking so we never have to map the volatile rate PK back to a name.
+  const customerTypeName = matchingRate?.customer_type?.singular ?? null
   const verifiedBaseCents =
     matchingRate?.customer_prototype?.total_including_tax
     ?? matchingRate?.customer_prototype?.total
@@ -160,5 +164,6 @@ export async function calculateQuote(input: QuoteInput): Promise<QuoteResult> {
     discountAmountCents,
     totalCents,
     durationMinutes,
+    customerTypeName,
   }
 }

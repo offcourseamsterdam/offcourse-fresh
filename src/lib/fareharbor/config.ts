@@ -16,8 +16,20 @@ export interface BoatConfig {
 }
 
 export const BOATS: BoatConfig[] = [
-  { id: 'diana', name: 'Diana', maxGuests: 8, imageUrl: '/images/boats/diana.webp' },
-  { id: 'curacao', name: 'Curaçao', maxGuests: 12, imageUrl: '/images/boats/curacao.webp' },
+  {
+    id: 'diana',
+    name: 'Diana',
+    maxGuests: 8,
+    // First (open-deck) photo from the boats table in Supabase
+    imageUrl: 'https://fkylzllxvepmrtqxisrn.supabase.co/storage/v1/object/public/cruise-images/_originals/boats/30ff589a-7198-4926-b1b2-275458f7d553/a82e26ae-ad46-4e10-9a53-40da554a277d.jpg',
+  },
+  {
+    id: 'curacao',
+    name: 'Curaçao',
+    maxGuests: 12,
+    // First (open-deck) photo from the boats table in Supabase
+    imageUrl: 'https://fkylzllxvepmrtqxisrn.supabase.co/storage/v1/object/public/cruise-images/_originals/c419659a-a021-42ef-bfb7-77bde2a0a82a/d9e85c8c-b9ba-470d-a670-3d4019f2f5eb.jpg',
+  },
 ]
 
 // ── Helpers for parsing customer type names ────────────────────────────────

@@ -166,6 +166,7 @@ export async function POST(request: NextRequest) {
       booking_uuid: fhBookingUuid ?? null,
       fareharbor_availability_pk: Number(meta.avail_pk),
       fareharbor_customer_type_rate_pk: Number(meta.customer_type_rate_pk),
+      customer_type_name: meta.customer_type_name || null,
       stripe_payment_intent_id: pi.id,
       stripe_amount: pi.amount,
       base_amount_cents: serverBaseAmount,
