@@ -5,6 +5,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { filterCateringItems } from '@/lib/catering/filter'
 import { buildCateringEmailText, buildCateringEmailSubject } from '@/lib/catering/email-template'
 import { postSlackText } from '@/lib/slack/send-notification'
+import { buildFHBookingNote } from '@/lib/catering/build-fh-note'
+import { FareHarborClient } from '@/lib/fareharbor/client'
 import { formatAmsterdamTime } from '@/lib/utils'
 import { Resend } from 'resend'
 
@@ -19,9 +21,9 @@ async function fetchBookingForCatering(id: string) {
   const { data, error } = await supabase
     .from('bookings')
     .select(`
-      id, customer_name, listing_title, tour_item_name,
+      id, booking_uuid, customer_name, listing_title, tour_item_name,
       booking_date, start_time, guest_count, category,
-      extras_selected, catering_email_sent_at
+      extras_selected, catering_email_sent_at, guest_note
     `)
     .eq('id', id)
     .single()
@@ -118,6 +120,19 @@ export async function POST(
     await postSlackText(
       `${slackPrefix}\n*${cruiseName}* — ${dateLabel} at ${timeLabel}\n${booking.guest_count ? `${booking.guest_count} guests\n` : ''}${itemSummary}`
     )
+
+    // Update FareHarbor booking note with catering details (best-effort)
+    if (booking.booking_uuid) {
+      try {
+        const note = buildFHBookingNote(booking.guest_note, cateringItems)
+        if (note) {
+          const fh = new FareHarborClient()
+          await fh.updateBookingNote(booking.booking_uuid, note)
+        }
+      } catch (err) {
+        console.error('[catering-email] FH note update failed:', err)
+      }
+    }
 
     // Always update the sent timestamp so we know when the last send was
     const supabase = createAdminClient()

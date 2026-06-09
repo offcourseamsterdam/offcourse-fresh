@@ -11,6 +11,8 @@ export interface AdminExtraLineItem {
    *  was ordered for (not the number of items). Renderers should display
    *  "for N people" rather than "× N". */
   is_per_person_pick?: boolean
+  /** 'extras_upsell' when added via the pre-cruise email upsell page (post-booking). */
+  source?: string
 }
 
 export interface AdminBooking {

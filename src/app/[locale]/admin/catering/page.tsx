@@ -241,7 +241,14 @@ export default function CateringPage() {
                                   ? `${qty}× ${item.name}`
                                   : item.name
                               return (
-                                <p key={i} className="text-xs text-zinc-600">{label}</p>
+                                <div key={i} className="flex items-center gap-1.5">
+                                  <p className="text-xs text-zinc-600">{label}</p>
+                                  {item.source === 'extras_upsell' && (
+                                    <span className="inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 whitespace-nowrap">
+                                      Pre-ordered
+                                    </span>
+                                  )}
+                                </div>
                               )
                             })}
                           </div>

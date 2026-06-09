@@ -14,9 +14,12 @@ export interface ExtrasLineItem {
   /** When true, `quantity` represents people-count for this item (e.g. Charcuterie
    *  for 4 people), not number of items. Renderers should show "for N people". */
   is_per_person_pick?: boolean
+  /** 'extras_upsell' when added via the pre-cruise email upsell page (post-booking).
+   *  Undefined for extras selected at checkout. */
+  source?: string
 }
 
-export const CATERING_CATEGORIES = ['food'] as const
+export const CATERING_CATEGORIES = ['food', 'drinks'] as const
 
 /**
  * Filter an extras_selected array down to catering items only.

@@ -249,6 +249,7 @@ export type Database = {
           external_id: string | null
           extras_amount_cents: number | null
           extras_selected: Json | null
+          extras_upsell_sent_at: string | null
           extras_vat_amount_cents: number | null
           fareharbor_availability_pk: number | null
           fareharbor_customer_type_rate_pk: number | null
@@ -301,6 +302,7 @@ export type Database = {
           external_id?: string | null
           extras_amount_cents?: number | null
           extras_selected?: Json | null
+          extras_upsell_sent_at?: string | null
           extras_vat_amount_cents?: number | null
           fareharbor_availability_pk?: number | null
           fareharbor_customer_type_rate_pk?: number | null
@@ -353,6 +355,7 @@ export type Database = {
           external_id?: string | null
           extras_amount_cents?: number | null
           extras_selected?: Json | null
+          extras_upsell_sent_at?: string | null
           extras_vat_amount_cents?: number | null
           fareharbor_availability_pk?: number | null
           fareharbor_customer_type_rate_pk?: number | null
