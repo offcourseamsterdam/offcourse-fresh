@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useCallback, useContext, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react'
 import type { AvailabilitySlot } from '@/types'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -79,18 +79,20 @@ export function SearchProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  const value = useMemo(() => ({
+    heroSearchVisible,
+    setHeroSearchVisible,
+    triggerNavbarSearch,
+    registerSearchHandler,
+    searchDate,
+    searchGuests,
+    searchLoading,
+    searchResults,
+    triggerHomepageSearch,
+  }), [heroSearchVisible, setHeroSearchVisible, triggerNavbarSearch, registerSearchHandler, searchDate, searchGuests, searchLoading, searchResults, triggerHomepageSearch])
+
   return (
-    <SearchContext.Provider value={{
-      heroSearchVisible,
-      setHeroSearchVisible,
-      triggerNavbarSearch,
-      registerSearchHandler,
-      searchDate,
-      searchGuests,
-      searchLoading,
-      searchResults,
-      triggerHomepageSearch,
-    }}>
+    <SearchContext.Provider value={value}>
       {children}
     </SearchContext.Provider>
   )

@@ -1,9 +1,17 @@
 /**
  * Server-side Supabase query builders for tracking aggregations.
  * Used by admin API routes.
+ *
+ * NOTE: these queries stream rows into JS for in-process aggregation.
+ * They are guarded by MAX_RANGE_DAYS to prevent unbounded table scans as
+ * analytics_sessions and tracking_events grow. A future improvement is to
+ * move the aggregations into Postgres RPC functions.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { FUNNEL_STEPS } from './constants'
+
+// Hard cap: refuse date ranges wider than this to prevent runaway table scans.
+const MAX_RANGE_DAYS = 90
 
 // ── Types ──
 
@@ -89,17 +97,30 @@ async function fetchDirectBookings(
 
 // ── Overview KPIs ──
 
+function clampRange(range: DateRange): DateRange {
+  const from = new Date(range.from)
+  const to = new Date(range.to)
+  const maxMs = MAX_RANGE_DAYS * 24 * 60 * 60 * 1000
+  if (to.getTime() - from.getTime() > maxMs) {
+    const clampedFrom = new Date(to.getTime() - maxMs)
+    console.warn(`[analytics] date range clamped to ${MAX_RANGE_DAYS} days (was ${Math.round((to.getTime() - from.getTime()) / 86400000)} days)`)
+    return { from: clampedFrom.toISOString(), to: range.to }
+  }
+  return range
+}
+
 export async function getOverviewKPIs(
   supabase: SupabaseClient,
   range: DateRange,
   category: BookingCategory = 'all',
 ): Promise<OverviewKPIs> {
+  const safeRange = clampRange(range)
   // Current period sessions
   const { data: sessions } = await supabase
     .from('analytics_sessions')
     .select('id, visitor_id')
-    .gte('started_at', range.from)
-    .lte('started_at', range.to)
+    .gte('started_at', safeRange.from)
+    .lte('started_at', safeRange.to)
 
   const sessionCount = sessions?.length ?? 0
   const allVisitorIds = sessions?.map((s) => s.visitor_id) ?? []
@@ -113,16 +134,16 @@ export async function getOverviewKPIs(
   let revenueCents = linkedBookings.reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0)
 
   // Also count bookings without session_id
-  const directBookings = await fetchDirectBookings(supabase, range, category)
+  const directBookings = await fetchDirectBookings(supabase, safeRange, category)
   bookingCount += directBookings.length
   revenueCents += directBookings.reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0)
 
   // Previous period
-  const fromDate = new Date(range.from)
-  const toDate = new Date(range.to)
+  const fromDate = new Date(safeRange.from)
+  const toDate = new Date(safeRange.to)
   const duration = toDate.getTime() - fromDate.getTime()
   const prevFrom = new Date(fromDate.getTime() - duration).toISOString()
-  const prevTo = range.from
+  const prevTo = safeRange.from
 
   const { data: prevSessions } = await supabase
     .from('analytics_sessions')
@@ -157,11 +178,12 @@ export async function getTrafficByDay(
   range: DateRange,
   category: BookingCategory = 'all',
 ): Promise<TrafficByDay[]> {
+  const safeRange = clampRange(range)
   const { data: sessions } = await supabase
     .from('analytics_sessions')
     .select('id, started_at')
-    .gte('started_at', range.from)
-    .lte('started_at', range.to)
+    .gte('started_at', safeRange.from)
+    .lte('started_at', safeRange.to)
     .order('started_at')
 
   if (!sessions?.length) return []
@@ -192,6 +214,7 @@ export async function getChannelMetrics(
   range: DateRange,
   category: BookingCategory = 'all',
 ): Promise<ChannelMetrics[]> {
+  const safeRange = clampRange(range)
   const { data: channels } = await supabase
     .from('channels')
     .select('*')
@@ -203,8 +226,8 @@ export async function getChannelMetrics(
   const { data: sessions } = await supabase
     .from('analytics_sessions')
     .select('id, visitor_id, channel_id')
-    .gte('started_at', range.from)
-    .lte('started_at', range.to)
+    .gte('started_at', safeRange.from)
+    .lte('started_at', safeRange.to)
 
   const sessionIds = sessions?.map((s) => s.id) ?? []
   const bookings = await fetchBookings(supabase, sessionIds, category)
@@ -246,18 +269,19 @@ export async function getFunnelData(
   range: DateRange,
   filters?: { channel_id?: string; campaign_id?: string },
 ): Promise<FunnelStep[]> {
+  const safeRange = clampRange(range)
   let query = supabase
     .from('tracking_events')
     .select('event_name, session_id')
-    .gte('created_at', range.from)
-    .lte('created_at', range.to)
+    .gte('created_at', safeRange.from)
+    .lte('created_at', safeRange.to)
 
   if (filters?.channel_id || filters?.campaign_id) {
     let sessionQuery = supabase
       .from('analytics_sessions')
       .select('id')
-      .gte('started_at', range.from)
-      .lte('started_at', range.to)
+      .gte('started_at', safeRange.from)
+      .lte('started_at', safeRange.to)
 
     if (filters.channel_id) {
       sessionQuery = sessionQuery.eq('channel_id', filters.channel_id)
@@ -347,6 +371,7 @@ export async function getConversionByListing(
   supabase: SupabaseClient,
   range: DateRange,
 ): Promise<ListingConversion[]> {
+  const safeRange = clampRange(range)
   const { data: listings } = await supabase
     .from('cruise_listings')
     .select('id, slug, title, category')
@@ -361,8 +386,8 @@ export async function getConversionByListing(
   const { data: sessions } = await supabase
     .from('analytics_sessions')
     .select('visitor_id, entry_page')
-    .gte('started_at', range.from)
-    .lte('started_at', range.to)
+    .gte('started_at', safeRange.from)
+    .lte('started_at', safeRange.to)
 
   const visitorsBySlug = new Map<string, Set<string>>()
   for (const s of sessions ?? []) {
@@ -379,8 +404,8 @@ export async function getConversionByListing(
     .select('listing_id')
     .eq('status', 'confirmed')
     .in('booking_source', ['website', 'stripe_recovery'])
-    .gte('created_at', range.from)
-    .lte('created_at', range.to)
+    .gte('created_at', safeRange.from)
+    .lte('created_at', safeRange.to)
 
   const bookingsByListingId = new Map<string, number>()
   for (const b of bookings ?? []) {
@@ -431,11 +456,12 @@ export async function getEntryFunnel(
   supabase: SupabaseClient,
   range: DateRange,
 ): Promise<EntryFunnelStage[]> {
+  const safeRange = clampRange(range)
   const { data: sessions } = await supabase
     .from('analytics_sessions')
     .select('visitor_id, entry_page, exit_page')
-    .gte('started_at', range.from)
-    .lte('started_at', range.to)
+    .gte('started_at', safeRange.from)
+    .lte('started_at', safeRange.to)
 
   const all = new Set<string>()
   const reachedCruise = new Set<string>()
@@ -457,8 +483,8 @@ export async function getEntryFunnel(
     .select('id', { count: 'exact', head: true })
     .eq('status', 'confirmed')
     .in('booking_source', ['website', 'stripe_recovery'])
-    .gte('created_at', range.from)
-    .lte('created_at', range.to)
+    .gte('created_at', safeRange.from)
+    .lte('created_at', safeRange.to)
 
   const total = all.size
   const stages = [
@@ -559,11 +585,12 @@ export async function getDeviceMetrics(
   supabase: SupabaseClient,
   range: DateRange,
 ): Promise<DeviceMetrics[]> {
+  const safeRange = clampRange(range)
   const { data: sessions } = await supabase
     .from('analytics_sessions')
     .select('visitor_id, device_type, entry_page, exit_page')
-    .gte('started_at', range.from)
-    .lte('started_at', range.to)
+    .gte('started_at', safeRange.from)
+    .lte('started_at', safeRange.to)
 
   const touchesCruise = (p: string | null) => !!p && (/\/cruises\//.test(p) || /\/book\//.test(p))
   const touchesCheckout = (p: string | null) => !!p && /\/book\/.+\/checkout/.test(p)

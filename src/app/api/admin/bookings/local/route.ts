@@ -2,10 +2,13 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 
+const PAGE_SIZE = 500
+
 /**
- * GET /api/admin/bookings/local
+ * GET /api/admin/bookings/local[?offset=N]
  *
- * Returns all bookings stored in our Supabase `bookings` table.
+ * Returns bookings from our Supabase `bookings` table, paginated at PAGE_SIZE rows.
+ * Use offset=N to fetch subsequent pages.
  *
  * Enrichments done in-memory (single extra query):
  * - customer_type_name: resolved from fareharbor_items.customer_types JSONB
@@ -14,11 +17,12 @@ import { createAdminClient } from '@/lib/supabase/admin'
  *
  * campaign_name + promo_code resolved via Supabase FK joins.
  */
-export async function GET() {
+export async function GET(request: Request) {
   const denied = await requireAdmin()
   if (denied) return denied
   try {
     const supabase = createAdminClient()
+    const offset = Number(new URL(request.url).searchParams.get('offset') ?? 0)
 
     // Fetch bookings (with FK joins for campaign + promo) + fareharbor_items in parallel
     const [bookingsResult, itemsResult] = await Promise.all([
@@ -46,7 +50,8 @@ export async function GET() {
         // Every real booking (website, admin, stripe_recovery) always has booking_date set.
         .not('booking_date', 'is', null)
         .order('booking_date', { ascending: false })
-        .order('created_at', { ascending: false }),
+        .order('created_at', { ascending: false })
+        .range(offset, offset + PAGE_SIZE - 1),
       supabase
         .from('fareharbor_items')
         .select('customer_types'),
@@ -105,6 +110,9 @@ export async function GET() {
       }
     })
 
+    if (bookings.length === PAGE_SIZE) {
+      console.warn(`[admin/bookings] Hit PAGE_SIZE=${PAGE_SIZE} — implement client pagination when the table grows further`)
+    }
     return apiOk(bookings)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
