@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
       contact: {
         name: booking.customer_name ?? '',
         email: booking.customer_email ?? '',
-        phone: booking.customer_phone ?? null,
+        phone: booking.customer_phone ?? undefined,
       },
       listingTitle: booking.listing_title ?? '',
       date: booking.booking_date ?? '',
