@@ -76,7 +76,7 @@ export async function ReviewsSection({
         </div>
 
         {/* Slider (client component) — shows source tabs only when both sources present */}
-        <ReviewsSlider reviews={sliderReviews} showSourceTabs={hasGoogle && hasTa} />
+        <ReviewsSlider reviews={sliderReviews} totalReviews={displayCount} showSourceTabs={hasGoogle && hasTa} />
       </div>
     </section>
   )

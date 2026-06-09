@@ -17,6 +17,13 @@ export interface ReviewsModalReview {
   publish_time: string | null
 }
 
+async function fetchAllReviews(): Promise<ReviewsModalReview[]> {
+  const res = await fetch('/api/reviews')
+  const json = await res.json()
+  if (json.ok && Array.isArray(json.data)) return json.data as ReviewsModalReview[]
+  return []
+}
+
 type SourceFilter = 'all' | 'google' | 'tripadvisor'
 type SortOrder = 'newest' | 'oldest'
 
@@ -39,10 +46,16 @@ function formatDate(publishTime: string | null): string {
  * "See all reviews" modal — filter by source + star rating, sort newest/oldest,
  * scroll through every review. Mirrors GalleryModal (overlay + scroll-lock + Escape).
  */
-export function ReviewsModal({ reviews, onClose }: { reviews: ReviewsModalReview[]; onClose: () => void }) {
+export function ReviewsModal({ reviews: initialReviews, onClose }: { reviews: ReviewsModalReview[]; onClose: () => void }) {
+  const [reviews, setReviews] = useState<ReviewsModalReview[]>(initialReviews)
   const [source, setSource] = useState<SourceFilter>('all')
   const [stars, setStars] = useState<number>(0) // 0 = all ratings
   const [sort, setSort] = useState<SortOrder>('newest')
+
+  // Fetch the full review list on open — the prop only has the slider's pre-loaded subset.
+  useEffect(() => {
+    fetchAllReviews().then(all => { if (all.length > 0) setReviews(all) }).catch(() => {})
+  }, [])
 
   // Lock body scroll & close on Escape
   useEffect(() => {

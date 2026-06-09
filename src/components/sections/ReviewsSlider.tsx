@@ -192,9 +192,11 @@ function SliderCard({ review, onClick }: { review: SliderReview; onClick: () => 
 
 export function ReviewsSlider({
   reviews,
+  totalReviews,
   showSourceTabs = false,
 }: {
   reviews: SliderReview[]
+  totalReviews?: number
   showSourceTabs?: boolean
 }) {
   const [activeModal, setActiveModal] = useState<SliderReview | null>(null)
@@ -278,7 +280,7 @@ export function ReviewsSlider({
           onClick={() => setShowAll(true)}
           className="px-6 py-2.5 rounded-full text-sm font-avenir font-medium bg-[var(--color-primary)] text-white hover:opacity-90 transition-opacity"
         >
-          See all {reviews.length} reviews
+          See all {totalReviews ?? reviews.length} reviews
         </button>
       </div>
 
