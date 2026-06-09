@@ -9,46 +9,127 @@ export function paymentReminderEmailHtml(data: {
   amountCents: number
   paymentUrl: string
 }) {
+  const firstName = escapeHtml(data.customerName.split(' ')[0])
   const amount = `€${(data.amountCents / 100).toFixed(2)}`
+  const site = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://offcourseamsterdam.com').replace(/\/$/, '')
 
-  return `
-<!DOCTYPE html>
-<html>
+  const DL = 'color:#71717a;padding:5px 12px 5px 0;white-space:nowrap;vertical-align:top;font-size:14px;'
+  const DV = 'color:#1e1b4b;font-weight:500;text-align:right;padding:5px 0;vertical-align:top;font-size:14px;'
+
+  return `<!DOCTYPE html>
+<html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:32px auto;">
-    <tr><td style="background:#18181b;padding:20px 24px;border-radius:12px 12px 0 0;">
-      <span style="color:#fff;font-size:14px;font-weight:700;">Off Course Amsterdam</span>
-      <span style="color:#ef4444;font-size:12px;margin-left:8px;font-weight:600;">Reminder</span>
-    </td></tr>
-    <tr><td style="background:#fff;padding:28px 24px;border:1px solid #e4e4e7;border-top:0;">
-      <p style="margin:0 0 12px;font-size:16px;font-weight:600;color:#18181b;">Hey ${escapeHtml(data.customerName)},</p>
-      <p style="margin:0 0 24px;font-size:14px;color:#3f3f46;line-height:1.6;">
-        Just a heads-up — you have <strong>~6 hours left</strong> to complete your payment. After that, your reservation is automatically released.
-      </p>
-      <table width="100%" style="font-size:13px;color:#3f3f46;border-collapse:collapse;margin-bottom:24px;">
-        <tr><td style="padding:6px 0;color:#71717a;">Cruise</td><td style="padding:6px 0;font-weight:600;">${escapeHtml(data.listingTitle)}</td></tr>
-        <tr><td style="padding:6px 0;color:#71717a;">Date</td><td style="padding:6px 0;">${escapeHtml(data.bookingDate)}</td></tr>
-        <tr><td style="padding:6px 0;color:#71717a;">Time</td><td style="padding:6px 0;">${escapeHtml(data.startTime)}</td></tr>
-        <tr><td style="padding:6px 0;color:#71717a;">Guests</td><td style="padding:6px 0;">${data.guestCount}</td></tr>
-        <tr><td style="padding:6px 0;color:#71717a;border-top:1px solid #f4f4f5;">Total</td><td style="padding:6px 0;font-weight:700;border-top:1px solid #f4f4f5;">${amount}</td></tr>
+<body style="margin:0;padding:0;background-color:#f0e9e0;background-image:url(${site}/textures/bg-sand.png);background-size:400px;background-repeat:repeat;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+
+  <!-- Preheader -->
+  <div style="display:none;max-height:0;overflow:hidden;color:#f0e9e0;">⏰ ~6 hours left to pay — after that your spot is released&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>
+
+  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr><td align="center" style="padding:32px 16px 48px;">
+
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
+
+        <!-- ═══ HEADER: deep indigo + logo ═══ -->
+        <tr>
+          <td bgcolor="#1e1b4b" style="background-color:#1e1b4b;padding:36px 32px 0;border-radius:20px 20px 0 0;text-align:center;">
+            <a href="https://offcourseamsterdam.com" style="display:inline-block;">
+              <img src="${site}/logos/offcourse-vertical.png" alt="Off Course Amsterdam" width="80" style="display:block;margin:0 auto;width:80px;height:auto;" />
+            </a>
+          </td>
+        </tr>
+
+        <!-- ═══ CRUISE STRIP: still indigo ═══ -->
+        <tr>
+          <td bgcolor="#1e1b4b" style="background-color:#1e1b4b;padding:20px 32px 36px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.08);">
+            <p style="margin:0 0 8px;font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,0.5);">⏰ last call to pay</p>
+            <h1 style="margin:0;font-size:22px;font-weight:800;color:#ffffff;line-height:1.3;">${escapeHtml(data.listingTitle)}</h1>
+            <p style="margin:8px 0 0;font-size:13px;color:rgba(255,255,255,0.6);">
+              📅&nbsp;${escapeHtml(data.bookingDate)}
+              ${data.startTime ? `&nbsp;&nbsp;🕐&nbsp;${escapeHtml(data.startTime)}` : ''}
+              &nbsp;&nbsp;👥&nbsp;${data.guestCount}&nbsp;guest${data.guestCount === 1 ? '' : 's'}
+            </p>
+          </td>
+        </tr>
+
+        <!-- ═══ BODY: white card ═══ -->
+        <tr>
+          <td bgcolor="#ffffff" style="background-color:#ffffff;padding:36px 32px 32px;border-radius:0 0 20px 20px;">
+
+            <!-- Greeting -->
+            <p style="margin:0 0 8px;font-size:17px;font-weight:700;color:#1e1b4b;">Hey ${firstName} 👋</p>
+            <p style="margin:0 0 28px;font-size:15px;color:#374151;line-height:1.7;">
+              Just a heads-up — you've got <strong>~6 hours left</strong> to pay. After that, your reservation is automatically released.
+            </p>
+
+            <!-- Amount block -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:28px;">
+              <tr>
+                <td bgcolor="#f7f4f0" style="background-color:#f7f4f0;border-radius:12px;padding:20px;">
+                  <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+                    <tr>
+                      <td style="${DL}">Cruise</td>
+                      <td style="color:#1e1b4b;font-weight:600;text-align:right;padding:5px 0;vertical-align:top;font-size:14px;">${escapeHtml(data.listingTitle)}</td>
+                    </tr>
+                    <tr>
+                      <td style="${DL}">Date</td>
+                      <td style="${DV}">${escapeHtml(data.bookingDate)}</td>
+                    </tr>
+                    ${data.startTime ? `<tr>
+                      <td style="${DL}">Time</td>
+                      <td style="${DV}">${escapeHtml(data.startTime)}</td>
+                    </tr>` : ''}
+                    <tr>
+                      <td style="${DL}">Guests</td>
+                      <td style="${DV}">${data.guestCount}</td>
+                    </tr>
+                    <tr>
+                      <td style="color:#71717a;padding:12px 12px 0 0;white-space:nowrap;vertical-align:top;font-size:14px;border-top:1px solid #e8e3dc;">Total</td>
+                      <td style="font-size:18px;font-weight:700;color:#1e1b4b;text-align:right;padding:12px 0 0;vertical-align:top;border-top:1px solid #e8e3dc;">${amount}</td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+
+            <!-- CTA button — red for urgency, on-brand crimson -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">
+              <tr>
+                <td align="center">
+                  <a href="${escapeHtml(data.paymentUrl)}"
+                     style="display:inline-block;background-color:#dc143c;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;padding:16px 40px;border-radius:50px;letter-spacing:0.3px;line-height:1;">
+                    Pay now &nbsp;&rarr;
+                  </a>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Deadline note -->
+            <p style="margin:0;font-size:13px;color:#9ca3af;text-align:center;line-height:1.6;">
+              After the deadline your spot is released — no hard feelings 🤍
+            </p>
+
+          </td>
+        </tr>
+
+        <!-- ═══ SPACER ═══ -->
+        <tr><td style="height:24px;"></td></tr>
+
+        <!-- ═══ FOOTER ═══ -->
+        <tr>
+          <td style="text-align:center;padding:0 16px;">
+            <p style="margin:0 0 4px;font-size:11px;color:#9ca3af;line-height:1.6;">Off Course Amsterdam &mdash; your friend with a boat</p>
+            <p style="margin:0;font-size:11px;color:#9ca3af;line-height:1.6;">
+              Herenmarkt 93A, Amsterdam &nbsp;·&nbsp;
+              <a href="mailto:cruise@offcourseamsterdam.com" style="color:#9ca3af;text-decoration:none;">cruise@offcourseamsterdam.com</a>
+            </p>
+          </td>
+        </tr>
+
       </table>
-      <div style="text-align:center;margin:28px 0;">
-        <a href="${escapeHtml(data.paymentUrl)}"
-           style="display:inline-block;background:#ef4444;color:#fff;font-size:15px;font-weight:700;text-decoration:none;padding:14px 32px;border-radius:10px;">
-          Pay now →
-        </a>
-      </div>
-      <p style="margin:0;font-size:12px;color:#a1a1aa;text-align:center;">
-        After the deadline your spot is released.
-      </p>
-    </td></tr>
-    <tr><td style="padding:16px 24px;border:1px solid #e4e4e7;border-top:0;border-radius:0 0 12px 12px;background:#fafafa;">
-      <p style="margin:0;font-size:11px;color:#a1a1aa;">
-        Questions? Email us at <a href="mailto:cruise@offcourseamsterdam.com" style="color:#71717a;">cruise@offcourseamsterdam.com</a>
-      </p>
+
     </td></tr>
   </table>
+
 </body>
 </html>`
 }

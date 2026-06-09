@@ -98,6 +98,8 @@ export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<
 
   const resend = getResend()
   const location = esc(p.departureLocation ?? 'Brouwersgracht 29, Amsterdam')
+  const site = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://offcourseamsterdam.com').replace(/\/$/, '')
+  const firstName = esc(p.contact.name.split(' ')[0])
 
   // ── Customer type lookup + end-time correction ──────────────────────────
   // Private cruises: FH returns end_at == start_at; recompute from duration.
@@ -121,8 +123,6 @@ export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<
 
   // ── Type + category row content ─────────────────────────────────────────
   const categoryLabel = fmtCategory(p.category)
-  // Append "× N" only for shared cruises with > 1 guest (e.g. "Adult × 4 · Shared")
-  // Private bookings are 1 boat regardless of guest count.
   const typeBase = ctInfo?.name ? esc(ctInfo.name) : null
   const typeWithQty = typeBase && p.category === 'shared' && p.guestCount > 1
     ? `${typeBase} × ${p.guestCount}`
@@ -139,113 +139,148 @@ export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<
     if (qty > 1) return `${safeName} × ${qty}`
     return safeName
   }
+
+  const DL = 'color:#71717a;padding:5px 12px 5px 0;white-space:nowrap;vertical-align:top;font-size:14px;'
+  const DV = 'color:#1e1b4b;font-weight:500;text-align:right;padding:5px 0;vertical-align:top;font-size:14px;'
+
   const extrasRows = p.extrasSelected.length > 0
     ? p.extrasSelected.map(e => `
         <tr>
-          <td class="detail-label">${formatExtraName(e)}</td>
-          <td class="detail-value">${fmtAmountEur(e.amount_cents)}</td>
+          <td style="${DL}">${formatExtraName(e)}</td>
+          <td style="${DV}">${fmtAmountEur(e.amount_cents)}</td>
         </tr>`).join('')
     : ''
 
-  const html = `
-<!DOCTYPE html>
+  const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Booking confirmed — Off Course Amsterdam</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f4f4f5; margin: 0; padding: 32px 16px; }
-    .container { max-width: 560px; margin: 0 auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
-    .header { background: #18181b; color: #fff; padding: 32px 32px 24px; }
-    .header h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; }
-    .header p { margin: 0; font-size: 14px; color: #a1a1aa; }
-    .body { padding: 32px; }
-    .greeting { font-size: 16px; color: #18181b; margin: 0 0 20px; }
-    .detail-block { background: #f4f4f5; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
-    .detail-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    .detail-table tr td { padding: 5px 0; vertical-align: top; }
-    .detail-label { color: #71717a; padding-right: 12px; white-space: nowrap; }
-    .detail-value { color: #18181b; font-weight: 500; text-align: right; }
-    .amount-row td { border-top: 1px solid #e4e4e7; padding-top: 14px; margin-top: 14px; }
-    .amount-value { font-size: 18px; font-weight: 700; color: #18181b; text-align: right; }
-    .notice-block { background: #fefce8; border: 1px solid #fde047; border-radius: 8px; padding: 16px 20px; margin-bottom: 24px; font-size: 14px; color: #713f12; line-height: 1.5; }
-    .notice-block strong { display: block; margin-bottom: 4px; color: #713f12; }
-    .footer-text { font-size: 13px; color: #71717a; line-height: 1.6; margin-bottom: 24px; }
-    .footer { background: #f4f4f5; padding: 20px 32px; text-align: center; font-size: 12px; color: #a1a1aa; }
-    .footer a { color: #52525b; text-decoration: none; }
-  </style>
 </head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>Off Course Amsterdam</h1>
-      <p>we're down to water</p>
-    </div>
-    <div class="body">
-      <p class="greeting">Hi ${esc(p.contact.name.split(' ')[0])}, your booking is confirmed!</p>
+<body style="margin:0;padding:0;background-color:#f0e9e0;background-image:url(${site}/textures/bg-sand.png);background-size:400px;background-repeat:repeat;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
 
-      <div class="detail-block">
-        <table class="detail-table">
-          <tr>
-            <td class="detail-label">Cruise</td>
-            <td class="detail-value">${esc(p.listingTitle)}</td>
-          </tr>
-          ${typeValue ? `<tr>
-            <td class="detail-label">Type</td>
-            <td class="detail-value">${typeValue}</td>
-          </tr>` : ''}
-          <tr>
-            <td class="detail-label">Date</td>
-            <td class="detail-value">${esc(p.date)}</td>
-          </tr>
-          ${timeRange ? `<tr>
-            <td class="detail-label">Time</td>
-            <td class="detail-value">${timeRange}</td>
-          </tr>` : ''}
-          <tr>
-            <td class="detail-label">Guests</td>
-            <td class="detail-value">${p.guestCount} guest${p.guestCount !== 1 ? 's' : ''}</td>
-          </tr>
-          ${extrasRows}
-          ${p.fhBookingUuid ? `<tr>
-            <td class="detail-label">Booking ref</td>
-            <td class="detail-value" style="font-family: monospace; font-size: 12px;">${esc(p.fhBookingUuid)}</td>
-          </tr>` : ''}
-          <tr class="amount-row">
-            <td class="detail-label">Paid</td>
-            <td class="amount-value">${fmtAmountEur(p.amountCents)}</td>
-          </tr>
-        </table>
-      </div>
+  <!-- Preheader -->
+  <div style="display:none;max-height:0;overflow:hidden;color:#f0e9e0;">you're booked — see you on the water 🛥️&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>
 
-      <div class="notice-block">
-        <strong>📍 Where to meet us</strong>
-        ${location} — look for the big pier/jetty on the waterfront.<br/>
-        Please be there <strong>10 minutes before</strong> your departure time — your skipper will be ready and waiting.<br/>
-        <a href="https://maps.app.goo.gl/UR1tijSgfdMVfgLi6" style="color:#92400e;">Open in Google Maps →</a>
-      </div>
+  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr><td align="center" style="padding:32px 16px 48px;">
 
-      <p class="footer-text">
-        Questions? Reply to this email or reach us at
-        <a href="mailto:cruise@offcourseamsterdam.com">cruise@offcourseamsterdam.com</a>.
-        See you on the water!
-      </p>
-    </div>
-    <div class="footer">
-      <a href="https://offcourseamsterdam.com">offcourseamsterdam.com</a> &nbsp;·&nbsp;
-      Amsterdam, Netherlands
-    </div>
-  </div>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
+
+        <!-- ═══ HEADER: deep indigo + logo ═══ -->
+        <tr>
+          <td bgcolor="#1e1b4b" style="background-color:#1e1b4b;padding:36px 32px 0;border-radius:20px 20px 0 0;text-align:center;">
+            <a href="https://offcourseamsterdam.com" style="display:inline-block;">
+              <img src="${site}/logos/offcourse-vertical.png" alt="Off Course Amsterdam" width="80" style="display:block;margin:0 auto;width:80px;height:auto;" />
+            </a>
+          </td>
+        </tr>
+
+        <!-- ═══ CRUISE STRIP: still indigo ═══ -->
+        <tr>
+          <td bgcolor="#1e1b4b" style="background-color:#1e1b4b;padding:20px 32px 36px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.08);">
+            <p style="margin:0 0 8px;font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,0.4);">booking confirmed 🎉</p>
+            <h1 style="margin:0;font-size:22px;font-weight:800;color:#ffffff;line-height:1.3;">${esc(p.listingTitle)}</h1>
+          </td>
+        </tr>
+
+        <!-- ═══ BODY: white card ═══ -->
+        <tr>
+          <td bgcolor="#ffffff" style="background-color:#ffffff;padding:36px 32px 32px;border-radius:0 0 20px 20px;">
+
+            <!-- Greeting -->
+            <p style="margin:0 0 8px;font-size:17px;font-weight:700;color:#1e1b4b;">Hey ${firstName} 👋</p>
+            <p style="margin:0 0 28px;font-size:15px;color:#374151;line-height:1.7;">
+              You're all set — your spot is reserved. See you on the water!
+            </p>
+
+            <!-- Detail block -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">
+              <tr>
+                <td bgcolor="#f7f4f0" style="background-color:#f7f4f0;border-radius:12px;padding:20px;">
+                  <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+                    <tr>
+                      <td style="${DL}">Cruise</td>
+                      <td style="color:#1e1b4b;font-weight:600;text-align:right;padding:5px 0;vertical-align:top;font-size:14px;">${esc(p.listingTitle)}</td>
+                    </tr>
+                    ${typeValue ? `<tr>
+                      <td style="${DL}">Type</td>
+                      <td style="${DV}">${typeValue}</td>
+                    </tr>` : ''}
+                    <tr>
+                      <td style="${DL}">Date</td>
+                      <td style="${DV}">${esc(p.date)}</td>
+                    </tr>
+                    ${timeRange ? `<tr>
+                      <td style="${DL}">Time</td>
+                      <td style="${DV}">${timeRange}</td>
+                    </tr>` : ''}
+                    <tr>
+                      <td style="${DL}">Guests</td>
+                      <td style="${DV}">${p.guestCount} guest${p.guestCount !== 1 ? 's' : ''}</td>
+                    </tr>
+                    ${extrasRows}
+                    ${p.fhBookingUuid ? `<tr>
+                      <td style="${DL}">Ref</td>
+                      <td style="color:#1e1b4b;font-family:monospace;font-size:12px;text-align:right;padding:5px 0;vertical-align:top;">${esc(p.fhBookingUuid)}</td>
+                    </tr>` : ''}
+                    <tr>
+                      <td style="color:#71717a;padding:12px 12px 0 0;white-space:nowrap;vertical-align:top;font-size:14px;border-top:1px solid #e8e3dc;">Paid</td>
+                      <td style="font-size:18px;font-weight:700;color:#1e1b4b;text-align:right;padding:12px 0 0;vertical-align:top;border-top:1px solid #e8e3dc;">${fmtAmountEur(p.amountCents)}</td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Location notice -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
+              <tr>
+                <td style="background-color:#eef0f8;border:1px solid rgba(30,27,75,0.2);border-radius:12px;padding:16px 20px;font-size:14px;color:#1e1b4b;line-height:1.6;">
+                  <strong style="display:block;margin-bottom:6px;color:#1e1b4b;">📍 Where to meet us</strong>
+                  ${location} — look for the big pier/jetty on the waterfront.<br/>
+                  Please be there <strong>10 minutes before</strong> your departure time — your skipper will be ready and waiting.<br/>
+                  <a href="https://maps.app.goo.gl/UR1tijSgfdMVfgLi6" style="color:#5b50b0;font-weight:600;">Open in Google Maps →</a>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Sign-off -->
+            <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.6;">
+              Questions? Reply to this email or reach us at <a href="mailto:cruise@offcourseamsterdam.com" style="color:#1e1b4b;font-weight:600;">cruise@offcourseamsterdam.com</a>
+            </p>
+
+          </td>
+        </tr>
+
+        <!-- ═══ SPACER ═══ -->
+        <tr><td style="height:24px;"></td></tr>
+
+        <!-- ═══ FOOTER ═══ -->
+        <tr>
+          <td style="text-align:center;padding:0 16px;">
+            <p style="margin:0 0 4px;font-size:11px;color:#9ca3af;line-height:1.6;">Off Course Amsterdam &mdash; your friend with a boat</p>
+            <p style="margin:0;font-size:11px;color:#9ca3af;line-height:1.6;">
+              Herenmarkt 93A, Amsterdam &nbsp;·&nbsp;
+              <a href="mailto:cruise@offcourseamsterdam.com" style="color:#9ca3af;text-decoration:none;">cruise@offcourseamsterdam.com</a>
+            </p>
+          </td>
+        </tr>
+
+      </table>
+
+    </td></tr>
+  </table>
+
 </body>
-</html>
-  `.trim()
+</html>`
 
   try {
     await resend.emails.send({
       from: 'Off Course Amsterdam <cruise@offcourseamsterdam.com>',
       to: [p.contact.email],
-      subject: `Booking confirmed — ${p.listingTitle}`,
+      subject: `you're booked 🎉 — ${p.listingTitle}`,
       html,
     })
   } catch (err) {
@@ -278,6 +313,7 @@ export async function sendRescheduleEmail(p: RescheduleEmailInput): Promise<void
 
   const resend = getResend()
   const location = esc(p.departureLocation ?? 'Brouwersgracht 29, Amsterdam')
+  const site = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://offcourseamsterdam.com').replace(/\/$/, '')
   const firstName = esc(p.contact.name.split(' ')[0])
 
   // Resolve correct end time (private cruises have end_at == start_at in FH)
@@ -301,99 +337,143 @@ export async function sendRescheduleEmail(p: RescheduleEmailInput): Promise<void
   const typeBase = ctInfo?.name ? esc(ctInfo.name) : null
   const typeValue = [typeBase, categoryLabel].filter(Boolean).join(' · ') || null
 
-  const html = `
-<!DOCTYPE html>
+  const DL = 'color:#71717a;padding:5px 12px 5px 0;white-space:nowrap;vertical-align:top;font-size:14px;'
+  const DV = 'color:#1e1b4b;font-weight:500;text-align:right;padding:5px 0;vertical-align:top;font-size:14px;'
+
+  const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Your booking has been rescheduled — Off Course Amsterdam</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f4f4f5; margin: 0; padding: 32px 16px; }
-    .container { max-width: 560px; margin: 0 auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
-    .header { background: #18181b; color: #fff; padding: 32px 32px 24px; }
-    .header h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; }
-    .header p  { margin: 0; font-size: 14px; color: #a1a1aa; }
-    .body { padding: 32px; }
-    .greeting { font-size: 16px; color: #18181b; margin: 0 0 20px; }
-    .badge { display: inline-block; background: #fefce8; border: 1px solid #fde047; color: #713f12; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; margin-bottom: 20px; }
-    .detail-block { background: #f4f4f5; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
-    .detail-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    .detail-table tr td { padding: 5px 0; vertical-align: top; }
-    .detail-label { color: #71717a; padding-right: 12px; white-space: nowrap; }
-    .detail-value { color: #18181b; font-weight: 500; text-align: right; }
-    .notice-block { background: #fefce8; border: 1px solid #fde047; border-radius: 8px; padding: 16px 20px; margin-bottom: 24px; font-size: 14px; color: #713f12; line-height: 1.5; }
-    .notice-block strong { display: block; margin-bottom: 4px; }
-    .footer-text { font-size: 13px; color: #71717a; line-height: 1.6; margin-bottom: 24px; }
-    .footer { background: #f4f4f5; padding: 20px 32px; text-align: center; font-size: 12px; color: #a1a1aa; }
-    .footer a { color: #52525b; text-decoration: none; }
-  </style>
 </head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>Off Course Amsterdam</h1>
-      <p>we're down to water</p>
-    </div>
-    <div class="body">
-      <p class="greeting">Hi ${firstName},</p>
-      <span class="badge">📅 Your booking has been rescheduled</span>
+<body style="margin:0;padding:0;background-color:#f0e9e0;background-image:url(${site}/textures/bg-sand.png);background-size:400px;background-repeat:repeat;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
 
-      <div class="detail-block">
-        <table class="detail-table">
-          <tr>
-            <td class="detail-label">Cruise</td>
-            <td class="detail-value">${esc(p.listingTitle)}</td>
-          </tr>
-          ${typeValue ? `<tr>
-            <td class="detail-label">Type</td>
-            <td class="detail-value">${typeValue}</td>
-          </tr>` : ''}
-          <tr>
-            <td class="detail-label">New date</td>
-            <td class="detail-value">${esc(p.newDate)}</td>
-          </tr>
-          ${timeRange ? `<tr>
-            <td class="detail-label">New time</td>
-            <td class="detail-value">${timeRange}</td>
-          </tr>` : ''}
-          <tr>
-            <td class="detail-label">Guests</td>
-            <td class="detail-value">${p.guestCount} guest${p.guestCount !== 1 ? 's' : ''}</td>
-          </tr>
-          ${p.fhBookingUuid ? `<tr>
-            <td class="detail-label">Booking ref</td>
-            <td class="detail-value" style="font-family: monospace; font-size: 12px;">${esc(p.fhBookingUuid)}</td>
-          </tr>` : ''}
-        </table>
-      </div>
+  <!-- Preheader -->
+  <div style="display:none;max-height:0;overflow:hidden;color:#f0e9e0;">your cruise has moved to a new date — here are the updated details&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>
 
-      <div class="notice-block">
-        <strong>📍 Where to meet us</strong>
-        ${location} — look for the big pier/jetty on the waterfront.<br/>
-        Please be there <strong>10 minutes before</strong> your departure time — your skipper will be ready and waiting.<br/>
-        <a href="https://maps.app.goo.gl/UR1tijSgfdMVfgLi6" style="color:#92400e;">Open in Google Maps →</a>
-      </div>
+  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr><td align="center" style="padding:32px 16px 48px;">
 
-      <p class="footer-text">
-        Questions? Reply to this email or reach us at
-        <a href="mailto:cruise@offcourseamsterdam.com">cruise@offcourseamsterdam.com</a>.
-        See you on the water!
-      </p>
-    </div>
-    <div class="footer">
-      <a href="https://offcourseamsterdam.com">offcourseamsterdam.com</a> &nbsp;·&nbsp;
-      Amsterdam, Netherlands
-    </div>
-  </div>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
+
+        <!-- ═══ HEADER: deep indigo + logo ═══ -->
+        <tr>
+          <td bgcolor="#1e1b4b" style="background-color:#1e1b4b;padding:36px 32px 0;border-radius:20px 20px 0 0;text-align:center;">
+            <a href="https://offcourseamsterdam.com" style="display:inline-block;">
+              <img src="${site}/logos/offcourse-vertical.png" alt="Off Course Amsterdam" width="80" style="display:block;margin:0 auto;width:80px;height:auto;" />
+            </a>
+          </td>
+        </tr>
+
+        <!-- ═══ CRUISE STRIP: still indigo ═══ -->
+        <tr>
+          <td bgcolor="#1e1b4b" style="background-color:#1e1b4b;padding:20px 32px 36px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.08);">
+            <p style="margin:0 0 8px;font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,0.4);">booking rescheduled 📅</p>
+            <h1 style="margin:0;font-size:22px;font-weight:800;color:#ffffff;line-height:1.3;">${esc(p.listingTitle)}</h1>
+          </td>
+        </tr>
+
+        <!-- ═══ BODY: white card ═══ -->
+        <tr>
+          <td bgcolor="#ffffff" style="background-color:#ffffff;padding:36px 32px 32px;border-radius:0 0 20px 20px;">
+
+            <!-- Greeting -->
+            <p style="margin:0 0 8px;font-size:17px;font-weight:700;color:#1e1b4b;">Hey ${firstName} 👋</p>
+            <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.7;">
+              Your booking has been moved to a new date. Here are the updated details — everything else stays the same.
+            </p>
+
+            <!-- Rescheduled badge -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">
+              <tr>
+                <td style="background-color:#eef0f8;border:1px solid rgba(30,27,75,0.2);border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;color:#1e1b4b;">
+                  📅 Your booking has been rescheduled
+                </td>
+              </tr>
+            </table>
+
+            <!-- Detail block -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">
+              <tr>
+                <td bgcolor="#f7f4f0" style="background-color:#f7f4f0;border-radius:12px;padding:20px;">
+                  <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+                    <tr>
+                      <td style="${DL}">Cruise</td>
+                      <td style="color:#1e1b4b;font-weight:600;text-align:right;padding:5px 0;vertical-align:top;font-size:14px;">${esc(p.listingTitle)}</td>
+                    </tr>
+                    ${typeValue ? `<tr>
+                      <td style="${DL}">Type</td>
+                      <td style="${DV}">${typeValue}</td>
+                    </tr>` : ''}
+                    <tr>
+                      <td style="${DL}">New date</td>
+                      <td style="${DV}">${esc(p.newDate)}</td>
+                    </tr>
+                    ${timeRange ? `<tr>
+                      <td style="${DL}">New time</td>
+                      <td style="${DV}">${timeRange}</td>
+                    </tr>` : ''}
+                    <tr>
+                      <td style="${DL}">Guests</td>
+                      <td style="${DV}">${p.guestCount} guest${p.guestCount !== 1 ? 's' : ''}</td>
+                    </tr>
+                    ${p.fhBookingUuid ? `<tr>
+                      <td style="${DL}">Ref</td>
+                      <td style="color:#1e1b4b;font-family:monospace;font-size:12px;text-align:right;padding:5px 0;vertical-align:top;">${esc(p.fhBookingUuid)}</td>
+                    </tr>` : ''}
+                  </table>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Location notice -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
+              <tr>
+                <td style="background-color:#eef0f8;border:1px solid rgba(30,27,75,0.2);border-radius:12px;padding:16px 20px;font-size:14px;color:#1e1b4b;line-height:1.6;">
+                  <strong style="display:block;margin-bottom:6px;color:#1e1b4b;">📍 Where to meet us</strong>
+                  ${location} — look for the big pier/jetty on the waterfront.<br/>
+                  Please be there <strong>10 minutes before</strong> your departure time — your skipper will be ready and waiting.<br/>
+                  <a href="https://maps.app.goo.gl/UR1tijSgfdMVfgLi6" style="color:#5b50b0;font-weight:600;">Open in Google Maps →</a>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Sign-off -->
+            <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.6;">
+              Questions? Reply to this email or reach us at <a href="mailto:cruise@offcourseamsterdam.com" style="color:#1e1b4b;font-weight:600;">cruise@offcourseamsterdam.com</a>. See you on the water!
+            </p>
+
+          </td>
+        </tr>
+
+        <!-- ═══ SPACER ═══ -->
+        <tr><td style="height:24px;"></td></tr>
+
+        <!-- ═══ FOOTER ═══ -->
+        <tr>
+          <td style="text-align:center;padding:0 16px;">
+            <p style="margin:0 0 4px;font-size:11px;color:#9ca3af;line-height:1.6;">Off Course Amsterdam &mdash; your friend with a boat</p>
+            <p style="margin:0;font-size:11px;color:#9ca3af;line-height:1.6;">
+              Herenmarkt 93A, Amsterdam &nbsp;·&nbsp;
+              <a href="mailto:cruise@offcourseamsterdam.com" style="color:#9ca3af;text-decoration:none;">cruise@offcourseamsterdam.com</a>
+            </p>
+          </td>
+        </tr>
+
+      </table>
+
+    </td></tr>
+  </table>
+
 </body>
-</html>`.trim()
+</html>`
 
   try {
     await resend.emails.send({
       from: 'Off Course Amsterdam <cruise@offcourseamsterdam.com>',
       to: [p.contact.email],
-      subject: `Your booking has been rescheduled — ${p.listingTitle}`,
+      subject: `your booking has moved 📅 — ${p.listingTitle}`,
       html,
     })
     console.log('[sendRescheduleEmail] sent to', p.contact.email)
