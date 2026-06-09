@@ -27,16 +27,16 @@ export function SettlementsSection({ partnerInvoiceRows, affiliateRows }: Props)
 
       {partnerInvoiceRows.length > 0 && (
         <SettlementCard
-          title="Partner invoice — you owe Off Course"
-          subtitle="You collected ticket prices on the desk. We invoice the net (ticket − commission) at quarter end."
+          title="They Collect — you owe Off Course"
+          subtitle="You collected ticket prices yourself. We invoice the net amount (ticket price − your commission) at quarter end."
           rows={partnerInvoiceRows}
           tone="rose"
         />
       )}
       {affiliateRows.length > 0 && (
         <SettlementCard
-          title="Affiliate — Off Course owes you"
-          subtitle="Customers paid us online via your tracking link. We pay you the commission at quarter end."
+          title="We Collect — Off Course owes you commission"
+          subtitle="Customers booked and paid us directly via your link. We pay you your commission cut at quarter end."
           rows={affiliateRows}
           tone="emerald"
         />

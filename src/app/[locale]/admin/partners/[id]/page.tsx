@@ -129,8 +129,8 @@ export default function PartnerDetailPage() {
           <>
             {summary.partnerInvoice.length > 0 && (
               <SettlementTable
-                title="Partner-invoice settlements"
-                subtitle="Partner collected ticket prices on the desk and owes Off Course the net (ticket – commission). Settle each quarter."
+                title="They Collect — partner owes us"
+                subtitle="Partner collected the ticket price themselves. They owe us the net amount (ticket price minus their commission). Settle each quarter."
                 rows={summary.partnerInvoice}
                 type="partner_invoice"
                 owesLabel="Partner owes us"
@@ -141,8 +141,8 @@ export default function PartnerDetailPage() {
             )}
             {summary.affiliate.length > 0 && (
               <SettlementTable
-                title="Affiliate settlements"
-                subtitle="Off Course collected the ticket price online; we owe the partner their commission. Settle each quarter."
+                title="We Collect — commission owed to partner"
+                subtitle="Customer paid us via the website. We owe the partner their commission cut. Settle each quarter."
                 rows={summary.affiliate}
                 type="affiliate"
                 owesLabel="We owe partner"

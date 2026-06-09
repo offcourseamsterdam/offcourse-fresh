@@ -89,7 +89,7 @@ export default function FinancePage() {
           <p className="text-2xl font-bold text-amber-700 mt-1">
             {fmtAdminAmountRounded(totals.outstandingWeOwePartnerCents)}
           </p>
-          <p className="text-xs text-zinc-400 mt-1">Affiliate commissions to pay out</p>
+          <p className="text-xs text-zinc-400 mt-1">Commissions owed to partners (we collected)</p>
         </div>
       </div>
 
