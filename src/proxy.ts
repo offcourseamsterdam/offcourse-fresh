@@ -37,23 +37,16 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // ── x-pathname header ───────────────────────────────────────────────────
-  // Set x-pathname on the REQUEST headers (not response!) so server
-  // components can read it via headers().get('x-pathname').
-  // Used by [locale]/layout.tsx to hide Navbar/Footer on admin/partner routes.
-  const pathWithoutLocale = pathname.slice(match[1].length + 1) || '/'
-  const requestHeaders = new Headers(request.headers)
-  requestHeaders.set('x-pathname', pathWithoutLocale)
-
-  // Start with a response that forwards the updated request headers
-  let response = NextResponse.next({
-    request: { headers: requestHeaders },
-  })
-
   // ── Session refresh ─────────────────────────────────────────────────────
   // @supabase/ssr requires calling getUser() in middleware so it can
   // silently refresh the access token with the refresh-token cookie.
   // Without this, the session expires after ~1 hour and the user is logged out.
+  // Skip entirely for anonymous visitors — they have no sb-* cookie to refresh,
+  // and the Supabase network round-trip is wasted on every page view.
+  const hasAuthCookie = request.cookies.getAll().some(c => c.name.startsWith('sb-'))
+  if (!hasAuthCookie) return NextResponse.next()
+
+  let response = NextResponse.next()
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -63,9 +56,7 @@ export async function proxy(request: NextRequest) {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          // Rebuild response (preserving x-pathname on requestHeaders)
-          // then write the refreshed auth cookies onto it for the browser.
-          response = NextResponse.next({ request: { headers: requestHeaders } })
+          response = NextResponse.next()
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options)
           )
