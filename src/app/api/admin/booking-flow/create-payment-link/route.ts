@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
         customer_email: contact.email,
         customer_phone: contact.phone,
         guest_note: note || null,
-        status: 'confirmed',
+        status: 'pending_payment',
         payment_status: 'pending_payment',
         currency: 'eur',
         booking_source: 'payment_link',

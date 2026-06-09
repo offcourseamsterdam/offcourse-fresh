@@ -231,9 +231,9 @@ export default function BookingsPage() {
                         {b.guest_count ?? '—'}
                       </td>
                       <td className="px-4 py-3 text-zinc-900 font-medium whitespace-nowrap">
-                        {b.booking_source && b.booking_source !== 'website'
-                          ? (b.deposit_amount_cents != null ? `€${(b.deposit_amount_cents / 100).toFixed(0)}` : '—')
-                          : fmtAdminAmountRounded(b.stripe_amount)
+                        {b.booking_source === 'website' || b.booking_source === 'payment_link' || !b.booking_source
+                          ? fmtAdminAmountRounded(b.stripe_amount)
+                          : (b.deposit_amount_cents != null ? `€${(b.deposit_amount_cents / 100).toFixed(0)}` : '—')
                         }
                       </td>
                       <td className="px-4 py-3">

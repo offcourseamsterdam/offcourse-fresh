@@ -29,7 +29,7 @@ export async function GET() {
           customer_name, customer_email, customer_phone,
           tour_item_name, start_time, end_time, booking_date,
           guest_count, category, listing_title,
-          stripe_payment_intent_id, stripe_amount, status,
+          stripe_payment_intent_id, stripe_amount, status, payment_status,
           guest_note, booking_source, deposit_amount_cents,
           extras_selected, base_amount_cents, extras_amount_cents,
           base_vat_amount_cents, extras_vat_amount_cents, total_vat_amount_cents,
@@ -40,7 +40,7 @@ export async function GET() {
           promo_codes ( code ),
           partners ( name )
         `)
-        .in('status', ['confirmed', 'booked'])
+        .in('status', ['confirmed', 'booked', 'pending_payment'])
         // Exclude skeleton rows created by FareHarbor's own booking.created webhook —
         // those rows have no booking_date and duplicate our own full booking record.
         // Every real booking (website, admin, stripe_recovery) always has booking_date set.

@@ -31,6 +31,7 @@ export interface AdminBooking {
   stripe_payment_intent_id: string | null
   stripe_amount: number | null
   status: string | null
+  payment_status: string | null
   guest_note: string | null
   booking_source: string | null
   deposit_amount_cents: number | null
