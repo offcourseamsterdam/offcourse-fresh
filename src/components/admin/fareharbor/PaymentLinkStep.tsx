@@ -68,7 +68,7 @@ export function PaymentLinkStep({
       })
       const json = await res.json()
       if (json.ok) {
-        onSuccess(json.bookingId, json.paymentUrl)
+        onSuccess(json.data.bookingId, json.data.paymentUrl)
       } else {
         setError(json.error ?? 'Er ging iets mis')
       }
