@@ -196,7 +196,7 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId, defaul
           {/* Settlement model — only meaningful when there's a partner */}
           {partnerId && (
             <div>
-              <label className="block text-xs font-medium text-zinc-600 mb-1">Settlement model</label>
+              <label className="block text-xs font-medium text-zinc-600 mb-1">Who collects the money?</label>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -207,9 +207,9 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId, defaul
                       : 'bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50'
                   }`}
                 >
-                  Affiliate
+                  We Collect
                   <span className={`block mt-0.5 text-[10px] ${settlementModel === 'affiliate' ? 'text-zinc-300' : 'text-zinc-400'}`}>
-                    We collect → we owe partner
+                    Customer pays us — we pay partner their cut
                   </span>
                 </button>
                 <button
@@ -221,9 +221,9 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId, defaul
                       : 'bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50'
                   }`}
                 >
-                  Reseller
+                  They Collect
                   <span className={`block mt-0.5 text-[10px] ${settlementModel === 'reseller' ? 'text-zinc-300' : 'text-zinc-400'}`}>
-                    Partner collected → partner owes us
+                    Partner takes payment — partner remits to us
                   </span>
                 </button>
               </div>

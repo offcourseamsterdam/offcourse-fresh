@@ -29,6 +29,7 @@ export async function GET(
       .eq('id', id)
       .single()
 
+    // Sessions: traffic signal — filtered by session start date
     const { data: sessions } = campaign?.slug
       ? await supabase
           .from('analytics_sessions')
@@ -38,14 +39,17 @@ export async function GET(
           .lte('started_at', to)
       : { data: [] as { id: string; visitor_id: string }[] }
 
-    const sessionIds = sessions?.map((s) => s.id) ?? []
-    const { data: bookings } = sessionIds.length > 0
-      ? await supabase
-          .from('bookings')
-          .select('id, session_id, stripe_amount')
-          .in('session_id', sessionIds)
-          .eq('status', 'confirmed')
-      : { data: [] }
+    // Bookings: use campaign_id (server-side attribution) filtered by booking creation date.
+    // This is the reliable source — set from the oc_attr cookie at checkout, never
+    // contaminated by which session happened to be active in the same browser tab.
+    const { data: bookings } = await supabase
+      .from('bookings')
+      .select('id, stripe_amount')
+      .eq('campaign_id', id)
+      .eq('status', 'confirmed')
+      .eq('payment_status', 'paid')
+      .gte('created_at', from)
+      .lte('created_at', to)
 
     const sessionCount = sessions?.length ?? 0
     const uniqueVisitors = new Set(
