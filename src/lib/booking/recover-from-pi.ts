@@ -47,8 +47,8 @@ type ExtraLineItem = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Fetch extras line items from the stored quote breakdown (same logic as webhook). */
-async function getExtrasFromQuote(quoteId: string | undefined): Promise<ExtraLineItem[]> {
+/** Fetch extras line items from the stored quote breakdown. */
+export async function getExtrasFromQuote(quoteId: string | undefined): Promise<ExtraLineItem[]> {
   if (!quoteId) return []
   try {
     const supabase = createAdminClient()
@@ -128,7 +128,7 @@ export async function recoverBookingFromPi(
     pi = typeof piOrId === 'string'
       ? await stripe.paymentIntents.retrieve(piOrId)
       : piOrId
-  } catch (err) {
+  } catch {
     return { ok: false, listingSlug: null, fhBookingUuid: null, outcome: 'failed', error: 'Could not retrieve payment' }
   }
 
@@ -259,7 +259,7 @@ export async function recoverBookingFromPi(
       dateStr: meta.date ?? null,
       startTimeStr: meta.start_at || null,
       guestCount,
-      extrasSelected: extrasSelected as never,
+      extrasSelected,
     }),
   ])
 

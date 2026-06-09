@@ -3,17 +3,24 @@ import { getStripe } from '@/lib/stripe/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { sendConfirmationEmail } from '@/lib/booking/send-confirmation-email'
+import { getExtrasFromQuote } from '@/lib/booking/recover-from-pi'
 import { notifyCateringOrder } from '@/lib/catering/notify'
 import { extractVat } from '@/lib/extras/calculate'
 import { reportBookingConversion } from '@/lib/google-ads/report-conversion'
 import { reportRefundAdjustment } from '@/lib/google-ads/report-refund'
+import { postSlackText } from '@/lib/slack/send-notification'
+import { formatAmsterdamTime } from '@/lib/utils'
 import type Stripe from 'stripe'
 
 export async function POST(request: NextRequest) {
   const stripe = getStripe()
   const body = await request.text()
   const sig = request.headers.get('stripe-signature') ?? ''
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? ''
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
+  if (!webhookSecret) {
+    console.error('[stripe-webhook] STRIPE_WEBHOOK_SECRET not set')
+    return NextResponse.json({ error: 'Misconfigured' }, { status: 500 })
+  }
 
   let event: Stripe.Event
   try {
@@ -42,7 +49,7 @@ export async function POST(request: NextRequest) {
     // Look up the pre-created booking by Stripe session ID
     const { data: booking } = await supabase
       .from('bookings')
-      .select('id, booking_uuid, customer_name, customer_email, customer_phone, listing_title, booking_date, start_time, end_time, guest_count, base_amount_cents, category')
+      .select('id, status, booking_uuid, customer_name, customer_email, customer_phone, listing_title, booking_date, start_time, end_time, guest_count, base_amount_cents, category')
       .eq('stripe_session_id', session.id)
       .maybeSingle()
 
@@ -51,8 +58,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true })
     }
 
+    // Idempotency — Stripe retries for 72h on timeout; skip if already confirmed
+    if (booking.status === 'confirmed') {
+      console.log('[stripe-webhook] checkout.session.completed: already confirmed, skipping', session.id)
+      return NextResponse.json({ received: true })
+    }
+
+    // Handle both string and expanded-object forms of payment_intent
+    const piId = typeof session.payment_intent === 'string'
+      ? session.payment_intent
+      : (session.payment_intent as Stripe.PaymentIntent | null)?.id ?? null
+
     // Mark confirmed + store the underlying PaymentIntent ID (for refund tracking)
-    const piId = typeof session.payment_intent === 'string' ? session.payment_intent : null
     const { error: updateError } = await supabase
       .from('bookings')
       .update({
@@ -65,51 +82,51 @@ export async function POST(request: NextRequest) {
 
     if (updateError) {
       console.error('[stripe-webhook] checkout.session.completed: DB update failed', updateError)
+      // Alert Slack — customer paid but booking stays pending in admin dashboard
+      await postSlackText([
+        '🚨 *CRITICAL: PAYMENT LINK BOOKING DB FAILED* 🚨',
+        '_Customer paid but booking status could not be confirmed in database._',
+        `Session: \`${session.id}\`${piId ? `  ·  PI: \`${piId}\`` : ''}`,
+        `Customer: ${booking.customer_name} · ${booking.customer_email}`,
+        `Cruise: ${booking.listing_title}  ·  Date: ${booking.booking_date ?? '—'}`,
+        '_Manually flip status to confirmed in Supabase and verify FareHarbor._',
+      ].join('\n'))
+      // Still send confirmation email — customer paid and needs their booking details
     }
 
-    // Slack notification
-    const webhookUrl = process.env.SLACK_WEBHOOK_URL
-    if (webhookUrl) {
-      const guestCount = Number(booking.guest_count ?? 1)
-      const startTime = booking.start_time
-        ? new Date(booking.start_time).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' })
-        : '—'
-      const text = [
-        `*Payment link booking confirmed!* 🎉`,
-        `*${booking.listing_title}*`,
-        `📅 ${booking.booking_date ?? '—'} · ${startTime}`,
-        `👥 ${guestCount} guest${guestCount !== 1 ? 's' : ''}`,
-        `💰 €${((session.amount_total ?? 0) / 100).toFixed(0)}`,
-        `👤 ${booking.customer_name} · ${booking.customer_email}`,
-        booking.booking_uuid ? `🎫 FH: ${booking.booking_uuid}` : '',
-        piId ? `💳 PI: ${piId}` : '',
-      ].filter(Boolean).join('\n')
-      await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-      }).catch(err => console.error('[stripe-webhook] Slack (payment link) failed:', err))
-    }
-
-    // Send booking confirmation email
     const guestCount = Number(booking.guest_count ?? 1)
-    await sendConfirmationEmail({
-      contact: {
-        name: booking.customer_name ?? '',
-        email: booking.customer_email ?? '',
-        phone: booking.customer_phone ?? undefined,
-      },
-      listingTitle: booking.listing_title ?? '',
-      date: booking.booking_date ?? '',
-      startAt: booking.start_time || null,
-      endAt: booking.end_time || null,
-      guestCount,
-      amountCents: session.amount_total ?? 0,
-      extrasSelected: [],
-      fhBookingUuid: booking.booking_uuid ?? undefined,
-      category: booking.category ?? null,
-      fareharborCustomerTypeRatePk: null,
-    }).catch(err => console.error('[stripe-webhook] payment link confirmation email failed:', err))
+    const startTime = formatAmsterdamTime(booking.start_time)
+    const slackText = [
+      `*Payment link booking confirmed!* 🎉`,
+      `*${booking.listing_title}*`,
+      `📅 ${booking.booking_date ?? '—'} · ${startTime}`,
+      `👥 ${guestCount} guest${guestCount !== 1 ? 's' : ''}`,
+      `💰 €${((session.amount_total ?? 0) / 100).toFixed(0)}`,
+      `👤 ${booking.customer_name} · ${booking.customer_email}`,
+      booking.booking_uuid ? `🎫 FH: ${booking.booking_uuid}` : '',
+      piId ? `💳 PI: ${piId}` : '',
+    ].filter(Boolean).join('\n')
+
+    await Promise.allSettled([
+      postSlackText(slackText),
+      sendConfirmationEmail({
+        contact: {
+          name: booking.customer_name ?? '',
+          email: booking.customer_email ?? '',
+          phone: booking.customer_phone ?? undefined,
+        },
+        listingTitle: booking.listing_title ?? '',
+        date: booking.booking_date ?? '',
+        startAt: booking.start_time || null,
+        endAt: booking.end_time || null,
+        guestCount,
+        amountCents: session.amount_total ?? 0,
+        extrasSelected: [],
+        fhBookingUuid: booking.booking_uuid ?? undefined,
+        category: booking.category ?? null,
+        fareharborCustomerTypeRatePk: null,
+      }),
+    ])
   }
 
   // ── checkout.session.expired ──────────────────────────────────────────────
@@ -143,26 +160,21 @@ export async function POST(request: NextRequest) {
     }
 
     // Mark cancelled in Supabase
-    await supabase
+    const { error: updateError } = await supabase
       .from('bookings')
       .update({ status: 'cancelled', payment_status: 'expired' })
       .eq('id', booking.id)
 
-    // Slack note
-    const webhookUrl = process.env.SLACK_WEBHOOK_URL
-    if (webhookUrl) {
-      const text = [
-        `⏰ *Payment link expired — FH slot released*`,
-        `${booking.listing_title}`,
-        `👤 ${booking.customer_name}`,
-        booking.booking_uuid ? `FH cancelled: ${booking.booking_uuid}` : '',
-      ].filter(Boolean).join('\n')
-      await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-      }).catch(() => {})
+    if (updateError) {
+      console.error('[stripe-webhook] checkout.session.expired: DB update failed', updateError)
     }
+
+    await postSlackText([
+      `⏰ *Payment link expired — FH slot released*`,
+      `${booking.listing_title}`,
+      `👤 ${booking.customer_name}`,
+      booking.booking_uuid ? `FH cancelled: ${booking.booking_uuid}` : '',
+    ].filter(Boolean).join('\n'))
   }
 
   // ── payment_intent.succeeded ──────────────────────────────────────────────
@@ -217,50 +229,7 @@ export async function POST(request: NextRequest) {
     console.log('[stripe-webhook] payment_intent.succeeded — creating booking for PI:', pi.id)
 
     // Retrieve extras line items from the stored quote breakdown.
-    // The quote was consumed at intent creation time but stays in the table for lookups.
-    type ExtraLineItem = {
-      name: string
-      amount_cents: number
-      category?: string
-      extra_id?: string
-      quantity?: number
-      is_per_person_pick?: boolean
-    }
-    let extrasSelected: ExtraLineItem[] = []
-    const quoteId = meta.quote_id
-    if (quoteId) {
-      const { data: quoteRow } = await supabase
-        .from('pricing_quotes')
-        .select('breakdown, extras_amount_cents')
-        .eq('id', quoteId)
-        .maybeSingle()
-
-      if (quoteRow?.breakdown) {
-        type Breakdown = {
-          extrasCalculation?: {
-            line_items?: Array<{
-              name?: string
-              amount_cents?: number
-              category?: string
-              extra_id?: string
-              quantity?: number
-              is_per_person_pick?: boolean
-            }>
-          }
-        }
-        const bd = quoteRow.breakdown as Breakdown
-        extrasSelected = (bd.extrasCalculation?.line_items ?? [])
-          .filter(li => Boolean(li.name) && typeof li.amount_cents === 'number' && li.amount_cents > 0)
-          .map(li => ({
-            name: li.name!,
-            amount_cents: li.amount_cents!,
-            ...(li.category ? { category: li.category } : {}),
-            ...(li.extra_id ? { extra_id: li.extra_id } : {}),
-            ...(li.quantity != null ? { quantity: li.quantity } : {}),
-            ...(li.is_per_person_pick ? { is_per_person_pick: true } : {}),
-          }))
-      }
-    }
+    const extrasSelected = await getExtrasFromQuote(meta.quote_id)
 
     // Create the FareHarbor booking
     const fh = getFareHarborClient()
@@ -349,35 +318,22 @@ export async function POST(request: NextRequest) {
       // Don't return early — still send Slack + email so we know the cruise is booked
     }
 
-    // Slack notification
-    const webhookUrl = process.env.SLACK_WEBHOOK_URL
-    if (webhookUrl) {
-      const startTime = meta.start_at
-        ? new Date(meta.start_at).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' })
-        : '—'
-      const endTime = meta.end_at
-        ? new Date(meta.end_at).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' })
-        : '—'
-      const text = [
-        `*New booking confirmed!* 🎉 _(iDEAL/async — via webhook)_`,
-        `*${meta.listing_title}*`,
-        `📅 ${meta.date} · ${startTime} – ${endTime}`,
-        `👥 ${guestCount} guest${guestCount !== 1 ? 's' : ''} · ${meta.category}`,
-        `💰 €${(pi.amount / 100).toFixed(0)}`,
-        `👤 ${meta.guest_name} · ${meta.guest_email}`,
-        fhBookingUuid ? `🎫 FH: ${fhBookingUuid}` : '',
-        `💳 PI: ${pi.id}`,
-      ].filter(Boolean).join('\n')
+    const startTime = formatAmsterdamTime(meta.start_at)
+    const endTime = formatAmsterdamTime(meta.end_at)
+    const slackText = [
+      `*New booking confirmed!* 🎉 _(iDEAL/async — via webhook)_`,
+      `*${meta.listing_title}*`,
+      `📅 ${meta.date} · ${startTime} – ${endTime}`,
+      `👥 ${guestCount} guest${guestCount !== 1 ? 's' : ''} · ${meta.category}`,
+      `💰 €${(pi.amount / 100).toFixed(0)}`,
+      `👤 ${meta.guest_name} · ${meta.guest_email}`,
+      fhBookingUuid ? `🎫 FH: ${fhBookingUuid}` : '',
+      `💳 PI: ${pi.id}`,
+    ].filter(Boolean).join('\n')
 
-      await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-      }).catch(err => console.error('[stripe-webhook] Slack notification failed:', err))
-    }
-
-    // Confirmation email + catering alert (fire concurrently)
+    // Slack + email + catering fire concurrently (all best-effort side channels)
     await Promise.allSettled([
+      postSlackText(slackText),
       sendConfirmationEmail({
         contact: {
           name: meta.guest_name ?? '',
@@ -402,7 +358,7 @@ export async function POST(request: NextRequest) {
         dateStr: meta.date ?? null,
         startTimeStr: meta.start_at || null,
         guestCount,
-        extrasSelected: extrasSelected as never,
+        extrasSelected,
       }),
     ])
   }
@@ -412,7 +368,9 @@ export async function POST(request: NextRequest) {
   // Update the booking's payment_status in Supabase + post a Slack note.
   if (event.type === 'charge.refunded') {
     const charge = event.data.object as Stripe.Charge
-    const piId = typeof charge.payment_intent === 'string' ? charge.payment_intent : null
+    const piId = typeof charge.payment_intent === 'string'
+      ? charge.payment_intent
+      : (charge.payment_intent as Stripe.PaymentIntent | null)?.id ?? null
     if (piId) {
       const refundedCents = charge.amount_refunded
       const isFullRefund = refundedCents >= charge.amount
@@ -436,19 +394,11 @@ export async function POST(request: NextRequest) {
         console.error('[stripe-webhook] reportRefundAdjustment error (ignored):', err)
       }
 
-      const webhookUrl = process.env.SLACK_WEBHOOK_URL
-      if (webhookUrl) {
-        const text = [
-          isFullRefund ? '↩️ *Full refund issued*' : '↩️ *Partial refund issued*',
-          `Amount refunded: €${(refundedCents / 100).toFixed(2)}`,
-          `PI: \`${piId}\``,
-        ].join('\n')
-        await fetch(webhookUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text }),
-        }).catch(() => {})
-      }
+      await postSlackText([
+        isFullRefund ? '↩️ *Full refund issued*' : '↩️ *Partial refund issued*',
+        `Amount refunded: €${(refundedCents / 100).toFixed(2)}`,
+        `PI: \`${piId}\``,
+      ].join('\n'))
     }
   }
 
@@ -458,26 +408,18 @@ export async function POST(request: NextRequest) {
   if (event.type === 'charge.dispute.created') {
     const dispute = event.data.object as Stripe.Dispute
     const chargeId = typeof dispute.charge === 'string' ? dispute.charge : (dispute.charge as Stripe.Charge)?.id
-    const webhookUrl = process.env.SLACK_WEBHOOK_URL
 
-    if (webhookUrl) {
-      const text = [
-        '🚨 *CHARGEBACK OPENED* 🚨',
-        '_A customer disputed a charge. Respond in Stripe within 7 days to avoid auto-losing._',
-        '',
-        `Amount: €${(dispute.amount / 100).toFixed(2)}`,
-        `Reason: ${dispute.reason ?? 'unknown'}`,
-        `Charge: \`${chargeId}\``,
-        `Dispute: \`${dispute.id}\``,
-        '',
-        `https://dashboard.stripe.com/disputes/${dispute.id}`,
-      ].join('\n')
-      await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-      }).catch(() => {})
-    }
+    await postSlackText([
+      '🚨 *CHARGEBACK OPENED* 🚨',
+      '_A customer disputed a charge. Respond in Stripe within 7 days to avoid auto-losing._',
+      '',
+      `Amount: €${(dispute.amount / 100).toFixed(2)}`,
+      `Reason: ${dispute.reason ?? 'unknown'}`,
+      `Charge: \`${chargeId}\``,
+      `Dispute: \`${dispute.id}\``,
+      '',
+      `https://dashboard.stripe.com/disputes/${dispute.id}`,
+    ].join('\n'))
   }
 
   // ── payment_intent.payment_failed ──────────────────────────────────────────
@@ -488,22 +430,14 @@ export async function POST(request: NextRequest) {
     const pi = event.data.object as Stripe.PaymentIntent
     const meta = pi.metadata ?? {}
     const failureMsg = pi.last_payment_error?.message ?? 'unknown reason'
-    const webhookUrl = process.env.SLACK_WEBHOOK_URL
 
-    if (webhookUrl) {
-      const text = [
-        `💳 *Payment failed* — €${(pi.amount / 100).toFixed(0)}`,
-        `Reason: ${failureMsg}`,
-        meta.listing_title ? `Cruise: ${meta.listing_title}` : '',
-        meta.guest_name ? `Guest: ${meta.guest_name} · ${meta.guest_email}` : '',
-        `PI: \`${pi.id}\``,
-      ].filter(Boolean).join('\n')
-      await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-      }).catch(() => {})
-    }
+    await postSlackText([
+      `💳 *Payment failed* — €${(pi.amount / 100).toFixed(0)}`,
+      `Reason: ${failureMsg}`,
+      meta.listing_title ? `Cruise: ${meta.listing_title}` : '',
+      meta.guest_name ? `Guest: ${meta.guest_name} · ${meta.guest_email}` : '',
+      `PI: \`${pi.id}\``,
+    ].filter(Boolean).join('\n'))
   }
 
   return NextResponse.json({ received: true })
@@ -514,7 +448,6 @@ export async function POST(request: NextRequest) {
  * This is critical — Stripe confirmed the money, but FareHarbor or Supabase failed.
  */
 async function alertWebhookFailure(pi: Stripe.PaymentIntent, reason: string) {
-  const webhookUrl = process.env.SLACK_WEBHOOK_URL
   const meta = pi.metadata ?? {}
 
   const text = [
@@ -530,12 +463,8 @@ async function alertWebhookFailure(pi: Stripe.PaymentIntent, reason: string) {
     '_Manually create the FareHarbor booking and send a confirmation email._',
   ].join('\n')
 
-  if (webhookUrl) {
-    await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-    }).catch(err => console.error('[stripe-webhook] alertWebhookFailure Slack failed:', err))
+  if (process.env.SLACK_WEBHOOK_URL) {
+    await postSlackText(text)
   } else {
     console.error('[stripe-webhook] CRITICAL (no Slack configured):', text)
   }
