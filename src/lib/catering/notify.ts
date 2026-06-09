@@ -8,6 +8,7 @@
  */
 
 import { postSlackText } from '@/lib/slack/send-notification'
+import { formatAmsterdamTime } from '@/lib/utils'
 import { filterCateringItems } from './filter'
 import type { ExtrasLineItem } from './filter'
 
@@ -31,11 +32,7 @@ export async function notifyCateringOrder(input: CateringNotifyInput): Promise<v
         weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
       })
     : '—'
-  const timeLabel = startTimeStr
-    ? new Date(startTimeStr).toLocaleTimeString('nl-NL', {
-        hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam',
-      })
-    : '—'
+  const timeLabel = formatAmsterdamTime(startTimeStr)
 
   const hoursUntil = startTimeStr
     ? (new Date(startTimeStr).getTime() - Date.now()) / 3_600_000

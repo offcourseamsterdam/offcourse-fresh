@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe } from '@/lib/stripe/server'
 import { Resend } from 'resend'
 import { paymentReminderEmailHtml } from '@/emails/PaymentReminderEmail'
-import { format } from 'date-fns'
+import { formatAmsterdamTime } from '@/lib/utils'
 import { requireCronSecret } from '@/lib/auth/require-cron-secret'
 
 /**
@@ -56,10 +56,10 @@ export async function GET(request: NextRequest) {
     if (!paymentUrl) continue
 
     const dateFormatted = booking.booking_date
-      ? format(new Date(booking.booking_date), 'd MMMM yyyy')
+      ? new Date(booking.booking_date + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
       : ''
     const startTimeFormatted = booking.start_time
-      ? format(new Date(booking.start_time), 'HH:mm')
+      ? formatAmsterdamTime(booking.start_time)
       : ''
 
     try {

@@ -10,6 +10,7 @@
  */
 
 import { postSlackText } from '@/lib/slack/send-notification'
+import { formatAmsterdamTime } from '@/lib/utils'
 
 export type BookingFailureStage =
   | 'fareharbor_validate'   // FH says not bookable
@@ -85,9 +86,7 @@ export async function notifyBookingFailure(ctx: BookingFailureContext): Promise<
   }
   if (ctx.cruise.listingTitle) {
     const timeStr = ctx.cruise.startAt
-      ? new Date(ctx.cruise.startAt).toLocaleTimeString('nl-NL', {
-          hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam',
-        })
+      ? formatAmsterdamTime(ctx.cruise.startAt)
       : ''
     lines.push(`*Cruise:* ${ctx.cruise.listingTitle} · ${ctx.cruise.date ?? '?'}${timeStr ? ' · ' + timeStr : ''}`)
   }

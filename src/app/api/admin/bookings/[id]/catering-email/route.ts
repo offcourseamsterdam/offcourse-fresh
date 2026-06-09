@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { filterCateringItems } from '@/lib/catering/filter'
 import { buildCateringEmailText, buildCateringEmailSubject } from '@/lib/catering/email-template'
 import { postSlackText } from '@/lib/slack/send-notification'
+import { formatAmsterdamTime } from '@/lib/utils'
 import { Resend } from 'resend'
 
 let _resend: Resend | null = null
@@ -112,11 +113,7 @@ export async function POST(
           weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
         })
       : '—'
-    const timeLabel = booking.start_time
-      ? new Date(booking.start_time).toLocaleTimeString('nl-NL', {
-          hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam',
-        })
-      : '—'
+    const timeLabel = formatAmsterdamTime(booking.start_time)
     const slackPrefix = isResend ? '🔄 *Catering order resent to supplier*' : '🍽️ *Catering order sent to supplier*'
     await postSlackText(
       `${slackPrefix}\n*${cruiseName}* — ${dateLabel} at ${timeLabel}\n${booking.guest_count ? `${booking.guest_count} guests\n` : ''}${itemSummary}`

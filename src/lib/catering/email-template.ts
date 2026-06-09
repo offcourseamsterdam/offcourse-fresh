@@ -3,6 +3,8 @@
  * No HTML, no styling. Reads like a regular email from a person.
  */
 
+import { formatAmsterdamTime } from '@/lib/utils'
+
 function fmtDate(dateStr: string | null): string {
   if (!dateStr) return '—'
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-NL', {
@@ -11,10 +13,7 @@ function fmtDate(dateStr: string | null): string {
 }
 
 function fmtTime(timeStr: string | null): string {
-  if (!timeStr) return '—'
-  return new Date(timeStr).toLocaleTimeString('nl-NL', {
-    hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam',
-  })
+  return formatAmsterdamTime(timeStr)
 }
 
 export interface CateringEmailInput {

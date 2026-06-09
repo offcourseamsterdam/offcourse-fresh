@@ -1,5 +1,6 @@
 import { Resend } from 'resend'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { escapeHtml as esc } from '@/lib/utils'
 
 let _resend: Resend | null = null
 function getResend(): Resend {
@@ -45,17 +46,17 @@ async function lookupCustomerTypeInfo(
     const { data, error } = await supabase
       .from('fareharbor_items')
       .select('customer_types')
+      .contains('customer_types', [{ fareharbor_pk: ratePk }])
+      .maybeSingle()
     if (error || !data) return null
 
     type CtRow = { fareharbor_pk: number; name?: string; duration_minutes?: number }
-    for (const item of data) {
-      const cts = (item.customer_types ?? []) as CtRow[]
-      const found = cts.find(ct => ct.fareharbor_pk === ratePk)
-      if (found?.name) {
-        return {
-          name: found.name,
-          duration_minutes: found.duration_minutes ?? 0,
-        }
+    const cts = (data.customer_types ?? []) as CtRow[]
+    const found = cts.find(ct => ct.fareharbor_pk === ratePk)
+    if (found?.name) {
+      return {
+        name: found.name,
+        duration_minutes: found.duration_minutes ?? 0,
       }
     }
   } catch (err) {
@@ -96,7 +97,7 @@ export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<
   if (!process.env.RESEND_API_KEY) return
 
   const resend = getResend()
-  const location = p.departureLocation ?? 'Brouwersgracht 29, Amsterdam'
+  const location = esc(p.departureLocation ?? 'Brouwersgracht 29, Amsterdam')
 
   // ── Customer type lookup + end-time correction ──────────────────────────
   // Private cruises: FH returns end_at == start_at; recompute from duration.
@@ -122,7 +123,7 @@ export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<
   const categoryLabel = fmtCategory(p.category)
   // Append "× N" only for shared cruises with > 1 guest (e.g. "Adult × 4 · Shared")
   // Private bookings are 1 boat regardless of guest count.
-  const typeBase = ctInfo?.name ?? null
+  const typeBase = ctInfo?.name ? esc(ctInfo.name) : null
   const typeWithQty = typeBase && p.category === 'shared' && p.guestCount > 1
     ? `${typeBase} × ${p.guestCount}`
     : typeBase
@@ -130,12 +131,13 @@ export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<
 
   // ── Extras ──────────────────────────────────────────────────────────────
   function formatExtraName(e: { name: string; quantity?: number; is_per_person_pick?: boolean }) {
+    const safeName = esc(e.name)
     const qty = e.quantity ?? 1
     if (e.is_per_person_pick && qty > 0) {
-      return `${e.name} — for ${qty} ${qty === 1 ? 'person' : 'people'}`
+      return `${safeName} — for ${qty} ${qty === 1 ? 'person' : 'people'}`
     }
-    if (qty > 1) return `${e.name} × ${qty}`
-    return e.name
+    if (qty > 1) return `${safeName} × ${qty}`
+    return safeName
   }
   const extrasRows = p.extrasSelected.length > 0
     ? p.extrasSelected.map(e => `
@@ -181,13 +183,13 @@ export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<
       <p>we're down to water</p>
     </div>
     <div class="body">
-      <p class="greeting">Hi ${p.contact.name.split(' ')[0]}, your booking is confirmed!</p>
+      <p class="greeting">Hi ${esc(p.contact.name.split(' ')[0])}, your booking is confirmed!</p>
 
       <div class="detail-block">
         <table class="detail-table">
           <tr>
             <td class="detail-label">Cruise</td>
-            <td class="detail-value">${p.listingTitle}</td>
+            <td class="detail-value">${esc(p.listingTitle)}</td>
           </tr>
           ${typeValue ? `<tr>
             <td class="detail-label">Type</td>
@@ -195,7 +197,7 @@ export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<
           </tr>` : ''}
           <tr>
             <td class="detail-label">Date</td>
-            <td class="detail-value">${p.date}</td>
+            <td class="detail-value">${esc(p.date)}</td>
           </tr>
           ${timeRange ? `<tr>
             <td class="detail-label">Time</td>
@@ -208,7 +210,7 @@ export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<
           ${extrasRows}
           ${p.fhBookingUuid ? `<tr>
             <td class="detail-label">Booking ref</td>
-            <td class="detail-value" style="font-family: monospace; font-size: 12px;">${p.fhBookingUuid}</td>
+            <td class="detail-value" style="font-family: monospace; font-size: 12px;">${esc(p.fhBookingUuid)}</td>
           </tr>` : ''}
           <tr class="amount-row">
             <td class="detail-label">Paid</td>
@@ -275,8 +277,8 @@ export async function sendRescheduleEmail(p: RescheduleEmailInput): Promise<void
   if (!process.env.RESEND_API_KEY) return
 
   const resend = getResend()
-  const location = p.departureLocation ?? 'Brouwersgracht 29, Amsterdam'
-  const firstName = p.contact.name.split(' ')[0]
+  const location = esc(p.departureLocation ?? 'Brouwersgracht 29, Amsterdam')
+  const firstName = esc(p.contact.name.split(' ')[0])
 
   // Resolve correct end time (private cruises have end_at == start_at in FH)
   const ctInfo = await lookupCustomerTypeInfo(p.fareharborCustomerTypeRatePk)
@@ -296,7 +298,7 @@ export async function sendRescheduleEmail(p: RescheduleEmailInput): Promise<void
     : startTime
 
   const categoryLabel = fmtCategory(p.category)
-  const typeBase = ctInfo?.name ?? null
+  const typeBase = ctInfo?.name ? esc(ctInfo.name) : null
   const typeValue = [typeBase, categoryLabel].filter(Boolean).join(' · ') || null
 
   const html = `
@@ -341,7 +343,7 @@ export async function sendRescheduleEmail(p: RescheduleEmailInput): Promise<void
         <table class="detail-table">
           <tr>
             <td class="detail-label">Cruise</td>
-            <td class="detail-value">${p.listingTitle}</td>
+            <td class="detail-value">${esc(p.listingTitle)}</td>
           </tr>
           ${typeValue ? `<tr>
             <td class="detail-label">Type</td>
@@ -349,7 +351,7 @@ export async function sendRescheduleEmail(p: RescheduleEmailInput): Promise<void
           </tr>` : ''}
           <tr>
             <td class="detail-label">New date</td>
-            <td class="detail-value">${p.newDate}</td>
+            <td class="detail-value">${esc(p.newDate)}</td>
           </tr>
           ${timeRange ? `<tr>
             <td class="detail-label">New time</td>
@@ -361,7 +363,7 @@ export async function sendRescheduleEmail(p: RescheduleEmailInput): Promise<void
           </tr>
           ${p.fhBookingUuid ? `<tr>
             <td class="detail-label">Booking ref</td>
-            <td class="detail-value" style="font-family: monospace; font-size: 12px;">${p.fhBookingUuid}</td>
+            <td class="detail-value" style="font-family: monospace; font-size: 12px;">${esc(p.fhBookingUuid)}</td>
           </tr>` : ''}
         </table>
       </div>

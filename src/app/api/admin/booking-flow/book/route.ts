@@ -13,6 +13,7 @@ import { sendConfirmationEmail } from '@/lib/booking/send-confirmation-email'
 import { notifyCateringOrder } from '@/lib/catering/notify'
 import { notifyBookingFailure } from '@/lib/booking/notify-booking-failure'
 import { extractVat } from '@/lib/extras/calculate'
+import { formatAmsterdamTime } from '@/lib/utils'
 import { postSlackText } from '@/lib/slack/send-notification'
 import type { Json } from '@/lib/supabase/types'
 
@@ -882,7 +883,7 @@ async function alertBookingSaveFailure(p: BookingPayload, dbError: string) {
     `• Stripe Payment Intent: \`${p.stripePaymentIntentId ?? 'internal'}\``,
     `• Customer: ${p.contact.name} · ${p.contact.email} · ${p.contact.phone}`,
     `• Cruise: ${p.listingTitle}`,
-    `• Date: ${p.date} ${p.startAt ? '· ' + new Date(p.startAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' }) : ''}`,
+    `• Date: ${p.date} ${p.startAt ? '· ' + formatAmsterdamTime(p.startAt) : ''}`,
     `• Guests: ${p.guestCount} · Category: ${p.category}`,
     `• Base: €${(p.baseAmountCents / 100).toFixed(2)} · Extras: €${(p.extrasAmountCents / 100).toFixed(2)}`,
     p.note ? `• Note: ${p.note}` : '',
@@ -927,8 +928,8 @@ async function sendSlackNotification(p: SlackPayload) {
   const webhookUrl = process.env.SLACK_WEBHOOK_URL
   if (!webhookUrl) return // not configured
 
-  const startTime = p.startAt ? new Date(p.startAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' }) : '—'
-  const endTime = p.endAt ? new Date(p.endAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' }) : '—'
+  const startTime = formatAmsterdamTime(p.startAt)
+  const endTime = formatAmsterdamTime(p.endAt)
 
   const isInternal = p.bookingSource && p.bookingSource !== 'website'
   const isPartnerInvoice = p.bookingSource === 'partner_invoice' && p.partnerInvoice

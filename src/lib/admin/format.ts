@@ -1,3 +1,5 @@
+import { formatAmsterdamTime } from '@/lib/utils'
+
 /** Format a date string (YYYY-MM-DD or ISO) for display in the admin. */
 export function fmtAdminDate(dateStr: string | null): string {
   if (!dateStr) return '—'
@@ -10,12 +12,7 @@ export function fmtAdminDate(dateStr: string | null): string {
 
 /** Format an ISO datetime string as HH:MM in Amsterdam timezone. */
 export function fmtAdminTime(iso: string | null): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleTimeString('nl-NL', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'Europe/Amsterdam',
-  })
+  return formatAmsterdamTime(iso)
 }
 
 /** Format cents as €X,XX (nl-NL decimal). Returns '—' for null or 0. */
@@ -48,8 +45,6 @@ export function fmtAdminDatetime(iso: string | null): string {
  */
 export function fmtAdminDateCreated(iso: string | null): string {
   if (!iso) return '—'
-  const d = new Date(iso)
-  const date = d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', timeZone: 'Europe/Amsterdam' })
-  const time = d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' })
-  return `${date}, ${time}`
+  const date = new Date(iso).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', timeZone: 'Europe/Amsterdam' })
+  return `${date}, ${formatAmsterdamTime(iso)}`
 }

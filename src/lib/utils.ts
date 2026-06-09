@@ -114,3 +114,22 @@ export function getErrorMessage(err: unknown): string {
 export function pluralize(n: number, singular: string, plural: string): string {
   return n === 1 ? singular : plural
 }
+
+// ── HTML escaping ─────────────────────────────────────────────────────────────
+
+/** Escape HTML-special chars for safe interpolation into HTML (e.g. email templates). */
+export function escapeHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+// ── Amsterdam timezone formatting ─────────────────────────────────────────────
+
+/** Format an ISO datetime (or Date) as HH:MM in Amsterdam time (nl-NL). Returns '—' for null/undefined. */
+export function formatAmsterdamTime(value: string | number | Date | null | undefined): string {
+  if (!value) return '—'
+  return new Date(value).toLocaleTimeString('nl-NL', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Europe/Amsterdam',
+  })
+}

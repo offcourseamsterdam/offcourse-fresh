@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { formatAmsterdamTime } from '@/lib/utils'
 import { Check, Calendar, Mail, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 
@@ -41,9 +42,7 @@ export default async function ConfirmationPage({ params, searchParams }: Props) 
 
   // Format time for display
   const startTime = booking?.start_time
-    ? new Date(booking.start_time).toLocaleTimeString('nl-NL', {
-        hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam'
-      })
+    ? formatAmsterdamTime(booking.start_time)
     : null
 
   const bookingDate = booking?.booking_date

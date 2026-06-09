@@ -1,4 +1,4 @@
-import { fmtEuros } from '@/lib/utils'
+import { fmtEuros, formatAmsterdamTime } from '@/lib/utils'
 
 interface BookingItem {
   id: string
@@ -60,7 +60,6 @@ function formatBookingDate(dateIso: string, startTimeIso: string | null): string
   const d = new Date(dateIso)
   const datePart = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
   if (!startTimeIso) return datePart
-  const t = new Date(startTimeIso)
-  const timePart = t.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' })
+  const timePart = formatAmsterdamTime(startTimeIso)
   return `${datePart} · ${timePart}`
 }

@@ -1,9 +1,8 @@
 import type { Rate } from './types'
+import { formatAmsterdamTime } from '@/lib/utils'
 
 export function fmtTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('nl-NL', {
-    hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam',
-  })
+  return formatAmsterdamTime(iso)
 }
 
 export function fmtPrice(cents: number) {
