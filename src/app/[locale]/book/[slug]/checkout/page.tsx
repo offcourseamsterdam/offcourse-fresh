@@ -55,7 +55,7 @@ export default async function CheckoutPage({ params, searchParams }: Props) {
   }
 
   return (
-    <div className="min-h-screen bg-texture-teal">
+    <div className="min-h-screen bg-texture-lightgreen">
       <CheckoutFlow
         listingSlug={slug}
         cancellationTiers={cancellationTiers}

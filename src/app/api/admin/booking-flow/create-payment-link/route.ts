@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
+import { resolveCustomerTypeName } from '@/lib/fareharbor/customer-type-name'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe } from '@/lib/stripe/server'
 import { Resend } from 'resend'
@@ -107,6 +108,8 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient()
     const bookingId = fhBooking?.uuid ?? `pl_${Date.now()}`
     const baseVatAmountCents = extractVat(Number(overrideAmountCents), 9)
+    // Snapshot the customer-type label (best-effort; null never blocks the booking).
+    const customerTypeName = await resolveCustomerTypeName(Number(availPk), Number(customerTypeRatePk))
     const { data: savedBooking, error: dbError } = await supabase
       .from('bookings')
       .insert({
@@ -114,6 +117,7 @@ export async function POST(request: NextRequest) {
         booking_uuid: fhBooking?.uuid ?? null,
         fareharbor_availability_pk: Number(availPk),
         fareharbor_customer_type_rate_pk: Number(customerTypeRatePk),
+        customer_type_name: customerTypeName,
         stripe_session_id: session.id,
         stripe_amount: Number(overrideAmountCents),
         base_amount_cents: Number(overrideAmountCents),
