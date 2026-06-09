@@ -28,6 +28,12 @@ export function PaymentLinkStep({
 
   const amountCents = Math.round(parseFloat(amountInput || '0') * 100)
 
+  // Price breakdown — derived live from whatever is in the amount input
+  const cityTaxCents   = guestCount * 260                                     // €2.60 per person
+  const baseCents      = Math.max(0, amountCents - cityTaxCents)               // cruise + extras
+  const vatInBaseCents = Math.round(baseCents * 9 / 109)                       // 9% included in base
+  const fmt = (c: number) => `€${(c / 100).toFixed(2).replace('.', ',')}`
+
   async function handleSubmit() {
     if (amountCents < 100) {
       setError('Minimum bedrag is €1.00')
@@ -115,6 +121,30 @@ export function PaymentLinkStep({
           />
           <p className="text-xs text-zinc-400">Pas aan voor korting of custom quote.</p>
         </div>
+
+        {/* Live price breakdown */}
+        {amountCents > 0 && (
+          <div className="rounded-md border border-zinc-100 bg-zinc-50 px-4 py-3 space-y-1.5 text-sm">
+            <div className="flex justify-between">
+              <span className="text-zinc-500">Basis cruise</span>
+              <span className="text-zinc-700">{fmt(baseCents)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-zinc-500">
+                Toeristenbelasting
+                <span className="text-zinc-400 ml-1">€2,60 × {guestCount}</span>
+              </span>
+              <span className="text-zinc-700">{fmt(cityTaxCents)}</span>
+            </div>
+            <div className="flex justify-between font-semibold border-t border-zinc-200 pt-1.5">
+              <span>Totaal</span>
+              <span>{fmt(amountCents)}</span>
+            </div>
+            <p className="text-xs text-zinc-400 pt-0.5">
+              9% btw inbegrepen in basis: {fmt(vatInBaseCents)}
+            </p>
+          </div>
+        )}
 
         {error && (
           <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
