@@ -11,7 +11,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "gads": "tsx scripts/google-ads/gads.ts"
+    "gads": "tsx scripts/google-ads/gads.ts",
+    "report:conversions": "tsx scripts/conversion-report.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
