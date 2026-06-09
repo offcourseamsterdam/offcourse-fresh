@@ -27,10 +27,6 @@ export function getCookie(name: string): string | null {
   return match ? decodeURIComponent(match[1]) : null
 }
 
-export function deleteCookie(name: string) {
-  document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;SameSite=Lax`
-}
-
 // ── ID generation ──
 
 export function generateId(): string {
@@ -156,10 +152,6 @@ export function captureClickIdsFromURL(): void {
     setCookie(COOKIE_GCLID, picked.value, GCLID_COOKIE_DAYS)
     setCookie(COOKIE_CLICK_TYPE, picked.type, GCLID_COOKIE_DAYS)
   }
-}
-
-export function getGclid(): string | null {
-  return getCookie(COOKIE_GCLID)
 }
 
 // ── Attribution cookie ──

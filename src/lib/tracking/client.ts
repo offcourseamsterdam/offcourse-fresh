@@ -195,8 +195,3 @@ export function trackWhatsAppClick(source: WhatsAppSource) {
 export function getSessionId(): string | null {
   return getCookie(COOKIE_SESSION_ID) ?? getAnonSessionId()
 }
-
-/** Get the current visitor ID. */
-export function getVisitorId(): string | null {
-  return getCookie(COOKIE_VISITOR_ID)
-}

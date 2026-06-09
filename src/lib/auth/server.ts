@@ -1,12 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import type { UserProfile, UserRole } from './types'
 
-export async function getSession() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  return user
-}
-
 export async function getUserProfile(): Promise<UserProfile | null> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

@@ -98,12 +98,3 @@ export function buildTypeMapFromAvailabilities(
 export async function getCustomerTypeMap(): Promise<Map<number, CustomerTypeConfig>> {
   return new Map()
 }
-
-export function getBoatForCustomerType(
-  customerTypePk: number,
-  typeMap: Map<number, CustomerTypeConfig>
-): BoatConfig | undefined {
-  const config = typeMap.get(customerTypePk)
-  if (!config) return undefined
-  return BOATS.find((b) => b.id === config.boat)
-}

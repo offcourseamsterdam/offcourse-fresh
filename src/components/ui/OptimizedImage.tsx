@@ -124,21 +124,3 @@ export function OptimizedImage({
     </picture>
   )
 }
-
-/**
- * Inject a `<link rel="preload">` for the LCP hero variant. Use only on
- * above-the-fold hero images. Place inside the page's <head> via Next.js metadata
- * or as a child of <head> in layouts.
- */
-export function buildHeroPreloadProps(asset: ImageAsset, context: ImageContext = 'hero') {
-  if (asset.status !== 'complete' || !asset.variants?.length) return null
-  const sizes = IMAGE_CONTEXT_SIZES[context]
-  return {
-    rel: 'preload' as const,
-    as: 'image' as const,
-    imageSrcSet: buildSrcSet(asset.variants, 'avif'),
-    imageSizes: sizes,
-    type: 'image/avif',
-    fetchPriority: 'high' as const,
-  }
-}
