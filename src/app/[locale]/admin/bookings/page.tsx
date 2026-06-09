@@ -228,10 +228,7 @@ export default function BookingsPage() {
                         {b.customer_email && <p className="text-zinc-400 text-xs">{b.customer_email}</p>}
                       </td>
                       <td className="px-4 py-3 text-zinc-600">
-                        {b.category === 'shared'
-                          ? <span title={b.tour_item_name ?? ''}>{b.guest_count ?? '—'} {b.tour_item_name ? `(${b.tour_item_name})` : ''}</span>
-                          : (b.guest_count ?? '—')
-                        }
+                        {b.guest_count ?? '—'}
                       </td>
                       <td className="px-4 py-3 text-zinc-900 font-medium whitespace-nowrap">
                         {b.booking_source && b.booking_source !== 'website'

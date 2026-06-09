@@ -4,6 +4,7 @@ import { getFareHarborClient } from '@/lib/fareharbor/client'
 import type { FHBookingResponse } from '@/lib/fareharbor/types'
 import { resolveCustomerTypeName } from '@/lib/fareharbor/customer-type-name'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getStripe } from '@/lib/stripe/server'
 import type { BookingSource } from '@/lib/constants'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { normalizePartnerCode } from '@/lib/partner-codes/generate'
@@ -57,6 +58,24 @@ const PLATFORM_SOURCES = ['withlocals', 'clickandboat', 'getyourguide', 'tripadv
  *   Private boats: quantity is always 1 regardless of guest count (the rate IS the boat/duration).
  *   Shared boats: quantity = guestCount (each guest is a separate customer entry).
  */
+/**
+ * Pick which analytics session a booking belongs to.
+ *
+ * The browsing session captured on the PaymentIntent at intent-creation
+ * (`metadata.session_id`) is authoritative — it was recorded while the customer
+ * was still browsing. The client-sent `body.sessionId` is read at booking time,
+ * AFTER the Stripe payment redirect, so it points at a fresh post-payment session
+ * (the "/confirmation" orphan) and would detach the booking from the funnel that
+ * actually produced it. Prefer the PI value; fall back to the body value for
+ * non-Stripe bookings (full-discount / partner-invoice) that have no PaymentIntent.
+ */
+export function pickBookingSessionId(
+  piMetadataSessionId: string | null | undefined,
+  bodySessionId: string | null | undefined,
+): string | null {
+  return piMetadataSessionId || bodySessionId || null
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -110,11 +129,16 @@ export async function POST(request: NextRequest) {
 
     // ── Campaign attribution & commission ──────────────────────────────────
     // Resolves to one of three sources, in this precedence (last wins):
-    //   1. Cookie (oc_attr) — passive attribution from a tracked visit
+    //   1. Cookie (oc_attr) — passive attribution from a tracked visit (website only)
     //   2. Promo code with campaign_id — explicit code-scoped attribution
     //   3. Partner-invoice context — always wins when present
+    //
+    // Cookie attribution is intentionally skipped for non-website sources (GetYourGuide,
+    // WithLocals, stripe_recovery, etc.) — those bookings are entered by an admin whose
+    // browser may carry a partner cookie unrelated to the actual booking channel.
+    // Platform auto-attribution still runs via resolveCampaignId in saveToSupabase.
     const { campaignId: cookieCampaignId, partnerId, commissionAmountCents } = await resolveAttribution({
-      attrCookie: request.cookies.get('oc_attr')?.value ?? null,
+      attrCookie: bookingSource === 'website' ? (request.cookies.get('oc_attr')?.value ?? null) : null,
       promoCodeId: promoCodeId ?? null,
       partnerInvoiceContext,
       baseAmountCents: Number(baseAmountCents ?? 0),
@@ -221,6 +245,22 @@ export async function POST(request: NextRequest) {
     // bookings are created here; the webhook handles the iDEAL/async path.
     const gclid = request.cookies.get('oc_gclid')?.value ?? null
 
+    // Session attribution: the browsing session is captured on the PaymentIntent
+    // at intent-creation (metadata.session_id) — the same source the Stripe webhook
+    // trusts. body.sessionId is read client-side AFTER the payment redirect and
+    // points at a fresh "/confirmation" session, so it must NOT win. Retrieve the
+    // PI and prefer its session; never block a paid booking on this lookup.
+    let piSessionId: string | null = null
+    if (!isInternal && stripePaymentIntentId) {
+      try {
+        const pi = await getStripe().paymentIntents.retrieve(String(stripePaymentIntentId))
+        piSessionId = pi.metadata?.session_id ?? null
+      } catch (err) {
+        console.error('[book] could not read session_id from PaymentIntent metadata:', err)
+      }
+    }
+    const sessionId = pickBookingSessionId(piSessionId, body.sessionId as string | null)
+
     const bookingPayload = buildBookingPayload(
       body,
       { uuid: booking?.uuid },
@@ -230,6 +270,7 @@ export async function POST(request: NextRequest) {
         partnerId,
         commissionAmountCents,
         gclid,
+        sessionId,
       },
     )
 
@@ -370,6 +411,7 @@ function buildBookingPayload(
     partnerId: string | null
     commissionAmountCents: number | null
     gclid: string | null
+    sessionId: string | null
   },
 ): BookingPayload {
   const baseAmt = Number(body.baseAmountCents ?? 0)
@@ -412,7 +454,7 @@ function buildBookingPayload(
       : isInternal ? null : String(body.stripePaymentIntentId ?? ''),
     bookingSource: (body.bookingSource && body.bookingSource !== 'undefined' ? String(body.bookingSource) : 'website') as BookingSource,
     depositAmountCents: (isInternal && !isStripeRecovery) ? Number(body.depositAmountCents ?? 0) : null,
-    sessionId: (body.sessionId as string | null) ?? null,
+    sessionId: attribution.sessionId,
     cookieCampaignId: attribution.campaignId,
     partnerId: attribution.partnerId,
     commissionAmountCents: attribution.commissionAmountCents,
