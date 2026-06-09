@@ -1,7 +1,9 @@
 'use client'
 
 import { ReactNode } from 'react'
-import { motion } from 'framer-motion'
+import { LazyMotion, m } from 'framer-motion'
+
+const loadFeatures = () => import('framer-motion').then(res => res.domAnimation)
 import { Check, ChevronDown } from 'lucide-react'
 
 interface StepAccordionProps {
@@ -68,17 +70,19 @@ export function StepAccordion({
       </button>
 
       {/* Content — always mounted so child state survives step navigation */}
-      <motion.div
-        initial={false}
-        animate={isActive ? { height: 'auto', opacity: 1 } : { height: 0, opacity: 0 }}
-        transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
-        className="overflow-hidden"
-        aria-hidden={!isActive}
-      >
-        <div className="pb-4 px-1">
-          {children}
-        </div>
-      </motion.div>
+      <LazyMotion features={loadFeatures} strict>
+        <m.div
+          initial={false}
+          animate={isActive ? { height: 'auto', opacity: 1 } : { height: 0, opacity: 0 }}
+          transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
+          className="overflow-hidden"
+          aria-hidden={!isActive}
+        >
+          <div className="pb-4 px-1">
+            {children}
+          </div>
+        </m.div>
+      </LazyMotion>
     </div>
   )
 }

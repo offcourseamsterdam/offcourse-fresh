@@ -41,6 +41,8 @@ interface BookingDetailRowProps {
   promoCode: string | null
   discountAmountCents: number | null
   partnerName: string | null
+  category: string | null
+  customerTypeName: string | null
   className?: string
 }
 
@@ -72,6 +74,8 @@ export function BookingDetailRow({
   promoCode,
   discountAmountCents,
   partnerName,
+  category,
+  customerTypeName,
   className = '',
 }: BookingDetailRowProps) {
   const [showCancel, setShowCancel] = useState(false)
@@ -81,12 +85,14 @@ export function BookingDetailRow({
 
   const isCancelled = status === 'cancelled'
   const isInternal = bookingSource && bookingSource !== 'website'
-  const isWebsiteBooking = !bookingSource || bookingSource === 'website'
-  // Stripe recovery is "internal" in that the admin entered it manually,
-  // but the money DID come in. Display it like a paid booking (Base, City tax,
-  // Total charged) rather than the deposit-style block used for complimentary etc.
+  const isWebsiteBooking = !bookingSource || bookingSource === 'website' || bookingSource === 'payment_link'
+  // Stripe recovery + payment links both involve real Stripe money — display like
+  // paid bookings (Base, City tax, Total) rather than the deposit-style block
+  // used for complimentary / partner / GYG bookings.
   const isStripeRecovery = bookingSource === 'stripe_recovery'
-  const isDepositStyle = isInternal && !isStripeRecovery
+  const isPaymentLink = bookingSource === 'payment_link'
+  const isPaymentPending = status === 'pending_payment'
+  const isDepositStyle = isInternal && !isStripeRecovery && !isPaymentLink
   const extras = (extrasSelected ?? []) as AdminExtraLineItem[]
 
   // Group extras by category
@@ -238,9 +244,21 @@ export function BookingDetailRow({
                 )}
                 {/* 2-decimal precision intentional: financial breakdown must show exact cents */}
                 <div className="flex justify-between font-semibold border-t border-zinc-200 pt-1 mt-1">
-                  <span className="text-zinc-900">Total charged</span>
+                  <span className="text-zinc-900">
+                    {isPaymentPending ? 'Amount due' : 'Total charged'}
+                  </span>
                   <span className="text-zinc-900">{grandTotal != null ? fmtAdminAmount(grandTotal) : '—'}</span>
                 </div>
+                {isPaymentLink && isPaymentPending && (
+                  <p className="text-[10px] text-amber-600 mt-2 font-medium">
+                    💳 Payment link sent — awaiting payment from customer
+                  </p>
+                )}
+                {isPaymentLink && !isPaymentPending && (
+                  <p className="text-[10px] text-zinc-400 mt-2 italic">
+                    Paid via payment link.
+                  </p>
+                )}
                 {isStripeRecovery && (
                   <p className="text-[10px] text-zinc-400 mt-2 italic">
                     Manually recorded via Stripe recovery — actual Stripe charge may differ if refunded.
@@ -337,6 +355,8 @@ export function BookingDetailRow({
           currentStartAt={startTime}
           guestName={customerName}
           cruiseTitle={listingTitle}
+          category={category}
+          originalCustomerTypeName={customerTypeName}
           onClose={() => setShowReschedule(false)}
           onSuccess={() => { setShowReschedule(false); onRefresh() }}
         />

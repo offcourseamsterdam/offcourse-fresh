@@ -350,6 +350,11 @@ export function CheckoutFlow({
 
   // Load booking data from sessionStorage
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const paymentIntent = params.get('payment_intent')
+    const redirectStatus = params.get('redirect_status')
+    const isIdealReturn = !!(paymentIntent && redirectStatus === 'succeeded')
+
     const stored = sessionStorage.getItem(SESSION_BOOKING_KEY)
     if (stored) {
       try {
@@ -357,7 +362,9 @@ export function CheckoutFlow({
       } catch {
         setError('Could not restore your booking. Please go back and try again.')
       }
-    } else {
+    } else if (!isIdealReturn) {
+      // Only show "no data" error when we're NOT returning from an iDEAL redirect —
+      // in that case handlePaymentSuccess below will call the recovery endpoint.
       setError('No booking data found. Please start your booking from the cruise page.')
     }
 
@@ -368,11 +375,8 @@ export function CheckoutFlow({
     }
 
     // Handle iDEAL redirect return
-    const params = new URLSearchParams(window.location.search)
-    const paymentIntent = params.get('payment_intent')
-    const redirectStatus = params.get('redirect_status')
-    if (paymentIntent && redirectStatus === 'succeeded') {
-      handlePaymentSuccess(paymentIntent)
+    if (isIdealReturn) {
+      handlePaymentSuccess(paymentIntent!)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -575,7 +579,12 @@ export function CheckoutFlow({
       trackEvent('booking_completed', { listing: bookingData.listingSlug, promo: 'full' })
       sessionStorage.removeItem(SESSION_BOOKING_KEY)
       sessionStorage.removeItem(SESSION_CONTACT_KEY)
-      window.location.href = `/book/${bookingData.listingSlug}/confirmation?promo=full`
+      // Pass the FareHarbor UUID so the confirmation page can look up and display
+      // the full booking details. Falls back to ?promo=full if somehow missing.
+      const fhUuid = result.data?.booking?.uuid
+      window.location.href = fhUuid
+        ? `/book/${bookingData.listingSlug}/confirmation?fh=${fhUuid}`
+        : `/book/${bookingData.listingSlug}/confirmation?promo=full`
     } catch {
       setError('Something went wrong. Please contact us at info@offcourseamsterdam.com')
     } finally {
@@ -590,7 +599,26 @@ export function CheckoutFlow({
     const stored = sessionStorage.getItem(SESSION_BOOKING_KEY)
     const data: BookingData | null = stored ? JSON.parse(stored) : bookingData
     if (!data || !data.selectedSlot) {
-      setError('Booking data was lost during payment redirect. Your payment was received — please contact us at info@offcourseamsterdam.com')
+      // sessionStorage was cleared during the iDEAL bank redirect (cross-origin).
+      // Recover server-side from PI metadata + stored pricing quote — no data loss.
+      try {
+        setError(null)
+        const res = await fetch('/api/booking-flow/recover', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paymentIntentId }),
+        })
+        const result = await res.json()
+        if (result.ok && result.listingSlug) {
+          sessionStorage.removeItem(SESSION_BOOKING_KEY)
+          sessionStorage.removeItem(SESSION_CONTACT_KEY)
+          window.location.href = `/book/${result.listingSlug}/confirmation?payment_intent=${paymentIntentId}`
+          return
+        }
+      } catch {
+        // fall through to the error below
+      }
+      setError('We received your payment but could not complete the booking automatically. A confirmation email is on its way — if it doesn\'t arrive within a few minutes, please contact us at cruise@offcourseamsterdam.com')
       return
     }
 
@@ -686,7 +714,9 @@ export function CheckoutFlow({
 
   const boat = BOATS.find(b => b.id === bookingData.selectedBoat)
   const boatName = boat?.name ?? null
-  const boatImageUrl = boat?.imageUrl ?? bookingData.listingHeroImageUrl
+  // Prefer the hero image chosen on the virtual listing (what the customer
+  // actually browsed), falling back to the boat's stock photo only if unset.
+  const boatImageUrl = bookingData.listingHeroImageUrl ?? boat?.imageUrl ?? null
 
   const cruiseLabel = boatName && bookingData.selectedCustomerType
     ? `${boatName} · ${Math.floor(bookingData.selectedCustomerType.durationMinutes / 60)}h`

@@ -16,4 +16,5 @@ One file per track or major feature. Written before every PR and kept up to date
 | Google Ads admin dashboard (monitor & maintain) | [google-ads-dashboard.md](google-ads-dashboard.md) | — | done |
 | AI referrals tracking (ChatGPT/Perplexity/Gemini citations) | [ai-referrals-tracking.md](ai-referrals-tracking.md) | — | done |
 | WhatsApp click tracking (button usage analytics) | [whatsapp-click-tracking.md](whatsapp-click-tracking.md) | — | done |
+| Admin performance (cache + prefetch + parallel queries + images) | [admin-performance.md](admin-performance.md) | — | done |
 | Codebase refactoring plan | [codebase-refactoring-plan.md](codebase-refactoring-plan.md) | — | planned |

@@ -29,18 +29,22 @@ export async function GET() {
           customer_name, customer_email, customer_phone,
           tour_item_name, start_time, end_time, booking_date,
           guest_count, category, listing_title,
-          stripe_payment_intent_id, stripe_amount, status,
+          stripe_payment_intent_id, stripe_amount, status, payment_status,
           guest_note, booking_source, deposit_amount_cents,
           extras_selected, base_amount_cents, extras_amount_cents,
           base_vat_amount_cents, extras_vat_amount_cents, total_vat_amount_cents,
-          fareharbor_customer_type_rate_pk,
+          fareharbor_customer_type_rate_pk, customer_type_name,
           campaign_id, promo_code_id, discount_amount_cents,
           partner_id,
           campaigns ( name ),
           promo_codes ( code ),
           partners ( name )
         `)
-        .eq('status', 'confirmed')
+        .in('status', ['confirmed', 'booked', 'pending_payment'])
+        // Exclude skeleton rows created by FareHarbor's own booking.created webhook —
+        // those rows have no booking_date and duplicate our own full booking record.
+        // Every real booking (website, admin, stripe_recovery) always has booking_date set.
+        .not('booking_date', 'is', null)
         .order('booking_date', { ascending: false })
         .order('created_at', { ascending: false }),
       supabase
@@ -90,7 +94,8 @@ export async function GET() {
       return {
         ...b,
         end_time: endTime,
-        customer_type_name: ctInfo?.name ?? null,
+        // Prefer the snapshotted label; fall back to resolving the (volatile) rate PK.
+        customer_type_name: b.customer_type_name ?? ctInfo?.name ?? null,
         campaign_name: campaignName,
         promo_code: promoCode,
         partner_name: partnerName,

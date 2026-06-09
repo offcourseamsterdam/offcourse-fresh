@@ -41,13 +41,19 @@ export async function GET(
             .in('campaign_slug', campaignSlugs)
         : { data: [] as { id: string; visitor_id: string; campaign_slug: string | null }[] }
 
-      const sessionIds = sessions?.map((s) => s.id) ?? []
-      const { data: bookings } = sessionIds.length > 0
+      // Bookings: fetch by campaign_id (server-side attribution) — reliable source.
+      // Session-based counting was contaminated by browser tab bleed (e.g. a test booking
+      // in a tab that still had a campaign session active would count against the wrong campaign).
+      const campaignIds = campaigns.map((c) => c.id)
+      const { data: bookings } = campaignIds.length > 0
         ? await supabase
             .from('bookings')
-            .select('id, session_id, stripe_amount')
-            .in('session_id', sessionIds)
+            .select('id, campaign_id, stripe_amount')
+            .in('campaign_id', campaignIds)
             .eq('status', 'confirmed')
+            .eq('payment_status', 'paid')
+            .gte('created_at', from)
+            .lte('created_at', to)
         : { data: [] }
 
       const enriched = campaigns.map((c) => {
@@ -55,8 +61,7 @@ export async function GET(
         const uniqueUsers = new Set(
           campaignSessions.map((s) => s.visitor_id).filter((id) => !id.startsWith('anon_'))
         ).size
-        const campaignSessionIds = new Set(campaignSessions.map((s) => s.id))
-        const campaignBookings = bookings?.filter((b) => b.session_id && campaignSessionIds.has(b.session_id)) ?? []
+        const campaignBookings = bookings?.filter((b) => b.campaign_id === c.id) ?? []
         const revenue = campaignBookings.reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0)
         const investmentCents = c.investment_amount != null ? c.investment_amount * 100 : null
         const roi = investmentCents && investmentCents > 0

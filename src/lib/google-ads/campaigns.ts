@@ -1,4 +1,4 @@
-import { googleAdsCall, eurosToMicros, type AdsCallResult } from './campaign-client'
+import { googleAdsCall, eurosToMicros, customerPath, getCampaignConfig, type AdsCallResult } from './campaign-client'
 import { geoConstant, languageConstant } from './geo-constants'
 
 // Campaign management for Google Ads Search campaigns.
@@ -311,6 +311,12 @@ export function buildSearchCampaignOps(
 
 // ── Orchestrators (do the I/O) ──────────────────────────────────────────────────
 
+/** Resolve the customer resource path and numeric customer id in one call. */
+function custIds() {
+  const cust = customerPath()
+  return { cust, customerId: cust.split('/')[1] }
+}
+
 export interface CreateCampaignResult {
   ok: boolean
   validateOnly: boolean
@@ -338,7 +344,6 @@ export async function createSearchCampaign(
     return { ok: false, validateOnly, validationErrors }
   }
 
-  const { getCampaignConfig } = await import('./campaign-client')
   const cfg = getCampaignConfig()
   if ('error' in cfg) return { ok: false, validateOnly, error: cfg.error }
 
@@ -370,9 +375,7 @@ export async function setCampaignStatus(
   campaignId: string,
   status: 'ENABLED' | 'PAUSED',
 ): Promise<AdsCallResult> {
-  const { customerPath } = await import('./campaign-client')
-  const cust = customerPath() // "customers/<id>"
-  const customerId = cust.split('/')[1]
+  const { cust, customerId } = custIds()
   return googleAdsCall(`customers/${customerId}/campaigns:mutate`, {
     method: 'POST',
     body: {
@@ -388,9 +391,7 @@ export async function updateCampaignBudget(
   campaignId: string,
   newDailyEuros: number,
 ): Promise<AdsCallResult> {
-  const { customerPath } = await import('./campaign-client')
-  const cust = customerPath()
-  const customerId = cust.split('/')[1]
+  const { cust, customerId } = custIds()
 
   // Find the budget attached to this campaign.
   const q = `SELECT campaign.id, campaign_budget.resource_name FROM campaign WHERE campaign.id = ${Number(campaignId)}`
@@ -423,9 +424,7 @@ export async function addKeywords(
   matchType: MatchType,
   opts: { validateOnly?: boolean } = {},
 ): Promise<AdsCallResult> {
-  const { customerPath } = await import('./campaign-client')
-  const cust = customerPath()
-  const customerId = cust.split('/')[1]
+  const { cust, customerId } = custIds()
   return googleAdsCall(`customers/${customerId}/adGroupCriteria:mutate`, {
     method: 'POST',
     body: {
@@ -443,9 +442,7 @@ export async function addNegativeKeywords(
   negatives: string[],
   opts: { validateOnly?: boolean } = {},
 ): Promise<AdsCallResult> {
-  const { customerPath } = await import('./campaign-client')
-  const cust = customerPath()
-  const customerId = cust.split('/')[1]
+  const { cust, customerId } = custIds()
   return googleAdsCall(`customers/${customerId}/campaignCriteria:mutate`, {
     method: 'POST',
     body: {

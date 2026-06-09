@@ -2,11 +2,11 @@ import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
+import { resolveCustomerTypeName } from '@/lib/fareharbor/customer-type-name'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe } from '@/lib/stripe/server'
 import { Resend } from 'resend'
 import { paymentLinkEmailHtml } from '@/emails/PaymentLinkEmail'
-import { format } from 'date-fns'
 import { extractVat } from '@/lib/extras/calculate'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://offcourseamsterdam.com'
@@ -67,8 +67,19 @@ export async function POST(request: NextRequest) {
     // Step 3: Create Stripe Checkout Session with 24h expiry
     const stripe = getStripe()
     const expiresAt = Math.floor(Date.now() / 1000) + 86400
-    const startTimeFormatted = startAt ? format(new Date(startAt), 'HH:mm') : ''
-    const dateFormatted = date ? format(new Date(date), 'd MMMM yyyy') : ''
+    // Always format in Amsterdam timezone (Vercel runs UTC; +1/+2 offset matters)
+    const startTimeFormatted = startAt
+      ? new Intl.DateTimeFormat('nl-NL', {
+          hour: '2-digit', minute: '2-digit',
+          timeZone: 'Europe/Amsterdam', hour12: false,
+        }).format(new Date(startAt))
+      : ''
+    const dateFormatted = date
+      ? new Intl.DateTimeFormat('en-GB', {
+          day: 'numeric', month: 'long', year: 'numeric',
+          timeZone: 'Europe/Amsterdam',
+        }).format(new Date(date + 'T12:00:00Z'))
+      : ''
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
@@ -107,6 +118,8 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient()
     const bookingId = fhBooking?.uuid ?? `pl_${Date.now()}`
     const baseVatAmountCents = extractVat(Number(overrideAmountCents), 9)
+    // Snapshot the customer-type label (best-effort; null never blocks the booking).
+    const customerTypeName = await resolveCustomerTypeName(Number(availPk), Number(customerTypeRatePk))
     const { data: savedBooking, error: dbError } = await supabase
       .from('bookings')
       .insert({
@@ -114,6 +127,7 @@ export async function POST(request: NextRequest) {
         booking_uuid: fhBooking?.uuid ?? null,
         fareharbor_availability_pk: Number(availPk),
         fareharbor_customer_type_rate_pk: Number(customerTypeRatePk),
+        customer_type_name: customerTypeName,
         stripe_session_id: session.id,
         stripe_amount: Number(overrideAmountCents),
         base_amount_cents: Number(overrideAmountCents),
@@ -134,7 +148,7 @@ export async function POST(request: NextRequest) {
         customer_email: contact.email,
         customer_phone: contact.phone,
         guest_note: note || null,
-        status: 'confirmed',
+        status: 'pending_payment',
         payment_status: 'pending_payment',
         currency: 'eur',
         booking_source: 'payment_link',

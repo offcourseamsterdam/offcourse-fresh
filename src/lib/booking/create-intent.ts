@@ -122,6 +122,7 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
       listing_id: String(quoteRow.listing_id ?? ''),
       avail_pk: String(quoteRow.avail_pk),
       customer_type_rate_pk: String(quoteRow.customer_type_rate_pk ?? ''),
+      customer_type_name: String(recomputed.customerTypeName ?? ''),
       guest_count: String(quoteRow.guest_count),
       category: String(quoteRow.category),
       date: String(date ?? ''),

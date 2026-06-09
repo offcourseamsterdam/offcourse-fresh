@@ -47,7 +47,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
   // Join campaigns so we can read the settlement_model that determines bucket direction.
   const { data: bookings, error } = await supabase
     .from('bookings')
-    .select('booking_date, base_amount_cents, commission_amount_cents, booking_source, campaign_id, campaigns ( settlement_model )')
+    .select('booking_date, base_amount_cents, commission_amount_cents, guest_count, booking_source, campaign_id, campaigns ( settlement_model )')
     .eq('partner_id', id)
 
   if (error) return apiError(error.message)
@@ -69,17 +69,22 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     return b.booking_source === 'partner_invoice' ? 'partner_invoice' : 'affiliate'
   }
 
+  const CITY_TAX_CENTS_PER_GUEST = 260 // €2.60 per guest — municipal pass-through
+
   // Bucket bookings by (quarter, type)
-  const buckets: Record<string, { quarter: string; type: 'partner_invoice' | 'affiliate'; count: number; base: number; commission: number }> = {}
+  const buckets: Record<string, { quarter: string; type: 'partner_invoice' | 'affiliate'; count: number; base: number; commission: number; cityTax: number }> = {}
   for (const b of bookings ?? []) {
     if (!b.booking_date) continue
     const quarter = quarterFromDate(b.booking_date)
     const type = directionFor(b as never)
     const key = `${quarter}::${type}`
-    const bucket = buckets[key] ?? { quarter, type, count: 0, base: 0, commission: 0 }
+    const bucket = buckets[key] ?? { quarter, type, count: 0, base: 0, commission: 0, cityTax: 0 }
     bucket.count += 1
     bucket.base += Number(b.base_amount_cents ?? 0)
     bucket.commission += Number(b.commission_amount_cents ?? 0)
+    // City tax is invoiced on top for They Collect (reseller) partners —
+    // they owe us the cruise net + the municipal city tax their customers paid.
+    bucket.cityTax += Number(b.guest_count ?? 0) * CITY_TAX_CENTS_PER_GUEST
     buckets[key] = bucket
   }
 
@@ -101,7 +106,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
       const settlement = settlementByKey.get(`${bucket.quarter}::${type}`)
       const netAmountCents =
         type === 'partner_invoice'
-          ? bucket.base - bucket.commission
+          ? bucket.base - bucket.commission + bucket.cityTax  // cruise net + city tax
           : bucket.commission
       rows.push({
         quarter: bucket.quarter,

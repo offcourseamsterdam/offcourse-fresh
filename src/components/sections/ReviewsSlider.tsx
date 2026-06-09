@@ -4,7 +4,14 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import { ReviewPhoto } from '@/components/ui/ReviewPhoto'
-import { ReviewsModal } from './ReviewsModal'
+// Lazy-load the reviews lightbox — it's a large component (filter UI, sort,
+// pagination, full review list) that most visitors never open. Downloaded only
+// when the user taps "See all reviews".
+import dynamic from 'next/dynamic'
+const ReviewsModal = dynamic(
+  () => import('./ReviewsModal').then(m => ({ default: m.ReviewsModal })),
+  { ssr: false },
+)
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

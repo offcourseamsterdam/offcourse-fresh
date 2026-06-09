@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import { getTranslations } from 'next-intl/server'
-import { Clock, Users } from 'lucide-react'
+import { Clock, Users, Umbrella } from 'lucide-react'
 import { BookingPanel } from '@/components/booking/BookingPanel'
 import { ImageGallery } from '@/components/cruise/ImageGallery'
 import { StickyBookingHeader } from '@/components/cruise/StickyBookingHeader'
@@ -21,15 +21,17 @@ interface Props {
 
 export async function generateMetadata({ params }: Props) {
   const { locale, slug } = await params
-  const meta = await getListingBySlug(slug)
-  if (!meta) return {}
+  const listing = await getListingBySlug(slug)
+  if (!listing) return {}
   const loc = locale as Locale
-  const title = getLocalizedField(meta, 'seo_title', loc) ?? meta.title
-  const description = getLocalizedField(meta, 'seo_meta_description', loc) ?? meta.tagline ?? undefined
-  const isPartnerInvoice = meta.payment_mode === 'partner_invoice'
+  const title = getLocalizedField(listing, 'seo_title', loc) ?? listing.title
+  const description = getLocalizedField(listing, 'seo_meta_description', loc) ?? listing.tagline ?? undefined
+  const isPartnerInvoice = listing.payment_mode === 'partner_invoice'
 
-  // Open Graph image — pick the optimised 1080px variant if available, else legacy hero
-  const ogImageUrl = await getCruiseOgImage(meta)
+  // getCruisePageData is wrapped with React cache() and already fetches the hero asset
+  // in its parallel batch — so calling it here derives the OG image URL for free,
+  // eliminating the separate serial DB query (getCruiseOgImage) that used to run here.
+  const data = await getCruisePageData(listing, loc)
 
   return {
     title: `${title} — Off Course Amsterdam`,
@@ -37,32 +39,15 @@ export async function generateMetadata({ params }: Props) {
     openGraph: {
       title,
       description: description ?? undefined,
-      ...(ogImageUrl ? { images: [{ url: ogImageUrl, alt: title }] } : {}),
+      ...(data.ogImageUrl ? { images: [{ url: data.ogImageUrl, alt: title }] } : {}),
     },
-    twitter: ogImageUrl
-      ? { card: 'summary_large_image', images: [ogImageUrl] }
+    twitter: data.ogImageUrl
+      ? { card: 'summary_large_image', images: [data.ogImageUrl] }
       : undefined,
     // Partner-invoice listings are distributed only via physical QR codes.
     // Keep them out of search engines so the URL can't be found by accident.
     ...(isPartnerInvoice ? { robots: { index: false, follow: false } } : {}),
   }
-}
-
-/** Pick the best image URL for Open Graph cards — prefer optimised 1080px AVIF variant. */
-async function getCruiseOgImage(listing: { id: string; hero_image_url: string | null; hero_image_asset_id?: string | null }): Promise<string | null> {
-  if (!listing.hero_image_asset_id) return listing.hero_image_url
-  const { createClient } = await import('@/lib/supabase/server')
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('image_assets')
-    .select('variants, status')
-    .eq('id', listing.hero_image_asset_id)
-    .maybeSingle()
-  if (!data || data.status !== 'complete') return listing.hero_image_url
-  const variants = (data.variants as Array<{ width: number; webp_url: string; avif_url: string }>) ?? []
-  // OG / Twitter cards prefer JPEG/WebP — pick 1080px WebP for max compatibility
-  const ideal = variants.find(v => v.width === 1080) ?? variants[variants.length - 1]
-  return ideal?.webp_url ?? listing.hero_image_url
 }
 
 export default async function CruiseListingPage({ params, searchParams }: Props) {
@@ -98,22 +83,25 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
         <h2 className="font-briston text-[28px] sm:text-[36px] text-[var(--color-accent)] uppercase leading-none">
           Start Cruising
         </h2>
-        {(listing.duration_display || listing.max_guests) && (
-          <div className="flex flex-wrap gap-1.5 mt-3">
-            {listing.duration_display && (
-              <span className="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] bg-[var(--color-sand)] px-2.5 py-1 rounded-full">
-                <Clock className="w-3 h-3" />
-                {listing.duration_display}
-              </span>
-            )}
-            {listing.max_guests && (
-              <span className="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] bg-[var(--color-sand)] px-2.5 py-1 rounded-full">
-                <Users className="w-3 h-3" />
-                Up to {listing.max_guests} guests
-              </span>
-            )}
-          </div>
-        )}
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {listing.duration_display && (
+            <span className="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] bg-[var(--color-sand)] px-2.5 py-1 rounded-full">
+              <Clock className="w-3 h-3" />
+              {listing.duration_display}
+            </span>
+          )}
+          {listing.max_guests && (
+            <span className="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] bg-[var(--color-sand)] px-2.5 py-1 rounded-full">
+              <Users className="w-3 h-3" />
+              Up to {listing.max_guests} guests
+            </span>
+          )}
+          {/* Rain reassurance pill — all Off Course boats have a covered canopy */}
+          <span className="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] bg-[var(--color-sand)] px-2.5 py-1 rounded-full">
+            <Umbrella className="w-3 h-3" />
+            Covered canopy
+          </span>
+        </div>
       </div>
       {listing.starting_price != null && (
         <div className="text-right flex-shrink-0">
@@ -142,6 +130,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
     cancellationPolicy: data.cancellationPolicy,
     cancellationTiers: data.cancellationTiers,
     startingPrice: listing.starting_price ?? null,
+    maxGuests: listing.max_guests ?? null,
     infoPills: [
       ...(listing.duration_display ? [{ icon: 'duration' as const, label: listing.duration_display }] : []),
       ...(listing.max_guests ? [{ icon: 'guests' as const, label: `Up to ${listing.max_guests} guests` }] : []),
@@ -167,6 +156,10 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
           imageSrcSet={heroPreload.srcSet}
           imageSizes={heroPreload.sizes}
           type="image/avif"
+          // fetchPriority="high" signals to the browser that this is the LCP
+          // resource and should be fetched at the highest network priority,
+          // ahead of other preloads (fonts, scripts).
+          fetchPriority="high"
         />
       )}
 
@@ -210,8 +203,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
         </div>
 
         {/* ── Inline booking (mobile/tablet) ── */}
-        <div id="booking" className="lg:hidden max-w-7xl mx-auto px-4 sm:px-6 py-8">
-          <div className="border-t border-gray-200 pt-6 mb-6" />
+        <div id="booking" className="lg:hidden max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-8">
           {renderStartCruisingHeader()}
           <BookingPanel {...bookingPanelProps} layout="inline" />
         </div>
@@ -234,15 +226,15 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
               faqLabel={t('faq')}
             />
 
-            {/* Desktop sidebar — sticky wrapper so the heading stays pinned
-                while only the booking panel card scrolls beneath it. */}
+            {/* Desktop sidebar — date/guests card scrolls with the page;
+                the time/booking card (+ the "Start Cruising" heading) sticks
+                together as one unified block once the top card scrolls off. */}
             <div className="hidden lg:block lg:col-span-1">
-              <div className="sticky top-24">
-                {renderStartCruisingHeader()}
-                <div className="max-h-[calc(100vh-10rem)] overflow-y-auto pr-1">
-                  <BookingPanel {...bookingPanelProps} layout="sidebar" />
-                </div>
-              </div>
+              <BookingPanel
+                {...bookingPanelProps}
+                layout="sidebar"
+                sidebarHeader={renderStartCruisingHeader()}
+              />
             </div>
           </div>
         </div>

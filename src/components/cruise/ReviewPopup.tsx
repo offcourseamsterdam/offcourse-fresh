@@ -30,11 +30,14 @@ export function ReviewPopup({ reviews, totalReviews, avgRating: avgRatingProp, v
     setActiveIndex((prev) => (prev + 1) % reviews.length)
   }, [reviews.length])
 
+  // Pause rotation when the popup is hidden (hovering over gallery images)
+  // or when only one review is available. This avoids wasting CPU on a timer
+  // that isn't visible to the user.
   useEffect(() => {
-    if (reviews.length <= 1 || isHovering) return
+    if (reviews.length <= 1 || isHovering || !visible) return
     const interval = setInterval(nextReview, 5000)
     return () => clearInterval(interval)
-  }, [reviews.length, isHovering, nextReview])
+  }, [reviews.length, isHovering, visible, nextReview])
 
   if (reviews.length === 0) return null
 
@@ -45,7 +48,7 @@ export function ReviewPopup({ reviews, totalReviews, avgRating: avgRatingProp, v
 
   return (
     <div
-      className={`absolute bottom-4 left-4 z-10 w-64 bg-white rounded-xl shadow-xl p-4 transition-opacity duration-300 hidden sm:block ${
+      className={`absolute bottom-4 left-4 z-10 w-56 bg-white rounded-xl shadow-xl p-3 transition-opacity duration-300 hidden sm:block ${
         visible ? 'opacity-100' : 'opacity-0 pointer-events-none'
       }`}
       onMouseEnter={() => { setIsHovering(true); onHoverChange(true) }}
@@ -53,7 +56,7 @@ export function ReviewPopup({ reviews, totalReviews, avgRating: avgRatingProp, v
     >
       {/* Rating badge */}
       <div className="flex items-center gap-2 mb-2">
-        <span className="flex items-center justify-center w-9 h-9 bg-[var(--color-primary)] text-white rounded-lg font-bold text-sm">
+        <span className="flex items-center justify-center w-8 h-8 bg-[var(--color-primary)] text-white rounded-lg font-bold text-xs">
           {avgRating.toFixed(1)}
         </span>
         <div>
@@ -65,7 +68,7 @@ export function ReviewPopup({ reviews, totalReviews, avgRating: avgRatingProp, v
       </div>
 
       {/* Current review */}
-      <div className="border-t border-gray-100 pt-2 mt-1 h-[120px] overflow-hidden">
+      <div className="border-t border-gray-100 pt-2 mt-1 h-[76px] overflow-hidden">
         <p className="text-[10px] uppercase tracking-wider text-[var(--color-muted)] mb-1.5 font-semibold">
           What guests loved most
         </p>
@@ -89,7 +92,7 @@ export function ReviewPopup({ reviews, totalReviews, avgRating: avgRatingProp, v
               {reviews[activeIndex]?.reviewer_name}
             </span>
           </div>
-          <p className="text-xs text-[var(--color-ink)] leading-relaxed line-clamp-3">
+          <p className="text-xs text-[var(--color-ink)] leading-relaxed line-clamp-2">
             &ldquo;{reviews[activeIndex]?.review_text}&rdquo;
           </p>
         </div>

@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Trash2, GripVertical, Image as ImageIcon, Upload, Loader2 } from 'lucide-react'
+import { Plus, Trash2, ChevronUp, ChevronDown, Image as ImageIcon, Upload, Loader2 } from 'lucide-react'
 import { SafeImage } from '@/components/ui/SafeImage'
+import { SectionStylesEditor } from './SectionStylesEditor'
+import { downscaleImage } from '@/lib/images/client-downscale'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,20 +27,33 @@ type PriorityCard = {
   body: string
   rotate: string
   sort_order: number
+  polaroid_color: string | null
+  title_color: string | null
 }
 
 // ── Shared upload helper ─────────────────────────────────────────────────────
 
 async function uploadFile(file: File): Promise<{ url: string; mediaType: string } | null> {
-  const formData = new FormData()
-  formData.append('file', file)
-  const res = await fetch('/api/admin/hero/upload', { method: 'POST', body: formData })
-  const json = await res.json()
-  if (!json.ok) {
-    alert('Upload failed: ' + json.error)
+  try {
+    // Downscale large photos in the browser so they don't hit Vercel's ~4.5MB
+    // request-body limit (videos & small files pass through untouched).
+    const blob = await downscaleImage(file)
+    const formData = new FormData()
+    formData.append('file', blob, blob === file ? file.name : 'image.jpg')
+    const res = await fetch('/api/admin/hero/upload', { method: 'POST', body: formData })
+    // Read defensively — a body-limit/timeout error may not be JSON.
+    const text = await res.text()
+    let json: { ok?: boolean; error?: string; data?: { url: string; mediaType: string } } | null = null
+    try { json = JSON.parse(text) } catch { /* non-JSON response */ }
+    if (res.ok && json?.ok && json.data) {
+      return { url: json.data.url, mediaType: json.data.mediaType }
+    }
+    alert('Upload failed: ' + (json?.error || `${res.status} ${res.statusText || 'error'}`))
+    return null
+  } catch (e) {
+    alert('Upload failed: ' + (e instanceof Error ? e.message : 'unexpected error'))
     return null
   }
-  return { url: json.data.url, mediaType: json.data.mediaType }
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
@@ -155,6 +170,19 @@ export default function HomepageAdminPage() {
     setSlides(prev => prev.filter(s => s.id !== id))
   }
 
+  // Move a slide up/down and renumber sort_order for the whole list.
+  async function moveSlide(id: string, dir: -1 | 1) {
+    const idx = slides.findIndex(s => s.id === id)
+    const target = idx + dir
+    if (idx < 0 || target < 0 || target >= slides.length) return
+    const reordered = [...slides]
+    ;[reordered[idx], reordered[target]] = [reordered[target], reordered[idx]]
+    setSlides(reordered.map((s, i) => ({ ...s, sort_order: i })))
+    await Promise.all(
+      reordered.map((s, i) => supabase.from('hero_carousel_items').update({ sort_order: i }).eq('id', s.id)),
+    )
+  }
+
   // ── Priorities handlers ─────────────────────────────────────────────────
 
   async function handlePriorityFileUpload(cardId: string, e: React.ChangeEvent<HTMLInputElement>) {
@@ -171,6 +199,26 @@ export default function HomepageAdminPage() {
       const ref = priorityFileInputRefs.current[cardId]
       if (ref) ref.value = ''
     }
+  }
+
+  // Move a priority card up/down and renumber sort_order for the whole list,
+  // so the order shown here (top = 1) is exactly the order on the homepage.
+  async function movePriorityCard(id: string, dir: -1 | 1) {
+    const idx = priorityCards.findIndex(c => c.id === id)
+    const target = idx + dir
+    if (idx < 0 || target < 0 || target >= priorityCards.length) return
+    const reordered = [...priorityCards]
+    ;[reordered[idx], reordered[target]] = [reordered[target], reordered[idx]]
+    setPriorityCards(reordered.map((c, i) => ({ ...c, sort_order: i })))
+    await Promise.all(
+      reordered.map((c, i) =>
+        fetch(`/api/admin/priorities-cards/${c.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sort_order: i }),
+        }),
+      ),
+    )
   }
 
   async function updatePriorityCard(id: string, field: string, value: string) {
@@ -201,6 +249,9 @@ export default function HomepageAdminPage() {
         <p className="text-sm text-zinc-500 mt-1">Manage content shown on the public homepage.</p>
       </div>
 
+      {/* Per-section background textures + text colours */}
+      <SectionStylesEditor />
+
       {/* ═══════════════════════════════════════════════════════════════════ */}
       {/* Hero Carousel Section                                             */}
       {/* ═══════════════════════════════════════════════════════════════════ */}
@@ -227,9 +278,18 @@ export default function HomepageAdminPage() {
           </div>
         ) : (
           <ul className="divide-y divide-zinc-100">
-            {slides.map(slide => (
+            {slides.map((slide, idx) => (
               <li key={slide.id} className="px-6 py-4 flex items-start gap-4">
-                <GripVertical size={16} className="text-zinc-300 mt-1 flex-shrink-0" />
+                <div className="flex flex-col gap-0.5 mt-0.5 flex-shrink-0">
+                  <button type="button" onClick={() => moveSlide(slide.id, -1)} disabled={idx === 0}
+                    className="text-zinc-300 hover:text-zinc-700 disabled:opacity-25 disabled:cursor-not-allowed transition-colors" title="Move up">
+                    <ChevronUp size={16} />
+                  </button>
+                  <button type="button" onClick={() => moveSlide(slide.id, 1)} disabled={idx === slides.length - 1}
+                    className="text-zinc-300 hover:text-zinc-700 disabled:opacity-25 disabled:cursor-not-allowed transition-colors" title="Move down">
+                    <ChevronDown size={16} />
+                  </button>
+                </div>
 
                 {/* Preview */}
                 <div className="relative w-20 h-16 rounded-md overflow-hidden bg-zinc-100 flex-shrink-0">
@@ -428,9 +488,19 @@ export default function HomepageAdminPage() {
           <ul className="divide-y divide-zinc-100">
             {priorityCards.map((card, idx) => (
               <li key={card.id} className="px-6 py-5 flex items-start gap-4">
-                {/* Card number */}
-                <div className="w-6 h-6 rounded-full bg-zinc-100 flex items-center justify-center text-xs font-medium text-zinc-500 flex-shrink-0 mt-1">
-                  {idx + 1}
+                {/* Reorder arrows + card number */}
+                <div className="flex flex-col items-center gap-1 flex-shrink-0 mt-1">
+                  <button type="button" onClick={() => movePriorityCard(card.id, -1)} disabled={idx === 0}
+                    className="text-zinc-300 hover:text-zinc-700 disabled:opacity-25 disabled:cursor-not-allowed transition-colors" title="Move up">
+                    <ChevronUp size={16} />
+                  </button>
+                  <div className="w-6 h-6 rounded-full bg-zinc-100 flex items-center justify-center text-xs font-medium text-zinc-500">
+                    {idx + 1}
+                  </div>
+                  <button type="button" onClick={() => movePriorityCard(card.id, 1)} disabled={idx === priorityCards.length - 1}
+                    className="text-zinc-300 hover:text-zinc-700 disabled:opacity-25 disabled:cursor-not-allowed transition-colors" title="Move down">
+                    <ChevronDown size={16} />
+                  </button>
                 </div>
 
                 {/* Image preview */}
@@ -502,6 +572,43 @@ export default function HomepageAdminPage() {
                     defaultValue={card.body}
                     onBlur={e => updatePriorityCard(card.id, 'body', e.target.value)}
                   />
+                  {/* Polaroid colour + heading colour (swatch + hex) */}
+                  <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-1">
+                    {([
+                      { field: 'polaroid_color', label: 'Polaroid', def: '#ffffff', value: card.polaroid_color },
+                      { field: 'title_color', label: 'Heading', def: '#980201', value: card.title_color },
+                    ] as const).map(({ field, label, def, value }) => (
+                      <div key={field} className="flex items-center gap-2">
+                        <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">{label}</span>
+                        <input
+                          key={`${field}-c-${value || 'd'}`}
+                          type="color"
+                          defaultValue={value || def}
+                          onBlur={e => updatePriorityCard(card.id, field, e.target.value)}
+                          className="w-8 h-8 rounded cursor-pointer border border-zinc-200 bg-white p-0"
+                          title={`${label} colour`}
+                        />
+                        <input
+                          key={`${field}-h-${value || 'd'}`}
+                          type="text"
+                          defaultValue={value || def}
+                          spellCheck={false}
+                          maxLength={7}
+                          onBlur={e => {
+                            let v = e.target.value.trim()
+                            if (v && !v.startsWith('#')) v = '#' + v
+                            if (/^#[0-9a-fA-F]{6}$/.test(v)) updatePriorityCard(card.id, field, v.toLowerCase())
+                          }}
+                          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                          className="w-[78px] px-1.5 py-1 text-xs font-mono uppercase border border-zinc-200 rounded focus:outline-none focus:ring-2 focus:ring-zinc-300"
+                        />
+                        {value && (
+                          <button type="button" onClick={() => updatePriorityCard(card.id, field, '')}
+                            className="text-[10px] text-zinc-400 hover:text-zinc-700">reset</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Saving indicator */}

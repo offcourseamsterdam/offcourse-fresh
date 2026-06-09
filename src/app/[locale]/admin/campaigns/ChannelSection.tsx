@@ -33,6 +33,7 @@ export interface Campaign {
   percentage_value: number | null
   investment_type: string | null
   investment_amount: number | null
+  settlement_model?: string | null
   notes?: string | null
   is_active: boolean | null
   sessions?: number
@@ -232,6 +233,15 @@ export function ChannelSection({
                                 {c.percentage_value && c.investment_type === 'percentage' && (
                                   <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-full font-medium">
                                     {c.percentage_value}%
+                                  </span>
+                                )}
+                                {c.partner_id && c.settlement_model && (
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                                    c.settlement_model === 'reseller'
+                                      ? 'bg-violet-50 text-violet-700'
+                                      : 'bg-sky-50 text-sky-700'
+                                  }`}>
+                                    {c.settlement_model === 'reseller' ? 'They Collect' : 'We Collect'}
                                   </span>
                                 )}
                                 <span className="text-[10px] text-zinc-400">

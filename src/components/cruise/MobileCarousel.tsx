@@ -11,6 +11,28 @@ interface MobileCarouselProps {
   onTap: () => void
 }
 
+// iOS-style page indicator: at most 7 dots. When there are more photos than fit,
+// the dots on the edge that still has photos beyond the window shrink — the very
+// last one smallest, the one before it medium — to hint there's more to scroll.
+const MAX_DOTS = 7
+function pageDots(active: number, total: number): { idx: number; scale: number }[] {
+  if (total <= MAX_DOTS) {
+    return Array.from({ length: total }, (_, idx) => ({ idx, scale: 1 }))
+  }
+  const start = Math.min(Math.max(active - 3, 0), total - MAX_DOTS)
+  const moreBefore = start > 0
+  const moreAfter = start + MAX_DOTS < total
+  return Array.from({ length: MAX_DOTS }, (_, p) => {
+    const idx = start + p
+    let scale = 1
+    if (moreBefore && p === 0) scale = 0.5
+    else if (moreBefore && p === 1) scale = 0.75
+    if (moreAfter && p === MAX_DOTS - 1) scale = 0.5
+    else if (moreAfter && p === MAX_DOTS - 2) scale = 0.75
+    return { idx, scale }
+  })
+}
+
 export function MobileCarousel({ images, title, onTap }: MobileCarouselProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [activeIndex, setActiveIndex] = useState(0)
@@ -39,10 +61,10 @@ export function MobileCarousel({ images, title, onTap }: MobileCarouselProps) {
   if (images.length === 0) return null
 
   return (
-    <div className="sm:hidden relative">
+    <div className="sm:hidden relative left-1/2 -translate-x-1/2 w-screen">
       <div
         ref={scrollRef}
-        className="flex overflow-x-auto scrollbar-hide rounded-2xl"
+        className="flex overflow-x-auto scrollbar-hide"
         style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
       >
         {images.map((img, i) => (
@@ -59,7 +81,7 @@ export function MobileCarousel({ images, title, onTap }: MobileCarouselProps) {
               alt={img.alt_text ?? title}
               context="carousel"
               fill
-              priority={i === 0}
+              priority={false}
             />
           </button>
         ))}
@@ -77,15 +99,25 @@ export function MobileCarousel({ images, title, onTap }: MobileCarouselProps) {
       )}
 
       {images.length > 1 && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5">
-          {images.map((_, i) => (
-            <span
-              key={i}
-              className={`block rounded-full transition-all duration-200 ${
-                i === activeIndex ? 'w-2 h-2 bg-white' : 'w-1.5 h-1.5 bg-white/50'
-              }`}
-            />
-          ))}
+        <div
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-black/20 backdrop-blur-sm"
+          role="tablist"
+          aria-label={`Photo ${activeIndex + 1} of ${images.length}`}
+        >
+          {pageDots(activeIndex, images.length).map(({ idx, scale }) => {
+            const isActive = idx === activeIndex
+            const px = Math.round((isActive ? 8 : 6) * scale)
+            return (
+              <span
+                key={idx}
+                role="tab"
+                aria-selected={isActive}
+                aria-label={`Photo ${idx + 1}`}
+                style={{ width: px, height: px }}
+                className={`block rounded-full transition-all duration-200 ${isActive ? 'bg-white' : 'bg-white/60'}`}
+              />
+            )
+          })}
         </div>
       )}
     </div>

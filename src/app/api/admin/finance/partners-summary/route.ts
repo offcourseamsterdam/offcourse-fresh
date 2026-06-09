@@ -39,7 +39,7 @@ export async function GET(_req: NextRequest) {
       supabase.from('partners').select('id, name').order('name', { ascending: true }),
       supabase
         .from('bookings')
-        .select('partner_id, booking_date, base_amount_cents, commission_amount_cents, booking_source, campaign_id, campaigns ( settlement_model )')
+        .select('partner_id, booking_date, base_amount_cents, commission_amount_cents, guest_count, booking_source, campaign_id, campaigns ( settlement_model )')
         .not('partner_id', 'is', null),
       supabase
         .from('partner_settlements')
@@ -72,6 +72,7 @@ export async function GET(_req: NextRequest) {
       const dir = directionFor(b as never)
       const base = Number(b.base_amount_cents ?? 0)
       const commission = Number(b.commission_amount_cents ?? 0)
+      const cityTax = Number(b.guest_count ?? 0) * 260 // €2.60/guest — added to They Collect invoices
 
       const partnerMap = byPartner[b.partner_id] ?? (byPartner[b.partner_id] = {})
       const agg = partnerMap[quarter] ?? (partnerMap[quarter] = {
@@ -79,7 +80,7 @@ export async function GET(_req: NextRequest) {
       })
       agg.bookingCount += 1
       if (dir === 'partner_invoice') {
-        agg.partnerOwesUsCents += (base - commission)
+        agg.partnerOwesUsCents += (base - commission + cityTax)
       } else {
         agg.weOwePartnerCents += commission
       }

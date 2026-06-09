@@ -37,6 +37,10 @@ export default function BookingFlowPage() {
   // Stripe recovery: real amount paid + optional PI ID to cross-reference
   const [recoveryAmountInput, setRecoveryAmountInput] = useState('')
   const [recoveryStripePiInput, setRecoveryStripePiInput] = useState('')
+  // When FareHarbor rejects due to minimum party size (e.g. solo booking on shared cruise),
+  // this lets you bypass the FH API and record the revenue locally only.
+  // You then create the booking manually in FareHarbor admin.
+  const [overrideMinParty, setOverrideMinParty] = useState(false)
 
   // Step 1
   const [date, setDate] = useState(today)
@@ -269,6 +273,9 @@ export default function BookingFlowPage() {
           recoveryStripePaymentIntentId: isStripeRecovery
             ? (recoveryStripePiInput.trim() || null)
             : null,
+          // Skip FareHarbor booking creation and record revenue locally only.
+          // Use when FH rejects due to minimum party size — create in FH admin manually.
+          overrideMinParty: isStripeRecovery ? overrideMinParty : false,
         }),
       })
       const json = await res.json()
@@ -385,6 +392,7 @@ export default function BookingFlowPage() {
     setBookingSource('website')
     setDepositAmountCents(0)
     setDepositInput('0')
+    setOverrideMinParty(false)
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -559,6 +567,24 @@ export default function BookingFlowPage() {
                   />
                   <p className="text-xs text-zinc-400">Paste the original Stripe PI ID to cross-reference. Leave empty if unknown.</p>
                 </div>
+
+                {/* Override minimum party size */}
+                <label className="flex items-start gap-3 cursor-pointer select-none rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 hover:bg-zinc-100 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={overrideMinParty}
+                    onChange={e => setOverrideMinParty(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-zinc-300 accent-zinc-900"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-zinc-800">Override minimum party size</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      Skip FareHarbor booking creation and record revenue locally only.
+                      Use when FH rejects due to party size (e.g. solo on shared cruise).
+                      You&apos;ll need to create the booking manually in FareHarbor admin.
+                    </p>
+                  </div>
+                </label>
               </>
             )}
 

@@ -228,15 +228,12 @@ export default function BookingsPage() {
                         {b.customer_email && <p className="text-zinc-400 text-xs">{b.customer_email}</p>}
                       </td>
                       <td className="px-4 py-3 text-zinc-600">
-                        {b.category === 'shared'
-                          ? <span title={b.tour_item_name ?? ''}>{b.guest_count ?? '—'} {b.tour_item_name ? `(${b.tour_item_name})` : ''}</span>
-                          : (b.guest_count ?? '—')
-                        }
+                        {b.guest_count ?? '—'}
                       </td>
                       <td className="px-4 py-3 text-zinc-900 font-medium whitespace-nowrap">
-                        {b.booking_source && b.booking_source !== 'website'
-                          ? (b.deposit_amount_cents != null ? `€${(b.deposit_amount_cents / 100).toFixed(0)}` : '—')
-                          : fmtAdminAmountRounded(b.stripe_amount)
+                        {b.booking_source === 'website' || b.booking_source === 'payment_link' || !b.booking_source
+                          ? fmtAdminAmountRounded(b.stripe_amount)
+                          : (b.deposit_amount_cents != null ? `€${(b.deposit_amount_cents / 100).toFixed(0)}` : '—')
                         }
                       </td>
                       <td className="px-4 py-3">
@@ -282,6 +279,8 @@ export default function BookingsPage() {
                             promoCode={b.promo_code}
                             discountAmountCents={b.discount_amount_cents}
                             partnerName={b.partner_name}
+                            category={b.category}
+                            customerTypeName={b.customer_type_name}
                           />
                         </td>
                       </tr>

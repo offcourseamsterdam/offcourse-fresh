@@ -2,12 +2,28 @@ import { Link } from '@/i18n/navigation'
 import { Logo } from '@/components/ui/Logo'
 import { WhatsAppLink } from '@/components/layout/WhatsAppLink'
 import { Mail, Phone, MapPin } from 'lucide-react'
+import { createClient } from '@/lib/supabase/server'
+import { sectionRootStyle, roleColor, type SectionStyle } from '@/lib/homepage/section-styles'
 
-export function Footer() {
+export async function Footer() {
   const year = new Date().getFullYear()
 
+  // Admin-managed footer background + text colour (the footer is site-wide).
+  const supabase = await createClient()
+  const { data: styleRow } = await supabase
+    .from('homepage_section_styles')
+    .select('background, text_colors')
+    .eq('section_key', 'footer')
+    .maybeSingle()
+  const sectionStyle: SectionStyle | undefined = styleRow
+    ? {
+        background: (styleRow.background ?? null) as SectionStyle['background'],
+        text_colors: (styleRow.text_colors ?? {}) as SectionStyle['text_colors'],
+      }
+    : undefined
+
   return (
-    <footer className="bg-texture-yellow">
+    <footer className="bg-texture-yellow" style={sectionRootStyle(sectionStyle)}>
       <div className="max-w-7xl mx-auto px-6 lg:px-12 py-16">
 
         {/* Main 3-column grid */}
@@ -15,7 +31,7 @@ export function Footer() {
 
           {/* Left — Navigate */}
           <div>
-            <h3 className="font-palmore text-[32px] sm:text-[40px] text-primary mb-6 leading-none">
+            <h3 className="font-palmore text-[32px] sm:text-[40px] mb-6 leading-none" style={{ color: roleColor('body', '#343499') }}>
               NAVIGATE
             </h3>
             <ul className="space-y-3">
@@ -38,7 +54,7 @@ export function Footer() {
           {/* Center — Logo + mission + socials */}
           <div className="flex flex-col items-center text-center">
             <Logo variant="vertical" className="mb-6" />
-            <p className="font-palmore text-[22px] sm:text-[26px] text-primary leading-snug max-w-sm">
+            <p className="font-palmore text-[22px] sm:text-[26px] leading-snug max-w-sm" style={{ color: roleColor('body', '#343499') }}>
               we create boats with vibes so good, the effect is instant. you&rsquo;re relaxed, connected, and fully present.
             </p>
 
@@ -65,7 +81,7 @@ export function Footer() {
 
           {/* Right — Get in Touch */}
           <div className="md:text-right">
-            <h3 className="font-palmore text-[32px] sm:text-[40px] text-primary mb-6 leading-none">
+            <h3 className="font-palmore text-[32px] sm:text-[40px] mb-6 leading-none" style={{ color: roleColor('body', '#343499') }}>
               GET IN TOUCH
             </h3>
             <ul className="space-y-4">
@@ -96,7 +112,7 @@ export function Footer() {
 
         {/* Bottom bar */}
         <div className="border-t border-primary/20 mt-14 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p className="font-avenir text-sm text-primary/60">
+          <p className="font-avenir text-sm" style={{ color: roleColor('body', '#343499'), opacity: 0.6 }}>
             © {year} Off Course Amsterdam. All rights reserved.
           </p>
           <div className="flex gap-6">

@@ -32,7 +32,12 @@ export const getListingBySlug = cache(async (slug: string) => {
   return data as CruiseListing | null
 })
 
-export async function getCruisePageData(listing: CruiseListing, locale: Locale) {
+// Wrap with React cache() so both generateMetadata and the page body can call
+// this function without triggering duplicate Supabase queries. Next.js 16 runs
+// generateMetadata in a separate RSC request from the page — cache() deduplicates
+// within the same request, so we also ensure the OG image URL is derived here
+// (removing the old serial getCruiseOgImage query from generateMetadata).
+export const getCruisePageData = cache(async function getCruisePageData(listing: CruiseListing, locale: Locale) {
   const loc = locale
   const supabase = await createClient()
   // google_reviews_config holds OAuth tokens — we can't grant anon SELECT on the table.
@@ -57,9 +62,16 @@ export async function getCruisePageData(listing: CruiseListing, locale: Locale) 
   ].filter((id): id is string => Boolean(id))
 
   const [reviewsResult, reviewCountResult, allExtrasResult, listingExtrasResult, allBoatsResult, googleConfigResult, fhItemResult, assetsResult] = await Promise.all([
-    // Fetch ALL active reviews, newest first — they feed the gallery modal's
-    // review sidebar (endless scroll) + the on-page ReviewSlider + the popup.
-    supabase.from('social_proof_reviews').select('*').eq('is_active', true).order('publish_time', { ascending: false, nullsFirst: false }),
+    // Fetch the 20 most recent active reviews — enough for the ReviewSlider (3 at a time)
+    // and ReviewPopup (capped at 6). The GalleryModal fetches the full list on open via
+    // /api/reviews so it doesn't bloat the initial page RSC payload.
+    // Selecting only the columns we actually use (all 7 locale text columns + metadata)
+    // avoids fetching unused admin/internal fields and cuts JSON payload ~50-80%.
+    supabase.from('social_proof_reviews')
+      .select('id, reviewer_name, rating, source, author_photo_url, review_image_url, publish_time, review_text, review_text_nl, review_text_de, review_text_fr, review_text_es, review_text_pt, review_text_zh')
+      .eq('is_active', true)
+      .order('publish_time', { ascending: false, nullsFirst: false })
+      .limit(20),
     supabase.from('social_proof_reviews').select('*', { count: 'exact', head: true }).eq('is_active', true),
     adminSupabase.from('extras').select('*').eq('is_active', true).in('category', ['food', 'drinks']).order('sort_order', { ascending: true }),
     adminSupabase.from('listing_extras').select('extra_id, is_enabled').eq('listing_id', listing.id),
@@ -180,9 +192,19 @@ export async function getCruisePageData(listing: CruiseListing, locale: Locale) 
     avgRating = (reviews.reduce((sum, r) => sum + (r.rating ?? 0), 0) / reviews.length).toFixed(1)
   }
 
+  // Derive the Open Graph image URL from the already-fetched heroAsset — eliminates
+  // the separate getCruiseOgImage() Supabase query that used to run serially inside
+  // generateMetadata before the page could start rendering.
+  let ogImageUrl: string | null = listing.hero_image_url
+  if (heroAsset && heroAsset.status === 'complete' && heroAsset.variants?.length) {
+    const ogVariants = heroAsset.variants as Array<{ width: number; webp_url: string }>
+    const ideal = ogVariants.find(v => v.width === 1080) ?? ogVariants[ogVariants.length - 1]
+    ogImageUrl = ideal?.webp_url ?? listing.hero_image_url
+  }
+
   return {
-    listing, title, tagline, description, heroUrl, heroAsset, images, highlights, faqs,
+    listing, title, tagline, description, heroUrl, heroAsset, ogImageUrl, images, highlights, faqs,
     cancellationPolicy, cancellationTiers, serializedReviews, serializedFood, serializedDrinks,
     listingBoats, reviewCount, totalReviews, avgRating, videoUrl, loc,
   }
-}
+})

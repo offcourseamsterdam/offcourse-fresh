@@ -2,7 +2,12 @@
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Loader2, Check } from 'lucide-react'
+import { Loader2, Check, AlertTriangle } from 'lucide-react'
+
+interface LocalOnlyBooking {
+  localOnly: true
+  message: string
+}
 
 interface ConfirmationStepProps {
   bookingLoading: boolean
@@ -11,6 +16,10 @@ interface ConfirmationStepProps {
   paymentIntentId: string | null
   paymentLinkUrl?: string | null
   onReset: () => void
+}
+
+function isLocalOnly(b: unknown): b is LocalOnlyBooking {
+  return typeof b === 'object' && b !== null && (b as Record<string, unknown>).localOnly === true
 }
 
 export function ConfirmationStep({
@@ -47,7 +56,31 @@ export function ConfirmationStep({
         </Card>
       )}
 
-      {booking !== null && (
+      {/* Local-only booking (minimum party override) */}
+      {booking !== null && isLocalOnly(booking) && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center">
+                <AlertTriangle className="w-3.5 h-3.5 text-white" />
+              </div>
+              <CardTitle className="text-sm text-amber-900">Revenue recorded — FareHarbor step pending</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-amber-800">{booking.message}</p>
+            {paymentIntentId && (
+              <p className="text-xs text-amber-600 font-mono">Payment: {paymentIntentId}</p>
+            )}
+            <Button variant="outline" size="sm" onClick={onReset}>
+              Start new booking
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Regular FareHarbor-confirmed booking */}
+      {booking !== null && !isLocalOnly(booking) && (
         <Card className="border-emerald-200 bg-emerald-50">
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">

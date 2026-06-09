@@ -10,6 +10,12 @@ interface TicketStepProps {
   maxCapacity: number
   onUpdateCount: (customerTypePk: number, count: number) => void
   onConfirm: () => void
+  /**
+   * True when the slot already has at least one other booking (remaining
+   * capacity < boat maximum). In this case the cruise is already "happening"
+   * and we skip the minimum party size gate — a solo add-on is fine.
+   */
+  hasExistingBookings?: boolean
 }
 
 // Try to derive a human label from customer type data.
@@ -26,11 +32,30 @@ export function TicketStep({
   maxCapacity,
   onUpdateCount,
   onConfirm: _onConfirm,
+  hasExistingBookings = false,
 }: TicketStepProps) {
   const totalTickets = Object.values(ticketCounts).reduce((sum, c) => sum + c, 0)
+
+  // Derive the minimum party size from FareHarbor customer type data.
+  // FareHarbor enforces this server-side — we mirror it in the UI so
+  // the user knows before they try to proceed (avoids a paid booking
+  // that can't be confirmed, which is what happened to Christine Hall).
+  //
+  // Exception: if the slot already has other bookings (hasExistingBookings),
+  // the cruise is already "happening" — a solo add-on is fine and we skip the gate.
+  const minParty = Math.max(...customerTypes.map(ct => ct.minimumParty ?? 1), 1)
+  const enforceMinParty = !hasExistingBookings && minParty > 1
+  const belowMinimum = enforceMinParty && totalTickets > 0 && totalTickets < minParty
+
   return (
     <div className="space-y-3">
       <p className="text-xs text-zinc-500 mb-1">Select your tickets</p>
+
+      {enforceMinParty && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          This cruise requires a minimum of <strong>{minParty} tickets</strong> per booking.
+        </p>
+      )}
 
       {customerTypes.map((ct, index) => {
         const count = ticketCounts[ct.customerTypePk] || 0
@@ -53,23 +78,35 @@ export function TicketStep({
                 type="button"
                 onClick={() => onUpdateCount(ct.customerTypePk, Math.max(0, count - 1))}
                 disabled={count <= 0}
+                aria-label={`Remove one ${label} ticket`}
                 className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center text-zinc-600 hover:border-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
-                <Minus className="w-3.5 h-3.5" />
+                <Minus className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
-              <span className="w-6 text-center font-semibold text-zinc-800 tabular-nums">{count}</span>
+              <span
+                className="w-6 text-center font-semibold text-zinc-800 tabular-nums"
+                aria-live="polite"
+                aria-label={`${count} ${label} ticket${count !== 1 ? 's' : ''}`}
+              >{count}</span>
               <button
                 type="button"
                 onClick={() => onUpdateCount(ct.customerTypePk, count + 1)}
                 disabled={count >= remaining}
+                aria-label={`Add one ${label} ticket`}
                 className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center text-zinc-600 hover:border-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
-                <Plus className="w-3.5 h-3.5" />
+                <Plus className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             </div>
           </div>
         )
       })}
+
+      {belowMinimum && (
+        <p className="text-xs text-amber-700 font-medium pt-1">
+          Please add at least {minParty - totalTickets} more ticket{minParty - totalTickets !== 1 ? 's' : ''} to continue.
+        </p>
+      )}
 
     </div>
   )

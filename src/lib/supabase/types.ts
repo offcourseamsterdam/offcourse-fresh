@@ -242,6 +242,7 @@ export type Database = {
           customer_email: string
           customer_name: string
           customer_phone: string | null
+          customer_type_name: string | null
           deposit_amount_cents: number | null
           discount_amount_cents: number
           end_time: string | null
@@ -293,6 +294,7 @@ export type Database = {
           customer_email: string
           customer_name: string
           customer_phone?: string | null
+          customer_type_name?: string | null
           deposit_amount_cents?: number | null
           discount_amount_cents?: number
           end_time?: string | null
@@ -344,6 +346,7 @@ export type Database = {
           customer_email?: string
           customer_name?: string
           customer_phone?: string | null
+          customer_type_name?: string | null
           deposit_amount_cents?: number | null
           discount_amount_cents?: number
           end_time?: string | null
@@ -1573,6 +1576,33 @@ export type Database = {
           },
         ]
       }
+      homepage_section_styles: {
+        Row: {
+          background: Json | null
+          decoration_image_url: string | null
+          decoration_image_url_2: string | null
+          section_key: string
+          text_colors: Json
+          updated_at: string
+        }
+        Insert: {
+          background?: Json | null
+          decoration_image_url?: string | null
+          decoration_image_url_2?: string | null
+          section_key: string
+          text_colors?: Json
+          updated_at?: string
+        }
+        Update: {
+          background?: Json | null
+          decoration_image_url?: string | null
+          decoration_image_url_2?: string | null
+          section_key?: string
+          text_colors?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
       homepage_tour_cards: {
         Row: {
           created_at: string
@@ -2263,9 +2293,11 @@ export type Database = {
           created_at: string | null
           id: string
           image_url: string
+          polaroid_color: string | null
           rotate: string
           sort_order: number
           title: string
+          title_color: string | null
           updated_at: string | null
         }
         Insert: {
@@ -2280,9 +2312,11 @@ export type Database = {
           created_at?: string | null
           id?: string
           image_url?: string
+          polaroid_color?: string | null
           rotate?: string
           sort_order?: number
           title?: string
+          title_color?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -2297,9 +2331,11 @@ export type Database = {
           created_at?: string | null
           id?: string
           image_url?: string
+          polaroid_color?: string | null
           rotate?: string
           sort_order?: number
           title?: string
+          title_color?: string | null
           updated_at?: string | null
         }
         Relationships: []
@@ -2746,6 +2782,23 @@ export type Database = {
     }
     Functions: {
       get_translatable_columns: { Args: never; Returns: Json }
+      set_section_text_color: {
+        Args: { p_role: string; p_section: string; p_value: string }
+        Returns: {
+          background: Json | null
+          decoration_image_url: string | null
+          decoration_image_url_2: string | null
+          section_key: string
+          text_colors: Json
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "homepage_section_styles"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
     }
     Enums: {
       user_role: "admin" | "support" | "captain" | "guest" | "partner"

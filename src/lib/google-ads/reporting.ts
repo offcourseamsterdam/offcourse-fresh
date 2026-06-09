@@ -44,6 +44,13 @@ function lastNDays(days: number): string {
   return `segments.date BETWEEN '${ymd(Math.max(1, days) - 1)}' AND '${ymd(0)}'`
 }
 
+/** GAQL WHERE clause: date range + optional campaign filter. */
+function campaignWhere(days: number, campaignId?: string): string {
+  return [lastNDays(days), campaignId ? `campaign.id = ${Number(campaignId)}` : '']
+    .filter(Boolean)
+    .join(' AND ')
+}
+
 async function customerId(): Promise<string | { error: string }> {
   const { getCampaignConfig } = await import('./campaign-client')
   const cfg = getCampaignConfig()
@@ -156,9 +163,7 @@ export interface KeywordRow {
 }
 
 export async function listKeywords(campaignId?: string, days = 30): Promise<QueryResult<KeywordRow>> {
-  const where = [lastNDays(days), campaignId ? `campaign.id = ${Number(campaignId)}` : '']
-    .filter(Boolean)
-    .join(' AND ')
+  const where = campaignWhere(days, campaignId)
   const query = `
     SELECT ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type,
            ad_group_criterion.status, ad_group.name,
@@ -189,9 +194,7 @@ export interface SearchTermRow {
 }
 
 export async function searchTerms(campaignId?: string, days = 30): Promise<QueryResult<SearchTermRow>> {
-  const where = [lastNDays(days), campaignId ? `campaign.id = ${Number(campaignId)}` : '']
-    .filter(Boolean)
-    .join(' AND ')
+  const where = campaignWhere(days, campaignId)
   const query = `
     SELECT search_term_view.search_term,
            metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros

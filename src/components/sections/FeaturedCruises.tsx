@@ -7,6 +7,7 @@ import { useSearch } from '@/lib/search/SearchContext'
 import type { Database } from '@/lib/supabase/types'
 import type { AvailabilitySlot } from '@/types'
 import type { ImageAsset } from '@/lib/images/types'
+import { sectionRootStyle, roleColor, type SectionStyle } from '@/lib/homepage/section-styles'
 
 type CruiseListingRow = Database['public']['Tables']['cruise_listings']['Row']
 
@@ -38,11 +39,17 @@ function formatSearchDate(dateStr: string): string {
   }).replace(',', ' the')
 }
 
+// ── Departure-time pill colours ──────────────────────────────────────────────
+// All time pills share one scheme: deep indigo with a soft lavender label, plus
+// a translucent black "skin" so they read rich rather than bright.
+const PILL_BG = '#333399'
+const PILL_TEXT = '#efdcf7'
+
 // ── Skeleton for time slot pills ─────────────────────────────────────────────
 
 function TimeSlotSkeleton() {
   return (
-    <div className="flex gap-2 mt-3">
+    <div className="flex gap-2 justify-center">
       {[1, 2, 3].map(i => (
         <div key={i} className="h-7 w-14 rounded-full bg-zinc-200 animate-pulse" />
       ))}
@@ -67,19 +74,26 @@ function TimeSlotPills({ slots, slug, date, guests }: {
   }
 
   return (
-    <div className="flex flex-wrap gap-1.5 mt-3">
-      {slots.slice(0, 5).map(slot => (
+    <div className="flex flex-wrap gap-1.5 justify-center">
+      {slots.slice(0, 6).map(slot => (
         <Link
           key={slot.startTime}
           href={`/cruises/${slug}?date=${date}&guests=${guests}&time=${slot.startTime}`}
-          className="font-avenir text-xs bg-sand text-primary font-medium px-3 py-1.5 rounded-full hover:bg-primary hover:text-white transition-colors duration-150"
+          style={{
+            backgroundColor: PILL_BG,
+            // Translucent black "skin" so the pill reads rich rather than bright.
+            backgroundImage: 'linear-gradient(rgba(0,0,0,0.28), rgba(0,0,0,0.28))',
+            color: PILL_TEXT,
+            boxShadow: '0 2px 7px rgba(0,0,0,0.25)',
+          }}
+          className="font-avenir text-xs font-bold px-3 py-1.5 rounded-full transition-transform duration-150 hover:scale-110"
         >
           {slot.startTime}
         </Link>
       ))}
-      {slots.length > 5 && (
-        <span className="font-avenir text-xs text-muted font-medium px-2 py-1.5">
-          +{slots.length - 5} more
+      {slots.length > 6 && (
+        <span className="font-avenir text-xs font-medium px-2 py-1.5" style={{ color: PILL_BG }}>
+          +{slots.length - 6} more
         </span>
       )}
     </div>
@@ -98,8 +112,10 @@ function CruiseCard({ listing, rotation, slots, loading, date, guests }: {
 }) {
   const isPrivate = listing.category === 'private'
 
+  // sm:w-96 = 384px, i.e. 20% wider than the old sm:w-80 (320px). The row's
+  // gap-12 is unchanged, so the spacing between cards stays the same.
   return (
-    <div className={`w-full sm:w-80 flex-shrink-0 ${rotation} transition-transform hover:rotate-0 duration-300`}>
+    <div className={`w-full sm:w-96 flex-shrink-0 ${rotation} transition-transform hover:rotate-0 duration-300`}>
       {/* Polaroid frame */}
       <div className="bg-white p-4 pb-3 shadow-polaroid">
         {/* Image with badge */}
@@ -126,35 +142,34 @@ function CruiseCard({ listing, rotation, slots, loading, date, guests }: {
         </h3>
       </div>
 
-      {/* Below polaroid — tagline, price, buttons (white Verdana text on lavender bg) */}
-      <div className="text-center mt-4 px-2" style={{ fontFamily: 'Verdana, Geneva, sans-serif' }}>
+      {/* Below polaroid — centred stack: tagline, price, duration, More Info,
+          then (after a date search) the departure times underneath. */}
+      <div className="mt-4 px-2 text-center" style={{ fontFamily: 'Verdana, Geneva, sans-serif' }}>
         {listing.tagline && (
-          <p className="text-white text-base leading-relaxed mb-3 italic">
+          <p className="text-sm sm:text-base leading-relaxed mb-3 italic" style={{ color: roleColor('body', '#ffffff') }}>
             {listing.tagline}
           </p>
         )}
-
-        {/* Price */}
         {listing.price_display && (
-          <p className="font-bold text-white text-xl mb-0.5">{listing.price_display}</p>
+          <p className="font-bold text-xl mb-0.5" style={{ color: roleColor('body', '#ffffff') }}>{listing.price_display}</p>
         )}
         {listing.duration_display && (
-          <p className="text-white/70 text-xs mb-4">{listing.duration_display}</p>
+          <p className="text-xs mb-4" style={{ color: roleColor('body', '#ffffff'), opacity: 0.7 }}>{listing.duration_display}</p>
         )}
 
-        {/* CTAs */}
-        <div className="flex gap-3 justify-center">
+        <div className="flex justify-center">
           <Link
             href={`/cruises/${listing.slug}`}
-            className="flex-1 max-w-[180px] border-2 border-white text-white py-2 font-avenir text-sm text-center hover:bg-white hover:text-primary transition-all duration-300"
+            className="inline-block min-w-[140px] max-w-[180px] border-2 py-2 px-4 font-avenir text-sm text-center hover:bg-white hover:text-primary transition-all duration-300"
+            style={{ color: roleColor('body', '#ffffff'), borderColor: roleColor('body', '#ffffff') }}
           >
             More Info
           </Link>
         </div>
 
-        {/* Time slots — only visible after search */}
+        {/* Departure times — under More Info, only after a search */}
         {date && (
-          <div className="mt-3 pb-2">
+          <div className="mt-4 animate-slide-in-right">
             {loading ? (
               <TimeSlotSkeleton />
             ) : slots ? (
@@ -171,9 +186,10 @@ function CruiseCard({ listing, rotation, slots, loading, date, guests }: {
 
 interface FeaturedCruisesProps {
   listings: FeaturedCruiseListing[]
+  sectionStyle?: SectionStyle
 }
 
-export function FeaturedCruises({ listings }: FeaturedCruisesProps) {
+export function FeaturedCruises({ listings, sectionStyle }: FeaturedCruisesProps) {
   const { searchDate, searchGuests, searchLoading, searchResults } = useSearch()
 
   // Prefer one private + one shared; fall back to first 2
@@ -192,15 +208,15 @@ export function FeaturedCruises({ listings }: FeaturedCruisesProps) {
   }
 
   return (
-    <section id="cruise-results" className="bg-texture-lavender min-h-screen flex items-center justify-center pt-60 pb-20">
+    <section id="cruise-results" className="bg-texture-lavender min-h-screen flex items-center justify-center pt-28 sm:pt-36 pb-20" style={sectionRootStyle(sectionStyle)}>
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
 
         {/* Section header */}
         <div className="text-center mb-12">
-          <h2 className="font-briston text-[48px] sm:text-[64px] lg:text-[72px] text-accent leading-none mb-3">
+          <h2 className="font-briston text-[48px] sm:text-[64px] lg:text-[72px] leading-none mb-3" style={{ color: roleColor('h2', '#990000') }}>
             OFF THE BEATEN CANAL
           </h2>
-          <p className="font-palmore text-[32px] sm:text-[40px] text-accent leading-tight">
+          <p className="font-palmore text-[32px] sm:text-[40px] leading-tight" style={{ color: roleColor('h3', '#990000') }}>
             we drift different
           </p>
 

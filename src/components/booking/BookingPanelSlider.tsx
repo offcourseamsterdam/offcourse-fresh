@@ -1,7 +1,13 @@
 'use client'
 
 import { useState, useCallback, useMemo, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { CalendarDays, Users, Clock, Ship, Ticket } from 'lucide-react'
+import { LazyMotion, m, AnimatePresence } from 'framer-motion'
+
+// Load animation features lazily — cuts the initial framer-motion JS from ~34 KB
+// down to ~4.6 KB. The domAnimation bundle (~15 KB) is fetched after first render,
+// so slide animations degrade gracefully on the very first paint.
+const loadFeatures = () => import('framer-motion').then(res => res.domAnimation)
 import { DateCardPicker } from './DateCardPicker'
 import { TimeSlotStep } from './TimeSlotStep'
 import { BoatDurationStep } from './BoatDurationStep'
@@ -55,18 +61,24 @@ function GuestCounter({ guests, onSet }: { guests: number; onSet: (n: number) =>
             type="button"
             onClick={() => onSet(Math.max(1, guests - 1))}
             disabled={guests <= 1}
+            aria-label="Remove one guest"
             className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center text-zinc-600 hover:border-zinc-500 disabled:opacity-30 transition-colors"
           >
-            <span className="text-lg leading-none">−</span>
+            <span className="text-lg leading-none" aria-hidden="true">−</span>
           </button>
-          <span className="w-6 text-center font-semibold text-zinc-800 tabular-nums">{guests}</span>
+          <span
+            className="w-6 text-center font-semibold text-zinc-800 tabular-nums"
+            aria-live="polite"
+            aria-label={`${guests} guest${guests !== 1 ? 's' : ''}`}
+          >{guests}</span>
           <button
             type="button"
             onClick={() => onSet(Math.min(12, guests + 1))}
             disabled={guests >= 12}
+            aria-label="Add one guest"
             className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center text-zinc-600 hover:border-zinc-500 disabled:opacity-30 transition-colors"
           >
-            <span className="text-lg leading-none">+</span>
+            <span className="text-lg leading-none" aria-hidden="true">+</span>
           </button>
         </div>
       </div>
@@ -84,7 +96,7 @@ function SlidePanel({ panelKey, direction, initial = 'enter', className, childre
   children: React.ReactNode
 }) {
   return (
-    <motion.div
+    <m.div
       key={panelKey}
       custom={direction}
       variants={slideVariants}
@@ -95,7 +107,7 @@ function SlidePanel({ panelKey, direction, initial = 'enter', className, childre
       className={className}
     >
       {children}
-    </motion.div>
+    </m.div>
   )
 }
 
@@ -124,18 +136,18 @@ export function BookingPanelSlider(props: BookingPanelProps) {
   // ── Summary tabs for completed steps ──────────────────────────────────────
 
   const summaryTabs = useMemo(() => {
-    const tabs: { label: string; panelIndex: number }[] = []
+    const tabs: { label: string; panelIndex: number; icon?: typeof CalendarDays }[] = []
 
     if (category === 'private') {
-      if (panelIndex > 0 && dateSummary) tabs.push({ label: dateSummary, panelIndex: 0 })
-      if (panelIndex > 0 && guestsSummary) tabs.push({ label: guestsSummary, panelIndex: 0 })
-      if (panelIndex > 1 && timeSummary) tabs.push({ label: timeSummary, panelIndex: 1 })
-      if (panelIndex > 2 && cruiseLabel) tabs.push({ label: cruiseLabel, panelIndex: 2 })
+      if (panelIndex > 0 && dateSummary) tabs.push({ label: dateSummary, panelIndex: 0, icon: CalendarDays })
+      if (panelIndex > 0 && guestsSummary) tabs.push({ label: guestsSummary, panelIndex: 0, icon: Users })
+      if (panelIndex > 1 && timeSummary) tabs.push({ label: timeSummary, panelIndex: 1, icon: Clock })
+      if (panelIndex > 2 && cruiseLabel) tabs.push({ label: cruiseLabel, panelIndex: 2, icon: Ship })
     } else {
       // Shared: 0=date+time, 1=tickets, 2=extras
-      if (dateSummary) tabs.push({ label: dateSummary, panelIndex: 0 })
-      if (timeSummary) tabs.push({ label: timeSummary, panelIndex: 0 })
-      if (panelIndex > 1 && ticketSummary) tabs.push({ label: ticketSummary, panelIndex: 1 })
+      if (dateSummary) tabs.push({ label: dateSummary, panelIndex: 0, icon: CalendarDays })
+      if (timeSummary) tabs.push({ label: timeSummary, panelIndex: 0, icon: Clock })
+      if (panelIndex > 1 && ticketSummary) tabs.push({ label: ticketSummary, panelIndex: 1, icon: Ticket })
     }
 
     return tabs
@@ -228,7 +240,20 @@ export function BookingPanelSlider(props: BookingPanelProps) {
   const isPrivate = category === 'private'
   const hasTickets = !isPrivate && state.totalTickets > 0
 
+  // Enforce FareHarbor minimum party size — prevents a solo booking on a
+  // shared cruise that requires 2+ guests (mirrors the TicketStep warning).
+  //
+  // Exception: if the slot already has other bookings (remaining capacity <
+  // boat maximum), the cruise is already "happening" and a solo add-on is fine.
+  const minParty = !isPrivate && state.selectedSlot
+    ? Math.max(...state.selectedSlot.customerTypes.map(ct => ct.minimumParty ?? 1), 1)
+    : 1
+  const slotHasExistingBookings = !isPrivate && !!props.maxGuests && !!state.selectedSlot
+    && state.selectedSlot.capacity < props.maxGuests
+  const belowMinParty = !slotHasExistingBookings && hasTickets && state.totalTickets < minParty
+
   return (
+    <LazyMotion features={loadFeatures} strict>
     <div>
       {/* Starting price + info pills moved to the section header above this card on the cruise page */}
       <BookingSummaryTabs tabs={summaryTabs} currentPanel={panelIndex} onTabClick={handleTabClick} />
@@ -359,6 +384,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                   maxCapacity={state.selectedSlot.capacity}
                   onUpdateCount={(pk, count) => dispatch({ type: 'UPDATE_TICKET_COUNT', customerTypePk: pk, count })}
                   onConfirm={() => dispatch({ type: 'CONFIRM_TICKETS' })}
+                  hasExistingBookings={slotHasExistingBookings}
                 />
 
                 {basePriceCents > 0 && (
@@ -374,9 +400,11 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                       size="md"
                       className="w-full rounded-xl font-bold"
                       onClick={() => { dispatch({ type: 'CONFIRM_TICKETS' }); goToPanel(2) }}
-                      disabled={!hasTickets}
+                      disabled={!hasTickets || belowMinParty}
                     >
-                      Next
+                      {belowMinParty
+                        ? `Add ${minParty - state.totalTickets} more ticket${minParty - state.totalTickets !== 1 ? 's' : ''} to continue`
+                        : 'Next'}
                     </Button>
                   </div>
                 )}
@@ -389,5 +417,6 @@ export function BookingPanelSlider(props: BookingPanelProps) {
       {/* Extras — kept mounted once visited, hidden when not on extras panel */}
       {extrasBlock}
     </div>
+    </LazyMotion>
   )
 }

@@ -25,6 +25,146 @@ export async function POST(request: NextRequest) {
 
   const supabase = createAdminClient()
 
+  // ── checkout.session.completed ────────────────────────────────────────────
+  // Fires when a customer completes payment on a Stripe Checkout Session.
+  // Used exclusively by our payment link flow (admin → "Betaallink aanmaken").
+  //
+  // The FareHarbor booking is already created at link-send time (to reserve the
+  // slot). When the customer pays, we just flip the status + send a confirmation.
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object as Stripe.Checkout.Session
+
+    // Only handle our payment link bookings (other checkout sessions, if any, are skipped)
+    if (session.metadata?.booking_source !== 'payment_link') {
+      return NextResponse.json({ received: true })
+    }
+
+    // Look up the pre-created booking by Stripe session ID
+    const { data: booking } = await supabase
+      .from('bookings')
+      .select('id, booking_uuid, customer_name, customer_email, customer_phone, listing_title, booking_date, start_time, end_time, guest_count, base_amount_cents, category')
+      .eq('stripe_session_id', session.id)
+      .maybeSingle()
+
+    if (!booking) {
+      console.error('[stripe-webhook] checkout.session.completed: no booking found for session', session.id)
+      return NextResponse.json({ received: true })
+    }
+
+    // Mark confirmed + store the underlying PaymentIntent ID (for refund tracking)
+    const piId = typeof session.payment_intent === 'string' ? session.payment_intent : null
+    const { error: updateError } = await supabase
+      .from('bookings')
+      .update({
+        status: 'confirmed',
+        payment_status: 'paid',
+        stripe_amount: session.amount_total ?? undefined,
+        ...(piId ? { stripe_payment_intent_id: piId } : {}),
+      })
+      .eq('id', booking.id)
+
+    if (updateError) {
+      console.error('[stripe-webhook] checkout.session.completed: DB update failed', updateError)
+    }
+
+    // Slack notification
+    const webhookUrl = process.env.SLACK_WEBHOOK_URL
+    if (webhookUrl) {
+      const guestCount = Number(booking.guest_count ?? 1)
+      const startTime = booking.start_time
+        ? new Date(booking.start_time).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' })
+        : '—'
+      const text = [
+        `*Payment link booking confirmed!* 🎉`,
+        `*${booking.listing_title}*`,
+        `📅 ${booking.booking_date ?? '—'} · ${startTime}`,
+        `👥 ${guestCount} guest${guestCount !== 1 ? 's' : ''}`,
+        `💰 €${((session.amount_total ?? 0) / 100).toFixed(0)}`,
+        `👤 ${booking.customer_name} · ${booking.customer_email}`,
+        booking.booking_uuid ? `🎫 FH: ${booking.booking_uuid}` : '',
+        piId ? `💳 PI: ${piId}` : '',
+      ].filter(Boolean).join('\n')
+      await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      }).catch(err => console.error('[stripe-webhook] Slack (payment link) failed:', err))
+    }
+
+    // Send booking confirmation email
+    const guestCount = Number(booking.guest_count ?? 1)
+    await sendConfirmationEmail({
+      contact: {
+        name: booking.customer_name ?? '',
+        email: booking.customer_email ?? '',
+        phone: booking.customer_phone ?? undefined,
+      },
+      listingTitle: booking.listing_title ?? '',
+      date: booking.booking_date ?? '',
+      startAt: booking.start_time || null,
+      endAt: booking.end_time || null,
+      guestCount,
+      amountCents: session.amount_total ?? 0,
+      extrasSelected: [],
+      fhBookingUuid: booking.booking_uuid ?? undefined,
+      category: booking.category ?? null,
+      fareharborCustomerTypeRatePk: null,
+    }).catch(err => console.error('[stripe-webhook] payment link confirmation email failed:', err))
+  }
+
+  // ── checkout.session.expired ──────────────────────────────────────────────
+  // The 24h payment link expired without the customer paying.
+  // The FH slot was pre-booked — we must cancel it to release capacity.
+  if (event.type === 'checkout.session.expired') {
+    const session = event.data.object as Stripe.Checkout.Session
+
+    if (session.metadata?.booking_source !== 'payment_link') {
+      return NextResponse.json({ received: true })
+    }
+
+    const { data: booking } = await supabase
+      .from('bookings')
+      .select('id, booking_uuid, customer_name, listing_title')
+      .eq('stripe_session_id', session.id)
+      .maybeSingle()
+
+    if (!booking) {
+      return NextResponse.json({ received: true })
+    }
+
+    // Cancel the pre-booked FH slot so capacity is released
+    if (booking.booking_uuid) {
+      const fh = getFareHarborClient()
+      try {
+        await fh.cancelBooking(booking.booking_uuid)
+      } catch (err) {
+        console.error('[stripe-webhook] checkout.session.expired: FH cancel failed', err)
+      }
+    }
+
+    // Mark cancelled in Supabase
+    await supabase
+      .from('bookings')
+      .update({ status: 'cancelled', payment_status: 'expired' })
+      .eq('id', booking.id)
+
+    // Slack note
+    const webhookUrl = process.env.SLACK_WEBHOOK_URL
+    if (webhookUrl) {
+      const text = [
+        `⏰ *Payment link expired — FH slot released*`,
+        `${booking.listing_title}`,
+        `👤 ${booking.customer_name}`,
+        booking.booking_uuid ? `FH cancelled: ${booking.booking_uuid}` : '',
+      ].filter(Boolean).join('\n')
+      await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      }).catch(() => {})
+    }
+  }
+
   // ── payment_intent.succeeded ──────────────────────────────────────────────
   // Safety net for async payment methods (iDEAL, Bancontact, SEPA, etc.).
   //
@@ -42,6 +182,13 @@ export async function POST(request: NextRequest) {
   if (event.type === 'payment_intent.succeeded') {
     const pi = event.data.object as Stripe.PaymentIntent
     const meta = pi.metadata ?? {}
+
+    // Payment link bookings are handled in checkout.session.completed above.
+    // The Checkout Session creates its own PI — if we don't skip here, the webhook
+    // would try to create a second FareHarbor booking for the same slot.
+    if (meta.booking_source === 'payment_link') {
+      return NextResponse.json({ received: true })
+    }
 
     // Google Ads conversion — report BEFORE the idempotency check below, because
     // that check early-returns for card payments already booked by /book, which
@@ -166,6 +313,7 @@ export async function POST(request: NextRequest) {
       booking_uuid: fhBookingUuid ?? null,
       fareharbor_availability_pk: Number(meta.avail_pk),
       fareharbor_customer_type_rate_pk: Number(meta.customer_type_rate_pk),
+      customer_type_name: meta.customer_type_name || null,
       stripe_payment_intent_id: pi.id,
       stripe_amount: pi.amount,
       base_amount_cents: serverBaseAmount,

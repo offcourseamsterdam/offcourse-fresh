@@ -45,7 +45,7 @@ alone tells us everything, no session join required for the dashboard count.
 
 | File | What changed |
 |------|--------------|
-| `supabase/migrations/056_whatsapp_click_event.sql` | **New.** Adds `whatsapp_click` to the `tracking_events.event_name` CHECK constraint. **Must be applied** before events will persist (see below). |
+| `supabase/migrations/062_whatsapp_click_event.sql` | **New.** Adds `whatsapp_click` to the `tracking_events.event_name` CHECK constraint. **Must be applied** before events will persist (see below). |
 | `src/lib/tracking/constants.ts` | Added `whatsapp_click` to `TRACKING_EVENTS`. Deliberately *not* added to `FUNNEL_STEPS` — it's a side engagement event, like `no_availability`. |
 | `src/lib/tracking/client.ts` | `trackEvent` gained an optional `dedupeKey` (so the same event can be counted separately per source within a session). New `trackWhatsAppClick(source)` helper + `WhatsAppSource` type; stamps the `gclid` cookie onto the event metadata. |
 | `src/lib/tracking/whatsapp-alert.ts` | **New.** `buildWhatsAppAdAlert()` (pure, tested message builder) + `notifyGoogleAdsWhatsAppClick()` — posts a Slack alert when a gclid-carrying WhatsApp click arrives, deduped to once per session. |
@@ -112,7 +112,7 @@ alone tells us everything, no session join required for the dashboard count.
 
 ## ⚠️ Deployment note — apply the migration
 
-`056_whatsapp_click_event.sql` must run against Supabase before clicks will be
+`062_whatsapp_click_event.sql` must run against Supabase before clicks will be
 stored. Until then the API silently rejects the new event (the CHECK constraint
 fails and the insert is swallowed — tracking never breaks the UX). Apply it via
 the Management API as described in `CLAUDE.md` (the `SUPABASE_MANAGEMENT_TOKEN`

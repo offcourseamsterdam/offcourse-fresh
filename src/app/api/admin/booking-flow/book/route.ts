@@ -1,7 +1,10 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
+import type { FHBookingResponse } from '@/lib/fareharbor/types'
+import { resolveCustomerTypeName } from '@/lib/fareharbor/customer-type-name'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getStripe } from '@/lib/stripe/server'
 import type { BookingSource } from '@/lib/constants'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { normalizePartnerCode } from '@/lib/partner-codes/generate'
@@ -55,6 +58,24 @@ const PLATFORM_SOURCES = ['withlocals', 'clickandboat', 'getyourguide', 'tripadv
  *   Private boats: quantity is always 1 regardless of guest count (the rate IS the boat/duration).
  *   Shared boats: quantity = guestCount (each guest is a separate customer entry).
  */
+/**
+ * Pick which analytics session a booking belongs to.
+ *
+ * The browsing session captured on the PaymentIntent at intent-creation
+ * (`metadata.session_id`) is authoritative — it was recorded while the customer
+ * was still browsing. The client-sent `body.sessionId` is read at booking time,
+ * AFTER the Stripe payment redirect, so it points at a fresh post-payment session
+ * (the "/confirmation" orphan) and would detach the booking from the funnel that
+ * actually produced it. Prefer the PI value; fall back to the body value for
+ * non-Stripe bookings (full-discount / partner-invoice) that have no PaymentIntent.
+ */
+export function pickBookingSessionId(
+  piMetadataSessionId: string | null | undefined,
+  bodySessionId: string | null | undefined,
+): string | null {
+  return piMetadataSessionId || bodySessionId || null
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -68,6 +89,9 @@ export async function POST(request: NextRequest) {
       depositAmountCents,
       partnerCode,
       promoCodeId,
+      // Stripe recovery only: skip FareHarbor validate+create, record revenue locally.
+      // Use when FH rejects due to minimum party size — admin creates in FH manually.
+      overrideMinParty = false,
     } = body
 
     if (!availPk || !customerTypeRatePk || !guestCount || !contact?.name || !contact?.email || !contact?.phone) {
@@ -105,11 +129,16 @@ export async function POST(request: NextRequest) {
 
     // ── Campaign attribution & commission ──────────────────────────────────
     // Resolves to one of three sources, in this precedence (last wins):
-    //   1. Cookie (oc_attr) — passive attribution from a tracked visit
+    //   1. Cookie (oc_attr) — passive attribution from a tracked visit (website only)
     //   2. Promo code with campaign_id — explicit code-scoped attribution
     //   3. Partner-invoice context — always wins when present
+    //
+    // Cookie attribution is intentionally skipped for non-website sources (GetYourGuide,
+    // WithLocals, stripe_recovery, etc.) — those bookings are entered by an admin whose
+    // browser may carry a partner cookie unrelated to the actual booking channel.
+    // Platform auto-attribution still runs via resolveCampaignId in saveToSupabase.
     const { campaignId: cookieCampaignId, partnerId, commissionAmountCents } = await resolveAttribution({
-      attrCookie: request.cookies.get('oc_attr')?.value ?? null,
+      attrCookie: bookingSource === 'website' ? (request.cookies.get('oc_attr')?.value ?? null) : null,
       promoCodeId: promoCodeId ?? null,
       partnerInvoiceContext,
       baseAmountCents: Number(baseAmountCents ?? 0),
@@ -171,31 +200,41 @@ export async function POST(request: NextRequest) {
       },
     } as const
 
-    // Step 1: Validate — FareHarbor always returns 200; is_bookable tells us if it's valid
-    const validation = await fh.validateBooking(Number(availPk), bookingData)
-    if (!validation.is_bookable) {
-      // Fire-and-forget alert. Especially critical when stripePaymentIntentId is set
-      // (customer already charged) — but also useful for ops visibility on internal failures.
-      await notifyBookingFailure({
-        ...failureCtx,
-        stage: 'fareharbor_validate',
-        reason: validation.error ?? 'Slot not bookable',
-      }).catch(err => console.error('[book] notifyBookingFailure (validate) failed:', err))
-      return apiError(validation.error ?? 'Booking is not available', 422)
-    }
+    // ── FareHarbor validate + create (skipped when overrideMinParty is set) ──
+    // overrideMinParty is only honoured for stripe_recovery bookings where the
+    // customer already paid but FH rejects due to minimum party size. The admin
+    // records the revenue locally and creates the FH booking manually.
+    let booking: FHBookingResponse | undefined = undefined
 
-    // Step 2: Create FareHarbor booking
-    let booking
-    try {
-      booking = await fh.createBooking(Number(availPk), bookingData)
-    } catch (fhErr) {
-      const msg = fhErr instanceof Error ? fhErr.message : String(fhErr)
-      await notifyBookingFailure({
-        ...failureCtx,
-        stage: 'fareharbor_create',
-        reason: msg,
-      }).catch(err => console.error('[book] notifyBookingFailure (create) failed:', err))
-      throw fhErr // Re-throw so the outer catch returns a proper 500 to the client
+    if (overrideMinParty && isStripeRecovery) {
+      // Intentionally skip FareHarbor — fhBookingUuid will be null in Supabase.
+      console.info('[book] overrideMinParty: skipping FareHarbor validate+create for stripe_recovery')
+    } else {
+      // Step 1: Validate — FareHarbor always returns 200; is_bookable tells us if it's valid
+      const validation = await fh.validateBooking(Number(availPk), bookingData)
+      if (!validation.is_bookable) {
+        // Fire-and-forget alert. Especially critical when stripePaymentIntentId is set
+        // (customer already charged) — but also useful for ops visibility on internal failures.
+        await notifyBookingFailure({
+          ...failureCtx,
+          stage: 'fareharbor_validate',
+          reason: validation.error ?? 'Slot not bookable',
+        }).catch(err => console.error('[book] notifyBookingFailure (validate) failed:', err))
+        return apiError(validation.error ?? 'Booking is not available', 422)
+      }
+
+      // Step 2: Create FareHarbor booking
+      try {
+        booking = await fh.createBooking(Number(availPk), bookingData)
+      } catch (fhErr) {
+        const msg = fhErr instanceof Error ? fhErr.message : String(fhErr)
+        await notifyBookingFailure({
+          ...failureCtx,
+          stage: 'fareharbor_create',
+          reason: msg,
+        }).catch(err => console.error('[book] notifyBookingFailure (create) failed:', err))
+        throw fhErr // Re-throw so the outer catch returns a proper 500 to the client
+      }
     }
 
     // Step 3a: Save to Supabase — BLOCKING.
@@ -206,6 +245,22 @@ export async function POST(request: NextRequest) {
     // bookings are created here; the webhook handles the iDEAL/async path.
     const gclid = request.cookies.get('oc_gclid')?.value ?? null
 
+    // Session attribution: the browsing session is captured on the PaymentIntent
+    // at intent-creation (metadata.session_id) — the same source the Stripe webhook
+    // trusts. body.sessionId is read client-side AFTER the payment redirect and
+    // points at a fresh "/confirmation" session, so it must NOT win. Retrieve the
+    // PI and prefer its session; never block a paid booking on this lookup.
+    let piSessionId: string | null = null
+    if (!isInternal && stripePaymentIntentId) {
+      try {
+        const pi = await getStripe().paymentIntents.retrieve(String(stripePaymentIntentId))
+        piSessionId = pi.metadata?.session_id ?? null
+      } catch (err) {
+        console.error('[book] could not read session_id from PaymentIntent metadata:', err)
+      }
+    }
+    const sessionId = pickBookingSessionId(piSessionId, body.sessionId as string | null)
+
     const bookingPayload = buildBookingPayload(
       body,
       { uuid: booking?.uuid },
@@ -215,6 +270,7 @@ export async function POST(request: NextRequest) {
         partnerId,
         commissionAmountCents,
         gclid,
+        sessionId,
       },
     )
 
@@ -278,6 +334,17 @@ export async function POST(request: NextRequest) {
         fareharborCustomerTypeRatePk: customerTypeRatePk ? Number(customerTypeRatePk) : null,
       }),
     ])
+
+    // When FareHarbor was intentionally skipped (minimum party override), return a
+    // clear local-only marker so the UI can show a tailored confirmation message.
+    if (overrideMinParty && isStripeRecovery && !booking) {
+      return apiOk({
+        booking: {
+          localOnly: true,
+          message: 'Revenue recorded locally. No FareHarbor booking created — add it manually in the FH admin dashboard.',
+        },
+      })
+    }
 
     return apiOk({ booking })
   } catch (err) {
@@ -344,6 +411,7 @@ function buildBookingPayload(
     partnerId: string | null
     commissionAmountCents: number | null
     gclid: string | null
+    sessionId: string | null
   },
 ): BookingPayload {
   const baseAmt = Number(body.baseAmountCents ?? 0)
@@ -384,9 +452,9 @@ function buildBookingPayload(
     stripePaymentIntentId: isStripeRecovery
       ? (body.recoveryStripePaymentIntentId ? String(body.recoveryStripePaymentIntentId) : null)
       : isInternal ? null : String(body.stripePaymentIntentId ?? ''),
-    bookingSource: String(body.bookingSource) as BookingSource,
+    bookingSource: (body.bookingSource && body.bookingSource !== 'undefined' ? String(body.bookingSource) : 'website') as BookingSource,
     depositAmountCents: (isInternal && !isStripeRecovery) ? Number(body.depositAmountCents ?? 0) : null,
-    sessionId: (body.sessionId as string | null) ?? null,
+    sessionId: attribution.sessionId,
     cookieCampaignId: attribution.campaignId,
     partnerId: attribution.partnerId,
     commissionAmountCents: attribution.commissionAmountCents,
@@ -657,11 +725,14 @@ async function saveToSupabase(p: BookingPayload): Promise<{ ok: true } | { ok: f
       : isInternal
         ? (p.fhBookingUuid ?? `internal_${Date.now()}`)
         : (p.stripePaymentIntentId ?? '')
+    // Snapshot the customer-type label (best-effort; null never blocks the booking).
+    const customerTypeName = await resolveCustomerTypeName(p.availPk, p.customerTypeRatePk)
     const { error } = await supabase.from('bookings').insert({
       booking_id: bookingId,
       booking_uuid: p.fhBookingUuid ?? null,
       fareharbor_availability_pk: p.availPk,
       fareharbor_customer_type_rate_pk: p.customerTypeRatePk,
+      customer_type_name: customerTypeName,
       stripe_payment_intent_id: p.stripePaymentIntentId,
       // Stripe recovery: use the admin-entered amount (real revenue). Other internal: 0.
       // Website: compute from base + extras + city tax − discount.

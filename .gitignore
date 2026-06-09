@@ -52,3 +52,10 @@ env-local-backup.txt
 next-env.d.ts
 .env*.local
 .worktrees/
+
+# Root-level working / source files (keep locally, not for repo)
+# Processed versions live in public/logos/ and public/textures/
+OffCourse_VerticalLogo_RGB_NoBackground_Pink.png
+Texture_background_LightGreen_Small.png
+Texture_background_Purple_Small.png
+stervoor beer.jpeg
