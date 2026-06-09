@@ -12,6 +12,24 @@ with a breakdown of which button people used.
 This reuses the existing first-party tracking system (sessions + funnel events in
 Supabase) — no third-party analytics, no extra cookies.
 
+On top of the plain count, two Google Ads features:
+
+- **Dashboard sub-stat** — "X from Google Ads visitors": how many of those
+  WhatsApp chats came from someone who clicked a Google ad (booked or not).
+- **Slack alert** — when a Google Ads visitor opens WhatsApp, a message is posted
+  to `SLACK_WEBHOOK_URL` (once per session), with the button, page, campaign, and
+  country. This catches leads that contact you instead of booking online.
+
+### How "Google Ads visitor" is detected
+
+When a visitor lands from a Google ad, Google appends a **gclid** (click id) to
+the URL; we already store it first-party in the `oc_gclid` cookie for 90 days
+(see `attribution.ts`). The WhatsApp click event copies that gclid into its
+`metadata`, so a click is attributed to Google Ads if it carries a gclid. This is
+more reliable than UTM-based channel attribution (it works even when ads use
+gclid auto-tagging without `utm_medium=cpc`) and self-contained — the event row
+alone tells us everything, no session join required for the dashboard count.
+
 ### How it counts
 
 - **Once per session, per source.** A visitor who taps the floating bubble twice
@@ -29,12 +47,15 @@ Supabase) — no third-party analytics, no extra cookies.
 |------|--------------|
 | `supabase/migrations/056_whatsapp_click_event.sql` | **New.** Adds `whatsapp_click` to the `tracking_events.event_name` CHECK constraint. **Must be applied** before events will persist (see below). |
 | `src/lib/tracking/constants.ts` | Added `whatsapp_click` to `TRACKING_EVENTS`. Deliberately *not* added to `FUNNEL_STEPS` — it's a side engagement event, like `no_availability`. |
-| `src/lib/tracking/client.ts` | `trackEvent` gained an optional `dedupeKey` (so the same event can be counted separately per source within a session). New `trackWhatsAppClick(source)` helper + `WhatsAppSource` type. |
+| `src/lib/tracking/client.ts` | `trackEvent` gained an optional `dedupeKey` (so the same event can be counted separately per source within a session). New `trackWhatsAppClick(source)` helper + `WhatsAppSource` type; stamps the `gclid` cookie onto the event metadata. |
+| `src/lib/tracking/whatsapp-alert.ts` | **New.** `buildWhatsAppAdAlert()` (pure, tested message builder) + `notifyGoogleAdsWhatsAppClick()` — posts a Slack alert when a gclid-carrying WhatsApp click arrives, deduped to once per session. |
+| `src/lib/tracking/whatsapp-alert.test.ts` | **New.** Unit tests for the Slack message builder. |
+| `src/app/api/tracking/event/route.ts` | Calls `notifyGoogleAdsWhatsAppClick()` before inserting a `whatsapp_click` row. |
 | `src/components/layout/WhatsAppButton.tsx` | Floating bubble fires `trackWhatsAppClick('floating_button')` on click. |
 | `src/components/layout/WhatsAppLink.tsx` | **New.** Small client component for a tracked WhatsApp link, so server components (the footer) can keep server-rendering while the click is still tracked. |
 | `src/components/layout/Footer.tsx` | Footer phone link now uses `<WhatsAppLink source="footer">`. |
 | `src/components/booking/TimeSlotStep.tsx` | "Chat to book" timeslots fire `trackWhatsAppClick('chat_to_book')` before opening WhatsApp. |
-| `src/lib/tracking/queries.ts` | New `aggregateWhatsAppClicks()` (pure, tested) + `getWhatsAppClicks()` query → unique-session counts total and per source. |
+| `src/lib/tracking/queries.ts` | New `aggregateWhatsAppClicks()` (pure, tested) + `getWhatsAppClicks()` query → unique-session counts total, per source, and Google Ads (gclid-carrying) sessions. |
 | `src/lib/tracking/queries.test.ts` | **New.** Unit tests for the aggregation logic. |
 | `src/app/api/admin/tracking/overview/route.ts` | Overview endpoint now returns `whatsAppClicks`. |
 | `src/app/[locale]/admin/statistics/page.tsx` | New "WhatsApp Chats Started" card with per-source breakdown bars. |
@@ -83,7 +104,10 @@ Supabase) — no third-party analytics, no extra cookies.
 ## Dependencies
 
 - **Depends on:** the first-party tracking system (Track A) — sessions,
-  `tracking_events`, consent cookies, `/api/tracking/event`.
+  `tracking_events`, consent cookies, `/api/tracking/event`; the `oc_gclid`
+  cookie capture (`attribution.ts`) for Google Ads attribution; `postSlackText`
+  (`src/lib/slack/send-notification.ts`) and the `SLACK_WEBHOOK_URL` env var for
+  the alert (no-ops silently when unset).
 - **Depended on by:** the admin Performance dashboard.
 
 ## ⚠️ Deployment note — apply the migration

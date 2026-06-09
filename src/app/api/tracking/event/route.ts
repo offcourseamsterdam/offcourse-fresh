@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { TRACKING_EVENTS } from '@/lib/tracking/constants'
 import { checkRateLimit } from '@/lib/tracking/rate-limit'
 import { isBot } from '@/lib/tracking/bot-filter'
+import { notifyGoogleAdsWhatsAppClick } from '@/lib/tracking/whatsapp-alert'
 
 /**
  * POST /api/tracking/event
@@ -50,6 +51,12 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createAdminClient()
+
+    // Slack ping when a Google Ads visitor contacts us on WhatsApp.
+    // Runs before the insert so its "first tap of the session" check is accurate.
+    if (event_name === 'whatsapp_click') {
+      await notifyGoogleAdsWhatsAppClick(supabase, session_id, metadata)
+    }
 
     await supabase.from('tracking_events').insert({
       session_id,

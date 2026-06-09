@@ -3,7 +3,7 @@ import { aggregateWhatsAppClicks } from './queries'
 
 describe('aggregateWhatsAppClicks', () => {
   it('returns zero for no rows', () => {
-    expect(aggregateWhatsAppClicks([])).toEqual({ total: 0, bySource: [] })
+    expect(aggregateWhatsAppClicks([])).toEqual({ total: 0, bySource: [], googleAdsSessions: 0 })
   })
 
   it('counts unique sessions overall (deduping repeat rows from one session)', () => {
@@ -54,6 +54,24 @@ describe('aggregateWhatsAppClicks', () => {
     const stats = aggregateWhatsAppClicks([
       { session_id: '', metadata: { source: 'footer' } },
     ])
-    expect(stats).toEqual({ total: 0, bySource: [] })
+    expect(stats).toEqual({ total: 0, bySource: [], googleAdsSessions: 0 })
+  })
+
+  it('counts unique Google Ads sessions (gclid present), deduped per session', () => {
+    const stats = aggregateWhatsAppClicks([
+      { session_id: 's1', metadata: { source: 'floating_button', gclid: 'abc123' } },
+      { session_id: 's1', metadata: { source: 'footer', gclid: 'abc123' } }, // same session, still 1
+      { session_id: 's2', metadata: { source: 'floating_button', gclid: 'def456' } },
+      { session_id: 's3', metadata: { source: 'floating_button' } }, // no gclid → not an ad clicker
+    ])
+    expect(stats.total).toBe(3)
+    expect(stats.googleAdsSessions).toBe(2)
+  })
+
+  it('does not count empty-string gclid as a Google Ads session', () => {
+    const stats = aggregateWhatsAppClicks([
+      { session_id: 's1', metadata: { source: 'footer', gclid: '' } },
+    ])
+    expect(stats.googleAdsSessions).toBe(0)
   })
 })

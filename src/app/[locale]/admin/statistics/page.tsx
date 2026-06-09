@@ -51,6 +51,7 @@ interface OverviewData {
   whatsAppClicks: {
     total: number
     bySource: { source: string; sessions: number }[]
+    googleAdsSessions: number
   }
 }
 
@@ -312,6 +313,16 @@ export default function StatisticsPage() {
                     {data.whatsAppClicks.total.toLocaleString()}
                   </span>
                   <span className="text-xs text-zinc-400">sessions</span>
+                </div>
+                {/* Google Ads sub-stat — ad clickers who contacted us on WhatsApp */}
+                <div className="mb-4 flex items-center gap-2 rounded-lg bg-[#4285f4]/5 border border-[#4285f4]/15 px-3 py-2">
+                  <span className="text-lg font-semibold tabular-nums text-[#4285f4]">
+                    {data.whatsAppClicks.googleAdsSessions.toLocaleString()}
+                  </span>
+                  <span className="text-xs text-zinc-500">
+                    from Google Ads visitors
+                    <span className="text-zinc-400"> · clicked an ad, then messaged (booked or not)</span>
+                  </span>
                 </div>
                 <div className="space-y-2.5">
                   {data.whatsAppClicks.bySource.map((row) => {

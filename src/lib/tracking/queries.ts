@@ -491,14 +491,23 @@ export interface WhatsAppClickStats {
   total: number
   /** Unique sessions per source, highest first. */
   bySource: { source: string; sessions: number }[]
+  /**
+   * Unique sessions whose WhatsApp tap carried a Google Ads click id (gclid) —
+   * i.e. ad clickers who contacted us on WhatsApp (whether or not they booked).
+   */
+  googleAdsSessions: number
+}
+
+interface WhatsAppClickRow {
+  session_id: string
+  metadata: { source?: string; gclid?: string } | null
 }
 
 /** Pure aggregation of whatsapp_click rows into unique-session counts. */
-export function aggregateWhatsAppClicks(
-  rows: { session_id: string; metadata: { source?: string } | null }[],
-): WhatsAppClickStats {
+export function aggregateWhatsAppClicks(rows: WhatsAppClickRow[]): WhatsAppClickStats {
   const allSessions = new Set<string>()
   const sessionsBySource = new Map<string, Set<string>>()
+  const googleAdsSessions = new Set<string>()
 
   for (const r of rows) {
     if (!r.session_id) continue
@@ -507,13 +516,14 @@ export function aggregateWhatsAppClicks(
     const set = sessionsBySource.get(source) ?? new Set<string>()
     set.add(r.session_id)
     sessionsBySource.set(source, set)
+    if (r.metadata?.gclid) googleAdsSessions.add(r.session_id)
   }
 
   const bySource = Array.from(sessionsBySource.entries())
     .map(([source, set]) => ({ source, sessions: set.size }))
     .sort((a, b) => b.sessions - a.sessions)
 
-  return { total: allSessions.size, bySource }
+  return { total: allSessions.size, bySource, googleAdsSessions: googleAdsSessions.size }
 }
 
 export async function getWhatsAppClicks(
@@ -527,9 +537,7 @@ export async function getWhatsAppClicks(
     .gte('created_at', range.from)
     .lte('created_at', range.to)
 
-  return aggregateWhatsAppClicks(
-    (data ?? []) as { session_id: string; metadata: { source?: string } | null }[],
-  )
+  return aggregateWhatsAppClicks((data ?? []) as WhatsAppClickRow[])
 }
 
 // ── Device breakdown ──

@@ -13,6 +13,7 @@ import {
   getAnonSessionId,
   parseUTMFromURL,
   getAttribution,
+  getGclid,
 } from './attribution'
 
 let pageViewCount = 0
@@ -175,12 +176,15 @@ export type WhatsAppSource = 'floating_button' | 'footer' | 'chat_to_book'
 /**
  * Track a tap on any WhatsApp button. Counted once per session per source
  * (so a visitor who taps the floating bubble and the footer link counts once
- * for each). Records the source and the page it happened on.
+ * for each). Records the source, the page it happened on, and the Google Ads
+ * click id (gclid) if this visitor arrived via a Google ad within the 90-day
+ * window — that's how we tell "an ad clicker contacted us on WhatsApp".
  */
 export function trackWhatsAppClick(source: WhatsAppSource) {
+  const gclid = getGclid() || undefined
   trackEvent(
     'whatsapp_click',
-    { source, path: window.location.pathname },
+    { source, path: window.location.pathname, gclid },
     `whatsapp_click:${source}`,
   )
 }
