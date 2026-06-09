@@ -1,4 +1,5 @@
 import { SafeImage } from '@/components/ui/SafeImage'
+import { sectionRootStyle, roleColor, type SectionStyle } from '@/lib/homepage/section-styles'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -8,6 +9,8 @@ interface Card {
   title: string
   body: string
   rotate: string
+  polaroidColor?: string | null
+  titleColor?: string | null
 }
 
 export interface PrioritiesCardRow {
@@ -16,6 +19,8 @@ export interface PrioritiesCardRow {
   title: string
   body: string
   rotate: string
+  polaroid_color?: string | null
+  title_color?: string | null
 }
 
 // ── Fallback cards (used if database is empty) ───────────────────────────────
@@ -62,37 +67,43 @@ const FALLBACK_CARDS: Card[] = [
 
 function PolaroidCard({ card }: { card: Card }) {
   return (
-    <div
-      className={`bg-white rounded-[2px] shadow-polaroid w-56 overflow-hidden ${card.rotate} transition-transform hover:rotate-0 duration-300`}
-    >
-      {/* Photo */}
-      <div className="relative aspect-[4/3] overflow-hidden bg-[#e5e7eb]">
-        {card.img ? (
-          <SafeImage
-            src={card.img}
-            alt={card.alt}
-            fill
-            sizes="224px"
-            className="object-cover"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-zinc-300 text-xs">
-            No image
-          </div>
-        )}
+    <div className="w-72 sm:w-80 flex flex-col items-center">
+      {/* Polaroid — photo + title caption (classic look) */}
+      <div
+        className={`w-full rounded-[2px] shadow-polaroid ${card.rotate} transition-transform hover:rotate-0 duration-300`}
+        style={{ backgroundColor: card.polaroidColor || '#ffffff' }}
+      >
+        {/* Photo — uniform square frame across all cards (consistent look) */}
+        <div className="relative overflow-hidden bg-[#e5e7eb] m-3 sm:m-4 mb-0 rounded-[1px] aspect-square">
+          {card.img ? (
+            <SafeImage
+              src={card.img}
+              alt={card.alt}
+              fill
+              sizes="(max-width: 640px) 288px, 320px"
+              className="object-cover"
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center text-zinc-300 text-xs">
+              No image
+            </div>
+          )}
+        </div>
+        {/* Title — the polaroid's caption */}
+        <div className="px-4 sm:px-5 pt-4 pb-6 text-center">
+          <p
+            className="font-palmore text-2xl sm:text-3xl leading-snug"
+            style={{ color: card.titleColor || '#980201' }}
+          >
+            {card.title}
+          </p>
+        </div>
       </div>
-      {/* Caption */}
-      <div className="p-3 pb-4">
-        <p
-          className="font-palmore text-sm leading-snug mb-1"
-          style={{ color: '#980201' }}
-        >
-          {card.title}
-        </p>
-        <p className="font-avenir text-muted text-xs leading-relaxed">
-          {card.body}
-        </p>
-      </div>
+
+      {/* Description — outside the polaroid, on the section background */}
+      <p className="font-avenir text-muted text-base sm:text-lg leading-relaxed text-center mt-4 max-w-sm px-2">
+        {card.body}
+      </p>
     </div>
   )
 }
@@ -101,9 +112,10 @@ function PolaroidCard({ card }: { card: Card }) {
 
 interface PrioritiesSectionProps {
   cards?: PrioritiesCardRow[]
+  sectionStyle?: SectionStyle
 }
 
-export function PrioritiesSection({ cards: rows = [] }: PrioritiesSectionProps) {
+export function PrioritiesSection({ cards: rows = [], sectionStyle }: PrioritiesSectionProps) {
   const cards: Card[] = rows.length > 0
     ? rows.map(row => ({
         img: row.image_url,
@@ -111,24 +123,26 @@ export function PrioritiesSection({ cards: rows = [] }: PrioritiesSectionProps) 
         title: row.title,
         body: row.body,
         rotate: row.rotate,
+        polaroidColor: row.polaroid_color,
+        titleColor: row.title_color,
       }))
     : FALLBACK_CARDS
 
   return (
-    <section className="bg-texture-sand py-20">
+    <section className="bg-texture-sand py-20" style={sectionRootStyle(sectionStyle)}>
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
 
         {/* Section header */}
         <div className="text-center mb-14">
           <h2
             className="font-briston text-[48px] sm:text-[64px] lg:text-[72px] leading-none mb-3"
-            style={{ color: '#980201' }}
+            style={{ color: roleColor('h2', '#980201') }}
           >
             WE GOT OUR PRIORITIES STRAIGHT
           </h2>
           <p
             className="font-palmore text-[32px] sm:text-[40px] leading-tight"
-            style={{ color: '#980201' }}
+            style={{ color: roleColor('h3', '#980201') }}
           >
             make yourself at home
           </p>

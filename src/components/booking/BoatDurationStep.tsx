@@ -148,18 +148,24 @@ export function BoatDurationStep({
                           <button
                             type="button"
                             onClick={() => onSelectSlot(nearest.earlier!)}
-                            className="px-3 py-2 rounded-full text-xs font-bold bg-white/90 text-[var(--color-primary)] hover:bg-white shadow-sm"
+                            className="px-3 py-2 rounded-full text-xs font-bold bg-white/90 text-[var(--color-primary)] hover:bg-white shadow-sm text-left"
                           >
                             ← Earlier: {nearest.earlier.startTime}
+                            {nearest.earlier.callToBook && (
+                              <span className="block text-[10px] font-medium text-amber-600 mt-0.5">Chat to book</span>
+                            )}
                           </button>
                         )}
                         {nearest.later && (
                           <button
                             type="button"
                             onClick={() => onSelectSlot(nearest.later!)}
-                            className="px-3 py-2 rounded-full text-xs font-bold bg-white/90 text-[var(--color-primary)] hover:bg-white shadow-sm"
+                            className="px-3 py-2 rounded-full text-xs font-bold bg-white/90 text-[var(--color-primary)] hover:bg-white shadow-sm text-left"
                           >
                             Later: {nearest.later.startTime} →
+                            {nearest.later.callToBook && (
+                              <span className="block text-[10px] font-medium text-amber-600 mt-0.5">Chat to book</span>
+                            )}
                           </button>
                         )}
                       </div>
