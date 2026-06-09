@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useLocale } from 'next-intl'
+import { trackWhatsAppClick } from '@/lib/tracking/client'
 
 /** Show admin shortcut on dev/preview domains, hide on the real production domain */
 function useShowAdminButton() {
@@ -65,6 +66,7 @@ export function WhatsAppButton() {
         href="https://wa.me/31645351618"
         target="_blank"
         rel="noopener noreferrer"
+        onClick={() => trackWhatsAppClick('floating_button')}
         aria-label="Chat with us on WhatsApp"
         className={`fixed ${bottomClass} right-4 z-50 w-10 h-10 bg-[#25D366] rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-[bottom] duration-300`}
       >

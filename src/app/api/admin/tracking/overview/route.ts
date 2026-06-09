@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getOverviewKPIs, getTrafficByDay, getChannelMetrics, getConversionByListing, getEntryFunnel, getDeviceMetrics, type BookingCategory } from '@/lib/tracking/queries'
+import { getOverviewKPIs, getTrafficByDay, getChannelMetrics, getConversionByListing, getEntryFunnel, getDeviceMetrics, getWhatsAppClicks, type BookingCategory } from '@/lib/tracking/queries'
 
 /**
  * GET /api/admin/tracking/overview?from=2024-01-01&to=2024-01-31
@@ -25,16 +25,17 @@ export async function GET(request: NextRequest) {
     const supabase = createAdminClient()
     const range = { from, to }
 
-    const [kpis, trafficByDay, channels, conversionByListing, entryFunnel, deviceMetrics] = await Promise.all([
+    const [kpis, trafficByDay, channels, conversionByListing, entryFunnel, deviceMetrics, whatsAppClicks] = await Promise.all([
       getOverviewKPIs(supabase, range, category),
       getTrafficByDay(supabase, range, category),
       getChannelMetrics(supabase, range, category),
       getConversionByListing(supabase, range),
       getEntryFunnel(supabase, range),
       getDeviceMetrics(supabase, range),
+      getWhatsAppClicks(supabase, range),
     ])
 
-    return apiOk({ kpis, trafficByDay, channels, conversionByListing, entryFunnel, deviceMetrics })
+    return apiOk({ kpis, trafficByDay, channels, conversionByListing, entryFunnel, deviceMetrics, whatsAppClicks })
   } catch (err) {
     return apiError(err instanceof Error ? err.message : 'Unknown error')
   }

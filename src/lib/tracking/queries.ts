@@ -477,6 +477,69 @@ export async function getEntryFunnel(
   }))
 }
 
+// ── WhatsApp clicks ──
+//
+// "How often is the WhatsApp button used?" We record a `whatsapp_click` event
+// (deduped client-side to once per session per source) and count it here as
+// UNIQUE SESSIONS — both overall and broken down by where the tap happened
+// (floating bubble / footer / chat-to-book). Like the funnel, this is
+// client-side tracking, so it under-counts visitors with ad blockers and is
+// not recorded before cookie consent.
+
+export interface WhatsAppClickStats {
+  /** Unique sessions in which at least one WhatsApp button was tapped. */
+  total: number
+  /** Unique sessions per source, highest first. */
+  bySource: { source: string; sessions: number }[]
+  /**
+   * Unique sessions whose WhatsApp tap carried a Google Ads click id (gclid) —
+   * i.e. ad clickers who contacted us on WhatsApp (whether or not they booked).
+   */
+  googleAdsSessions: number
+}
+
+interface WhatsAppClickRow {
+  session_id: string
+  metadata: { source?: string; gclid?: string } | null
+}
+
+/** Pure aggregation of whatsapp_click rows into unique-session counts. */
+export function aggregateWhatsAppClicks(rows: WhatsAppClickRow[]): WhatsAppClickStats {
+  const allSessions = new Set<string>()
+  const sessionsBySource = new Map<string, Set<string>>()
+  const googleAdsSessions = new Set<string>()
+
+  for (const r of rows) {
+    if (!r.session_id) continue
+    allSessions.add(r.session_id)
+    const source = r.metadata?.source || 'unknown'
+    const set = sessionsBySource.get(source) ?? new Set<string>()
+    set.add(r.session_id)
+    sessionsBySource.set(source, set)
+    if (r.metadata?.gclid) googleAdsSessions.add(r.session_id)
+  }
+
+  const bySource = Array.from(sessionsBySource.entries())
+    .map(([source, set]) => ({ source, sessions: set.size }))
+    .sort((a, b) => b.sessions - a.sessions)
+
+  return { total: allSessions.size, bySource, googleAdsSessions: googleAdsSessions.size }
+}
+
+export async function getWhatsAppClicks(
+  supabase: SupabaseClient,
+  range: DateRange,
+): Promise<WhatsAppClickStats> {
+  const { data } = await supabase
+    .from('tracking_events')
+    .select('session_id, metadata')
+    .eq('event_name', 'whatsapp_click')
+    .gte('created_at', range.from)
+    .lte('created_at', range.to)
+
+  return aggregateWhatsAppClicks((data ?? []) as WhatsAppClickRow[])
+}
+
 // ── Device breakdown ──
 //
 // Mobile vs desktop vs tablet, with each device's funnel-to-checkout rate.

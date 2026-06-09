@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import type { AvailabilitySlot } from '@/types'
 import { Loader2, ChevronDown, ChevronUp } from 'lucide-react'
+import { trackWhatsAppClick } from '@/lib/tracking/client'
 
 interface TimeSlotStepProps {
   slots: AvailabilitySlot[]
@@ -98,7 +99,7 @@ export function TimeSlotStep({ slots, loading, mode, selectedSlotPk, onSelect, s
 
           function handleClick() {
             if (isSoldOut) return
-            if (isChatToBook) { window.open(WHATSAPP_URL, '_blank'); return }
+            if (isChatToBook) { trackWhatsAppClick('chat_to_book'); window.open(WHATSAPP_URL, '_blank'); return }
             onSelect(slot)
             // After picking a new time from the expanded list, collapse back to
             // the 9-slot window centred on the new selection.

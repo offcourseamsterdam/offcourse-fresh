@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Loader2, Activity, UtensilsCrossed } from 'lucide-react'
+import { Loader2, Activity, UtensilsCrossed, MessageCircle } from 'lucide-react'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { KPICard } from '@/components/admin/tracking/KPICard'
 import { PeriodSelector, getDateRange, type PeriodKey } from '@/components/admin/tracking/PeriodSelector'
@@ -48,6 +48,19 @@ interface OverviewData {
     reached_checkout: number
     checkout_rate: number
   }[]
+  whatsAppClicks: {
+    total: number
+    bySource: { source: string; sessions: number }[]
+    googleAdsSessions: number
+  }
+}
+
+// Friendly labels for WhatsApp click sources (from event metadata)
+const WHATSAPP_SOURCE_LABELS: Record<string, string> = {
+  floating_button: 'Floating button',
+  footer: 'Footer link',
+  chat_to_book: 'Chat to book',
+  unknown: 'Other',
 }
 
 interface FunnelStep {
@@ -285,6 +298,57 @@ export default function StatisticsPage() {
               </div>
             </div>
           )}
+
+          {/* WhatsApp button usage */}
+          <div className="bg-white rounded-xl border border-zinc-200 p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <MessageCircle className="w-4 h-4 text-[#25D366]" />
+              <h2 className="text-sm font-semibold text-zinc-900">WhatsApp Chats Started</h2>
+            </div>
+            <p className="text-xs text-zinc-400 mb-4">Sessions where someone tapped a WhatsApp button · client-side, under-counts vs server traffic</p>
+            {data.whatsAppClicks && data.whatsAppClicks.total > 0 ? (
+              <>
+                <div className="flex items-baseline gap-2 mb-4">
+                  <span className="text-3xl font-semibold text-zinc-900 tabular-nums">
+                    {data.whatsAppClicks.total.toLocaleString()}
+                  </span>
+                  <span className="text-xs text-zinc-400">sessions</span>
+                </div>
+                {/* Google Ads sub-stat — ad clickers who contacted us on WhatsApp */}
+                <div className="mb-4 flex items-center gap-2 rounded-lg bg-[#4285f4]/5 border border-[#4285f4]/15 px-3 py-2">
+                  <span className="text-lg font-semibold tabular-nums text-[#4285f4]">
+                    {data.whatsAppClicks.googleAdsSessions.toLocaleString()}
+                  </span>
+                  <span className="text-xs text-zinc-500">
+                    from Google Ads visitors
+                    <span className="text-zinc-400"> · clicked an ad, then messaged (booked or not)</span>
+                  </span>
+                </div>
+                <div className="space-y-2.5">
+                  {data.whatsAppClicks.bySource.map((row) => {
+                    const widthPct = data.whatsAppClicks.total > 0
+                      ? Math.max((row.sessions / data.whatsAppClicks.total) * 100, 2)
+                      : 0
+                    return (
+                      <div key={row.source} className="flex items-center gap-3">
+                        <span className="text-sm flex-1 truncate text-zinc-700">
+                          {WHATSAPP_SOURCE_LABELS[row.source] ?? row.source}
+                        </span>
+                        <div className="w-28 bg-zinc-100 rounded-full h-1.5 overflow-hidden flex-shrink-0">
+                          <div className="h-1.5 rounded-full bg-[#25D366]" style={{ width: `${widthPct}%` }} />
+                        </div>
+                        <span className="text-xs font-medium tabular-nums w-10 text-right flex-shrink-0 text-zinc-900">
+                          {row.sessions.toLocaleString()}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-zinc-400 py-6 text-center">No WhatsApp taps recorded for this period.</p>
+            )}
+          </div>
 
           {/* Funnel */}
           <div className="bg-white rounded-xl border border-zinc-200 p-5">
