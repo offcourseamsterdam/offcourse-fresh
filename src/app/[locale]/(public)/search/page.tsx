@@ -1,7 +1,5 @@
-import { createClient } from '@/lib/supabase/server'
-import { getFilteredAvailability } from '@/lib/fareharbor/availability'
 import { SearchResultsPage } from '@/components/search/SearchResultsPage'
-import type { SearchResult } from '@/types'
+import { fetchSearchResults } from '@/lib/search/fetch-search-results'
 
 export const revalidate = 0
 
@@ -19,19 +17,6 @@ export default async function SearchPage({ params, searchParams }: Props) {
     return <SearchResultsPage results={[]} date="" guests={guests} locale={locale} />
   }
 
-  const supabase = await createClient()
-  const { data: listings } = await supabase
-    .from('cruise_listings')
-    .select('*')
-    .eq('is_published', true)
-    .order('display_order', { ascending: true })
-
-  const results: SearchResult[] = await Promise.all(
-    (listings ?? []).map(async listing => {
-      const { slots } = await getFilteredAvailability(listing.id, date, guests)
-      return { listing, availableSlots: slots, date, guests }
-    })
-  )
-
+  const results = await fetchSearchResults(date, guests)
   return <SearchResultsPage results={results} date={date} guests={guests} locale={locale} />
 }

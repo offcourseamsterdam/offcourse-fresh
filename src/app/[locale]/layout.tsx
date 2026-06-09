@@ -1,30 +1,13 @@
 import { NextIntlClientProvider } from 'next-intl'
 import { getMessages } from 'next-intl/server'
 import { notFound } from 'next/navigation'
-import { headers } from 'next/headers'
 import { routing } from '@/i18n/routing'
-import { Navbar } from '@/components/layout/Navbar'
-import { Footer } from '@/components/layout/Footer'
-import { WhatsAppButton } from '@/components/layout/WhatsAppButton'
 import AuthProvider from '@/components/auth/AuthProvider'
 import { SearchProvider } from '@/lib/search/SearchContext'
 import { TrackingScript } from '@/components/tracking/TrackingScript'
-import { CookieBanner } from '@/components/tracking/CookieBanner'
-import { GoogleTag } from '@/components/tracking/GoogleTag'
-import { createClient } from '@/lib/supabase/server'
 import type { Locale } from '@/lib/i18n/config'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://offcourseamsterdam.com'
-
-async function getNavListings() {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('cruise_listings')
-    .select('id, title, slug, category')
-    .eq('is_published', true)
-    .order('display_order', { ascending: true })
-  return (data ?? []) as { id: string; title: string; slug: string; category: string }[]
-}
 
 interface Props {
   children: React.ReactNode
@@ -55,39 +38,7 @@ export default async function LocaleLayout({ children, params }: Props) {
     notFound()
   }
 
-  const headersList = await headers()
-  const pathname = headersList.get('x-pathname') ?? ''
-  const isAdminRoute = (
-    pathname === '/admin' || pathname.startsWith('/admin/') ||
-    pathname === '/partner' || pathname.startsWith('/partner/')
-  )
-
-  // Run the two independent fetches concurrently; skip the nav query entirely on
-  // admin/partner routes, where the Navbar (its only consumer) isn't rendered.
-  const [messages, navListings] = await Promise.all([
-    getMessages(),
-    isAdminRoute
-      ? Promise.resolve<Awaited<ReturnType<typeof getNavListings>>>([])
-      : getNavListings(),
-  ])
-
-  const orgJsonLd = {
-    '@context': 'https://schema.org',
-    '@type': 'LocalBusiness',
-    name: 'Off Course Amsterdam',
-    description: "Electric canal cruises through Amsterdam's hidden gems. Your friend with a boat.",
-    url: BASE_URL,
-    telephone: '+31645351618',
-    address: {
-      '@type': 'PostalAddress',
-      streetAddress: 'Keizersgracht 62',
-      addressLocality: 'Amsterdam',
-      addressCountry: 'NL',
-    },
-    sameAs: [
-      'https://instagram.com/offcourseamsterdam',
-    ],
-  }
+  const messages = await getMessages()
 
   return (
     <NextIntlClientProvider messages={messages}>
@@ -96,17 +47,8 @@ export default async function LocaleLayout({ children, params }: Props) {
           {/* Resource hints for the Supabase Storage CDN — saves ~100ms on first image load. */}
           <link rel="preconnect" href="https://fkylzllxvepmrtqxisrn.supabase.co" />
           <link rel="dns-prefetch" href="https://fkylzllxvepmrtqxisrn.supabase.co" />
-          <script
-            type="application/ld+json"
-            dangerouslySetInnerHTML={{ __html: JSON.stringify(orgJsonLd) }}
-          />
-          {!isAdminRoute && <Navbar navListings={navListings} />}
-          <main>{children}</main>
-          {!isAdminRoute && <Footer />}
-          {!isAdminRoute && <WhatsAppButton />}
-          {!isAdminRoute && <CookieBanner />}
-          {!isAdminRoute && <GoogleTag />}
           <TrackingScript />
+          {children}
         </SearchProvider>
       </AuthProvider>
     </NextIntlClientProvider>

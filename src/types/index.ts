@@ -1,5 +1,4 @@
 import type { Locale } from '@/lib/i18n/config'
-import type { Database } from '@/lib/supabase/types'
 
 // ── Availability ─────────────────────────────────────────────────────────────
 
@@ -35,8 +34,22 @@ export interface SearchParams {
   locale: Locale
 }
 
+/** Narrow listing shape returned in search results — only what the UI actually needs. */
+export interface SearchListingRow {
+  id: string
+  slug: string
+  title: string
+  tagline: string | null
+  category: string
+  hero_image_url: string | null
+  starting_price: number | null
+  price_display: string | null
+  price_label: string | null
+  departure_location: string | null
+}
+
 export interface SearchResult {
-  listing: Database['public']['Tables']['cruise_listings']['Row']
+  listing: SearchListingRow
   availableSlots: AvailabilitySlot[]
   date: string
   guests: number

@@ -159,7 +159,7 @@ export async function applyListingFilters(
  * less than the item's full capacity (meaning at least one person has booked),
  * we keep the slot bookable — the boat is going out anyway.
  */
-function applyCutoff(
+export function applyCutoff(
   slots: AvailabilitySlot[],
   fhItem: { booking_cutoff_hours: number | null; item_type: string | null; max_slot_capacity: number | null } | null,
   now: Date
