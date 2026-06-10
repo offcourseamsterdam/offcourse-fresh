@@ -344,3 +344,124 @@ picked in whatever order the business screams for.
 shadow mode, they're one feature in practice) + C1 (weather brain).
 A1 makes the system pleasant daily, B makes it promotable safely, C1 is
 the highest-leverage Amsterdam-specific intelligence.
+
+---
+
+## 9. Maintenance board (boats break; the system should know)
+
+A `/admin/maintenance` tab: kanban board of everything broken, being
+fixed, or due for service — with captains reporting from the dock in
+30 seconds.
+
+**Data:**
+```
+maintenance_issues  id, boat_id FK, title, description, photos jsonb,
+                    severity ('blocking'|'urgent'|'normal'|'cosmetic'),
+                    status ('reported'|'triage'|'planned'|'in_progress'|'done'),
+                    reported_by (staff or 'agent'), assigned_to null,
+                    cost_cents null, due_date null, resolved_at null,
+                    recurrence_of FK null  ← "3rd time this part" tracking
+```
+
+**Captain reporting — two zero-friction paths:**
+1. **QR on each boat** (the QR-is-a-URL trick again): scan → phone page →
+   photo, voice note or short text, severity tap → submitted. 30 seconds
+   between guests.
+2. **Just WhatsApp it.** Captains message the business number a photo of
+   the broken pump — the inbox classifier (§ inbox plan) detects
+   maintenance intent from staff numbers and creates the issue card
+   automatically, replying "logged ✓, marked urgent". No new app to
+   teach anyone; the unified inbox becomes the intake for *everything*.
+
+**Admin UI:** kanban columns = status, drag cards between them —
+`@dnd-kit` is already a dependency (cruise gallery editor uses it), so
+the drag-and-drop plumbing exists. Card: photo, boat, severity chip,
+age, assignee, cost. Filters per boat. Done column asks for cost →
+feeds the finance layer (§5) as a cost row.
+
+**The single-source-of-truth synergies (why this belongs in the system
+rather than Trello):**
+- **Blocking issue → availability proposal.** Severity 'blocking' on
+  Diana → agent immediately proposes blocking Diana's FareHarbor slots
+  for the affected dates + drafts reschedule messages for already-booked
+  guests (weather-playbook machinery reused verbatim, different trigger).
+  Trello can't ground a breakdown in tomorrow's bookings; the truth can.
+- **Engine-hours service intervals for free.** Bookings know each
+  cruise's duration per boat → cumulative engine hours ≈ sum of booked
+  hours → "Curaçao passed ~200h since last service" becomes a proposal,
+  no logging required from anyone.
+- **Recurrence detection.** `recurrence_of` chains let the agent say
+  "bow thruster issue #3 in 10 weeks — €180 in repairs; consider
+  replacement (€450)". Repairs stop being amnesiac.
+- **Parts → stock.** A repair consuming spare parts decrements stock
+  items; reorder proposals (§3) cover spares the same as prosecco.
+
+**Build size:** table + QR report page + kanban tab ≈ 1 week (Stage-1,
+human-powered). The agent behaviors are later proposal kinds on top.
+
+---
+
+## 10. What the equivalent human labor would cost (the business case)
+
+Assumptions: Dutch employer cost for office/ops staff ≈ €25–35/h all-in
+(salary + employer charges). Season ≈ Apr–Oct. Hours are estimates of
+the work the system covers — the same work Beer historically did himself.
+
+| Work the system does | Human hrs/wk (season) | Off-season |
+|---|---|---|
+| Customer support: email + WhatsApp + phone, logging | 10–14 | 3–5 |
+| OTA booking emails → check availability → enter → reply | 3–5 | 1 |
+| Missed-call chasing, voicemail follow-up | 2–3 | 1 |
+| Stock counting coordination + supplier ordering | 2–3 | 1 |
+| Rota making, availability chasing, swap handling | 2–4 | 1 |
+| Review monitoring + replies + insight gathering | 1–2 | 0.5 |
+| Demand watching, ads babysitting, anomaly spotting | 2–3 | 1 |
+| Maintenance coordination | 1–2 | 0.5 |
+| Bookkeeping prep / monthly close | 1 | 1 |
+| **Total** | **~24–37 h/wk** | **~10–12 h/wk** |
+
+Year-averaged ≈ 17–25 h/wk ≈ **0.5–0.65 FTE** ≈ **€1,900–3,200/month
+employer cost ≈ €23k–38k/year** — i.e. the system does roughly the work
+of a halftime-to-substantial ops employee, year round, without holidays.
+
+Against that: running costs ≈ €50–150/mo (Twilio + WhatsApp conversations
++ AI calls + queue + monitoring) — **15–40× cheaper than the labor it
+covers** — plus the build investment (the phases in these two docs).
+
+Honest accounting of what does NOT go away: human-in-the-loop means
+judgment time remains — realistically **15–30 min/day of approving and
+steering** (the Today screen, §8-A1). The system compresses *execution*
+~85–90% on covered tasks; it converts doing-hours into deciding-minutes.
+
+The strategically bigger number than saved cost: **deferred hiring.**
+This work profile is exactly the first ops hire a growing tour company is
+forced into (€35k+/yr, recruiting risk, management overhead). The system
+pushes that hire out by seasons while capacity grows — and when the first
+hire does come, they start with an inbox, a board, and an AI staff
+instead of a shoebox of processes in the founder's head.
+
+### 10b. The sharper benchmark: a €750/mo remote VA
+
+Fair comparison — a full-time remote assistant (e.g. Nigeria, which is
+even on Amsterdam time, UTC+1) at €750/mo who learns the business:
+
+| | Remote VA | The system |
+|---|---|---|
+| Cash, yr 1 | ~€9,000–11,000 (wage + platform/bonus) | ~€600–1,800 running + the build (Beer's sessions + subscription) |
+| Cash, yr 2+ | same again, every year | ~€600–1,800/yr |
+| Beer's time | managing + QA: realistically 2–4 h/wk, heavier in the first months of training | approving: 15–30 min/day |
+| Coverage | one human: ~40 h/wk, sleeps, sick days, holidays; one pair of hands at Saturday-morning peak (5 WhatsApps + 2 calls + 3 OTA emails at once) | 24/7 intake, parallel by nature; the human only decides |
+| Ramp-up | months to learn FareHarbor, boats, brand voice — and the learning **walks out the door** if they leave | playbook + history accumulate as data; never resigns |
+| Risk surface | full admin access (refunds, PII, Stripe) to a low-cost contractor — GDPR processor + trust exposure | agents are scoped API clients with audit trails (§1b) |
+| Mistake profile | human errors, variable with fatigue/turnover | systematic errors, but every action proposal-gated + logged |
+| Speed to start | can start next week | ~2–3 months of phased building |
+
+Honest read: the VA is a *legitimate* option and wins on speed-to-start.
+The system wins on cash (≈ €8k+/yr cheaper from year 2), coverage,
+zero-churn, and risk. **But the strongest play is that they're not
+rivals:** if volume ever justifies a human, a €750 VA *operating the
+system* — approving proposals, handling the weird cases — is 3–5× more
+productive than one drowning in raw inboxes, can be onboarded from the
+playbook in days instead of months, and inherits guardrails instead of
+admin keys. Build the system either way; it makes every future human
+(Beer included) the supervisor instead of the clerk.
