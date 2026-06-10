@@ -3,7 +3,7 @@
  * Uses sendBeacon for fire-and-forget delivery that survives page transitions.
  */
 import type { TrackingEventName } from './constants'
-import { COOKIE_SESSION_ID, COOKIE_VISITOR_ID } from './constants'
+import { COOKIE_SESSION_ID, COOKIE_VISITOR_ID, COOKIE_GCLID } from './constants'
 import {
   getCookie,
   getOrCreateVisitorId,
@@ -13,7 +13,6 @@ import {
   getAnonSessionId,
   parseUTMFromURL,
   getAttribution,
-  getGclid,
 } from './attribution'
 
 let pageViewCount = 0
@@ -181,7 +180,7 @@ export type WhatsAppSource = 'floating_button' | 'footer' | 'chat_to_book'
  * window — that's how we tell "an ad clicker contacted us on WhatsApp".
  */
 export function trackWhatsAppClick(source: WhatsAppSource) {
-  const gclid = getGclid() || undefined
+  const gclid = getCookie(COOKIE_GCLID) || undefined
   trackEvent(
     'whatsapp_click',
     { source, path: window.location.pathname, gclid },
