@@ -280,6 +280,64 @@ Webhooks for voice are *synchronous* — if your endpoint is slow or down,
 Same idempotency story as WhatsApp: `CallSid` unique, callbacks
 forward-only.
 
+### 7b. Voice UI & answering model (how Beer actually picks up)
+
+There are three ways a human can be on the other end of a Twilio call.
+Be honest about what each can and cannot do:
+
+| Mode | How it rings | Works away from laptop? | Verdict |
+|---|---|---|---|
+| **A. Forward to personal phone** (PSTN `<Dial><Number>`) | Native phone call: lock screen, ringtone, car Bluetooth, smartwatch | ✅ Always | **v1 default — the reliable backbone** |
+| **B. Browser softphone** (Twilio Voice JS SDK / WebRTC in `/admin`) | Rings inside the open browser tab | ❌ Mobile browsers can't reliably ring: iOS/Android won't wake a background tab for an incoming WebRTC call, no native call screen, audio routes like a website not like a phone call | **Desktop-only, Phase 4b** |
+| **C. Native app w/ CallKit** | Like a real phone app | ✅ | Overkill — not planned |
+
+**Mobile browser reality check (the answer to "can I answer in the admin
+on my phone?"):** no — and it's a platform limit, not an effort limit.
+A web page can only receive a WebRTC call while it is open, foregrounded,
+and awake. Phones aggressively freeze background tabs, and the web has no
+access to the native incoming-call UI. Anyone selling "browser call
+answering on mobile" is really selling missed calls. The personal-phone
+leg (A) IS the mobile experience — and it's better than anything we could
+build, because the OS treats it as what it is: a phone call.
+
+**v1 — Mode A with two refinements:**
+
+1. **Call screening (whisper).** The `<Dial>` to Beer's personal number
+   uses a screening URL: when he picks up, *he* (not the customer) hears
+   "Off Course call from +44… — press 1 to accept." Two reasons:
+   - He knows it's business before saying "with Beer!" to a stranger.
+   - **The voicemail-swallow gotcha:** without screening, if his phone is
+     off, his *personal* voicemail "answers" the call — Twilio sees a
+     human pickup, and the customer leaves a message in Beer's private
+     voicemail instead of the business one. Screening means an answer
+     only counts when a key is pressed; otherwise Twilio falls through to
+     the business voicemail + transcript + inbox flow.
+2. **Ring order config** stored in a small `voice_settings` table
+   (editable in admin): list of numbers, simultaneous vs sequential,
+   per-day business hours, holiday override ("all voicemail").
+
+**Outbound from a phone — the callback trick (no WebRTC needed):**
+"Call customer" button in the inbox, tapped on Beer's phone browser:
+1. API asks Twilio to **call Beer's personal phone first** (native ring).
+2. He answers — hears "connecting you to Sarah, GYG booking Saturday".
+3. Twilio dials the customer and bridges the legs.
+4. Customer's screen shows the **business number**, the call is recorded
+   and logged to the conversation like any other.
+So his personal phone is just the *handset*; identity, recording, and
+logging stay with the business line. This works from any device that can
+tap a button — no microphone-in-browser involved.
+
+**Phase 4b — desktop softphone (nice-to-have, after everything else):**
+Twilio Voice JS SDK in the admin shell. A presence toggle ("Available in
+browser") includes a `<Client>` leg in the simultaneous ring alongside the
+phone legs — whoever answers first wins, Twilio cancels the rest. Incoming-
+call banner shows caller, matched contact, their bookings; answer/decline/
+mute; notes typed during the call save to the conversation. If the tab is
+closed nothing is lost — the phone leg still rings. The softphone is
+sugar; the phone leg is the guarantee.
+
+
+
 ---
 
 ## 8. Admin inbox UI (`/admin/inbox`)
