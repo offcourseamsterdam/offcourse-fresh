@@ -6,8 +6,9 @@ routes), money path, frontend maintainability, data-layer scalability, structure
 readiness. Plus: `npx tsc --noEmit` (clean), `npm test` (578/578 passing, 52 files),
 `npm audit` (9 transitive vulns).
 
-**Supersedes** the June 2 audits (`CODEBASE_HEALTH.md`, `PERF_AUDIT.md`) — most of their
-critical findings have since been fixed and are re-verified below.
+**Supersedes** the June 2 audits (now at `docs/audits/2026-06-02-codebase-health.md` and
+`2026-06-02-perf-audit.md`) — most of their critical findings have since been fixed and are
+re-verified below.
 
 ---
 
@@ -141,3 +142,24 @@ write-back at all** — that determines whether Supabase or FH is the source of 
 Decisions needed from the owner: (1) keep 7 locales and populate translations, or cut down?
 (2) chat channel: WhatsApp Business API vs on-site live chat vs both? (3) abandoned carts:
 email-only or email+SMS? (4) capacity source of truth: FareHarbor or Supabase?
+
+---
+
+## 6. Addendum — fixed later the same day (this session)
+
+| Finding | Status |
+|---|---|
+| C1 duplicate migration 062 | ✅ renamed to `063_whatsapp_click_event.sql` |
+| C2 rate limiting | ✅ `enforceRateLimit()` (moved limiter to `src/lib/rate-limit.ts`) on promo/validate (10/min), search (30/min), search/slots (60/min), fareharbor/availability (120/min), booking-flow/quote (30/min). In-memory per-instance — upgrade to Redis-backed when adding the queue |
+| C3 npm vulnerabilities | ✅ `npm audit fix` + **Next.js 16.2.2 → 16.2.9** (closes the high-severity middleware-bypass/cache-poisoning CVEs). 2 moderates remain, both needing breaking bumps for unused features (`@anthropic-ai/sdk` memory tool; `postcss` bundled in next) |
+| C4 FareHarbor singleton bypass | ✅ both call sites now use `getFareHarborClient()` |
+| H1 (partial) cron observability | ✅ `alertCronFailure()` (`src/lib/cron/alert.ts`, tested) wired into all 7 crons + fareharbor/sync — failures now post to Slack. Sentry still recommended for the app at large |
+| H5 dev auth bypass | ✅ now requires explicit `ADMIN_DEV_BYPASS=true` *and* dev build; documented in `.env.example` |
+| M3 duplicated `extractVat` | ✅ `AddCateringModal` imports from `lib/extras/calculate` |
+| M6 cron secret inconsistency | ✅ fareharbor/sync uses `requireCronSecret`; **bonus bug found: the route only exported POST while Vercel Cron sends GET — the nightly sync had been failing twice over (405 + wrong secret). GET now exported.** `CRON_SECRET` added to `.env.example` |
+| M7 pricing_quotes RLS | ✅ migration `064_pricing_quotes_enable_rls.sql` written — **must still be applied to the live DB** (no management token in this environment) |
+| M8 revalidate path validation | ✅ paths must start with `/`; secret check fails closed when env unset |
+| M9 docs drift | ✅ CLAUDE.md test count updated (582/53); June 2 audits moved to `docs/audits/`; stale `/api/admin/migrate` reference removed from `.env.example` |
+| M11 image-list select narrowing | ❌ intentionally skipped — the admin UI renders `variants`, narrowing would break it |
+
+Still open after this session: Sentry (H2 app-wide), job queue (H2), tracking aggregation → Postgres RPC (H3), Redis-backed FH cache/limiter (H4), admin hook/modal consolidation (M1/M2), i18n decision (M4), zod on mutation routes (M5), missing feature docs, money-path plumbing tests (M10).
