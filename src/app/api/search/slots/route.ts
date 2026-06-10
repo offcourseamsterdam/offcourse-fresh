@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { enforceRateLimit } from '@/lib/rate-limit'
 import { createClient } from '@/lib/supabase/server'
 import { getFilteredAvailability } from '@/lib/fareharbor/availability'
 
@@ -7,6 +8,10 @@ import { getFilteredAvailability } from '@/lib/fareharbor/availability'
 // Returns FareHarbor availability slots for a single cruise listing,
 // filtered through the listing's 3-layer filter system.
 export async function GET(request: NextRequest) {
+  // One FareHarbor call per request — cap abuse of the shared FH quota.
+  const limited = enforceRateLimit(request, 'search-slots', 60, 60_000)
+  if (limited) return limited
+
   const { searchParams } = request.nextUrl
   const slug = searchParams.get('slug')
   const date = searchParams.get('date')
