@@ -340,23 +340,109 @@ sugar; the phone leg is the guarantee.
 
 ---
 
-## 8. Admin inbox UI (`/admin/inbox`)
+## 8. Admin inbox UI (`/admin/inbox`) — the support environment
 
-- **List pane**: conversations, filter chips (channel · status · assigned to
-  me), unread counts; built on `useAdminFetch` + **Supabase Realtime**
-  subscription on `messages` for live updates (first Realtime use in the
-  app — client component subscribes to postgres_changes, no server infra).
-- **Thread pane**: bubbles (in/out), per-message delivery status, call
-  entries with audio player + transcript, internal notes (visible to team
-  only), AI proposal cards with the Confirm flow (§5).
-- **Composer**: channel-aware — email reply via Gmail API (threads
-  correctly), WhatsApp free-form vs template picker per the 24h window,
-  voice = click-to-call later.
-- **Context sidebar**: contact, their bookings (match by email/phone),
-  linked OTA proposal, quick links.
-- Sidebar nav: replace the `customers` "coming soon" entry with **Inbox**
-  (badge: open conversation count — same pattern as the catering badge).
-- New modals/forms ride the `AdminFormModal` + `useAdminSave` foundation.
+### 8a. Desktop layout — three panes
+
+```
+┌─────────────┬───────────────────────────────────┬──────────────────┐
+│ CONVERSATIONS│  THREAD                           │ CUSTOMER          │
+│             │                                    │                  │
+│ [All][Mine] │  💬 Sarah · WhatsApp · open        │ Sarah Mitchell   │
+│ [✉][💬][📞] │  ─────────────────────────────     │ +44 7… · EN      │
+│             │  ┌─ in ──────────────┐             │ sarah@…          │
+│ ● 💬 Sarah  │  │ Hi! Can we move   │             │                  │
+│   can we mo…│  │ our cruise to 6pm?│ 14:02       │ BOOKINGS         │
+│   2m        │  └───────────────────┘             │ ▸ Sat 21 Jun     │
+│             │            ┌─ out ─────────────┐   │   Diana · 4 p.   │
+│   ✉ GYG     │            │ Of course! Let me │   │   €340 · paid    │
+│   booking r…│            │ check the 6pm slot│✓✓ │ ▸ Aug '25 (past) │
+│   1h  [AI]  │            └───────────────────┘   │                  │
+│             │  ┌─ note (internal) ─┐             │ AI PROPOSAL      │
+│   📞 +31 6… │  │ regular customer, │             │ (none here)      │
+│   missed ·  │  │ gave discount '25 │             │                  │
+│   voicemail │  └───────────────────┘             │ ACTIONS          │
+│   3h        │                                    │ ⊕ Create booking │
+│             │  [Reply][WhatsApp ✓ window 21h]    │ ✉ Payment link   │
+│   …         │  [📞 Call customer] [+ Note]       │ 🍽 Add catering  │
+└─────────────┴───────────────────────────────────┴──────────────────┘
+```
+
+- **Left — conversation list.** Every channel in one list, newest activity
+  first. Each row: channel icon (✉ 💬 📞), contact name, snippet, time,
+  unread dot, `[AI]` chip when a proposal is waiting. Filter chips:
+  All / Mine / Unassigned + per-channel + status. Live via Supabase
+  Realtime — a new WhatsApp message appears without refresh, like
+  WhatsApp Web.
+- **Middle — the thread.** One conversation, chronological. Per-channel
+  rendering:
+  - **WhatsApp**: chat bubbles; outbound show ✓ sent → ✓✓ delivered →
+    blue read (from Twilio status callbacks); images/voice notes inline;
+    template messages get a small "template" tag.
+  - **Email**: card per email — subject line, collapsible body
+    (sanitized HTML), attachments as chips. OTA booking emails carry the
+    **AI proposal card** (§5) pinned at top: extracted details, live
+    availability result, editable fields, **[Confirm booking]** button.
+  - **Voice**: call card — direction arrow, duration, ▶ audio player
+    (recording), expandable transcript, the AI 2-line summary in italics
+    ("Wants to know if dogs are allowed; mentioned Saturday"). Missed
+    calls show red with the voicemail attached.
+  - **Internal notes**: amber background, never sent anywhere — the team
+    margin-scribble ("regular, friend of Tariq").
+  - **System lines**: thin grey — "Booking #1042 linked", "Assigned to
+    Jannah", "AI proposal approved by Beer".
+- **Composer (bottom).** Adapts to the conversation's channel:
+  - WhatsApp: free-text + a small chip showing the 24h window ("window
+    closes in 21h"); when expired the box swaps to the **template picker**
+    automatically (§6).
+  - Email: reply box with quoted thread, sends via Gmail API so it
+    threads under the same subject from the same address.
+  - Voice conversations: no text box — **[📞 Call customer]** (the
+    callback trick, §7b) and the option to continue on WhatsApp instead
+    ("switch channel" creates/locates the WhatsApp conversation for the
+    same contact).
+  - Always available: **+ Note** tab, and **AI draft** button — drafts a
+    reply in the brand voice (reusing `lib/ai/context.ts`, which already
+    encodes the tone-of-voice rules) with the booking context filled in;
+    human edits, then sends. Incoming non-English messages show an
+    inline translation; replies can be written in English and translated
+    back (same AI stack as content translations).
+- **Right — customer context.** Contact card (name, phone, email,
+  language), **their bookings** matched by email/phone — click opens the
+  existing `BookingDetailRow`. Quick actions reuse existing admin flows:
+  create booking (prefilled from conversation), send payment link,
+  add catering. Status + assignee selectors at top.
+
+### 8b. Workflow
+
+`open` (needs us) → `pending` (waiting on customer) → `resolved`.
+Replying flips open→pending automatically; an inbound message reopens.
+Assignment = a person per conversation; "Mine" filter is the personal
+queue. The nav sidebar gets an **Inbox** item with an open-count badge
+(same mechanism as the catering badge). Slack pings on: new conversation,
+unanswered > 15 min, failed outbound send.
+
+### 8c. On the phone (mobile browser)
+
+Unlike incoming *calls* (§7b), **text support from the phone browser works
+fully** — it's just reading and sending text. The inbox collapses to a
+two-level drill-in like a chat app: list → tap → thread (the three-pane
+layout is `lg:`-gated, per the responsive rules in CLAUDE.md). So the
+realistic away-from-laptop flow is: Slack ping → open admin on phone →
+read WhatsApp/email thread → reply or tap **Call customer** (your phone
+becomes the handset). The only thing the phone browser can't do is *ring*
+for incoming calls — that's what the native forwarding leg is for.
+
+### 8d. Build notes
+
+- All list/thread data over `useAdminFetch` + one Realtime subscription;
+  optimistic message insert on send (status `queued`), reconciled by the
+  status callback — the ✓✓ pattern falls out of the data model for free.
+- New modals (assign, template picker, switch-channel) ride
+  `AdminFormModal` + `useAdminSave`.
+- v1 deliberately excludes: snooze, canned-replies library, CSAT surveys,
+  multi-team routing, search-in-thread. The data model supports them;
+  the screens don't need them yet.
 
 ---
 
