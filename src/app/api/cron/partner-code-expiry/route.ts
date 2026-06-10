@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { postSlackText } from '@/lib/slack/send-notification'
 import { requireCronSecret } from '@/lib/auth/require-cron-secret'
+import { alertCronFailure } from '@/lib/cron/alert'
 
 /**
  * GET /api/cron/partner-code-expiry
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
       .order('expires_at', { ascending: true })
 
     if (error) {
-      console.error('[cron/partner-code-expiry] query error:', error)
+      await alertCronFailure('partner-code-expiry', error, 'expiring-codes query failed')
       return NextResponse.json({ error: 'Query failed' }, { status: 500 })
     }
 
@@ -53,7 +54,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ ok: true, checked: rows.length })
   } catch (err) {
-    console.error('[cron/partner-code-expiry]', err)
+    await alertCronFailure('partner-code-expiry', err)
     return NextResponse.json({ error: 'Failed' }, { status: 500 })
   }
 }

@@ -1,7 +1,9 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { requireCronSecret } from '@/lib/auth/require-cron-secret'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { alertCronFailure } from '@/lib/cron/alert'
 
 // Derive item_type from item name
 function deriveItemType(name: string): 'private' | 'shared' {
@@ -9,13 +11,12 @@ function deriveItemType(name: string): 'private' | 'shared' {
 }
 
 export async function POST(request: NextRequest) {
-  // Verify authorization
-  const authHeader = request.headers.get('Authorization')
-  const expectedToken = process.env.REVALIDATION_SECRET
-
-  if (!expectedToken || authHeader !== `Bearer ${expectedToken}`) {
-    return apiError('Unauthorized', 401)
-  }
+  // Vercel Cron invokes this route (vercel.json) with a GET request carrying
+  // `Bearer ${CRON_SECRET}` — the same guard every /api/cron/** route uses.
+  // (It previously checked REVALIDATION_SECRET and only exported POST, so the
+  // nightly cron was rejected twice over: wrong method AND wrong secret.)
+  const denied = requireCronSecret(request)
+  if (denied) return denied
 
   try {
     const client = getFareHarborClient()
@@ -94,7 +95,11 @@ export async function POST(request: NextRequest) {
       summary,
     })
   } catch (error) {
-    console.error('FareHarbor sync error:', error)
+    await alertCronFailure('fareharbor-sync', error)
     return apiError(error instanceof Error ? error.message : 'Sync failed')
   }
 }
+
+// Vercel Cron always sends GET — expose the same handler for both methods so
+// the scheduled run works and manual POST triggers keep working.
+export const GET = POST
