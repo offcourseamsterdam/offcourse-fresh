@@ -363,7 +363,7 @@ maintenance_issues  id, boat_id FK, title, description, photos jsonb,
                     recurrence_of FK null  ← "3rd time this part" tracking
 ```
 
-**Captain reporting — two zero-friction paths:**
+**Captain reporting — three zero-friction paths (pick per team habit):**
 1. **QR on each boat** (the QR-is-a-URL trick again): scan → phone page →
    photo, voice note or short text, severity tap → submitted. 30 seconds
    between guests.
@@ -372,6 +372,27 @@ maintenance_issues  id, boat_id FK, title, description, photos jsonb,
    maintenance intent from staff numbers and creates the issue card
    automatically, replying "logged ✓, marked urgent". No new app to
    teach anyone; the unified inbox becomes the intake for *everything*.
+3. **Slack channel `#broken`.** Captain posts photo + "bilge pump Diana
+   making noise" → a Slack **Events API** subscription delivers it to our
+   webhook → same classify-and-create pipeline → bot replies in-thread
+   "logged ✓ → [card](admin/maintenance/…)". Status changes post back to
+   the thread, so the channel doubles as a live log.
+
+**Slack upgrade this requires (one-time, ~2–3 days):** today's
+integration is an *incoming webhook* (outbound-only `postSlackText`).
+Receiving needs a proper **Slack App**: Events API subscription, bot
+token, and signing-secret verification (`v0=` HMAC — already on the
+`src/lib/webhooks/` verifier list in the inbox plan). The same app
+unlocks **interactive Approve/Reject buttons** on proposal pings (§8-A2)
+and threaded digests — one upgrade, three features.
+
+**Boundary (single-source-of-truth rule):** Slack is an *interface*,
+never the system of record. Every report becomes a `maintenance_issues`
+row; the kanban in `/admin/maintenance` is the truth. (Also practical:
+Slack's free plan deletes history after 90 days — a repair log that
+evaporates is exactly the amnesia §9 exists to prevent.) Photos are
+downloaded from Slack (bot-token auth) into Supabase Storage at intake,
+same pattern as Twilio media.
 
 **Admin UI:** kanban columns = status, drag cards between them —
 `@dnd-kit` is already a dependency (cruise gallery editor uses it), so
