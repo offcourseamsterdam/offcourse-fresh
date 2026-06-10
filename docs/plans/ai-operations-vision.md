@@ -45,6 +45,44 @@ smarter the way a new employee does: by being corrected and remembering.
 
 ---
 
+## 1b. Agents are API clients, never UI users (hard rule)
+
+The build order is: **traditional human-powered UI first, agents later —
+and the agents call the same functions the UI calls, not the UI itself.**
+
+```
+                 ┌────────────────────────────────┐
+   Admin UI ────▶│  Shared logic layer             │
+   (humans click)│  src/lib/* + /api/admin/*       │────▶ Postgres
+   AI agents ───▶│  (validation, money math, FH,   │      (the truth)
+   (jobs call)   │   notifications, audit)         │
+                 └────────────────────────────────┘
+```
+
+- **No browser automation, ever, for internal operations.** An agent
+  driving the admin UI would be slow, brittle (breaks on every redesign),
+  unauditable, and would hold a human's session. Agents are backend jobs
+  that call the same `lib/` functions and `/api/admin/*` routes the UI
+  buttons call — e.g. the booking agent's "Confirm" executes
+  `POST /api/admin/booking-flow/book`, the *exact* endpoint the FareHarbor
+  wizard in the UI uses. Same validation, same Slack notify, same dedupe.
+- **This is why "human UI first" is not a detour.** Building the manual
+  rota / stock pages / inbox forces the logic into shared, tested
+  functions. Those functions ARE the agent's toolbox later. The humans
+  battle-test the exact code paths the agents will call.
+- **Agent identity & permissions:** agents run as queue jobs with their
+  own service identity (`performed_by: 'agent:<kind>'` on every write),
+  scoped to the specific functions their kind needs — never a person's
+  session, never blanket admin. Every action lands in `agent_proposals` /
+  audit rows, visible in the UI as system lines ("AI ordered 24 prosecco
+  — approved by Beer, 14:02").
+- **Changeable & reversible:** proposals are editable before approval;
+  approved actions get an undo window where the underlying operation
+  supports it (pause campaign, unsend rota); irreversible operations
+  (refunds, FH bookings) stay behind explicit human approval permanently.
+
+---
+
 ## 2. Self-learning reply drafting (inbox)
 
 Mechanism, honestly described — three rungs, no magic:
