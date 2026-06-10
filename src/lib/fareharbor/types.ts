@@ -96,6 +96,7 @@ export interface FHBookingResponse {
   }>
   status: string
   is_cancelled: boolean | null
+  note: string | null
   created_at: string
   rebooked_from?: string
   rebooked_to?: string

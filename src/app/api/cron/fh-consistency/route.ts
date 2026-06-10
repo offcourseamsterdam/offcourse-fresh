@@ -4,14 +4,19 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { FHNotFoundError } from '@/lib/fareharbor/types'
 import { postSlackText } from '@/lib/slack/send-notification'
+import { buildFHBookingNote } from '@/lib/catering/build-fh-note'
+import type { ExtrasLineItem } from '@/lib/catering/filter'
 
 /**
  * GET /api/cron/fh-consistency
  * Vercel Cron: daily at 06:00 UTC (08:00 Amsterdam).
  *
- * Checks every upcoming confirmed/booked booking that has a FareHarbor UUID.
- * Posts a Slack alert for any booking whose FH booking is cancelled or missing.
- * Posts a green "all clear" if everything looks good.
+ * For every upcoming confirmed/booked booking with a FareHarbor UUID:
+ *   1. Verify the FH booking is not cancelled or missing.
+ *   2. If the booking has catering or a guest note, verify the FH note matches
+ *      what our system would generate — so the skipper sees correct info.
+ *
+ * Posts a Slack summary either way (green all-clear or red alert list).
  */
 export async function GET(request: NextRequest) {
   const denied = requireCronSecret(request)
@@ -20,10 +25,9 @@ export async function GET(request: NextRequest) {
   const supabase = createAdminClient()
   const fh = getFareHarborClient()
 
-  // Fetch all upcoming bookings with a FH UUID
   const { data: bookings, error } = await supabase
     .from('bookings')
-    .select('id, booking_uuid, customer_name, booking_date, start_time, customer_type_name, booking_source')
+    .select('id, booking_uuid, customer_name, booking_date, start_time, customer_type_name, booking_source, guest_note, extras_selected')
     .in('status', ['confirmed', 'booked'])
     .not('booking_date', 'is', null)
     .not('booking_uuid', 'is', null)
@@ -47,13 +51,26 @@ export async function GET(request: NextRequest) {
       const fhBooking = await fh.getBooking(booking.booking_uuid!)
 
       if (fhBooking.is_cancelled || fhBooking.status === 'cancelled') {
-        const line = formatBookingLine(booking)
-        issues.push(`🔴 *CANCELLED in FH* — ${line}`)
+        issues.push(`🔴 *CANCELLED in FH* — ${formatBookingLine(booking)}`)
+        continue
+      }
+
+      // Check catering/note consistency
+      const extras = (Array.isArray(booking.extras_selected) ? booking.extras_selected : []) as unknown as ExtrasLineItem[]
+      const expectedNote = buildFHBookingNote(booking.guest_note ?? null, extras)
+      const actualNote = fhBooking.note?.trim() || null
+      const normalised = expectedNote?.trim() || null
+
+      if (normalised !== null && normalised !== actualNote) {
+        issues.push(
+          `📋 *NOTE MISMATCH* — ${formatBookingLine(booking)}\n` +
+          `   Expected: ${normalised.split('\n')[0]}…\n` +
+          `   FH has: ${actualNote ? actualNote.split('\n')[0] + '…' : '(empty)'}`
+        )
       }
     } catch (err) {
       if (err instanceof FHNotFoundError) {
-        const line = formatBookingLine(booking)
-        issues.push(`❓ *NOT FOUND in FH* — ${line}`)
+        issues.push(`❓ *NOT FOUND in FH* — ${formatBookingLine(booking)}`)
       } else {
         const msg = err instanceof Error ? err.message : String(err)
         issues.push(`⚠️ *FH API error* for ${booking.customer_name ?? '?'} (${booking.booking_uuid?.slice(0, 8)}): ${msg}`)
@@ -64,7 +81,7 @@ export async function GET(request: NextRequest) {
   if (issues.length === 0) {
     const dates = [...new Set(bookings.map(b => b.booking_date))].sort()
     await postSlackText(
-      `✅ *FH Consistency Check* — all ${bookings.length} upcoming booking${bookings.length === 1 ? '' : 's'} confirmed in FareHarbor. ` +
+      `✅ *FH Consistency Check* — all ${bookings.length} upcoming booking${bookings.length === 1 ? '' : 's'} confirmed in FareHarbor with correct notes. ` +
       `Dates checked: ${dates.join(', ')}.`
     )
   } else {
@@ -74,7 +91,6 @@ export async function GET(request: NextRequest) {
       ...issues,
       '',
       `_Checked ${bookings.length} upcoming booking${bookings.length === 1 ? '' : 's'} total._`,
-      '_Fix these immediately — guests may not have a valid FareHarbor reservation._',
     ]
     await postSlackText(lines.join('\n'))
   }
