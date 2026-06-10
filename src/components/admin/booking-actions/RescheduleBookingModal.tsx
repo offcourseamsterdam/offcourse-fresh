@@ -143,7 +143,7 @@ export function RescheduleBookingModal({
     }
   }
 
-  async function handleConfirm() {
+  async function handleConfirm(sendEmail: boolean) {
     if (!selectedSlot || !selectedTypePk) return
     setSaving(true)
     setError(null)
@@ -158,6 +158,7 @@ export function RescheduleBookingModal({
           newDate: date,
           newStartAt: selectedSlot.start_at,
           newEndAt: selectedSlot.end_at,
+          sendEmail,
         }),
       })
       const json = await res.json()
@@ -297,9 +298,13 @@ export function RescheduleBookingModal({
         {/* Footer */}
         <div className="flex gap-2 justify-end px-6 py-4 border-t border-zinc-100 flex-shrink-0">
           <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>Go back</Button>
-          <Button size="sm" onClick={handleConfirm} disabled={saving || !canConfirm}>
+          <Button variant="outline" size="sm" onClick={() => handleConfirm(false)} disabled={saving || !canConfirm}>
             {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            {saving ? 'Rescheduling…' : 'Confirm reschedule'}
+            {saving ? 'Rescheduling…' : 'No email'}
+          </Button>
+          <Button size="sm" onClick={() => handleConfirm(true)} disabled={saving || !canConfirm}>
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            {saving ? 'Rescheduling…' : 'Reschedule + email'}
           </Button>
         </div>
       </div>

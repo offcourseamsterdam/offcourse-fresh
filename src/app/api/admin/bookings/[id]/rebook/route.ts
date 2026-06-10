@@ -15,13 +15,14 @@ export async function POST(
   try {
     const { id } = await params
     const body = await request.json()
-    const { newAvailPk, newCustomerTypeRatePk, newCustomerTypeName, newDate, newStartAt, newEndAt } = body as {
+    const { newAvailPk, newCustomerTypeRatePk, newCustomerTypeName, newDate, newStartAt, newEndAt, sendEmail } = body as {
       newAvailPk: number
       newCustomerTypeRatePk: number
       newCustomerTypeName?: string
       newDate: string
       newStartAt: string
       newEndAt: string
+      sendEmail?: boolean
     }
 
     if (!newAvailPk || !newCustomerTypeRatePk || !newDate) {
@@ -95,8 +96,8 @@ export async function POST(
 
     if (updateError) return apiError(updateError.message)
 
-    // Send reschedule confirmation email — fire-and-forget, never blocks the response
-    sendRescheduleEmail({
+    // Send reschedule confirmation email — only when explicitly requested
+    if (sendEmail !== false) sendRescheduleEmail({
       contact: {
         name: booking.customer_name ?? '',
         email: booking.customer_email ?? '',
