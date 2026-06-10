@@ -31,6 +31,10 @@
     {
       "path": "/api/cron/extras-upsell",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/fh-consistency",
+      "schedule": "0 6 * * *"
     }
   ]
 }

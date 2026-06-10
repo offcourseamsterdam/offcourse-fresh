@@ -95,9 +95,14 @@ export interface FHBookingResponse {
     customer_type_rate: FHCustomerTypeRate
   }>
   status: string
+  is_cancelled: boolean | null
   created_at: string
   rebooked_from?: string
   rebooked_to?: string
+}
+
+export interface FHSingleBookingResponse {
+  booking: FHBookingResponse
 }
 
 export interface FHValidationResult {

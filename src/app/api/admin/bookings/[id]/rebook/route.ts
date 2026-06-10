@@ -69,17 +69,9 @@ export async function POST(
       newFhBooking = await fh.createBooking(newAvailPk, bookingData)
     }
 
-    // Cancel original FH booking after new one is safely created
-    if (booking.booking_uuid) {
-      try {
-        await fh.cancelBooking(booking.booking_uuid)
-      } catch (err) {
-        if (!(err instanceof FHNotFoundError)) throw err
-        // Already gone in FH — continue
-      }
-    }
-
-    // Update Supabase record in-place with new slot details
+    // Update Supabase FIRST — if this fails, we still know the new FH UUID
+    // and can recover. Cancelling before the DB update is the root cause of
+    // orphaned bookings (new UUID created in FH but lost from our system).
     const { error: updateError } = await supabase
       .from('bookings')
       .update({
@@ -95,6 +87,16 @@ export async function POST(
       .eq('id', id)
 
     if (updateError) return apiError(updateError.message)
+
+    // Cancel original FH booking only after the DB is safely updated
+    if (booking.booking_uuid) {
+      try {
+        await fh.cancelBooking(booking.booking_uuid)
+      } catch (err) {
+        if (!(err instanceof FHNotFoundError)) throw err
+        // Already gone in FH — continue
+      }
+    }
 
     // Send reschedule confirmation email — only when explicitly requested
     if (sendEmail !== false) sendRescheduleEmail({

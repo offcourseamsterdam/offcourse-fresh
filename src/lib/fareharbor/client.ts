@@ -10,6 +10,7 @@ import type {
   FHBookingResponse,
   FHBookingCreateResponse,
   FHBookingsListResponse,
+  FHSingleBookingResponse,
   FHValidationResult,
 } from './types'
 import {
@@ -205,6 +206,13 @@ export class FareHarborClient {
     return res.bookings
   }
 
+  /** Fetch a single booking by UUID */
+  async getBooking(bookingUuid: string): Promise<FHBookingResponse> {
+    const path = `/companies/${COMPANY}/bookings/${bookingUuid}/`
+    const res = await this.request<FHSingleBookingResponse>(path, undefined, 0, EXTERNAL_API_BASE)
+    return res.booking
+  }
+
   /** Cancel a booking by UUID */
   async cancelBooking(bookingUuid: string): Promise<void> {
     const url = `/companies/${COMPANY}/bookings/${bookingUuid}/`
@@ -213,7 +221,7 @@ export class FareHarborClient {
 
   /** Update the note on an existing FareHarbor booking */
   async updateBookingNote(bookingUuid: string, note: string): Promise<void> {
-    const url = `/companies/${COMPANY}/bookings/${bookingUuid}/note`
+    const url = `/companies/${COMPANY}/bookings/${bookingUuid}/note/`
     await this.request(url, {
       method: 'PUT',
       body: JSON.stringify({ note }),
