@@ -251,3 +251,96 @@ input.
 Rough shape: items 4–5 are ~1–1.5 weeks each; 6 is ~1 week each kind;
 3 is ~1 week. None are blocked on each other after item 2 — they can be
 picked in whatever order the business screams for.
+
+---
+
+## 8. Improvement ideas (brainstormed 2026-06-10)
+
+### A. Making human-in-the-loop actually liveable
+
+- **A1. The "Today" screen (morning ritual).** One admin page: every
+  pending proposal sorted by urgency, plus today's operational picture —
+  cruises & skippers, weather, stock flags, unanswered conversations.
+  Five minutes with coffee = the company is run. This becomes THE landing
+  page of the admin; everything else is drill-down. *(High value, small
+  build — it's a read-only composition of tables that already exist in
+  the plans.)*
+- **A2. Approve from chat.** Proposals already ping Slack with a link;
+  upgrade to Slack interactive buttons (Approve / Open) and later
+  WhatsApp quick-replies. Approval latency is the real constraint on
+  human-in-the-loop — if approving takes 3 seconds from a phone, the
+  human never becomes the bottleneck.
+- **A3. Proposal expiry + escalation ladder.** Every proposal kind gets a
+  TTL and an escalation path: unanswered 30 min → Slack re-ping →
+  WhatsApp to Beer → safe fallback at deadline (e.g. OTA booking request:
+  fallback is "reply availability not confirmed yet" rather than silence;
+  stock order: roll into next week's proposal). Prevents "AI waited
+  politely while the customer walked away."
+- **A4. Voice memo → operations.** Beer records a voice note in the admin
+  on his phone ("white wine is finished, and Jannah can't skipper
+  Sunday") → transcription → agent converts it into structured proposals
+  (stock count adjustment + availability change), each approvable as
+  usual. The natural input device for someone standing on a boat is
+  voice, not forms. *(Rides on the inbox's transcription pipeline.)*
+
+### B. Making the AI measurably trustworthy
+
+- **B1. Agent scoreboard.** Per agent kind: proposals made, approval rate,
+  edit rate (approved-but-corrected), time-to-approval, outcome accuracy.
+  The trust ladder (§1) stops being a feeling: "booking agent ran 60 days
+  at 97% approval, 0 incidents → promote to auto-with-undo" is a
+  decision you read off a dashboard.
+- **B2. Shadow mode for every new agent.** Before any proposal kind goes
+  live, it runs silently for 2 weeks: proposals are generated and logged
+  but not shown (or shown only in a "shadow" tab). Compare against what
+  the humans actually did in the same period — free evaluation, zero
+  risk. No agent kind ships without a shadow-mode report.
+- **B3. Outcome tracking closes the loop.** Proposals store their
+  *prediction* ("ordering 24 covers next week"); a later job records what
+  actually happened (stock-out anyway? booking materialized? forecast vs
+  actual demand). Per-kind accuracy feeds B1 and recalibrates models.
+  Without this, "self-learning" is a slogan.
+- **B4. Weekly AI digest.** Monday email/Slack: what the AI staff did —
+  bookings confirmed, replies drafted (% sent unedited — the quality
+  metric), orders proposed, anomalies flagged, scoreboard deltas. Builds
+  Beer's intuition for where the system is strong/weak; doubles as drift
+  detection.
+
+### C. Off-Course-specific intelligence (the moat)
+
+- **C1. The weather brain.** For an Amsterdam boat company, weather IS the
+  operating system. Ingest a forecast API (KNMI/open-meteo) into the
+  truth as first-class data → every agent uses it: demand forecast
+  modifier, rota sizing, stock timing, and — the killer — a **weather
+  playbook proposal**: 48h before forecast rain/wind on a booked slot,
+  the agent drafts the full response plan (affected bookings, reschedule
+  options pulled from real FH availability, pre-written guest messages in
+  the right languages) as ONE proposal. Beer approves; the rainy-Saturday
+  fire-drill becomes a two-tap routine. "Rain or shine" pill on the site,
+  but operationally: rain → shine.
+- **C2. Business anomaly watchdog.** The ads-guardrail pattern,
+  generalized: a daily agent reads the truth and flags deviations —
+  bookings vs forecast, conversion-rate dip (tracking tables), refund
+  spike, FH-vs-Supabase mismatches, supplier price creep. Current
+  alerting fires on *system failures*; this fires on *business surprises*.
+  Each flag is a proposal-shaped card ("investigate / explain / dismiss"),
+  and dismissals teach it what's normal.
+- **C3. Review-mining loop.** Reviews already sync via Outscraper. An
+  agent extracts structured themes per boat/cruise/skipper (praise,
+  complaints, mentioned moments) → feeds the support playbook ("guests
+  ask about blankets — we have them, say so proactively"), listing copy
+  proposals ("12 reviews mention the sunset at Magere Brug — it's not in
+  the description"), and ops flags ("3 mentions of late departure on
+  Saturday shared cruises").
+- **C4. Customer memory (VIP layer).** The contacts table accumulates:
+  repeat guest count, preferences (prosecco vs beer, brings dog,
+  celebrated anniversary aboard), past hiccups. Inbox sidebar surfaces it;
+  reply drafts use it ("welcome back — 5th time aboard!"); the booking
+  agent flags VIPs to the skipper's day sheet. Cheap to build, and it's
+  exactly the "friend with a boat" brand made literal: a friend
+  *remembers*.
+
+### Recommended first three: A1 (Today screen) + B1/B2 (scoreboard +
+shadow mode, they're one feature in practice) + C1 (weather brain).
+A1 makes the system pleasant daily, B makes it promotable safely, C1 is
+the highest-leverage Amsterdam-specific intelligence.
