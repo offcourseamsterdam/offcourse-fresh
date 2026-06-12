@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatPrice, formatDate, formatShortDate, formatDuration, categorizeListings, slugify, amsterdamToday, formatAmsterdamTime } from './utils'
+import { formatPrice, formatDate, formatShortDate, formatDuration, categorizeListings, slugify, amsterdamToday, formatAmsterdamTime, timeAgoShort } from './utils'
 
 // ── formatPrice ─────────────────────────────────────────────────────────────
 
@@ -162,5 +162,23 @@ describe('formatAmsterdamTime', () => {
   it('returns an em dash for null/undefined', () => {
     expect(formatAmsterdamTime(null)).toBe('—')
     expect(formatAmsterdamTime(undefined)).toBe('—')
+  })
+})
+
+describe('timeAgoShort', () => {
+  const now = new Date('2026-06-12T12:00:00Z')
+
+  it('says "now" under a minute', () => {
+    expect(timeAgoShort('2026-06-12T11:59:30Z', now)).toBe('now')
+  })
+
+  it('formats minutes, hours, days', () => {
+    expect(timeAgoShort('2026-06-12T11:55:00Z', now)).toBe('5m')
+    expect(timeAgoShort('2026-06-12T09:00:00Z', now)).toBe('3h')
+    expect(timeAgoShort('2026-06-09T12:00:00Z', now)).toBe('3d')
+  })
+
+  it('clamps future timestamps to "now" (clock skew)', () => {
+    expect(timeAgoShort('2026-06-12T12:05:00Z', now)).toBe('now')
   })
 })
