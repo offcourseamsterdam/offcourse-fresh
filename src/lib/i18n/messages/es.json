@@ -11,6 +11,7 @@
     "placeholder": "Escribe un mensaje…",
     "send": "Enviar",
     "sent": "Te respondemos aquí mismo — vuelve cuando quieras.",
-    "error": "Algo salió mal — ¿lo intentas de nuevo?"
+    "error": "Algo salió mal — ¿lo intentas de nuevo?",
+    "online": "En línea"
   }
 }

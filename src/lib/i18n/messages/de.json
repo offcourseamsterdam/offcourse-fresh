@@ -11,6 +11,7 @@
     "placeholder": "Nachricht schreiben…",
     "send": "Senden",
     "sent": "Wir antworten genau hier — schau gern später wieder vorbei.",
-    "error": "Da ist etwas schiefgelaufen — nochmal versuchen?"
+    "error": "Da ist etwas schiefgelaufen — nochmal versuchen?",
+    "online": "Online"
   }
 }

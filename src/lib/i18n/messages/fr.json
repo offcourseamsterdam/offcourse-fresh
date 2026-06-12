@@ -11,6 +11,7 @@
     "placeholder": "Écrivez un message…",
     "send": "Envoyer",
     "sent": "On vous répond ici — repassez quand vous voulez.",
-    "error": "Quelque chose a mal tourné — réessayer ?"
+    "error": "Quelque chose a mal tourné — réessayer ?",
+    "online": "En ligne"
   }
 }

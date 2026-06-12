@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, CalendarSearch, Languages, Loader2, Send, StickyNote } from 'lucide-react'
 import { adminMutate } from '@/hooks/useAdminSave'
 import { formatAmsterdamTime } from '@/lib/utils'
+import { Linkify } from '@/components/chat/Linkify'
 import { AvailabilityFinder } from './AvailabilityFinder'
 import type { InboxConversationDetail, InboxMessage } from './types'
 
@@ -208,7 +209,7 @@ function MessageBubble({
             inbound ? 'bg-white border border-zinc-200 text-zinc-800 rounded-bl-sm' : 'bg-primary text-white rounded-br-sm'
           }`}
         >
-          {m.body}
+          <Linkify text={m.body} />
           <span className={`block text-[10px] mt-1 ${inbound ? 'text-zinc-400' : 'text-white/60'}`}>
             {!inbound && m.author_name ? `${m.author_name} · ` : ''}
             {formatAmsterdamTime(m.created_at)}

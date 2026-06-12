@@ -164,6 +164,7 @@
     "placeholder": "Type a message…",
     "send": "Send",
     "sent": "We'll reply right here — feel free to check back later.",
-    "error": "Something went wrong — try again?"
+    "error": "Something went wrong — try again?",
+    "online": "Online"
   }
 }

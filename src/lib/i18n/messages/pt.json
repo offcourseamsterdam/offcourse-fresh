@@ -11,6 +11,7 @@
     "placeholder": "Escreva uma mensagem…",
     "send": "Enviar",
     "sent": "Respondemos aqui mesmo — volte quando quiser.",
-    "error": "Algo deu errado — tentar de novo?"
+    "error": "Algo deu errado — tentar de novo?",
+    "online": "Online"
   }
 }
