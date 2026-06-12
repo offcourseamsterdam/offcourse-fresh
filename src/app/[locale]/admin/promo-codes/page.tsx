@@ -214,28 +214,16 @@ export default function AdminPromoCodesPage() {
 
       {/* Form modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div
-            className="fixed inset-0 bg-black/20"
-            style={{ animation: 'fadeIn 0.2s ease-out' }}
-            onClick={closeForm}
-          />
-          <div
-            className="relative max-w-lg mx-auto mt-8 px-4 pb-8"
-            style={{ animation: 'slideDown 0.3s ease-out' }}
-          >
-            <PromoCodeFormModal
-              editingCode={editingCode}
-              form={form}
-              onChange={setForm}
-              onSave={handleSave}
-              onClose={closeForm}
-              saving={saving}
-              saveError={saveError}
-              campaigns={campaigns}
-            />
-          </div>
-        </div>
+        <PromoCodeFormModal
+          editingCode={editingCode}
+          form={form}
+          onChange={setForm}
+          onSave={handleSave}
+          onClose={closeForm}
+          saving={saving}
+          saveError={saveError}
+          campaigns={campaigns}
+        />
       )}
     </div>
   )

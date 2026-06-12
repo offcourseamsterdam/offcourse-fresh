@@ -172,7 +172,7 @@ If you need to modify request handling (auth, i18n, redirects), edit `src/proxy.
 6. **What NOT to test** — don't test React component rendering or Tailwind classes. Test the logic, not the UI.
 
 ### Current Test Coverage
-Run `npm test` for the live count (currently **484 tests across 44 files**). Key areas:
+Run `npm test` for the live count (currently **582 tests across 53 files**). Key areas:
 - FareHarbor 3-layer filters — `src/lib/fareharbor/filters.test.ts`
 - Extras pricing / VAT math — `src/lib/extras/calculate.test.ts`
 - Formatting utilities — `src/lib/utils.test.ts`

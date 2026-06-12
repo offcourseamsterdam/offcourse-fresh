@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { enforceRateLimit } from '@/lib/rate-limit'
 import { validatePromoCode } from '@/lib/promo-codes/validate'
 import { applyPromoCode } from '@/lib/promo-codes/apply'
 
@@ -20,6 +21,11 @@ import { applyPromoCode } from '@/lib/promo-codes/apply'
  *   ok:false → { error: string }
  */
 export async function POST(request: NextRequest) {
+  // Codes are short and human-typeable, so they're brute-forceable without a
+  // per-IP cap. 10/min is far above what a real customer retyping a code needs.
+  const limited = enforceRateLimit(request, 'promo-validate', 10, 60_000)
+  if (limited) return limited
+
   try {
     const { code, amountCents, baseAmountCents, cityTaxCents, listingId } = await request.json()
 

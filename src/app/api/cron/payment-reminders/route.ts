@@ -5,6 +5,7 @@ import { Resend } from 'resend'
 import { paymentReminderEmailHtml } from '@/emails/PaymentReminderEmail'
 import { formatAmsterdamTime } from '@/lib/utils'
 import { requireCronSecret } from '@/lib/auth/require-cron-secret'
+import { alertCronFailure } from '@/lib/cron/alert'
 
 /**
  * GET /api/cron/payment-reminders
@@ -34,7 +35,7 @@ export async function GET(request: NextRequest) {
     .gt('payment_link_expires_at', now)
 
   if (error) {
-    console.error('[cron/payment-reminders] DB error:', error)
+    await alertCronFailure('payment-reminders', error, 'pending-bookings query failed')
     return NextResponse.json({ error: 'DB error' }, { status: 500 })
   }
 
@@ -85,7 +86,7 @@ export async function GET(request: NextRequest) {
 
       sent++
     } catch (err) {
-      console.error('[cron/payment-reminders] Email failed for booking', booking.id, err)
+      await alertCronFailure('payment-reminders', err, `email failed for booking ${booking.id}`)
     }
   }
 

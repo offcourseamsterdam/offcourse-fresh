@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Loader2, X, UtensilsCrossed } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { fmtEuros } from '@/lib/utils'
+import { extractVat } from '@/lib/extras/calculate'
 import type { AdminExtraLineItem } from '@/lib/admin/types'
 
 interface CatalogExtra {
@@ -53,12 +54,6 @@ function calcItemAmount(extra: CatalogExtra, guestCount: number, qty: number): n
     return Math.round(extra.price_value * guestCount * 1.5) * qty
   }
   return extra.price_value * qty
-}
-
-/** Back-calculate inclusive VAT. */
-function extractVat(amountInclVat: number, rate: number): number {
-  if (rate === 0) return 0
-  return Math.round((amountInclVat * rate) / (100 + rate))
 }
 
 export function AddCateringModal({

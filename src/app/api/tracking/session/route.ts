@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { resolveChannelSlug } from '@/lib/tracking/attribution'
-import { checkRateLimit } from '@/lib/tracking/rate-limit'
+import { checkRateLimit } from '@/lib/rate-limit'
 import { isBot } from '@/lib/tracking/bot-filter'
 import { sanitizeUTMParams } from '@/lib/tracking/sanitize'
 

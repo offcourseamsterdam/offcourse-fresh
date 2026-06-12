@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { Loader2 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { AdminFormModal } from '@/components/admin/ui/AdminFormModal'
+import { TextField, TextAreaField, Field } from '@/components/admin/ui/fields'
+import { useAdminSave, adminMutate } from '@/hooks/useAdminSave'
 
 export interface EditBookingModalProps {
   bookingId: string
@@ -34,17 +35,15 @@ export function EditBookingModal({
   const [depositInput, setDepositInput] = useState(
     initialDepositCents != null ? String(initialDepositCents / 100) : ''
   )
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { saving, error, setError, run } = useAdminSave()
 
-  async function handleSave() {
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
     if (!name.trim() || !email.trim()) {
       setError('Name and email are required')
       return
     }
-    setLoading(true)
-    setError(null)
-    try {
+    run(async () => {
       const body: Record<string, unknown> = {
         customer_name: name,
         customer_email: email,
@@ -54,86 +53,40 @@ export function EditBookingModal({
       if (isInternalBooking && depositInput) {
         body.deposit_amount_cents = Math.round(parseFloat(depositInput) * 100)
       }
-      const res = await fetch(`/api/admin/bookings/${bookingId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      const json = await res.json()
-      if (!json.ok) throw new Error(json.error ?? 'Update failed')
+      await adminMutate(`/api/admin/bookings/${bookingId}`, 'PATCH', body)
       onSuccess()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
-    } finally {
-      setLoading(false)
-    }
+    })
   }
 
-  const fields = [
-    { label: 'Full name', value: name, set: setName, type: 'text' },
-    { label: 'Email', value: email, set: setEmail, type: 'email' },
-    { label: 'Phone', value: phone, set: setPhone, type: 'tel' },
-  ] as const
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6 space-y-5">
-        <div>
-          <h2 className="text-base font-semibold text-zinc-900">Edit booking</h2>
-          <p className="text-sm text-zinc-500 mt-0.5">
-            Updates name, email, phone locally. Note is also synced to FareHarbor.
-          </p>
-        </div>
-
-        <div className="space-y-3">
-          {fields.map(({ label, value, set, type }) => (
-            <div key={label}>
-              <label className="block text-xs font-medium text-zinc-500 mb-1">{label}</label>
-              <input
-                type={type}
-                value={value}
-                onChange={e => set(e.target.value)}
-                className="w-full border border-zinc-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400"
-              />
-            </div>
-          ))}
-          <div>
-            <label className="block text-xs font-medium text-zinc-500 mb-1">Guest note</label>
-            <textarea
-              value={note}
-              onChange={e => setNote(e.target.value)}
-              rows={2}
-              className="w-full border border-zinc-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400 resize-none"
+    <AdminFormModal
+      title="Edit booking"
+      subtitle="Updates name, email, phone locally. Note is also synced to FareHarbor."
+      onClose={onClose}
+      onSubmit={handleSubmit}
+      saving={saving}
+      error={error}
+      submitLabel="Save changes"
+    >
+      <TextField label="Full name" type="text" value={name} onChange={e => setName(e.target.value)} />
+      <TextField label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} />
+      <TextField label="Phone" type="tel" value={phone} onChange={e => setPhone(e.target.value)} />
+      <TextAreaField label="Guest note" value={note} onChange={e => setNote(e.target.value)} rows={2} />
+      {isInternalBooking && (
+        <Field label="Deposit (€)">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-zinc-500">€</span>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={depositInput}
+              onChange={e => setDepositInput(e.target.value)}
+              className="w-24 px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent"
             />
           </div>
-          {isInternalBooking && (
-            <div>
-              <label className="block text-xs font-medium text-zinc-500 mb-1">Deposit (€)</label>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-zinc-500">€</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={depositInput}
-                  onChange={e => setDepositInput(e.target.value)}
-                  className="w-24 border border-zinc-200 rounded-md px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400"
-                />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
-
-        <div className="flex gap-2 justify-end pt-1">
-          <Button variant="outline" size="sm" onClick={onClose} disabled={loading}>Cancel</Button>
-          <Button size="sm" onClick={handleSave} disabled={loading}>
-            {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            {loading ? 'Saving…' : 'Save changes'}
-          </Button>
-        </div>
-      </div>
-    </div>
+        </Field>
+      )}
+    </AdminFormModal>
   )
 }

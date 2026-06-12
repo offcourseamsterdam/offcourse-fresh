@@ -7,6 +7,7 @@ import { extrasUpsellEmailHtml } from '@/emails/ExtrasUpsellEmail'
 import { filterCateringItems } from '@/lib/catering/filter'
 import type { ExtrasLineItem } from '@/lib/catering/filter'
 import { formatAmsterdamTime } from '@/lib/utils'
+import { alertCronFailure } from '@/lib/cron/alert'
 
 /**
  * GET /api/cron/extras-upsell
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest) {
     .is('extras_upsell_sent_at', null)
 
   if (error) {
-    console.error('[cron/extras-upsell] DB error:', error)
+    await alertCronFailure('extras-upsell', error, 'DB query for eligible bookings failed')
     return NextResponse.json({ error: 'DB error' }, { status: 500 })
   }
 
@@ -122,7 +123,7 @@ export async function GET(request: NextRequest) {
 
       sent++
     } catch (err) {
-      console.error(`[cron/extras-upsell] Failed for booking ${booking.id}:`, err)
+      await alertCronFailure('extras-upsell', err, `booking ${booking.id}`)
       failed.push(booking.id)
     }
   }

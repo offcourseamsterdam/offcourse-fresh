@@ -1,10 +1,16 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { enforceRateLimit } from '@/lib/rate-limit'
 import { getFilteredAvailability } from '@/lib/fareharbor/availability'
 
 // GET /api/fareharbor/availability?listing_id={uuid}&date={YYYY-MM-DD}&guests={n}
 // Returns filtered availability slots for a single cruise listing.
 export async function GET(request: NextRequest) {
+  // Generous cap: the booking panel legitimately fires one request per date the
+  // user browses, but each one costs FareHarbor quota (shared 30 req/s).
+  const limited = enforceRateLimit(request, 'fh-availability', 120, 60_000)
+  if (limited) return limited
+
   const { searchParams } = request.nextUrl
   const listingId = searchParams.get('listing_id')
   const date = searchParams.get('date')

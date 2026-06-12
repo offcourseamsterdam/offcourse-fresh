@@ -7,7 +7,7 @@ import { buildCateringEmailText, buildCateringEmailSubject } from '@/lib/caterin
 import { filterCateringItems, type ExtrasLineItem } from '@/lib/catering/filter'
 import { calculateExtras } from '@/lib/extras/calculate'
 import type { Extra } from '@/lib/extras/calculate'
-import { FareHarborClient } from '@/lib/fareharbor/client'
+import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { postSlackText } from '@/lib/slack/send-notification'
 import { Resend } from 'resend'
 
@@ -191,7 +191,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       try {
         const note = buildFHBookingNote(bookingSnapshot.guest_note, mergedExtras)
         if (note) {
-          const fh = new FareHarborClient()
+          const fh = getFareHarborClient()
           await fh.updateBookingNote(bookingSnapshot.booking_uuid, note)
         }
       } catch (err) {

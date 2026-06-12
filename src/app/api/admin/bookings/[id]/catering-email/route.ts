@@ -6,7 +6,7 @@ import { filterCateringItems, type ExtrasLineItem } from '@/lib/catering/filter'
 import { buildCateringEmailText, buildCateringEmailSubject } from '@/lib/catering/email-template'
 import { postSlackText } from '@/lib/slack/send-notification'
 import { buildFHBookingNote } from '@/lib/catering/build-fh-note'
-import { FareHarborClient } from '@/lib/fareharbor/client'
+import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { formatAmsterdamTime } from '@/lib/utils'
 import { Resend } from 'resend'
 
@@ -130,7 +130,7 @@ export async function POST(
         const allExtras = (booking.extras_selected ?? []) as unknown as ExtrasLineItem[]
         const note = buildFHBookingNote(booking.guest_note, allExtras)
         if (note) {
-          const fh = new FareHarborClient()
+          const fh = getFareHarborClient()
           await fh.updateBookingNote(booking.booking_uuid, note)
         }
       } catch (err) {

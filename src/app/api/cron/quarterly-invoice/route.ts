@@ -4,6 +4,7 @@ import { periodicSummaryHtml } from '@/emails/PeriodicSummary'
 import { getNotificationSettings, buildSummaryForRecipient } from '@/lib/tracking/cron-queries'
 import { Resend } from 'resend'
 import { requireCronSecret } from '@/lib/auth/require-cron-secret'
+import { alertCronFailure } from '@/lib/cron/alert'
 
 /**
  * GET /api/cron/quarterly-invoice
@@ -60,7 +61,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ ok: true, sent })
   } catch (err) {
-    console.error('[cron/quarterly-invoice]', err)
+    await alertCronFailure('quarterly-invoice', err)
     return NextResponse.json({ error: 'Failed' }, { status: 500 })
   }
 }
