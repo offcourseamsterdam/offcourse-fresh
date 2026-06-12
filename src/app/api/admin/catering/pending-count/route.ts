@@ -1,7 +1,7 @@
 import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { hasCatering } from '@/lib/catering/filter'
+import { hasFood } from '@/lib/catering/filter'
 
 export async function GET() {
   const denied = await requireAdmin()
@@ -19,8 +19,8 @@ export async function GET() {
 
     if (error) return apiError(error.message)
 
-    // Filter JS-side to those that actually have food/drinks extras
-    const count = (data ?? []).filter(b => hasCatering(b.extras_selected as never)).length
+    // Filter JS-side to those that have food items (drinks-only excluded)
+    const count = (data ?? []).filter(b => hasFood(b.extras_selected as never)).length
 
     return apiOk({ count })
   } catch (err) {

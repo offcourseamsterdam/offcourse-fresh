@@ -1,7 +1,7 @@
 import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { hasCatering, cateringAmountCents, filterCateringItems } from '@/lib/catering/filter'
+import { hasFood, foodAmountCents, filterFoodItems } from '@/lib/catering/filter'
 
 export async function GET() {
   const denied = await requireAdmin()
@@ -38,13 +38,13 @@ export async function GET() {
       }
     }
 
-    // Filter to bookings that have at least one food extra
+    // Filter to bookings that have at least one food item (drinks-only excluded)
     const cateringBookings = (bookingsResult.data ?? []).filter(b =>
-      hasCatering(b.extras_selected as never)
+      hasFood(b.extras_selected as never)
     )
 
     const totalRevenueCents = cateringBookings.reduce(
-      (sum, b) => sum + cateringAmountCents(b.extras_selected as never),
+      (sum, b) => sum + foodAmountCents(b.extras_selected as never),
       0,
     )
     const pendingCount = cateringBookings.filter(b => !b.catering_email_sent_at).length
@@ -54,8 +54,8 @@ export async function GET() {
         ...b,
         customer_type_name: b.customer_type_name
           ?? (b.fareharbor_customer_type_rate_pk ? (ctMap.get(b.fareharbor_customer_type_rate_pk) ?? null) : null),
-        cateringItems: filterCateringItems(b.extras_selected as never),
-        cateringAmountCents: cateringAmountCents(b.extras_selected as never),
+        cateringItems: filterFoodItems(b.extras_selected as never),
+        cateringAmountCents: foodAmountCents(b.extras_selected as never),
       })),
       stats: {
         totalRevenueCents,

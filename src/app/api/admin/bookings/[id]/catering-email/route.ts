@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { filterCateringItems } from '@/lib/catering/filter'
+import { filterCateringItems, type ExtrasLineItem } from '@/lib/catering/filter'
 import { buildCateringEmailText, buildCateringEmailSubject } from '@/lib/catering/email-template'
 import { postSlackText } from '@/lib/slack/send-notification'
 import { buildFHBookingNote } from '@/lib/catering/build-fh-note'
@@ -54,7 +54,10 @@ export async function GET(
       items: cateringItems,
     })
 
-    return apiOk({ text, alreadySent: !!booking.catering_email_sent_at })
+    const allExtras = (booking.extras_selected ?? []) as unknown as ExtrasLineItem[]
+    const fhNote = buildFHBookingNote(booking.guest_note, allExtras)
+
+    return apiOk({ text, alreadySent: !!booking.catering_email_sent_at, fhNote })
   } catch (err) {
     return apiError(err instanceof Error ? err.message : 'Unknown error')
   }
@@ -124,7 +127,8 @@ export async function POST(
     // Update FareHarbor booking note with catering details (best-effort)
     if (booking.booking_uuid) {
       try {
-        const note = buildFHBookingNote(booking.guest_note, cateringItems)
+        const allExtras = (booking.extras_selected ?? []) as unknown as ExtrasLineItem[]
+        const note = buildFHBookingNote(booking.guest_note, allExtras)
         if (note) {
           const fh = new FareHarborClient()
           await fh.updateBookingNote(booking.booking_uuid, note)
