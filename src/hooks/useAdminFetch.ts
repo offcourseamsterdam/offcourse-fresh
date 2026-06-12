@@ -4,8 +4,11 @@ import useSWR from 'swr'
 
 export async function adminFetcher<T>(url: string): Promise<T> {
   const res = await fetch(url)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const json = await res.json()
+  // Parse the body FIRST (same contract as adminMutate): our API always sends
+  // { ok, data?, error? }, so a 4xx/5xx body carries the real message — e.g.
+  // the captain portal's 'unlinked' 403 that the Unlinked screen matches on.
+  const json = await res.json().catch(() => null)
+  if (!json) throw new Error(`HTTP ${res.status}`)
   if (!json.ok) throw new Error(json.error ?? 'Request failed')
   return json.data as T
 }

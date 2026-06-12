@@ -35,11 +35,20 @@ describe('adminFetcher', () => {
     await expect(adminFetcher('/api/admin/test')).rejects.toThrow('Request failed')
   })
 
-  it('throws on non-200 HTTP status', async () => {
+  it('surfaces the body error on a non-200 status (e.g. the captain "unlinked" 403)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: async () => ({ ok: false, error: 'unlinked' }),
+    }))
+    await expect(adminFetcher('/api/admin/test')).rejects.toThrow('unlinked')
+  })
+
+  it('falls back to HTTP status when an error response has no JSON body', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false,
       status: 500,
-      json: async () => ({}),
+      json: async () => { throw new SyntaxError('not json') },
     }))
     await expect(adminFetcher('/api/admin/test')).rejects.toThrow('HTTP 500')
   })
