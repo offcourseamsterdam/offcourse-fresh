@@ -53,6 +53,63 @@ export type Database = {
         }
         Relationships: []
       }
+      agent_proposals: {
+        Row: {
+          conversation_id: string | null
+          created_at: string
+          human_edits: Json | null
+          id: string
+          kind: string
+          model: string | null
+          outcome: Json | null
+          payload: Json
+          reasoning: string | null
+          status: string
+          trigger_message_id: string | null
+        }
+        Insert: {
+          conversation_id?: string | null
+          created_at?: string
+          human_edits?: Json | null
+          id?: string
+          kind: string
+          model?: string | null
+          outcome?: Json | null
+          payload: Json
+          reasoning?: string | null
+          status?: string
+          trigger_message_id?: string | null
+        }
+        Update: {
+          conversation_id?: string | null
+          created_at?: string
+          human_edits?: Json | null
+          id?: string
+          kind?: string
+          model?: string | null
+          outcome?: Json | null
+          payload?: Json
+          reasoning?: string | null
+          status?: string
+          trigger_message_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_proposals_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_proposals_trigger_message_id_fkey"
+            columns: ["trigger_message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       analytics_sessions: {
         Row: {
           browser_name: string | null

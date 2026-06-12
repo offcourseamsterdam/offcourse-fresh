@@ -1,6 +1,8 @@
+import { after } from 'next/server'
 import { apiError, apiOk } from '@/lib/api/response'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isValidChatToken, parseChatMessage } from '@/lib/chat/validate'
+import { draftShadowReply } from '@/lib/chat/shadow-drafter'
 
 /**
  * Public widget endpoints, authenticated by the conversation's webchat_token
@@ -56,11 +58,15 @@ export async function POST(req: Request, { params }: RouteParams): Promise<Respo
   const { supabase, conversation } = await findConversation(token)
   if (!conversation) return apiError('Not found', 404)
 
-  const { error } = await supabase.from('messages').insert({
-    conversation_id: conversation.id,
-    direction: 'in',
-    body: parsed.message,
-  })
+  const { data: inserted, error } = await supabase
+    .from('messages')
+    .insert({
+      conversation_id: conversation.id,
+      direction: 'in',
+      body: parsed.message,
+    })
+    .select('id')
+    .single()
   if (error) return apiError('Could not send the message', 500)
 
   // A customer message always (re)opens the thread and bumps the badge.
@@ -72,6 +78,10 @@ export async function POST(req: Request, { params }: RouteParams): Promise<Respo
       status: 'open',
     })
     .eq('id', conversation.id)
+
+  // The Ghost drafts what it would reply — after the response is sent,
+  // shadow-only, never blocks or breaks the customer flow.
+  after(() => draftShadowReply(conversation.id, inserted?.id ?? null))
 
   return apiOk({ sent: true })
 }

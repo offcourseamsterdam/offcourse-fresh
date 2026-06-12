@@ -1,6 +1,8 @@
+import { after } from 'next/server'
 import { apiError, apiOk } from '@/lib/api/response'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { parseChatStart } from '@/lib/chat/validate'
+import { draftShadowReply } from '@/lib/chat/shadow-drafter'
 
 /**
  * POST /api/chat/start — the public widget opens a conversation.
@@ -71,13 +73,21 @@ export async function POST(req: Request): Promise<Response> {
     token = convo.webchat_token
   }
 
-  const { error: msgError } = await supabase.from('messages').insert({
-    conversation_id: conversationId,
-    direction: 'in',
-    body: message,
-    author_name: name,
-  })
+  const { data: inserted, error: msgError } = await supabase
+    .from('messages')
+    .insert({
+      conversation_id: conversationId,
+      direction: 'in',
+      body: message,
+      author_name: name,
+    })
+    .select('id')
+    .single()
   if (msgError) return apiError('Could not send the message', 500)
+
+  // The Ghost drafts what it would reply — after the response is sent,
+  // shadow-only, never blocks or breaks the customer flow.
+  after(() => draftShadowReply(conversationId, inserted?.id ?? null))
 
   await supabase
     .from('conversations')

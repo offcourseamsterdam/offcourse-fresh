@@ -31,6 +31,7 @@ import {
   UtensilsCrossed,
   Receipt,
   Inbox,
+  Ghost,
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react'
@@ -77,6 +78,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   promocodes: Ticket,
   finance: Receipt,
   inbox: Inbox,
+  ghost: Ghost,
 }
 
 const PREFETCH_URLS: Record<string, string> = {

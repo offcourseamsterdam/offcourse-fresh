@@ -55,6 +55,7 @@ const navSections: NavSection[] = [
   {
     label: 'Dev',
     items: [
+      { href: '/admin/ghost',               label: 'Ghost AI',              icon: 'ghost' },
       { href: '/admin/fareharbor',          label: 'FareHarbor API',        icon: 'fareharbor' },
       { href: '/admin/fareharbor-settings', label: 'FH Settings',           icon: 'fareharbor' },
       { href: '/admin/connections',        label: 'Other API Connections', icon: 'connections',  comingSoon: true },

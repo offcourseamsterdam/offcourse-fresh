@@ -79,13 +79,14 @@ describe('admin route auth contract', () => {
   it('discovers the expected number of admin route files', () => {
     // Snapshot so any change in route count (addition OR deletion) requires
     // deliberate acknowledgement — update via `npx vitest run --update-snapshots`.
-    // 87 = 64 + 5 /api/admin/google-ads/** routes + /api/admin/tracking/ai-referrals + 2 /api/admin/boats/** routes
+    // 88 = 64 + 5 /api/admin/google-ads/** routes + /api/admin/tracking/ai-referrals + 2 /api/admin/boats/** routes
     //    + 3 /api/admin/homepage-styles/** routes (list, [section] PATCH, [section]/background POST)
     //    + 7 /api/admin/scheduling/** routes (staff, staff/[id], sync, shifts, shifts/[id], payroll, payroll/csv)
     //    + 4 /api/admin/inbox/** routes (conversations, conversations/[id], …/messages, open-count)
     //    + 1 /api/admin/inbox/conversations/[id]/messages/[msgId]/translate
+    //    + 1 /api/admin/ghost (shadow AI proposals, read-only)
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`87`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`88`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {
