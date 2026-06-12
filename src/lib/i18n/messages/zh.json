@@ -1,1 +1,16 @@
-{}
+{
+  "chat": {
+    "openLabel": "联系我们",
+    "title": "Off Course",
+    "subtitle": "你那位有船的朋友",
+    "intro": "对游船有疑问？给我们留言——我们就在附近。",
+    "name": "你的名字",
+    "email": "邮箱",
+    "message": "你的留言",
+    "start": "发送",
+    "placeholder": "输入消息…",
+    "send": "发送",
+    "sent": "我们会在这里回复——欢迎稍后再来看看。",
+    "error": "出了点问题——再试一次？"
+  }
+}

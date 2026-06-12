@@ -1,1 +1,16 @@
-{}
+{
+  "chat": {
+    "openLabel": "Chat met ons",
+    "title": "Off Course",
+    "subtitle": "je vriend met een boot",
+    "intro": "Vragen over een cruise? Stuur ons een berichtje — we zijn in de buurt.",
+    "name": "Je naam",
+    "email": "E-mail",
+    "message": "Je bericht",
+    "start": "Versturen",
+    "placeholder": "Typ een bericht…",
+    "send": "Versturen",
+    "sent": "We reageren hier — kom gerust later even terug.",
+    "error": "Er ging iets mis — probeer het nog eens?"
+  }
+}

@@ -1,1 +1,16 @@
-{}
+{
+  "chat": {
+    "openLabel": "Discutez avec nous",
+    "title": "Off Course",
+    "subtitle": "votre ami qui a un bateau",
+    "intro": "Une question sur une croisière ? Écrivez-nous — on est dans le coin.",
+    "name": "Votre nom",
+    "email": "E-mail",
+    "message": "Votre message",
+    "start": "Envoyer",
+    "placeholder": "Écrivez un message…",
+    "send": "Envoyer",
+    "sent": "On vous répond ici — repassez quand vous voulez.",
+    "error": "Quelque chose a mal tourné — réessayer ?"
+  }
+}

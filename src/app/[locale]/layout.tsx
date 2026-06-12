@@ -5,6 +5,7 @@ import { routing } from '@/i18n/routing'
 import AuthProvider from '@/components/auth/AuthProvider'
 import { SearchProvider } from '@/lib/search/SearchContext'
 import { TrackingScript } from '@/components/tracking/TrackingScript'
+import { ChatWidget } from '@/components/chat/ChatWidget'
 import type { Locale } from '@/lib/i18n/config'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://offcourseamsterdam.com'
@@ -49,6 +50,7 @@ export default async function LocaleLayout({ children, params }: Props) {
           <link rel="dns-prefetch" href="https://fkylzllxvepmrtqxisrn.supabase.co" />
           <TrackingScript />
           {children}
+          <ChatWidget />
         </SearchProvider>
       </AuthProvider>
     </NextIntlClientProvider>

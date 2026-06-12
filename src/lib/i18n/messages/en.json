@@ -151,5 +151,19 @@
     "title": "Looks like you went off course.",
     "subtitle": "This page doesn't exist — but the canals do.",
     "cta": "Back to homepage"
+  },
+  "chat": {
+    "openLabel": "Chat with us",
+    "title": "Off Course",
+    "subtitle": "your friend with a boat",
+    "intro": "Questions about a cruise? Drop us a message — we're around.",
+    "name": "Your name",
+    "email": "Email",
+    "message": "Your message",
+    "start": "Send",
+    "placeholder": "Type a message…",
+    "send": "Send",
+    "sent": "We'll reply right here — feel free to check back later.",
+    "error": "Something went wrong — try again?"
   }
 }

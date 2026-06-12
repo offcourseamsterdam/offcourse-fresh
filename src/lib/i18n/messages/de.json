@@ -1,1 +1,16 @@
-{}
+{
+  "chat": {
+    "openLabel": "Chatte mit uns",
+    "title": "Off Course",
+    "subtitle": "dein Freund mit Boot",
+    "intro": "Fragen zu einer Tour? Schreib uns einfach — wir sind in der Nähe.",
+    "name": "Dein Name",
+    "email": "E-Mail",
+    "message": "Deine Nachricht",
+    "start": "Senden",
+    "placeholder": "Nachricht schreiben…",
+    "send": "Senden",
+    "sent": "Wir antworten genau hier — schau gern später wieder vorbei.",
+    "error": "Da ist etwas schiefgelaufen — nochmal versuchen?"
+  }
+}
