@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Languages, Loader2, Send, StickyNote } from 'lucide-react'
+import { ArrowLeft, CalendarSearch, Languages, Loader2, Send, StickyNote } from 'lucide-react'
 import { adminMutate } from '@/hooks/useAdminSave'
 import { formatAmsterdamTime } from '@/lib/utils'
+import { AvailabilityFinder } from './AvailabilityFinder'
 import type { InboxConversationDetail, InboxMessage } from './types'
 
 interface Props {
@@ -27,6 +28,7 @@ export function ThreadPane({ detail, onSent, onBack }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [translations, setTranslations] = useState<Record<string, Translation>>({})
   const [translating, setTranslating] = useState<Record<string, boolean>>({})
+  const [showFinder, setShowFinder] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   async function translate(msgId: string) {
@@ -103,8 +105,23 @@ export function ThreadPane({ detail, onSent, onBack }: Props) {
         <div ref={bottomRef} />
       </div>
 
+      {/* Availability finder — outside the composer <form> (forms can't nest) */}
+      {showFinder && (
+        <div className="border-t border-zinc-100 p-3 pb-0">
+          <AvailabilityFinder
+            customerLocale={conversation.contact?.locale ?? null}
+            onPick={url => {
+              setDraft(prev => (prev ? `${prev.trimEnd()}\n${url}` : url))
+              setShowFinder(false)
+              setMode('out')
+            }}
+            onClose={() => setShowFinder(false)}
+          />
+        </div>
+      )}
+
       {/* Composer */}
-      <form onSubmit={send} className="border-t border-zinc-100 p-3 space-y-2">
+      <form onSubmit={send} className={`${showFinder ? '' : 'border-t'} border-zinc-100 p-3 space-y-2`}>
         <div className="flex items-center gap-1">
           <button
             type="button"
@@ -119,6 +136,13 @@ export function ThreadPane({ detail, onSent, onBack }: Props) {
             className={`px-2.5 py-1 rounded-full text-xs font-medium inline-flex items-center gap-1 ${mode === 'note' ? 'bg-amber-500 text-white' : 'text-zinc-500 hover:bg-zinc-100'}`}
           >
             <StickyNote className="w-3 h-3" /> Note
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowFinder(f => !f)}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium inline-flex items-center gap-1 ${showFinder ? 'bg-indigo-600 text-white' : 'text-zinc-500 hover:bg-zinc-100'}`}
+          >
+            <CalendarSearch className="w-3 h-3" /> Availability
           </button>
           {error && <span className="text-xs text-red-600 ml-2">{error}</span>}
         </div>
