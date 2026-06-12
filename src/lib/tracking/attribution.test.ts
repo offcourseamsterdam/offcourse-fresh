@@ -41,6 +41,12 @@ describe('resolveChannelSlug', () => {
     expect(resolveChannelSlug(undefined, undefined, 'https://www.bing.com/search?q=boats')).toBe('organic')
   })
 
+  it('returns social for social platform referrers without UTM', () => {
+    expect(resolveChannelSlug(undefined, undefined, 'https://l.instagram.com/')).toBe('social')
+    expect(resolveChannelSlug(undefined, undefined, 'https://www.facebook.com/')).toBe('social')
+    expect(resolveChannelSlug(undefined, undefined, 'https://www.tiktok.com/@offcourse')).toBe('social')
+  })
+
   it('returns referral for non-search referrers without UTM', () => {
     expect(resolveChannelSlug(undefined, undefined, 'https://tripadvisor.com/some-page')).toBe('referral')
     expect(resolveChannelSlug(undefined, undefined, 'https://blog.example.com/best-boats')).toBe('referral')

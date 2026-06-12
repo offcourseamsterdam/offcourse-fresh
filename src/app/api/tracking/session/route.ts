@@ -95,6 +95,9 @@ export async function POST(request: NextRequest) {
     }
 
     // If campaign_slug is provided, look up its campaign_id and channel.
+    // The campaign's own channel ALWAYS wins over the referrer/UTM guess: a
+    // Google-ad click through /t/ arrives with referrer google.com and would
+    // otherwise be classified "organic"; an Instagram bio-link as "referral".
     let campaignId: string | null = null
     if (campaign_slug) {
       const { data: directCampaign } = await supabase
@@ -104,7 +107,7 @@ export async function POST(request: NextRequest) {
         .maybeSingle()
       if (directCampaign) {
         campaignId = directCampaign.id
-        if (!channelId && directCampaign.channel_id) channelId = directCampaign.channel_id
+        if (directCampaign.channel_id) channelId = directCampaign.channel_id
       }
     }
 

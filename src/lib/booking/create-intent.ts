@@ -25,6 +25,11 @@ interface CreateIntentInput {
   clickType?: string | null
   /** Whether the visitor accepted the tracking banner — gates send-to-Google. */
   marketingConsent?: boolean
+  /** Derived traffic channel (google-ads/campaign/social/organic/…) — see
+   *  src/lib/tracking/traffic-source.ts. Stored in PI metadata for attribution. */
+  trafficSource?: string | null
+  /** The specific origin: campaign slug, utm_source, or referrer host. */
+  trafficDetail?: string | null
   /** Analytics session id (cookie or stable-per-tab anon). Stored in PI metadata
    *  so the webhook can link the booking to its originating visit (device, channel). */
   sessionId?: string | null
@@ -48,7 +53,7 @@ interface CreateIntentResult {
  *   5. Mark the quote consumed.
  */
 export async function createPaymentIntent(input: CreateIntentInput): Promise<CreateIntentResult> {
-  const { quoteId, listingTitle, date, startAt, endAt, contact, gclid, clickType, marketingConsent, sessionId } = input
+  const { quoteId, listingTitle, date, startAt, endAt, contact, gclid, clickType, marketingConsent, sessionId, trafficSource, trafficDetail } = input
 
   if (!quoteId) {
     throw new Error('Missing quoteId — please refresh your booking and try again.')
@@ -145,6 +150,9 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
       consent_marketing: marketingConsent ? 'yes' : 'no',
       ...(sessionId ? { session_id: String(sessionId) } : {}),
       ...(gclid ? { gclid: String(gclid), click_type: toClickType(clickType) } : {}),
+      // Where the customer came from (first-party attribution, derived at checkout)
+      ...(trafficSource ? { traffic_source: String(trafficSource).slice(0, 100) } : {}),
+      ...(trafficDetail ? { traffic_detail: String(trafficDetail).slice(0, 200) } : {}),
       ...(quoteRow.promo_code_id
         ? {
             promo_code_id: String(quoteRow.promo_code_id),

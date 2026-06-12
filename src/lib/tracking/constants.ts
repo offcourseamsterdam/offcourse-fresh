@@ -47,6 +47,8 @@ export const COOKIE_CONSENT = 'oc_consent'
 export const COOKIE_GCLID = 'oc_gclid'
 /** Which kind of click id oc_gclid holds: 'gclid' | 'wbraid' | 'gbraid' */
 export const COOKIE_CLICK_TYPE = 'oc_click_type'
+/** First-touch traffic source (referrer/UTM/landing) — set once on first visit */
+export const COOKIE_SOURCE = 'oc_src'
 
 /** Visitor cookie lasts 1 year */
 export const VISITOR_COOKIE_DAYS = 365
@@ -54,6 +56,8 @@ export const VISITOR_COOKIE_DAYS = 365
 export const ATTRIBUTION_COOKIE_DAYS = 30
 /** gclid cookie lasts 90 days — matches Google's default click-conversion window */
 export const GCLID_COOKIE_DAYS = 90
+/** First-touch source cookie lasts 90 days — long enough to span browse-to-book gaps */
+export const SOURCE_COOKIE_DAYS = 90
 /** Session expires after 30 minutes of inactivity */
 export const SESSION_TIMEOUT_MINUTES = 30
 

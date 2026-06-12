@@ -229,6 +229,8 @@ export async function recoverBookingFromPi(
     booking_source: 'website',
     session_id: meta.session_id || null,
     gclid: meta.gclid || null,
+    traffic_source: meta.traffic_source || null,
+    traffic_detail: meta.traffic_detail || null,
     promo_code_id: meta.promo_code_id || null,
     discount_amount_cents: Number(meta.discount_amount_cents ?? 0),
   })

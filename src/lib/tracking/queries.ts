@@ -60,19 +60,147 @@ export interface FunnelStep {
   drop_off_rate: number
 }
 
-// ── Helper: fetch bookings with optional category filter ──
+// ── Helper: fetch sessions without the 1000-row PostgREST cap ──
+//
+// A plain .select() silently truncates at 1000 rows, so a busy month would
+// under-report (the dashboard once showed exactly "1,000 sessions" — the cap,
+// not the truth). Pages through in 1000-row chunks instead.
 
-async function fetchBookings(
+const SESSION_PAGE_SIZE = 1000
+const SESSION_MAX_PAGES = 30 // 30k sessions per range is far above current traffic
+
+async function fetchAllSessions<Row>(
   supabase: SupabaseClient,
-  sessionIds: string[],
+  range: DateRange,
+  columns: string,
+): Promise<Row[]> {
+  const rows: Row[] = []
+  for (let page = 0; page < SESSION_MAX_PAGES; page++) {
+    const from = page * SESSION_PAGE_SIZE
+    const { data, error } = await supabase
+      .from('analytics_sessions')
+      .select(columns)
+      .gte('started_at', range.from)
+      .lte('started_at', range.to)
+      .order('started_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, from + SESSION_PAGE_SIZE - 1)
+    if (error || !data?.length) break
+    rows.push(...(data as Row[]))
+    if (data.length < SESSION_PAGE_SIZE) break
+  }
+  return rows
+}
+
+// ── Helper: fetch bookings with optional category filter ──
+//
+// Linked bookings are fetched by their own created_at range — NOT via
+// .in('session_id', [1000+ ids]), which exceeds the PostgREST URL limit,
+// fails with Bad Request, and silently zeroed out every booking metric.
+
+export interface LinkedBookingRow {
+  id: string
+  stripe_amount: number | null
+  session_id: string | null
+  category: string | null
+  created_at: string | null
+}
+
+async function fetchLinkedBookings(
+  supabase: SupabaseClient,
+  range: DateRange,
   category: BookingCategory,
-) {
-  if (sessionIds.length === 0) return [] as { id: string; stripe_amount: number | null; session_id: string | null; category: string | null }[]
+): Promise<LinkedBookingRow[]> {
   let query = supabase
     .from('bookings')
-    .select('id, stripe_amount, session_id, category')
-    .in('session_id', sessionIds)
+    .select('id, stripe_amount, session_id, category, created_at')
+    .not('session_id', 'is', null)
+    .gte('created_at', range.from)
+    .lte('created_at', range.to)
     .eq('status', 'confirmed')
+  if (category !== 'all') query = query.eq('category', category)
+  const { data } = await query
+  return data ?? []
+}
+
+// ── Pure helper: attribute linked bookings to channels via their session ──
+
+export function attributeBookingsToChannels(
+  bookings: Pick<LinkedBookingRow, 'session_id' | 'stripe_amount'>[],
+  channelBySession: Map<string, string | null>,
+): Map<string, { bookings: number; revenue_cents: number }> {
+  const byChannel = new Map<string, { bookings: number; revenue_cents: number }>()
+  for (const b of bookings) {
+    if (!b.session_id) continue
+    const channelId = channelBySession.get(b.session_id)
+    if (!channelId) continue
+    const entry = byChannel.get(channelId) ?? { bookings: 0, revenue_cents: 0 }
+    entry.bookings++
+    entry.revenue_cents += b.stripe_amount ?? 0
+    byChannel.set(channelId, entry)
+  }
+  return byChannel
+}
+
+// ── Source-based channel attribution (bookings without a session) ──
+//
+// Marketplace bookings (GetYourGuide, Viator…) are made on the platform's own
+// site and arrive via the FareHarbor webhook — there is never a browser session
+// to attribute, so they are credited to the Platforms channel by their
+// booking_source. Website bookings that lost their session (ad blocker, old
+// rows) fall back to Direct. Operational sources (complimentary, payment_link)
+// are deliberately unattributed — they're not marketing channels.
+
+export const PLATFORM_BOOKING_SOURCES = [
+  'getyourguide', 'viator', 'withlocals', 'clickandboat', 'airbnb', 'tripadvisor',
+] as const
+
+const WEB_BOOKING_SOURCES = ['website', 'stripe_recovery'] as const
+
+export interface SourcelessBookingRow {
+  booking_source: string | null
+  stripe_amount: number | null
+  base_amount_cents: number | null
+}
+
+/** Revenue for a booking: the Stripe charge when there was one, else the booking
+ *  amount (platform bookings are paid on the platform, so stripe_amount is 0/null). */
+export function bookingRevenueCents(b: Pick<SourcelessBookingRow, 'stripe_amount' | 'base_amount_cents'>): number {
+  if (b.stripe_amount && b.stripe_amount > 0) return b.stripe_amount
+  return b.base_amount_cents ?? 0
+}
+
+export function attributeSourcelessBookings(
+  bookings: SourcelessBookingRow[],
+): Map<string, { bookings: number; revenue_cents: number }> {
+  const bySlug = new Map<string, { bookings: number; revenue_cents: number }>()
+  for (const b of bookings) {
+    const source = (b.booking_source ?? '').toLowerCase()
+    let slug: string | null = null
+    if ((PLATFORM_BOOKING_SOURCES as readonly string[]).includes(source)) slug = 'platforms'
+    else if ((WEB_BOOKING_SOURCES as readonly string[]).includes(source)) slug = 'direct'
+    if (!slug) continue
+    const entry = bySlug.get(slug) ?? { bookings: 0, revenue_cents: 0 }
+    entry.bookings++
+    entry.revenue_cents += bookingRevenueCents(b)
+    bySlug.set(slug, entry)
+  }
+  return bySlug
+}
+
+async function fetchSourcelessBookings(
+  supabase: SupabaseClient,
+  range: DateRange,
+  category: BookingCategory,
+): Promise<SourcelessBookingRow[]> {
+  let query = supabase
+    .from('bookings')
+    .select('booking_source, stripe_amount, base_amount_cents')
+    .is('session_id', null)
+    .gte('created_at', range.from)
+    .lte('created_at', range.to)
+    // FH-webhook platform bookings sit at status 'booked'; website ones at 'confirmed'
+    .in('status', ['confirmed', 'booked'])
   if (category !== 'all') query = query.eq('category', category)
   const { data } = await query
   return data ?? []
@@ -115,21 +243,18 @@ export async function getOverviewKPIs(
   category: BookingCategory = 'all',
 ): Promise<OverviewKPIs> {
   const safeRange = clampRange(range)
-  // Current period sessions
-  const { data: sessions } = await supabase
-    .from('analytics_sessions')
-    .select('id, visitor_id')
-    .gte('started_at', safeRange.from)
-    .lte('started_at', safeRange.to)
+  // Current period sessions (paginated — no 1000-row cap)
+  const sessions = await fetchAllSessions<{ id: string; visitor_id: string }>(
+    supabase, safeRange, 'id, visitor_id',
+  )
 
-  const sessionCount = sessions?.length ?? 0
-  const allVisitorIds = sessions?.map((s) => s.visitor_id) ?? []
+  const sessionCount = sessions.length
+  const allVisitorIds = sessions.map((s) => s.visitor_id)
   const uniqueVisitors = new Set(allVisitorIds.filter((id) => !id.startsWith('anon_'))).size
   const anonymousSessions = allVisitorIds.filter((id) => id.startsWith('anon_')).length
 
-  // Current period bookings (linked to sessions)
-  const sessionIds = sessions?.map((s) => s.id) ?? []
-  const linkedBookings = await fetchBookings(supabase, sessionIds, category)
+  // Current period bookings — both fetched by booking created_at in range
+  const linkedBookings = await fetchLinkedBookings(supabase, safeRange, category)
   let bookingCount = linkedBookings.length
   let revenueCents = linkedBookings.reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0)
 
@@ -144,17 +269,21 @@ export async function getOverviewKPIs(
   const duration = toDate.getTime() - fromDate.getTime()
   const prevFrom = new Date(fromDate.getTime() - duration).toISOString()
   const prevTo = safeRange.from
+  const prevRange = { from: prevFrom, to: prevTo }
 
-  const { data: prevSessions } = await supabase
+  // Count-only query — no rows transferred, no row cap
+  const { count: prevSessionCount } = await supabase
     .from('analytics_sessions')
-    .select('id')
+    .select('id', { count: 'exact', head: true })
     .gte('started_at', prevFrom)
     .lte('started_at', prevTo)
 
-  const prevSessionIds = prevSessions?.map((s) => s.id) ?? []
-  const prevLinkedBookings = await fetchBookings(supabase, prevSessionIds, category)
-  const prevBookingCount = prevLinkedBookings.length
-  const prevRevenueCents = prevLinkedBookings.reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0)
+  const prevLinkedBookings = await fetchLinkedBookings(supabase, prevRange, category)
+  const prevDirectBookings = await fetchDirectBookings(supabase, prevRange, category)
+  const prevBookingCount = prevLinkedBookings.length + prevDirectBookings.length
+  const prevRevenueCents =
+    prevLinkedBookings.reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0) +
+    prevDirectBookings.reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0)
 
   return {
     sessions: sessionCount,
@@ -165,7 +294,7 @@ export async function getOverviewKPIs(
     // Bookings per unique visitor — a person who visits twice and books once counts as one converted visitor,
     // not 50% of two sessions. Industry-standard "conversion rate" for booking platforms.
     conversion_rate: uniqueVisitors > 0 ? bookingCount / uniqueVisitors : 0,
-    prev_sessions: prevSessions?.length ?? 0,
+    prev_sessions: prevSessionCount ?? 0,
     prev_bookings: prevBookingCount,
     prev_revenue_cents: prevRevenueCents,
   }
@@ -179,18 +308,15 @@ export async function getTrafficByDay(
   category: BookingCategory = 'all',
 ): Promise<TrafficByDay[]> {
   const safeRange = clampRange(range)
-  const { data: sessions } = await supabase
-    .from('analytics_sessions')
-    .select('id, started_at')
-    .gte('started_at', safeRange.from)
-    .lte('started_at', safeRange.to)
-    .order('started_at')
+  const sessions = await fetchAllSessions<{ id: string; started_at: string | null }>(
+    supabase, safeRange, 'id, started_at',
+  )
 
-  if (!sessions?.length) return []
+  if (!sessions.length) return []
 
-  const sessionIds = sessions.map((s) => s.id)
-  const bookings = await fetchBookings(supabase, sessionIds, category)
-  const bookingSessionIds = new Set(bookings.map((b) => b.session_id))
+  // Bookings counted on the day they were made (created_at), independent of
+  // when their session started — keeps the line truthful at range edges.
+  const bookings = await fetchLinkedBookings(supabase, safeRange, category)
 
   const byDay = new Map<string, { sessions: number; bookings: number }>()
   for (const s of sessions) {
@@ -198,7 +324,13 @@ export async function getTrafficByDay(
     if (!day) continue
     const entry = byDay.get(day) ?? { sessions: 0, bookings: 0 }
     entry.sessions++
-    if (bookingSessionIds.has(s.id)) entry.bookings++
+    byDay.set(day, entry)
+  }
+  for (const b of bookings) {
+    const day = b.created_at?.slice(0, 10) ?? ''
+    if (!day) continue
+    const entry = byDay.get(day) ?? { sessions: 0, bookings: 0 }
+    entry.bookings++
     byDay.set(day, entry)
   }
 
@@ -223,30 +355,38 @@ export async function getChannelMetrics(
 
   if (!channels?.length) return []
 
-  const { data: sessions } = await supabase
-    .from('analytics_sessions')
-    .select('id, visitor_id, channel_id')
-    .gte('started_at', safeRange.from)
-    .lte('started_at', safeRange.to)
+  const sessions = await fetchAllSessions<{ id: string; visitor_id: string; channel_id: string | null }>(
+    supabase, safeRange, 'id, visitor_id, channel_id',
+  )
 
-  const sessionIds = sessions?.map((s) => s.id) ?? []
-  const bookings = await fetchBookings(supabase, sessionIds, category)
-  const bookingsBySession = new Map<string, number>()
-  for (const b of bookings) {
-    if (b.session_id) bookingsBySession.set(b.session_id, b.stripe_amount ?? 0)
+  // Attribute bookings to channels via their own session's channel. The
+  // booking's session may have started before the range (long browse-to-book
+  // gap), so look those sessions up directly — a handful of ids, never 1000+.
+  const bookings = await fetchLinkedBookings(supabase, safeRange, category)
+  const bookingSessionIds = [...new Set(bookings.map((b) => b.session_id).filter((id): id is string => !!id))]
+  const channelBySession = new Map<string, string | null>()
+  for (const s of sessions) channelBySession.set(s.id, s.channel_id)
+  const missingIds = bookingSessionIds.filter((id) => !channelBySession.has(id))
+  if (missingIds.length > 0) {
+    const { data: extraSessions } = await supabase
+      .from('analytics_sessions')
+      .select('id, channel_id')
+      .in('id', missingIds)
+    for (const s of extraSessions ?? []) channelBySession.set(s.id, s.channel_id)
   }
+  const bookingsByChannel = attributeBookingsToChannels(bookings, channelBySession)
+
+  // Session-less bookings credited by booking_source: marketplace bookings
+  // (GYG/Viator) → Platforms, session-less website bookings → Direct.
+  const sourceless = await fetchSourcelessBookings(supabase, safeRange, category)
+  const bookingsBySlug = attributeSourcelessBookings(sourceless)
 
   return channels.map((ch) => {
-    const chSessions = sessions?.filter((s) => s.channel_id === ch.id) ?? []
+    const chSessions = sessions.filter((s) => s.channel_id === ch.id)
     const chVisitors = new Set(chSessions.map((s) => s.visitor_id))
-    let chBookings = 0
-    let chRevenue = 0
-    for (const s of chSessions) {
-      if (bookingsBySession.has(s.id)) {
-        chBookings++
-        chRevenue += bookingsBySession.get(s.id) ?? 0
-      }
-    }
+    const viaSession = bookingsByChannel.get(ch.id) ?? { bookings: 0, revenue_cents: 0 }
+    const viaSource = bookingsBySlug.get(ch.slug) ?? { bookings: 0, revenue_cents: 0 }
+    const chBookings = viaSession.bookings + viaSource.bookings
     return {
       id: ch.id,
       name: ch.name,
@@ -256,7 +396,7 @@ export async function getChannelMetrics(
       sessions: chSessions.length,
       unique_visitors: chVisitors.size,
       bookings: chBookings,
-      revenue_cents: chRevenue,
+      revenue_cents: viaSession.revenue_cents + viaSource.revenue_cents,
       conversion_rate: chSessions.length > 0 ? chBookings / chSessions.length : 0,
     }
   })

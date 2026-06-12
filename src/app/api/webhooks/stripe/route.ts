@@ -5,6 +5,8 @@ import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { sendConfirmationEmail } from '@/lib/booking/send-confirmation-email'
 import { getExtrasFromQuote } from '@/lib/booking/recover-from-pi'
 import { notifyCateringOrder } from '@/lib/catering/notify'
+import { buildFHBookingNote } from '@/lib/catering/build-fh-note'
+import type { ExtrasLineItem } from '@/lib/catering/filter'
 import { extractVat } from '@/lib/extras/calculate'
 import { reportBookingConversion } from '@/lib/google-ads/report-conversion'
 import { reportRefundAdjustment } from '@/lib/google-ads/report-refund'
@@ -238,6 +240,7 @@ export async function POST(request: NextRequest) {
     const customers = Array.from({ length: isPrivate ? 1 : guestCount }, () => ({
       customer_type_rate: Number(meta.customer_type_rate_pk),
     }))
+    const fhNote = buildFHBookingNote(null, (extrasSelected ?? []) as unknown as ExtrasLineItem[])
     const bookingBody = {
       contact: {
         name: meta.guest_name ?? '',
@@ -245,6 +248,7 @@ export async function POST(request: NextRequest) {
         email: meta.guest_email ?? '',
       },
       customers,
+      ...(fhNote ? { note: fhNote } : {}),
     }
 
     let fhBookingUuid: string | undefined
@@ -308,6 +312,8 @@ export async function POST(request: NextRequest) {
       booking_source: 'website',
       session_id: meta.session_id || null,
       gclid: meta.gclid || null,
+      traffic_source: meta.traffic_source || null,
+      traffic_detail: meta.traffic_detail || null,
       promo_code_id: meta.promo_code_id || null,
       discount_amount_cents: Number(meta.discount_amount_cents ?? 0),
     })

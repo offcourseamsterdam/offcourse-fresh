@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { initSession, initAnonymousSession, trackEvent } from '@/lib/tracking/client'
-import { getCookie, captureClickIdsFromURL } from '@/lib/tracking/attribution'
+import { getCookie, captureClickIdsFromURL, captureFirstTouchSource } from '@/lib/tracking/attribution'
 import { COOKIE_CONSENT } from '@/lib/tracking/constants'
 
 /**
@@ -27,6 +27,10 @@ export function TrackingScript() {
     // via a /t/<slug> link, which captures it server-side). It's our own data, so
     // it runs regardless of consent — only the send-to-Google is consent-gated.
     captureClickIdsFromURL()
+
+    // First-touch traffic source (referrer/UTM/landing) — recorded once per
+    // browser so the eventual booking knows which channel earned it.
+    captureFirstTouchSource()
 
     const consent = getCookie(COOKIE_CONSENT)
 

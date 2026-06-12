@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { createPaymentIntent } from '@/lib/booking/create-intent'
+import { deriveTrafficSource, parseFirstTouch } from '@/lib/tracking/traffic-source'
 
 /**
  * POST /api/booking-flow/create-intent
@@ -28,6 +29,20 @@ export async function POST(request: NextRequest) {
     const clickType = request.cookies.get('oc_click_type')?.value ?? null
     const marketingConsent = request.cookies.get('oc_consent')?.value === 'yes'
 
+    // Traffic source: gclid > campaign link (oc_attr) > first-touch (oc_src) > direct.
+    let campaignSlug: string | null = null
+    try {
+      const attrRaw = request.cookies.get('oc_attr')?.value
+      if (attrRaw) campaignSlug = (JSON.parse(attrRaw) as { campaign_slug?: string }).campaign_slug ?? null
+    } catch {
+      // malformed cookie — ignore
+    }
+    const traffic = deriveTrafficSource({
+      gclid,
+      campaignSlug,
+      firstTouch: parseFirstTouch(request.cookies.get('oc_src')?.value),
+    })
+
     const result = await createPaymentIntent({
       quoteId: String(quoteId),
       listingTitle: String(listingTitle ?? ''),
@@ -38,6 +53,8 @@ export async function POST(request: NextRequest) {
       gclid,
       clickType,
       marketingConsent,
+      trafficSource: traffic.source,
+      trafficDetail: traffic.detail,
       // Cookie session (consented) takes priority; else the client-sent stable
       // anon session id from sessionStorage.
       sessionId: request.cookies.get('oc_sid')?.value ?? (sessionId ? String(sessionId) : null),

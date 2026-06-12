@@ -52,8 +52,10 @@ export async function GET(
     return response
   }
 
-  // Fire-and-forget click log
-  logClick(attr.campaign_id, request).catch(() => {})
+  // Await the click log — on Vercel the function freezes the moment the
+  // redirect response is sent, so a fire-and-forget insert gets dropped.
+  // Errors are still swallowed: a failed log must never block the redirect.
+  await logClick(attr.campaign_id, request).catch(() => {})
 
   const destination = click
     ? appendClickId(attr.destination_url, click.value, click.type)

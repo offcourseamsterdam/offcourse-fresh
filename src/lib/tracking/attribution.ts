@@ -4,14 +4,17 @@ import {
   COOKIE_ATTRIBUTION,
   COOKIE_GCLID,
   COOKIE_CLICK_TYPE,
+  COOKIE_SOURCE,
   VISITOR_COOKIE_DAYS,
   GCLID_COOKIE_DAYS,
+  SOURCE_COOKIE_DAYS,
   SESSION_TIMEOUT_MINUTES,
   UTM_PARAMS,
   SOCIAL_SOURCES,
   type UTMParams,
 } from './constants'
 import { pickClickId } from './click-ids'
+import type { FirstTouch } from './traffic-source'
 
 // ── Cookie helpers (browser-only) ──
 
@@ -154,6 +157,40 @@ export function captureClickIdsFromURL(): void {
   }
 }
 
+// ── First-touch traffic source ──
+//
+// Captured once per browser (90 days) on the very first page seen: external
+// referrer host, UTM params, and landing path. Never overwritten — first touch
+// wins, which is the convention for "where did this customer come from".
+// Like the click-id capture above this is our own first-party data, so it runs
+// regardless of consent; only sends to third parties are consent-gated.
+
+export function captureFirstTouchSource(): void {
+  if (typeof window === 'undefined') return
+  if (getCookie(COOKIE_SOURCE)) return // first touch already recorded
+
+  let ref: string | undefined
+  try {
+    if (document.referrer) {
+      const host = new URL(document.referrer).hostname
+      if (host && host !== window.location.hostname) ref = host
+    }
+  } catch {
+    // unparsable referrer — skip it
+  }
+
+  const utm = parseUTMFromURL(window.location.href)
+  const firstTouch: FirstTouch = {
+    ...(ref ? { ref } : {}),
+    ...(utm.utm_source ? { src: utm.utm_source.slice(0, 100) } : {}),
+    ...(utm.utm_medium ? { med: utm.utm_medium.slice(0, 100) } : {}),
+    ...(utm.utm_campaign ? { cmp: utm.utm_campaign.slice(0, 100) } : {}),
+    lp: window.location.pathname.slice(0, 200),
+    ts: Math.floor(Date.now() / 1000),
+  }
+  setCookie(COOKIE_SOURCE, JSON.stringify(firstTouch), SOURCE_COOKIE_DAYS)
+}
+
 // ── Attribution cookie ──
 //
 // The attribution cookie (oc_attr) is written ONLY by the server (via /api/t/[slug]
@@ -215,11 +252,12 @@ export function resolveChannelSlug(
   // Referral (explicit UTM)
   if (med === 'referral') return 'referral'
 
-  // No UTM but has referrer — check if organic search or referral
+  // No UTM but has referrer — classify by referrer host
   if (!src && !med && referrer) {
     try {
       const refHost = new URL(referrer).hostname.toLowerCase()
       if (SEARCH_ENGINES.some((se) => refHost.includes(se))) return 'organic'
+      if (SOCIAL_SOURCES.some((s) => refHost.includes(s))) return 'social'
       return 'referral'
     } catch {
       return 'referral'
