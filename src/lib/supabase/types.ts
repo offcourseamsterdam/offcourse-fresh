@@ -2428,6 +2428,7 @@ export type Database = {
           created_at: string
           date: string
           end_at: string
+          fareharbor_availability_pk: number | null
           id: string
           notes: string | null
           reminder_sent_at: string | null
@@ -2442,6 +2443,7 @@ export type Database = {
           created_at?: string
           date: string
           end_at: string
+          fareharbor_availability_pk?: number | null
           id?: string
           notes?: string | null
           reminder_sent_at?: string | null
@@ -2456,6 +2458,7 @@ export type Database = {
           created_at?: string
           date?: string
           end_at?: string
+          fareharbor_availability_pk?: number | null
           id?: string
           notes?: string | null
           reminder_sent_at?: string | null

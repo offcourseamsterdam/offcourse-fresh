@@ -14,7 +14,7 @@ const navSections: NavSection[] = [
     items: [
       { href: '/admin/bookings',  label: 'Bookings',  icon: 'bookings' },
       { href: '/admin/catering',  label: 'Catering',  icon: 'catering',  badge: 'pending-catering-count' },
-      { href: '/admin/planning',  label: 'Planning',  icon: 'planning',  comingSoon: true },
+      { href: '/admin/scheduling', label: 'Scheduling', icon: 'planning' },
       { href: '/admin/customers', label: 'Customers', icon: 'customers', comingSoon: true },
     ],
   },
@@ -48,7 +48,7 @@ const navSections: NavSection[] = [
   {
     label: 'Admin',
     items: [
-      { href: '/admin/users', label: 'Users', icon: 'users', comingSoon: true },
+      { href: '/admin/users', label: 'Users', icon: 'users' },
     ],
   },
   {

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { StaffTab } from './StaffTab'
+import { ShiftsTab } from './ShiftsTab'
 
 /**
  * Scheduling hub. Staff tab is live (M1); Shifts (M2) and Payroll (M5)
@@ -10,15 +11,15 @@ import { StaffTab } from './StaffTab'
  */
 
 const TABS = [
+  { key: 'shifts', label: 'Shifts', ready: true },
   { key: 'staff', label: 'Staff', ready: true },
-  { key: 'shifts', label: 'Shifts', ready: false },
   { key: 'payroll', label: 'Payroll', ready: false },
 ] as const
 
 type TabKey = (typeof TABS)[number]['key']
 
 export default function AdminSchedulingPage() {
-  const [tab, setTab] = useState<TabKey>('staff')
+  const [tab, setTab] = useState<TabKey>('shifts')
 
   return (
     <div className="p-4 sm:p-8 max-w-5xl space-y-6">
@@ -50,6 +51,7 @@ export default function AdminSchedulingPage() {
         ))}
       </div>
 
+      {tab === 'shifts' && <ShiftsTab />}
       {tab === 'staff' && <StaffTab />}
     </div>
   )
