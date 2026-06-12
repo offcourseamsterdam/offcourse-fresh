@@ -230,6 +230,24 @@ Use clear headings, short paragraphs, and code snippets where helpful. Write for
 | Core setup + infra | track-a-core-setup.md | A | done |
 ```
 
+## Shadow AI / Ghost Rule (MANDATORY)
+
+The Ghost is the shadow-mode AI layer (see `docs/plans/ai-operations-vision.md` §8-B2 and `/admin/ghost`). It reads the database (never the UI), drafts what it *would* do as rows in `agent_proposals` with status `'shadow'`, and never executes anything. Current kinds: `reply_draft` (per inbound chat message), `schedule_day` + `catering_order` (daily `/api/cron/ghost-ops`).
+
+### When adding ANY new operational feature or admin action, answer two questions:
+
+1. **Can the Ghost shadow it?** If a human performs a recurring decision through the admin (assigning, ordering, replying, approving), add a Ghost drafter for it: a new `kind` in `agent_proposals`, a drafter in `src/lib/ghost/` (or a trigger in the relevant flow), and a card renderer in `/admin/ghost`. Follow the pattern in `src/lib/ghost/ops-drafters.ts`: read the truth from Postgres, one Claude call, JSON-parsed payload + `reasoning`, status `'shadow'`, dedupe per target date, all errors swallowed.
+2. **Is it a money/irreversible action?** Then it may get a Ghost *proposal* later but NEVER auto-execution — refunds, FareHarbor bookings, payouts stay human-approved permanently.
+
+Document the decision (even "not ghostable, because…") in the feature's `docs/features/*.md`.
+
+### AI cost discipline (MANDATORY)
+
+- **Every Claude/Gemini call MUST be metered** via `recordAiUsage()` from `src/lib/ai/usage.ts` (tokens → euro cents → `ai_usage` table). No exceptions — an unmetered call is invisible spend.
+- Every €5 of cumulative spend automatically DMs Beer on Slack (`ai_usage_alerts` table guarantees exactly one alert per threshold). The Ghost page header shows total / 30-day spend.
+- Drafters must be **skip-first**: no open shifts → no call; no catering bookings → no call; proposal already exists for the target date → no call. The cheapest AI call is the one not made.
+- Keep `max_tokens` tight (≤1000 for drafters) and never put unbounded data in prompts — cap lists (e.g. last 30 messages, 5 bookings).
+
 ## Supabase
 
 - Existing database with ~25 tables. Schema documented in `docs/implementation-plan.md` section 1.2

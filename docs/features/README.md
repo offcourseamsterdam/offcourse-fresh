@@ -20,3 +20,4 @@ One file per track or major feature. Written before every PR and kept up to date
 | Codebase refactoring plan | [codebase-refactoring-plan.md](codebase-refactoring-plan.md) | — | planned |
 | Headless WordPress blog (WP SEO AI) | [wordpress-blog.md](wordpress-blog.md) | — | done |
 | Customer chat & unified inbox (webchat phase 1) | [customer-chat-inbox.md](customer-chat-inbox.md) | — | done |
+| Ghost shadow AI (proposals, ops drafters, cost meter) | [ghost-shadow-ai.md](ghost-shadow-ai.md) | — | done |

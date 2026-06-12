@@ -110,6 +110,51 @@ export type Database = {
           },
         ]
       }
+      ai_usage: {
+        Row: {
+          cost_eur_cents: number
+          created_at: string
+          feature: string
+          id: string
+          input_tokens: number
+          model: string
+          output_tokens: number
+        }
+        Insert: {
+          cost_eur_cents: number
+          created_at?: string
+          feature: string
+          id?: string
+          input_tokens?: number
+          model: string
+          output_tokens?: number
+        }
+        Update: {
+          cost_eur_cents?: number
+          created_at?: string
+          feature?: string
+          id?: string
+          input_tokens?: number
+          model?: string
+          output_tokens?: number
+        }
+        Relationships: []
+      }
+      ai_usage_alerts: {
+        Row: {
+          notified_at: string
+          threshold_eur: number
+        }
+        Insert: {
+          notified_at?: string
+          threshold_eur: number
+        }
+        Update: {
+          notified_at?: string
+          threshold_eur?: number
+        }
+        Relationships: []
+      }
       analytics_sessions: {
         Row: {
           browser_name: string | null

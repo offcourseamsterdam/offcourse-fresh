@@ -43,6 +43,10 @@
     {
       "path": "/api/cron/auto-close-entries",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/ghost-ops",
+      "schedule": "0 15 * * *"
     }
   ]
 }

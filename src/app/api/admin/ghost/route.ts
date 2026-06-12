@@ -1,5 +1,6 @@
 import { apiError, apiOk } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { getAiSpendSummary } from '@/lib/ai/usage'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
@@ -14,18 +15,21 @@ export async function GET() {
   try {
     const supabase = createAdminClient()
 
-    const { data, error } = await supabase
-      .from('agent_proposals')
-      .select(
-        `id, kind, payload, reasoning, status, model, created_at,
-         conversation:conversations(id, channel, contact:contacts(name, email, locale)),
-         trigger:messages!agent_proposals_trigger_message_id_fkey(body, author_name, created_at)`,
-      )
-      .order('created_at', { ascending: false })
-      .limit(50)
+    const [{ data, error }, spend] = await Promise.all([
+      supabase
+        .from('agent_proposals')
+        .select(
+          `id, kind, payload, reasoning, status, model, created_at,
+           conversation:conversations(id, channel, contact:contacts(name, email, locale)),
+           trigger:messages!agent_proposals_trigger_message_id_fkey(body, author_name, created_at)`,
+        )
+        .order('created_at', { ascending: false })
+        .limit(50),
+      getAiSpendSummary(),
+    ])
     if (error) return apiError(error.message)
 
-    return apiOk({ proposals: data ?? [] })
+    return apiOk({ proposals: data ?? [], spend })
   } catch (err) {
     return apiError(err instanceof Error ? err.message : 'Failed to load ghost proposals')
   }

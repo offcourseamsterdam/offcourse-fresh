@@ -1,5 +1,6 @@
 import { getClaude, CLAUDE_MODEL } from '@/lib/ai/clients'
 import { OFF_COURSE_SYSTEM_PROMPT } from '@/lib/ai/context'
+import { recordAiUsage } from '@/lib/ai/usage'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
@@ -84,6 +85,13 @@ Return JSON only:
 {"reply": "<the reply you would send, in the customer's language>", "reasoning": "<1-2 sentences in English: why this reply, what you'd need to verify>", "language": "<language of the reply>"}`,
         },
       ],
+    })
+
+    await recordAiUsage({
+      feature: 'ghost_reply_draft',
+      model: CLAUDE_MODEL,
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
     })
 
     const raw = response.content[0]?.type === 'text' ? response.content[0].text.trim() : ''
