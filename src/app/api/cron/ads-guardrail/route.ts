@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireCronSecret } from '@/lib/auth/require-cron-secret'
+import { alertCronFailure } from '@/lib/cron/alert'
 import { runGuardrail, DEFAULT_GUARDRAIL_CONFIG } from '@/lib/google-ads/guardrail'
 
 /**
@@ -14,6 +15,11 @@ export async function GET(request: NextRequest) {
   if (denied) return denied
 
   const result = await runGuardrail({ ...DEFAULT_GUARDRAIL_CONFIG, autoPause: true })
+  // "not configured" is the intentional no-op on environments without Google Ads
+  // credentials — only real failures should page Slack.
+  if (!result.ok && result.error && !result.error.includes('not configured')) {
+    await alertCronFailure('ads-guardrail', result.error)
+  }
   return NextResponse.json({
     ok: result.ok,
     alerts: result.alerts.length,

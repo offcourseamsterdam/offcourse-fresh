@@ -8,6 +8,8 @@
  * or a Redis-based solution.
  */
 
+import { NextResponse, type NextRequest } from 'next/server'
+
 interface WindowEntry {
   count: number
   resetAt: number
@@ -56,6 +58,29 @@ export function checkRateLimit(
   }
 
   return true
+}
+
+/**
+ * Route-handler guard for public endpoints that hit external APIs (FareHarbor)
+ * or write to the database. Returns a 429 response when the caller's IP is over
+ * the limit, or null when the request may proceed.
+ *
+ * Usage — first line of the handler:
+ *   const limited = enforceRateLimit(request, 'promo-validate', 10, 60_000)
+ *   if (limited) return limited
+ */
+export function enforceRateLimit(
+  request: NextRequest,
+  namespace: string,
+  maxRequests: number,
+  windowMs: number,
+): NextResponse | null {
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
+  if (checkRateLimit(ip, namespace, maxRequests, windowMs)) return null
+  return NextResponse.json(
+    { ok: false, error: 'Too many requests — please slow down and try again shortly.' },
+    { status: 429, headers: getRateLimitHeaders(ip, namespace, maxRequests) },
+  )
 }
 
 /**

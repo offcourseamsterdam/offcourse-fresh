@@ -199,35 +199,21 @@ export default function ExtrasPage() {
         />
       )}
 
-      {/* Create / Edit form — slides in from top */}
+      {/* Create / Edit form */}
       {showForm && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black/20"
-            style={{ animation: 'fadeIn 0.2s ease-out' }}
-            onClick={closeForm}
-          />
-          {/* Panel */}
-          <div
-            className="relative max-w-3xl mx-auto mt-8 px-4 pb-8"
-            style={{ animation: 'slideDown 0.3s ease-out' }}
-          >
-            <ExtrasFormModal
-              editingExtra={editingExtra}
-              form={form}
-              onFormChange={setForm}
-              onSave={handleSave}
-              onDelete={handleDelete}
-              onClose={closeForm}
-              saving={saving}
-              deleting={deleting}
-              saveError={saveError}
-              onExtrasUpdate={handleExtrasImageUpdate}
-              onEditingExtraUpdate={setEditingExtra}
-            />
-          </div>
-        </div>
+        <ExtrasFormModal
+          editingExtra={editingExtra}
+          form={form}
+          onFormChange={setForm}
+          onSave={handleSave}
+          onDelete={handleDelete}
+          onClose={closeForm}
+          saving={saving}
+          deleting={deleting}
+          saveError={saveError}
+          onExtrasUpdate={handleExtrasImageUpdate}
+          onEditingExtraUpdate={setEditingExtra}
+        />
       )}
 
     </div>

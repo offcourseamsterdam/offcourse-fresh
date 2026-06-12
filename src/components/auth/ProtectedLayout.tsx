@@ -20,8 +20,11 @@ const DEV_PROFILE: UserProfile = {
 }
 
 export default async function ProtectedLayout({ allowedRoles, locale, children }: Props) {
-  // Skip auth in development — remove before going to production
-  if (process.env.NODE_ENV === 'development') {
+  // Skip auth ONLY when explicitly opted in via env var AND running a dev build.
+  // The double condition means a preview/staging deploy can never expose the
+  // admin by accident: Vercel builds run NODE_ENV=production, and the env var
+  // is never set in any deployed environment — only in a local .env.local.
+  if (process.env.ADMIN_DEV_BYPASS === 'true' && process.env.NODE_ENV === 'development') {
     return <>{children(DEV_PROFILE)}</>
   }
 

@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { enforceRateLimit } from '@/lib/rate-limit'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { calculateQuote } from '@/lib/booking/calculate-quote'
 import { DEFAULT_DURATION_MINUTES } from '@/lib/constants'
@@ -17,6 +18,11 @@ import { DEFAULT_DURATION_MINUTES } from '@/lib/constants'
  * Public endpoint, no auth — same trust model as availability/promo lookups.
  */
 export async function POST(request: NextRequest) {
+  // Every call inserts a pricing_quotes row — cap so the table can't be spammed.
+  // Real checkouts re-quote on every extras/promo change, so stay generous.
+  const limited = enforceRateLimit(request, 'booking-quote', 30, 60_000)
+  if (limited) return limited
+
   try {
     const body = await request.json()
     const {

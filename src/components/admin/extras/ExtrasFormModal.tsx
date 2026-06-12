@@ -1,11 +1,11 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { AdminFormModal } from '@/components/admin/ui/AdminFormModal'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { SafeImage } from '@/components/ui/SafeImage'
-import { Loader2, Trash2, X } from 'lucide-react'
+import { Loader2, Trash2 } from 'lucide-react'
 import {
   CATEGORY_EMOJI,
   EXTRAS_CATEGORIES as CATEGORIES,
@@ -101,23 +101,29 @@ export function ExtrasFormModal({
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <Card className="border-zinc-300">
-      <CardHeader className="pb-4">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base">
-            {editingExtra ? `Edit: ${editingExtra.name}` : 'New Extra'}
-          </CardTitle>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 transition-colors"
-            title="Close"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      </CardHeader>
-
-      <CardContent className="space-y-5">
+    <AdminFormModal
+      title={editingExtra ? `Edit: ${editingExtra.name}` : 'New Extra'}
+      onClose={onClose}
+      onSubmit={(e) => { e.preventDefault(); onSave() }}
+      saving={saving}
+      error={saveError}
+      submitLabel={editingExtra ? 'Save changes' : 'Create extra'}
+      submitDisabled={!form.name.trim()}
+      maxWidthClass="max-w-3xl"
+      footerStart={editingExtra ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+          onClick={onDelete}
+          disabled={deleting || saving}
+        >
+          {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+          {deleting ? 'Deleting…' : 'Delete'}
+        </Button>
+      ) : undefined}
+    >
 
         {/* Name */}
         <div className="space-y-1.5">
@@ -421,47 +427,6 @@ export function ExtrasFormModal({
           </div>
         )}
 
-        {/* Save error */}
-        {saveError && (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {saveError}
-          </div>
-        )}
-
-        {/* Actions */}
-        <div className="flex items-center justify-between pt-2 border-t border-zinc-100">
-          <div>
-            {editingExtra && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
-                onClick={onDelete}
-                disabled={deleting || saving}
-              >
-                {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                {deleting ? 'Deleting…' : 'Delete'}
-              </Button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              onClick={onSave}
-              disabled={saving || !form.name.trim()}
-            >
-              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-              {saving ? 'Saving…' : editingExtra ? 'Save changes' : 'Create extra'}
-            </Button>
-          </div>
-        </div>
-
-      </CardContent>
-    </Card>
+    </AdminFormModal>
   )
 }
