@@ -35,6 +35,10 @@
     {
       "path": "/api/cron/fh-consistency",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/shift-reminder",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

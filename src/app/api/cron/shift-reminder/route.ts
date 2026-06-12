@@ -1,0 +1,74 @@
+import { NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/supabase/types'
+import { postDm, postToChannel } from '@/lib/slack/bot'
+
+/**
+ * Shift reminder cron — called every 5 minutes by Vercel (requires Pro plan)
+ * or an external cron service pointed at this endpoint.
+ *
+ * Finds shifts starting in the next 5–10 minutes where the assigned captain
+ * hasn't checked in yet, and sends them a Slack reminder.
+ *
+ * Vercel protects cron routes with a Bearer token it injects automatically:
+ *   Authorization: Bearer $CRON_SECRET
+ */
+export async function GET(req: Request): Promise<NextResponse> {
+  // Verify the request is from Vercel cron or an authorized caller.
+  const auth = req.headers.get('authorization')
+  const cronSecret = process.env.CRON_SECRET
+  if (cronSecret && auth !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const supabase = createClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  )
+
+  const now = new Date()
+  // Window: shifts starting between now+4min and now+11min (gives ~5min slack either side)
+  const windowStart = new Date(now.getTime() + 4 * 60 * 1000).toISOString()
+  const windowEnd   = new Date(now.getTime() + 11 * 60 * 1000).toISOString()
+
+  const { data: shifts, error } = await supabase
+    .from('shifts')
+    .select('id, start_at, end_at, staff_id, staff(name, slack_member_id), boats(name)')
+    .in('status', ['assigned', 'confirmed'])
+    .gte('start_at', windowStart)
+    .lte('start_at', windowEnd)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (!shifts?.length) return NextResponse.json({ reminded: 0 })
+
+  // Exclude captains who already checked in
+  const staffIds = shifts.map(s => s.staff_id).filter(Boolean) as string[]
+  const { data: openEntries } = await supabase
+    .from('time_entries')
+    .select('staff_id')
+    .in('staff_id', staffIds)
+    .is('clock_out_at', null)
+  const alreadyIn = new Set((openEntries ?? []).map(e => e.staff_id))
+
+  const opsChannel = process.env.SLACK_OPS_CHANNEL ?? '#bookings'
+  let reminded = 0
+
+  for (const shift of shifts) {
+    if (!shift.staff_id || alreadyIn.has(shift.staff_id)) continue
+    const staffName = shift.staff?.name ?? 'Captain'
+    const boatName  = shift.boats?.name ?? 'your boat'
+    const startTime = new Date(shift.start_at).toLocaleTimeString('nl-NL', {
+      hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam',
+    })
+    const msg = `⏰ ${staffName}, your shift starts at ${startTime} (${boatName}). Time to check in!`
+
+    const memberId = shift.staff?.slack_member_id
+    if (memberId) {
+      await postDm(memberId, msg)
+    } else {
+      await postToChannel(opsChannel, msg)
+    }
+    reminded++
+  }
+
+  return NextResponse.json({ reminded })
+}
