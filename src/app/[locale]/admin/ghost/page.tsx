@@ -1,15 +1,20 @@
 'use client'
 
-import { CalendarClock, Euro, Ghost, Loader2, UtensilsCrossed } from 'lucide-react'
+import { useState } from 'react'
+import { BookOpen, CalendarClock, Euro, Ghost, HelpCircle, Loader2, UtensilsCrossed } from 'lucide-react'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
+import { adminMutate } from '@/hooks/useAdminSave'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { formatAmsterdamTime } from '@/lib/utils'
 
 /**
- * The Ghost AI's notebook — shadow-mode proposals, read-only.
- * Reply drafts (per inbound chat message) + daily ops drafts (tomorrow's
- * captain schedule, upcoming catering orders). Nothing here is ever shown
- * to customers or executed; this page is where the Ghost earns trust.
+ * The Ghost AI's notebook — shadow-mode proposals, read-only + teachable.
+ *
+ * The learning loop, visible:
+ *  - every reply draft shows the human's ACTUAL reply once sent (the correction)
+ *  - the questions panel lists what the Ghost is unsure about; answering
+ *    feeds ghost_knowledge, which is injected into every future draft
+ *  - the stats strip counts corrections + taught facts — learning, measured
  */
 
 interface ScheduleAssignment {
@@ -31,6 +36,7 @@ interface GhostProposal {
   payload: {
     reply?: string
     language?: string
+    open_question?: string | null
     target_date?: string
     assignments?: ScheduleAssignment[]
     orders?: CateringOrder[]
@@ -38,6 +44,7 @@ interface GhostProposal {
   reasoning: string | null
   status: string
   model: string | null
+  outcome: { human_reply?: string; replied_by?: string; replied_at?: string } | null
   created_at: string
   conversation: {
     id: string
@@ -47,52 +54,72 @@ interface GhostProposal {
   trigger: { body: string; author_name: string | null; created_at: string } | null
 }
 
-interface SpendSummary {
-  totalEur: number
-  last30dEur: number
-  calls: number
+interface GhostData {
+  proposals: GhostProposal[]
+  spend: { totalEur: number; last30dEur: number; calls: number }
+  stats: {
+    total: number
+    byKind: Record<string, number>
+    corrected: number
+    awaitingComparison: number
+    openQuestions: number
+    knowledgeEntries: number
+  }
+  openQuestions: { proposal_id: string; question: string; created_at: string }[]
 }
 
 const POLL_MS = 15_000
 
 export default function GhostPage() {
-  const { data, isLoading, error } = useAdminFetch<{ proposals: GhostProposal[]; spend: SpendSummary }>(
-    '/api/admin/ghost',
-    { refreshInterval: POLL_MS },
-  )
+  const { data, isLoading, error, refresh } = useAdminFetch<GhostData>('/api/admin/ghost', {
+    refreshInterval: POLL_MS,
+  })
   const proposals = data?.proposals ?? []
-  const spend = data?.spend
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl">
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-900 inline-flex items-center gap-2">
             <Ghost className="w-6 h-6 text-violet-500" /> Ghost AI
           </h1>
           <p className="text-sm text-zinc-500 mt-1 max-w-xl">
-            Shadow mode — reply drafts, tomorrow&apos;s schedule and catering orders, all logged but
-            never executed. Compare against what you actually did. Trust is earned here first.
+            Shadow mode — drafts logged, never executed. It learns from your real replies and from
+            the questions you answer below.
           </p>
         </div>
 
-        {/* The fuel gauge — every AI call is metered; €5 steps DM Beer on Slack. */}
-        {spend && (
+        {data && (
           <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-right">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 inline-flex items-center gap-1">
               <Euro className="w-3 h-3" /> AI spend
             </p>
             <p className="text-lg font-semibold text-zinc-900 leading-tight">
-              €{spend.totalEur.toFixed(2)}
+              €{data.spend.totalEur.toFixed(2)}
             </p>
             <p className="text-[11px] text-zinc-400">
-              €{spend.last30dEur.toFixed(2)} last 30d · {spend.calls} calls · alert every €5
+              €{data.spend.last30dEur.toFixed(2)} last 30d · {data.spend.calls} calls · alert every €5
             </p>
           </div>
         )}
       </div>
 
       <AdminErrorBanner error={error} />
+
+      {/* Stats strip — is it learning? */}
+      {data && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
+          <StatCard label="Proposals" value={data.stats.total} sub={Object.entries(data.stats.byKind).map(([k, n]) => `${n} ${KIND_META[k]?.label?.toLowerCase() ?? k}`).join(' · ')} />
+          <StatCard label="Corrected by you" value={data.stats.corrected} sub={`${data.stats.awaitingComparison} awaiting your reply`} accent="violet" />
+          <StatCard label="Open questions" value={data.stats.openQuestions} sub="answer them below" accent={data.stats.openQuestions > 0 ? 'amber' : undefined} />
+          <StatCard label="Things taught" value={data.stats.knowledgeEntries} sub="in every future draft" accent="emerald" />
+        </div>
+      )}
+
+      {/* Questions panel — the Ghost's homework for the team */}
+      {data && data.openQuestions.length > 0 && (
+        <QuestionsPanel questions={data.openQuestions} onAnswered={refresh} />
+      )}
 
       {isLoading && !data && (
         <div className="flex items-center gap-2 text-sm text-zinc-400 py-8">
@@ -112,6 +139,92 @@ export default function GhostPage() {
       <div className="space-y-4">
         {proposals.map(p => (
           <ProposalCard key={p.id} proposal={p} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function StatCard({ label, value, sub, accent }: { label: string; value: number; sub?: string; accent?: 'violet' | 'amber' | 'emerald' }) {
+  const accentClass =
+    accent === 'violet' ? 'text-violet-600' : accent === 'amber' ? 'text-amber-600' : accent === 'emerald' ? 'text-emerald-600' : 'text-zinc-900'
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">{label}</p>
+      <p className={`text-xl font-semibold leading-tight ${accentClass}`}>{value}</p>
+      {sub && <p className="text-[11px] text-zinc-400 truncate" title={sub}>{sub}</p>}
+    </div>
+  )
+}
+
+/** The Ghost asks, you answer, it knows forever. */
+function QuestionsPanel({
+  questions,
+  onAnswered,
+}: {
+  questions: { proposal_id: string; question: string; created_at: string }[]
+  onAnswered: () => void
+}) {
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [busy, setBusy] = useState<Record<string, boolean>>({})
+  const [errorId, setErrorId] = useState<string | null>(null)
+
+  async function answer(proposalId: string, question: string) {
+    const text = drafts[proposalId]?.trim()
+    if (!text) return
+    setBusy(prev => ({ ...prev, [proposalId]: true }))
+    setErrorId(null)
+    try {
+      await adminMutate('/api/admin/ghost/knowledge', 'POST', {
+        question,
+        answer: text,
+        proposal_id: proposalId,
+      })
+      setDrafts(prev => ({ ...prev, [proposalId]: '' }))
+      onAnswered()
+    } catch {
+      setErrorId(proposalId)
+    } finally {
+      setBusy(prev => ({ ...prev, [proposalId]: false }))
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 mb-5">
+      <p className="text-sm font-semibold text-amber-900 inline-flex items-center gap-1.5 mb-1">
+        <HelpCircle className="w-4 h-4" /> The Ghost wants to know
+      </p>
+      <p className="text-xs text-amber-700 mb-3">
+        Things it was unsure about while drafting. Your answer is taught permanently — every future
+        draft knows it.
+      </p>
+      <div className="space-y-3">
+        {questions.map(q => (
+          <div key={q.proposal_id} className="bg-white rounded-lg border border-amber-200 p-3">
+            <p className="text-sm text-zinc-800 mb-2">
+              <span className="font-medium">{q.question}</span>
+              <span className="ml-2 text-[11px] text-zinc-400">{formatAmsterdamTime(q.created_at)}</span>
+            </p>
+            <div className="flex items-end gap-2">
+              <textarea
+                value={drafts[q.proposal_id] ?? ''}
+                onChange={e => setDrafts(prev => ({ ...prev, [q.proposal_id]: e.target.value }))}
+                placeholder="Answer it once — the Ghost remembers…"
+                rows={2}
+                maxLength={2000}
+                className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+              />
+              <button
+                onClick={() => answer(q.proposal_id, q.question)}
+                disabled={busy[q.proposal_id] || !drafts[q.proposal_id]?.trim()}
+                className="rounded-lg bg-amber-600 text-white px-3 py-2 text-xs font-semibold hover:bg-amber-700 disabled:opacity-40 inline-flex items-center gap-1.5 shrink-0"
+              >
+                {busy[q.proposal_id] ? <Loader2 className="w-3 h-3 animate-spin" /> : <BookOpen className="w-3 h-3" />}
+                Teach
+              </button>
+            </div>
+            {errorId === q.proposal_id && <p className="text-xs text-red-600 mt-1">Could not save — try again?</p>}
+          </div>
         ))}
       </div>
     </div>
@@ -160,7 +273,7 @@ function ProposalCard({ proposal: p }: { proposal: GhostProposal }) {
       </div>
 
       <div className="p-4 space-y-3">
-        {/* Reply draft — customer message + draft */}
+        {/* Reply draft — customer message + draft + the human correction */}
         {p.kind === 'reply_draft' && (
           <>
             {p.trigger && (
@@ -181,6 +294,25 @@ function ProposalCard({ proposal: p }: { proposal: GhostProposal }) {
                 {p.payload.reply ?? '—'}
               </div>
             </div>
+            {p.outcome?.human_reply && (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-600 mb-1">
+                  {p.outcome.replied_by ?? 'You'} actually replied
+                </p>
+                <div className="rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2 text-sm text-emerald-900 whitespace-pre-wrap">
+                  {p.outcome.human_reply}
+                </div>
+                <p className="text-[11px] text-zinc-400 mt-1">
+                  This pair is now a lesson — the Ghost sees it in future drafts.
+                </p>
+              </div>
+            )}
+            {p.payload.open_question && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                <HelpCircle className="w-3 h-3 inline mr-1 -mt-0.5" />
+                Ghost asked: {p.payload.open_question}
+              </p>
+            )}
           </>
         )}
 

@@ -58,6 +58,42 @@ export async function draftShadowReply(conversationId: string, triggerMessageId:
       ? bookings.map(b => `- ${b.booking_date ?? '?'} ${b.start_time ?? ''} · ${b.listing_title ?? 'cruise'} · ${b.guest_count ?? '?'} guests · ${b.status ?? ''}`).join('\n')
       : 'No bookings found for this customer.'
 
+    // ── The learning inputs ──────────────────────────────────────────────
+    // 1. Knowledge the team taught the Ghost (answers from the questions
+    //    panel + manual facts). Newest 20 — every answer changes behavior.
+    const { data: knowledge } = await supabase
+      .from('ghost_knowledge')
+      .select('question, answer')
+      .order('created_at', { ascending: false })
+      .limit(20)
+    const knowledgeBlock = knowledge?.length
+      ? `THINGS THE TEAM HAS TAUGHT YOU (treat as ground truth)\n${knowledge
+          .map(k => `- Q: ${k.question}\n  A: ${k.answer}`)
+          .join('\n')}\n\n`
+      : ''
+
+    // 2. Recent corrections: your past drafts vs what the human ACTUALLY
+    //    sent (captured when the admin replies). Few-shot style lessons.
+    const { data: corrections } = await supabase
+      .from('agent_proposals')
+      .select('payload, outcome, trigger:messages!agent_proposals_trigger_message_id_fkey(body)')
+      .eq('kind', 'reply_draft')
+      .not('outcome', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(5)
+    const correctionLines = (corrections ?? [])
+      .map(c => {
+        const triggerBody = (c.trigger as { body?: string } | null)?.body
+        const draft = (c.payload as { reply?: string })?.reply
+        const actual = (c.outcome as { human_reply?: string })?.human_reply
+        if (!triggerBody || !draft || !actual) return null
+        return `Customer: ${triggerBody}\nYour draft: ${draft}\nHuman actually sent: ${actual}`
+      })
+      .filter(Boolean)
+    const correctionsBlock = correctionLines.length
+      ? `HOW THE TEAM ACTUALLY REPLIES (your past drafts vs their real replies — imitate their style and choices)\n${correctionLines.join('\n---\n')}\n\n`
+      : ''
+
     const claude = getClaude()
     const response = await claude.messages.create({
       model: CLAUDE_MODEL,
@@ -68,7 +104,7 @@ export async function draftShadowReply(conversationId: string, triggerMessageId:
           role: 'user',
           content: `You are drafting a customer-support chat reply for Off Course Amsterdam. This is a SHADOW draft: it will never be sent — it is logged so the team can compare your draft against what a human actually replied. Draft it as if it WOULD be sent: reply in the customer's own language, keep it chat-length (1-3 short sentences usually), and follow the brand voice.
 
-CUSTOMER
+${knowledgeBlock}${correctionsBlock}CUSTOMER
 - Name: ${contact.name}
 - Locale: ${contact.locale ?? 'unknown'}
 - Internal notes: ${contact.notes ?? 'none'}
@@ -79,10 +115,14 @@ ${bookingLines}
 CONVERSATION SO FAR
 ${transcript}
 
-If answering would require information you don't have (live availability, prices, policy you're unsure of), say so in the reasoning and write the best reply you can that doesn't invent facts.
+HARD RULE — what you are allowed to state as fact:
+- The brand/boat facts in your system prompt, and
+- THINGS THE TEAM HAS TAUGHT YOU (above), and
+- this customer's actual booking data (above).
+ANYTHING ELSE about policies, amenities, equipment, prices, routes or availability (pets? speakers? toilets? blankets? rain policy? …) is NOT known to you — even if it sounds plausible. For such questions: do NOT assert an answer. Reply warmly that you'll check ("let me double-check that for you — back in a minute") and set "open_question" to ONE precise question for the team. Once they answer, it appears in your taught knowledge and you may state it from then on.
 
 Return JSON only:
-{"reply": "<the reply you would send, in the customer's language>", "reasoning": "<1-2 sentences in English: why this reply, what you'd need to verify>", "language": "<language of the reply>"}`,
+{"reply": "<the reply you would send, in the customer's language>", "reasoning": "<1-2 sentences in English: why this reply>", "language": "<language of the reply>", "open_question": <null or "<one specific question for the team, in English>">}`,
         },
       ],
     })
@@ -103,7 +143,7 @@ Return JSON only:
       kind: 'reply_draft',
       conversation_id: conversationId,
       trigger_message_id: triggerMessageId,
-      payload: { reply: parsed.reply, language: parsed.language },
+      payload: { reply: parsed.reply, language: parsed.language, open_question: parsed.open_question },
       reasoning: parsed.reasoning,
       status: 'shadow',
       model: CLAUDE_MODEL,
@@ -115,7 +155,9 @@ Return JSON only:
 }
 
 /** Parse the Ghost's JSON, tolerating accidental markdown fences. */
-export function parseDraftJson(raw: string): { reply: string; reasoning: string; language: string } | null {
+export function parseDraftJson(
+  raw: string,
+): { reply: string; reasoning: string; language: string; open_question: string | null } | null {
   const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
   try {
     const obj = JSON.parse(cleaned) as Record<string, unknown>
@@ -124,6 +166,8 @@ export function parseDraftJson(raw: string): { reply: string; reasoning: string;
       reply: obj.reply.trim(),
       reasoning: typeof obj.reasoning === 'string' ? obj.reasoning.trim() : '',
       language: typeof obj.language === 'string' ? obj.language.trim() : 'unknown',
+      open_question:
+        typeof obj.open_question === 'string' && obj.open_question.trim() ? obj.open_question.trim() : null,
     }
   } catch {
     return null

@@ -53,6 +53,30 @@ header shows total / 30-day spend.
 - **Alert-once via PK.** `ai_usage_alerts.threshold_eur` is the primary key;
   the first inserter wins and sends the DM, the loser hits the conflict.
 
+## The learning loop (how it gets smarter, mechanically)
+
+No model training — three retrieval mechanisms, all visible on `/admin/ghost`:
+
+1. **Corrections.** When an admin sends a reply in the inbox, the messages
+   route attaches it to the latest unanswered `reply_draft` proposal for that
+   conversation (`outcome: { human_reply, replied_by, replied_at }`). The
+   drafter includes the 5 most recent draft-vs-actual pairs in every prompt
+   as "HOW THE TEAM ACTUALLY REPLIES" — few-shot imitation of real style and
+   choices. The Ghost card shows both bubbles side by side.
+2. **Questions → knowledge.** The drafter operates under a hard rule: it may
+   only assert brand facts, taught knowledge, and the customer's booking
+   data. Anything else (amenities, policies, prices) → a warm "let me check"
+   reply + one `open_question` in the payload. The questions panel on the
+   Ghost page lists unanswered ones; answering inserts a `ghost_knowledge`
+   row, and the newest 20 entries are injected into every future prompt as
+   "THINGS THE TEAM HAS TAUGHT YOU (treat as ground truth)". Verified live:
+   asked about toilets/blankets → "let me check" + question; after one
+   taught answer → complete confident reply, open_question null.
+3. **Stats.** The strip on the Ghost page counts proposals by kind,
+   corrections captured, open questions, and knowledge entries — learning,
+   measured. (pgvector similarity retrieval is the planned next rung when
+   volume outgrows "5 most recent".)
+
 ## How to extend (the CLAUDE.md rule)
 
 Adding any new operational feature? Answer in its feature doc: *can the Ghost

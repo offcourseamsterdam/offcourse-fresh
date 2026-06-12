@@ -62,6 +62,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           status: conversation.status === 'resolved' ? 'resolved' : 'pending',
         })
         .eq('id', id)
+
+      // The Ghost's learning signal: attach the human's ACTUAL reply to the
+      // latest unanswered shadow draft in this conversation. Future drafts
+      // include these draft-vs-actual pairs as corrections.
+      const { data: openDraft } = await supabase
+        .from('agent_proposals')
+        .select('id')
+        .eq('kind', 'reply_draft')
+        .eq('conversation_id', id)
+        .is('outcome', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (openDraft) {
+        await supabase
+          .from('agent_proposals')
+          .update({
+            outcome: { human_reply: parsed.message, replied_by: authorName, replied_at: new Date().toISOString() },
+          })
+          .eq('id', openDraft.id)
+      }
     }
 
     return apiOk({ message })

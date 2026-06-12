@@ -8,7 +8,18 @@ describe('parseDraftJson', () => {
       reply: 'Hoi! Ja hoor, dat kan.',
       reasoning: 'Simple yes.',
       language: 'Dutch',
+      open_question: null,
     })
+  })
+
+  it('captures an open question for the team when the Ghost is unsure', () => {
+    const raw = '{"reply": "Goede vraag!", "reasoning": "r", "language": "Dutch", "open_question": "Are dogs allowed on board?"}'
+    expect(parseDraftJson(raw)?.open_question).toBe('Are dogs allowed on board?')
+  })
+
+  it('normalizes empty/whitespace open questions to null', () => {
+    expect(parseDraftJson('{"reply": "Hi", "open_question": "  "}')?.open_question).toBeNull()
+    expect(parseDraftJson('{"reply": "Hi", "open_question": null}')?.open_question).toBeNull()
   })
 
   it('tolerates markdown fences around the JSON', () => {
@@ -29,11 +40,11 @@ describe('parseDraftJson', () => {
 
   it('defaults missing optional fields instead of failing', () => {
     const parsed = parseDraftJson('{"reply": "Hi!"}')
-    expect(parsed).toEqual({ reply: 'Hi!', reasoning: '', language: 'unknown' })
+    expect(parsed).toEqual({ reply: 'Hi!', reasoning: '', language: 'unknown', open_question: null })
   })
 
   it('trims whitespace from all fields', () => {
     const parsed = parseDraftJson('{"reply": "  Hi!  ", "reasoning": " r ", "language": " German "}')
-    expect(parsed).toEqual({ reply: 'Hi!', reasoning: 'r', language: 'German' })
+    expect(parsed).toEqual({ reply: 'Hi!', reasoning: 'r', language: 'German', open_question: null })
   })
 })

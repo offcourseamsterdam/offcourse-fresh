@@ -1563,6 +1563,44 @@ export type Database = {
         }
         Relationships: []
       }
+      ghost_knowledge: {
+        Row: {
+          answer: string
+          created_at: string
+          created_by: string | null
+          id: string
+          proposal_id: string | null
+          question: string
+          source: string
+        }
+        Insert: {
+          answer: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          proposal_id?: string | null
+          question: string
+          source?: string
+        }
+        Update: {
+          answer?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          proposal_id?: string | null
+          question?: string
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ghost_knowledge_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "agent_proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       google_ads_campaign_listings: {
         Row: {
           campaign_id: string
