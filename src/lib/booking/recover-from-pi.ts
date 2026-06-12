@@ -17,7 +17,9 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { sendConfirmationEmail } from '@/lib/booking/send-confirmation-email'
 import { notifyCateringOrder } from '@/lib/catering/notify'
+import { postSlackText } from '@/lib/slack/send-notification'
 import { extractVat } from '@/lib/extras/calculate'
+import { formatAmsterdamTime } from '@/lib/utils'
 import type Stripe from 'stripe'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -29,8 +31,13 @@ export interface RecoveryResult {
   listingSlug: string | null
   /** The FH booking UUID, if created or found. */
   fhBookingUuid: string | null | undefined
-  /** 'existing' = idempotent hit; 'created' = newly created; 'failed' = error */
-  outcome: 'existing' | 'created' | 'failed'
+  /**
+   * 'existing' = idempotent hit; 'created' = newly created; 'failed' = error;
+   * 'processing' = payment still settling at the bank (iDEAL) — the webhook
+   * will complete the booking once Stripe confirms, the browser should send
+   * the customer to the confirmation page which polls until then.
+   */
+  outcome: 'existing' | 'created' | 'failed' | 'processing'
   error?: string
 }
 
@@ -46,6 +53,18 @@ type ExtraLineItem = {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Parse a cents amount from PI metadata (all metadata values are strings).
+ * Returns null when the field is absent/empty/garbage so the caller can fall
+ * back to a server-side computation — but, unlike `Number(x) || fallback`,
+ * an explicit "0" is respected as a real zero.
+ */
+export function parseMetaCents(value: string | undefined): number | null {
+  if (value == null || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
 
 /** Fetch extras line items from the stored quote breakdown. */
 export async function getExtrasFromQuote(quoteId: string | undefined): Promise<ExtraLineItem[]> {
@@ -132,11 +151,20 @@ export async function recoverBookingFromPi(
     return { ok: false, listingSlug: null, fhBookingUuid: null, outcome: 'failed', error: 'Could not retrieve payment' }
   }
 
+  const meta = pi.metadata ?? {}
+
+  if (pi.status === 'processing') {
+    // iDEAL banks report "succeeded" to the browser before Stripe has settled
+    // the payment. Not an error — the payment_intent.succeeded webhook will
+    // create the booking shortly. Hand the slug back so the browser can park
+    // the customer on the confirmation page, which polls until the row appears.
+    const listingSlug = await getListingSlug(meta.listing_id)
+    return { ok: false, listingSlug, fhBookingUuid: null, outcome: 'processing', error: 'Payment is still processing' }
+  }
+
   if (pi.status !== 'succeeded') {
     return { ok: false, listingSlug: null, fhBookingUuid: null, outcome: 'failed', error: `Payment not succeeded (status: ${pi.status})` }
   }
-
-  const meta = pi.metadata ?? {}
 
   // 2. Idempotency — if already booked, return the existing record
   const { data: existing } = await supabase
@@ -156,7 +184,22 @@ export async function recoverBookingFromPi(
     }
   }
 
-  // 3. Extras from quote
+  // 3. Refund guard — if this payment was already refunded (e.g. the webhook
+  //    couldn't complete the booking and automatically returned the money),
+  //    never create a booking for it.
+  try {
+    const refunds = await stripe.refunds.list({ payment_intent: pi.id, limit: 1 })
+    if (refunds.data.length > 0) {
+      return {
+        ok: false, listingSlug: null, fhBookingUuid: null, outcome: 'failed',
+        error: 'Payment was refunded — not creating a booking',
+      }
+    }
+  } catch {
+    // Refund lookup failing shouldn't block recovery — proceed.
+  }
+
+  // 3b. Extras from quote
   const extrasSelected = await getExtrasFromQuote(meta.quote_id)
 
   // 4. Create FareHarbor booking
@@ -194,11 +237,11 @@ export async function recoverBookingFromPi(
   // 5. Save to Supabase
   const serverBaseAmount = Number(meta.server_base_amount_cents ?? 0)
   const extrasAmountCents = Number(meta.extras_amount_cents ?? 0)
-  const baseVatAmountCents = Number(meta.base_vat_amount_cents) || extractVat(serverBaseAmount, 9)
-  const extrasVatAmountCents = Number(meta.extras_vat_amount_cents) || extractVat(extrasAmountCents, 21)
-  const totalVatAmountCents = Number(meta.total_vat_amount_cents) || (baseVatAmountCents + extrasVatAmountCents)
+  const baseVatAmountCents = parseMetaCents(meta.base_vat_amount_cents) ?? extractVat(serverBaseAmount, 9)
+  const extrasVatAmountCents = parseMetaCents(meta.extras_vat_amount_cents) ?? extractVat(extrasAmountCents, 21)
+  const totalVatAmountCents = parseMetaCents(meta.total_vat_amount_cents) ?? (baseVatAmountCents + extrasVatAmountCents)
 
-  await supabase.from('bookings').insert({
+  const { error: insertError } = await supabase.from('bookings').insert({
     booking_id: pi.id,
     booking_uuid: fhBookingUuid ?? null,
     fareharbor_availability_pk: Number(meta.avail_pk),
@@ -235,8 +278,52 @@ export async function recoverBookingFromPi(
     discount_amount_cents: Number(meta.discount_amount_cents ?? 0),
   })
 
-  // 6. Confirmation email + catering (fire-and-forget; errors are non-fatal)
+  if (insertError) {
+    if (insertError.code === '23505') {
+      // Unique violation on stripe_payment_intent_id: another path (the Stripe
+      // webhook, or the browser /book) saved this payment's booking while we
+      // were creating ours. Ours is a duplicate — cancel it in FareHarbor so
+      // the boat isn't blocked twice. The winning path sends the notifications.
+      console.warn('[recover-from-pi] duplicate booking for PI', pi.id, '— cancelling our FH booking', fhBookingUuid)
+      if (fhBookingUuid) {
+        try {
+          await fh.cancelBooking(fhBookingUuid)
+        } catch (err) {
+          await postSlackText([
+            '🚨 *Duplicate FareHarbor booking could not be cancelled*',
+            `Two booking paths raced for PI \`${pi.id}\`. The duplicate FH booking \`${fhBookingUuid}\` must be cancelled manually.`,
+            `Error: ${err instanceof Error ? err.message : String(err)}`,
+          ].join('\n'))
+        }
+      }
+      const listingSlug = await getListingSlug(meta.listing_id)
+      return { ok: true, listingSlug, fhBookingUuid: null, outcome: 'existing' }
+    }
+    // Any other insert failure: the FH booking exists and the email below will
+    // still go out, but the row is missing from the admin dashboard — alert.
+    console.error('[recover-from-pi] DB insert failed for PI', pi.id, insertError)
+    await postSlackText([
+      '🚨 *Booking created in FareHarbor but DB save failed (recovery path)*',
+      `PI: \`${pi.id}\`  ·  FH: \`${fhBookingUuid ?? '—'}\``,
+      `Customer: ${meta.guest_name} · ${meta.guest_email}`,
+      `Error: ${insertError.message}`,
+      '_Add the booking row manually in Supabase._',
+    ].join('\n'))
+  }
+
+  // 6. Slack + confirmation email + catering (fire-and-forget; errors are non-fatal)
+  const guestCountLabel = `${guestCount} guest${guestCount !== 1 ? 's' : ''}`
   await Promise.allSettled([
+    postSlackText([
+      `*New booking confirmed!* 🎉 _(iDEAL/async — via browser recovery)_`,
+      `*${meta.listing_title}*`,
+      `📅 ${meta.date} · ${formatAmsterdamTime(meta.start_at)} – ${formatAmsterdamTime(meta.end_at)}`,
+      `👥 ${guestCountLabel} · ${meta.category}`,
+      `💰 €${(pi.amount / 100).toFixed(0)}`,
+      `👤 ${meta.guest_name} · ${meta.guest_email}`,
+      fhBookingUuid ? `🎫 FH: ${fhBookingUuid}` : '',
+      `💳 PI: ${pi.id}`,
+    ].filter(Boolean).join('\n')),
     sendConfirmationEmail({
       contact: {
         name: meta.guest_name ?? '',

@@ -342,6 +342,9 @@ export function CheckoutFlow({
   const [creatingIntent, setCreatingIntent] = useState(false)
   const [submittingPartnerBooking, _setSubmittingPartnerBooking] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // True while completing an iDEAL booking after the bank redirect — renders a
+  // blocking "finalising your payment" screen instead of the checkout form.
+  const [recovering, setRecovering] = useState(false)
   const [promoResult, setPromoResult] = useState<PromoResult | null>(null)
   // Server-canonical price quote — single source of truth for what's displayed and charged
   const [quote, setQuote] = useState<ServerQuote | null>(null)
@@ -353,7 +356,9 @@ export function CheckoutFlow({
     const params = new URLSearchParams(window.location.search)
     const paymentIntent = params.get('payment_intent')
     const redirectStatus = params.get('redirect_status')
-    const isIdealReturn = !!(paymentIntent && redirectStatus === 'succeeded')
+    // 'processing' counts too: iDEAL banks can send the customer back before
+    // Stripe has settled the payment — the recovery endpoint handles both.
+    const isIdealReturn = !!(paymentIntent && (redirectStatus === 'succeeded' || redirectStatus === 'processing'))
 
     const stored = sessionStorage.getItem(SESSION_BOOKING_KEY)
     if (stored) {
@@ -374,9 +379,12 @@ export function CheckoutFlow({
       try { setContact(JSON.parse(storedContact)) } catch { /* ignore */ }
     }
 
-    // Handle iDEAL redirect return
+    // Handle iDEAL redirect return — show a full-screen "finalising" state so
+    // the customer can't interact with (or re-submit) the checkout form while
+    // the booking is being completed in the background.
     if (isIdealReturn) {
-      handlePaymentSuccess(paymentIntent!)
+      setRecovering(true)
+      handlePaymentSuccess(paymentIntent!).finally(() => setRecovering(false))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -609,10 +617,14 @@ export function CheckoutFlow({
           body: JSON.stringify({ paymentIntentId }),
         })
         const result = await res.json()
-        if (result.ok && result.listingSlug) {
+        // apiOk nests the payload under `data`. This includes the 'processing'
+        // outcome: payment still settling at the bank — the confirmation page
+        // polls until the webhook completes the booking, so redirect there too.
+        if (result.ok) {
+          const slug = result.data?.listingSlug ?? listingSlug
           sessionStorage.removeItem(SESSION_BOOKING_KEY)
           sessionStorage.removeItem(SESSION_CONTACT_KEY)
-          window.location.href = `/book/${result.listingSlug}/confirmation?payment_intent=${paymentIntentId}`
+          window.location.href = `/book/${slug}/confirmation?payment_intent=${paymentIntentId}`
           return
         }
       } catch {
@@ -690,6 +702,24 @@ export function CheckoutFlow({
     } catch {
       setError('Something went wrong creating your booking. Your payment was received — please contact us at info@offcourseamsterdam.com')
     }
+  }
+
+  // iDEAL return: block the whole checkout UI while the booking is finalised in
+  // the background — otherwise the customer briefly sees the payment form again
+  // and could try to pay twice.
+  if (recovering) {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-20 sm:py-24 text-center">
+        <div className="bg-white rounded-2xl shadow-lg p-8 sm:p-10">
+          <Loader2 className="w-8 h-8 animate-spin text-[var(--color-primary)] mx-auto mb-4" />
+          <h2 className="text-lg font-bold text-zinc-900 mb-2">Finalising your payment…</h2>
+          <p className="text-sm text-zinc-500">
+            We&apos;re confirming your booking with the bank. This usually takes a few
+            seconds — please don&apos;t close this page.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   // Error state

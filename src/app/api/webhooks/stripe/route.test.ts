@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { NextRequest } from 'next/server'
 
 /**
@@ -22,7 +22,9 @@ const h = vi.hoisted(() => ({
   fhCreateBooking: vi.fn(),
   fhValidateBooking: vi.fn(),
   fhCancelBooking: vi.fn().mockResolvedValue(undefined),
+  refundsCreate: vi.fn().mockResolvedValue({ id: 're_test_1' }),
   maybeSingle: vi.fn(),
+  insert: vi.fn().mockResolvedValue({ error: null }),
   sendConfirmationEmail: vi.fn().mockResolvedValue(undefined),
   notifyCateringOrder: vi.fn().mockResolvedValue(undefined),
   postSlackText: vi.fn().mockResolvedValue(undefined),
@@ -30,14 +32,17 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/stripe/server', () => ({
-  getStripe: () => ({ webhooks: { constructEvent: h.constructEvent } }),
+  getStripe: () => ({
+    webhooks: { constructEvent: h.constructEvent },
+    refunds: { create: h.refundsCreate },
+  }),
 }))
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from: () => ({
       select: () => ({ eq: () => ({ maybeSingle: h.maybeSingle }) }),
       update: () => ({ eq: () => Promise.resolve({ error: null }) }),
-      insert: () => Promise.resolve({ error: null }),
+      insert: h.insert,
     }),
   }),
 }))
@@ -53,7 +58,15 @@ vi.mock('@/lib/fareharbor/client', () => ({
 vi.mock('@/lib/booking/send-confirmation-email', () => ({ sendConfirmationEmail: h.sendConfirmationEmail }))
 vi.mock('@/lib/catering/notify', () => ({ notifyCateringOrder: h.notifyCateringOrder }))
 vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText }))
-vi.mock('@/lib/booking/recover-from-pi', () => ({ getExtrasFromQuote: h.getExtrasFromQuote }))
+vi.mock('@/lib/booking/recover-from-pi', () => ({
+  getExtrasFromQuote: h.getExtrasFromQuote,
+  // Real implementation is trivial — duplicate it so route VAT math behaves normally.
+  parseMetaCents: (v: string | undefined) => {
+    if (v == null || v === '') return null
+    const n = Number(v)
+    return Number.isFinite(n) ? n : null
+  },
+}))
 
 import { POST } from './route'
 
@@ -240,5 +253,123 @@ describe('stripe webhook — checkout.session.expired', () => {
     expect(res.status).toBe(200)
     expect(h.fhCancelBooking).not.toHaveBeenCalled()
     expect(h.postSlackText).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ── payment_intent.succeeded — post-payment failure handling ─────────────────
+//
+// When a customer has PAID but FareHarbor can't complete the booking, the
+// webhook must (a) wait and re-check that the browser-side flow didn't just
+// create the booking, then (b) auto-refund + alert Slack. And when two paths
+// race and both create FH bookings, the loser must cancel its duplicate.
+
+describe('stripe webhook — paid-but-unbookable safety net', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubEnv('STRIPE_WEBHOOK_SECRET', 'whsec_test')
+    // alertWebhookFailure only posts to Slack when a webhook URL is configured
+    vi.stubEnv('SLACK_WEBHOOK_URL', 'https://hooks.slack.test/x')
+    h.insert.mockResolvedValue({ error: null })
+    h.refundsCreate.mockResolvedValue({ id: 're_test_1' })
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  function makePiSucceeded() {
+    return {
+      type: 'payment_intent.succeeded',
+      data: {
+        object: {
+          id: 'pi_unbookable',
+          amount: 16500,
+          metadata: {
+            avail_pk: '1001',
+            customer_type_rate_pk: '2002',
+            guest_count: '2',
+            category: 'private',
+            guest_name: 'Dana Test',
+            guest_email: 'dana@example.com',
+            listing_title: 'Canal Cruise',
+            date: '2026-06-20',
+          },
+        },
+      },
+    }
+  }
+
+  async function runWebhookThroughRecheckDelay() {
+    const resPromise = POST(mockReq())
+    // Skip past the 8s booking re-check delay
+    await vi.advanceTimersByTimeAsync(10_000)
+    return resPromise
+  }
+
+  it('auto-refunds and alerts Slack when FH validation fails and no booking exists', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded())
+    // No booking row — neither at the idempotency check nor at the recheck
+    h.maybeSingle.mockResolvedValue({ data: null })
+    h.fhValidateBooking.mockResolvedValue({ is_bookable: false, error: 'No availability' })
+
+    const res = await runWebhookThroughRecheckDelay()
+
+    expect(res.status).toBe(200)
+    expect(h.fhCreateBooking).not.toHaveBeenCalled()
+    expect(h.refundsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ payment_intent: 'pi_unbookable' }),
+    )
+    expect(h.postSlackText).toHaveBeenCalledWith(
+      expect.stringContaining('Auto-refund issued'),
+    )
+  })
+
+  it('does NOT refund when the booking appears during the recheck window', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded())
+    // Idempotency check: no booking yet. Recheck after the delay: booking exists
+    // (the browser-side /book or /recover finished while we were validating).
+    h.maybeSingle
+      .mockResolvedValueOnce({ data: null })
+      .mockResolvedValueOnce({ data: { id: 'booking-from-browser' } })
+    h.fhValidateBooking.mockResolvedValue({ is_bookable: false, error: 'No availability' })
+
+    const res = await runWebhookThroughRecheckDelay()
+
+    expect(res.status).toBe(200)
+    expect(h.refundsCreate).not.toHaveBeenCalled()
+    expect(h.postSlackText).not.toHaveBeenCalled()
+  })
+
+  it('auto-refunds when FH createBooking throws after payment', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded())
+    h.maybeSingle.mockResolvedValue({ data: null })
+    h.fhValidateBooking.mockResolvedValue({ is_bookable: true })
+    h.fhCreateBooking.mockRejectedValue(new Error('FH 500'))
+
+    const res = await runWebhookThroughRecheckDelay()
+
+    expect(res.status).toBe(200)
+    expect(h.refundsCreate).toHaveBeenCalledTimes(1)
+    expect(h.postSlackText).toHaveBeenCalledWith(
+      expect.stringContaining('Auto-refund issued'),
+    )
+  })
+
+  it('cancels its duplicate FH booking when the DB insert hits the unique constraint', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded())
+    h.maybeSingle.mockResolvedValue({ data: null })
+    h.fhValidateBooking.mockResolvedValue({ is_bookable: true })
+    h.fhCreateBooking.mockResolvedValue({ uuid: 'fh-duplicate-uuid' })
+    // Another path inserted this PI's booking first → unique violation
+    h.insert.mockResolvedValue({ error: { code: '23505', message: 'duplicate key' } })
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.fhCancelBooking).toHaveBeenCalledWith('fh-duplicate-uuid')
+    // The winning path already sent notifications — this one must stay silent.
+    expect(h.sendConfirmationEmail).not.toHaveBeenCalled()
+    expect(h.refundsCreate).not.toHaveBeenCalled()
   })
 })

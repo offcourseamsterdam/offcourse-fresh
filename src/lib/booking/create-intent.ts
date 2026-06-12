@@ -61,25 +61,41 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
 
   const supabase = createAdminClient()
 
-  // 1. Look up the quote
-  const { data: quoteRow, error: quoteError } = await supabase
+  // 1+2. Atomically claim the quote: UPDATE … WHERE consumed_at IS NULL.
+  //      Two concurrent requests (e.g. a double-tap on Pay) both racing a
+  //      separate read-then-write would each see consumed_at = null and charge
+  //      twice. With a conditional update only one request wins the transition;
+  //      the loser gets no row back and is rejected.
+  const now = new Date()
+  const { data: quoteRow, error: claimError } = await supabase
     .from('pricing_quotes')
-    .select('*')
+    .update({ consumed_at: now.toISOString() })
     .eq('id', quoteId)
+    .is('consumed_at', null)
+    .select('*')
     .maybeSingle()
 
-  if (quoteError || !quoteRow) {
+  if (claimError || !quoteRow) {
+    // Claim failed — look the row up to report the precise reason.
+    const { data: existing } = await supabase
+      .from('pricing_quotes')
+      .select('id, consumed_at')
+      .eq('id', quoteId)
+      .maybeSingle()
+    if (existing?.consumed_at) {
+      throw new Error('This quote has already been used. Please refresh your booking and try again.')
+    }
     throw new Error('Your price quote could not be found. Please refresh your booking and try again.')
   }
 
-  // 2. Validate freshness
-  const now = new Date()
+  // Expired quotes stay claimed — they can never be used again anyway.
   if (new Date(quoteRow.expires_at) < now) {
     throw new Error('Your price quote has expired. Please refresh your booking and try again.')
   }
-  if (quoteRow.consumed_at) {
-    throw new Error('This quote has already been used. Please refresh your booking and try again.')
-  }
+
+  // From here on the quote is claimed. If anything below fails (price drift,
+  // Stripe outage), release the claim so the customer can simply retry.
+  try {
 
   // 3. Defence-in-depth: re-run the calculation with the same inputs.
   //    If it differs, refuse — something changed (price, deactivated extra) since
@@ -162,10 +178,11 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
     },
   })
 
-  // 5. Mark the quote consumed (best-effort; ignore failure — Stripe is the source of truth)
+  // 5. Record which PaymentIntent consumed the quote (the claim itself already
+  //    happened atomically in step 1; best-effort, Stripe is the source of truth)
   await supabase
     .from('pricing_quotes')
-    .update({ consumed_at: now.toISOString(), consumed_intent_id: paymentIntent.id })
+    .update({ consumed_intent_id: paymentIntent.id })
     .eq('id', quoteId)
 
   console.log('[create-intent] charge', {
@@ -182,5 +199,16 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
     calculation: recomputed.extrasCalculation,
     discountAmountCents: recomputed.discountAmountCents,
     chargedCents: recomputed.totalCents,
+  }
+
+  } catch (err) {
+    // Release the claim — without this, a transient failure would lock the
+    // customer out with "quote already used" until they rebuild their booking.
+    await supabase
+      .from('pricing_quotes')
+      .update({ consumed_at: null })
+      .eq('id', quoteId)
+      .is('consumed_intent_id', null)
+    throw err
   }
 }

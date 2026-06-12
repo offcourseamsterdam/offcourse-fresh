@@ -3,7 +3,7 @@ import { getStripe } from '@/lib/stripe/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { sendConfirmationEmail } from '@/lib/booking/send-confirmation-email'
-import { getExtrasFromQuote } from '@/lib/booking/recover-from-pi'
+import { getExtrasFromQuote, parseMetaCents } from '@/lib/booking/recover-from-pi'
 import { notifyCateringOrder } from '@/lib/catering/notify'
 import { buildFHBookingNote } from '@/lib/catering/build-fh-note'
 import type { ExtrasLineItem } from '@/lib/catering/filter'
@@ -13,6 +13,16 @@ import { reportRefundAdjustment } from '@/lib/google-ads/report-refund'
 import { postSlackText } from '@/lib/slack/send-notification'
 import { formatAmsterdamTime } from '@/lib/utils'
 import type Stripe from 'stripe'
+
+// The payment_intent.succeeded handler can sleep ~8s (see refundFailedBooking)
+// before deciding to auto-refund. Raise the function timeout so that wait never
+// kills the request mid-flight (Vercel default can be as low as 10s).
+export const maxDuration = 60
+
+// How long to wait before concluding "this paid customer truly has no booking".
+// The browser-side /book or /recover may still be writing its row when this
+// webhook fires; refunding during that window would refund a valid booking.
+const BOOKING_RECHECK_DELAY_MS = 8000
 
 export async function POST(request: NextRequest) {
   const stripe = getStripe()
@@ -256,7 +266,7 @@ export async function POST(request: NextRequest) {
       const validation = await fh.validateBooking(Number(meta.avail_pk), bookingBody)
       if (!validation.is_bookable) {
         console.error('[stripe-webhook] FH validation failed:', validation.error)
-        await alertWebhookFailure(pi, `FareHarbor validation failed: ${validation.error ?? 'unknown'}`)
+        await refundFailedBooking(stripe, supabase, pi, `FareHarbor validation failed: ${validation.error ?? 'unknown'}`)
         return NextResponse.json({ received: true })
       }
       const booking = await fh.createBooking(Number(meta.avail_pk), bookingBody)
@@ -264,7 +274,7 @@ export async function POST(request: NextRequest) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('[stripe-webhook] FH createBooking failed:', msg)
-      await alertWebhookFailure(pi, `FareHarbor error: ${msg}`)
+      await refundFailedBooking(stripe, supabase, pi, `FareHarbor error: ${msg}`)
       return NextResponse.json({ received: true })
     }
 
@@ -273,13 +283,14 @@ export async function POST(request: NextRequest) {
     const extrasAmountCents = Number(meta.extras_amount_cents ?? 0)
     // VAT fields may be absent from PI metadata (older intents, browser-side
     // omissions, etc.). Fall back to server-side compute: 9% on base, 21% on
-    // extras. City tax is 0% VAT (municipal levy).
-    const baseVatAmountCents = Number(meta.base_vat_amount_cents)
-      || extractVat(serverBaseAmount, 9)
-    const extrasVatAmountCents = Number(meta.extras_vat_amount_cents)
-      || extractVat(extrasAmountCents, 21)
-    const totalVatAmountCents = Number(meta.total_vat_amount_cents)
-      || (baseVatAmountCents + extrasVatAmountCents)
+    // extras. City tax is 0% VAT (municipal levy). parseMetaCents keeps an
+    // explicit "0" instead of treating it as missing.
+    const baseVatAmountCents = parseMetaCents(meta.base_vat_amount_cents)
+      ?? extractVat(serverBaseAmount, 9)
+    const extrasVatAmountCents = parseMetaCents(meta.extras_vat_amount_cents)
+      ?? extractVat(extrasAmountCents, 21)
+    const totalVatAmountCents = parseMetaCents(meta.total_vat_amount_cents)
+      ?? (baseVatAmountCents + extrasVatAmountCents)
 
     const { error: dbError } = await supabase.from('bookings').insert({
       booking_id: pi.id,
@@ -319,6 +330,25 @@ export async function POST(request: NextRequest) {
     })
 
     if (dbError) {
+      if (dbError.code === '23505') {
+        // Unique violation on stripe_payment_intent_id: the browser-side /book
+        // or /recover saved this payment's booking while we were creating ours.
+        // Ours is the duplicate — cancel it in FareHarbor so the boat isn't
+        // blocked twice. The winning path already sent Slack + email.
+        console.warn('[stripe-webhook] duplicate booking for PI', pi.id, '— cancelling our FH booking', fhBookingUuid)
+        if (fhBookingUuid) {
+          try {
+            await fh.cancelBooking(fhBookingUuid)
+          } catch (err) {
+            await alertWebhookFailure(
+              pi,
+              `Duplicate FH booking ${fhBookingUuid} could not be cancelled: ${err instanceof Error ? err.message : String(err)}`,
+              '_Cancel the duplicate FareHarbor booking manually — the customer has a valid booking, do NOT refund._',
+            )
+          }
+        }
+        return NextResponse.json({ received: true })
+      }
       console.error('[stripe-webhook] DB save failed for PI', pi.id, dbError)
       await alertWebhookFailure(pi, `DB save failed: ${dbError.message}`)
       // Don't return early — still send Slack + email so we know the cruise is booked
@@ -450,10 +480,58 @@ export async function POST(request: NextRequest) {
 }
 
 /**
+ * A paid PaymentIntent could not be turned into a FareHarbor booking.
+ *
+ * Before doing anything drastic: wait, then re-check the bookings table. The
+ * browser-side /book (card) or /recover (iDEAL) often races this webhook —
+ * if it just created the booking, FH validation fails HERE simply because the
+ * slot was consumed by the customer's OWN booking. Refunding then would hand
+ * money back to someone with a perfectly valid booking.
+ *
+ * If after the wait there is still no booking anywhere, the customer paid for
+ * nothing — issue an automatic refund and alert Slack with the outcome.
+ */
+async function refundFailedBooking(
+  stripe: Stripe,
+  supabase: ReturnType<typeof createAdminClient>,
+  pi: Stripe.PaymentIntent,
+  reason: string,
+) {
+  await new Promise(resolve => setTimeout(resolve, BOOKING_RECHECK_DELAY_MS))
+
+  const { data: lateBooking } = await supabase
+    .from('bookings')
+    .select('id')
+    .eq('stripe_payment_intent_id', pi.id)
+    .maybeSingle()
+
+  if (lateBooking) {
+    console.log('[stripe-webhook] booking appeared during recheck — no refund needed for PI', pi.id)
+    return
+  }
+
+  let refundLine: string
+  try {
+    const refund = await stripe.refunds.create({
+      payment_intent: pi.id,
+      metadata: { auto_refund: 'booking_failed', reason: reason.slice(0, 450) },
+    })
+    refundLine = `↩️ *Auto-refund issued* (\`${refund.id}\`) — money is on its way back to the customer. Please contact them to explain and offer to rebook.`
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    refundLine = msg.toLowerCase().includes('already been refunded')
+      ? '↩️ Payment was already refunded (earlier attempt) — verify in Stripe, then contact the customer.'
+      : `❌ *AUTO-REFUND FAILED* (${msg}) — *refund manually in Stripe now*, then contact the customer.`
+  }
+
+  await alertWebhookFailure(pi, reason, refundLine)
+}
+
+/**
  * Alert Slack when the webhook can't complete a booking for a paid PI.
  * This is critical — Stripe confirmed the money, but FareHarbor or Supabase failed.
  */
-async function alertWebhookFailure(pi: Stripe.PaymentIntent, reason: string) {
+async function alertWebhookFailure(pi: Stripe.PaymentIntent, reason: string, actionLine?: string) {
   const meta = pi.metadata ?? {}
 
   const text = [
@@ -466,7 +544,7 @@ async function alertWebhookFailure(pi: Stripe.PaymentIntent, reason: string) {
     `*Cruise:* ${meta.listing_title}  ·  Date: ${meta.date}`,
     `*Avail PK:* ${meta.avail_pk}  ·  CT Rate PK:* ${meta.customer_type_rate_pk}`,
     '',
-    '_Manually create the FareHarbor booking and send a confirmation email._',
+    actionLine ?? '_Manually create the FareHarbor booking and send a confirmation email._',
   ].join('\n')
 
   if (process.env.SLACK_WEBHOOK_URL) {

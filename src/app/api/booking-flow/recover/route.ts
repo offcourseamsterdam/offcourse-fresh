@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { recoverBookingFromPi } from '@/lib/booking/recover-from-pi'
+import { postSlackText } from '@/lib/slack/send-notification'
 
 /**
  * POST /api/booking-flow/recover
@@ -31,8 +32,29 @@ export async function POST(request: NextRequest) {
 
     const result = await recoverBookingFromPi(paymentIntentId)
 
+    // Payment still settling at the bank (iDEAL) — not a failure. The browser
+    // sends the customer to the confirmation page, which polls until the
+    // payment_intent.succeeded webhook creates the booking.
+    if (result.outcome === 'processing') {
+      console.log('[recover] PI still processing, deferring to webhook:', paymentIntentId)
+      return apiOk({
+        listingSlug: result.listingSlug,
+        fhBookingUuid: null,
+        outcome: 'processing',
+      })
+    }
+
     if (!result.ok) {
       console.error('[recover] failed for PI', paymentIntentId, result.error)
+      // A customer PAID and the browser-side recovery couldn't complete the
+      // booking. The webhook safety net will retry (and auto-refund if it also
+      // fails) — but ops must see this immediately, not find out from the customer.
+      await postSlackText([
+        '⚠️ *Browser-side iDEAL recovery failed*',
+        `PI: \`${paymentIntentId}\``,
+        `Reason: ${result.error ?? 'unknown'}`,
+        '_The Stripe webhook will retry this booking (and auto-refund if it also fails). Watch for its alert._',
+      ].join('\n'))
       return apiError(result.error ?? 'Recovery failed', 500)
     }
 

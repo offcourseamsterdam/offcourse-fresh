@@ -19,3 +19,4 @@ One file per track or major feature. Written before every PR and kept up to date
 | Admin performance (cache + prefetch + parallel queries + images) | [admin-performance.md](admin-performance.md) | — | done |
 | Codebase refactoring plan | [codebase-refactoring-plan.md](codebase-refactoring-plan.md) | — | planned |
 | Headless WordPress blog (WP SEO AI) | [wordpress-blog.md](wordpress-blog.md) | — | done |
+| Payment flow hardening (iDEAL recovery, auto-refund, polling confirmation) | [payment-flow-hardening.md](payment-flow-hardening.md) | D | done |

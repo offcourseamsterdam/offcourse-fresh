@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatAmsterdamTime } from '@/lib/utils'
+import { ConfirmationPending } from '@/components/checkout/ConfirmationPending'
 import { Check, Calendar, Mail, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 
@@ -25,7 +26,7 @@ export default async function ConfirmationPage({ params, searchParams }: Props) 
       .from('bookings')
       .select('*')
       .eq('stripe_payment_intent_id', payment_intent)
-      .single()
+      .maybeSingle()
     booking = data
   } else if (fh) {
     // Partner-invoice bookings (no Stripe PI) are looked up by FareHarbor UUID
@@ -34,9 +35,14 @@ export default async function ConfirmationPage({ params, searchParams }: Props) 
       .from('bookings')
       .select('*')
       .eq('booking_uuid', fh)
-      .single()
+      .maybeSingle()
     booking = data
   }
+
+  // No booking row yet, but we have a payment reference: the customer most
+  // likely beat the Stripe webhook here (common with iDEAL). The pending
+  // component polls until the booking appears, then refreshes this page.
+  const isPending = !booking && Boolean(payment_intent)
 
   const isPartnerInvoice = booking?.payment_status === 'partner_invoice_pending'
 
@@ -66,8 +72,12 @@ export default async function ConfirmationPage({ params, searchParams }: Props) 
             <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4">
               <Check className="w-8 h-8 text-emerald-500" strokeWidth={3} />
             </div>
-            <h1 className="text-2xl font-bold text-white">You&apos;re all set!</h1>
-            <p className="text-emerald-100 mt-1">Your booking is confirmed</p>
+            <h1 className="text-2xl font-bold text-white">
+              {isPending ? 'Payment received!' : 'You’re all set!'}
+            </h1>
+            <p className="text-emerald-100 mt-1">
+              {isPending ? 'Finalising your booking' : 'Your booking is confirmed'}
+            </p>
           </div>
 
           {/* Body */}
@@ -185,6 +195,9 @@ export default async function ConfirmationPage({ params, searchParams }: Props) 
                   </a>
                 )}
               </>
+            ) : isPending ? (
+              /* Booking row not written yet (webhook still running) — poll for it */
+              <ConfirmationPending paymentIntent={payment_intent!} />
             ) : (
               /* Fallback when no booking found */
               <div className="text-center py-4">
