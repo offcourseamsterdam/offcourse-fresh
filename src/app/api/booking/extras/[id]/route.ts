@@ -189,7 +189,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // Update FareHarbor booking note (best-effort)
     if (bookingSnapshot.booking_uuid) {
       try {
-        const note = buildFHBookingNote(bookingSnapshot.guest_note, cateringItems)
+        const note = buildFHBookingNote(bookingSnapshot.guest_note, mergedExtras)
         if (note) {
           const fh = new FareHarborClient()
           await fh.updateBookingNote(bookingSnapshot.booking_uuid, note)

@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Loader2, RefreshCw, Database, Plus, Check, Globe, Home, Pencil, Clock, Copy, ExternalLink } from 'lucide-react'
+import { Loader2, RefreshCw, Database, Plus, Check, Globe, Home, Pencil, Clock, Copy, ExternalLink, Trash2 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────
 
@@ -116,6 +116,9 @@ export default function AdminCruisesPage() {
 
   const [savingCutoff, setSavingCutoff] = useState<string | null>(null)
   const [duplicating, setDuplicating] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<CruiseListing | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   async function toggleListingField(id: string, field: 'is_published' | 'is_featured', value: boolean) {
     mutateListings(prev => prev ? { data: prev.data.map(l => l.id === id ? { ...l, [field]: value } : l) } : prev, { revalidate: false })
@@ -136,6 +139,23 @@ export default function AdminCruisesPage() {
       }
     } finally {
       setDuplicating(null)
+    }
+  }
+
+  async function deleteListing(id: string) {
+    setDeleting(id)
+    setDeleteError(null)
+    try {
+      const res = await fetch(`/api/admin/cruise-listings/${id}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (json.ok) {
+        setConfirmDelete(null)
+        mutateListings(prev => prev ? { data: prev.data.filter(l => l.id !== id) } : prev, { revalidate: false })
+      } else {
+        setDeleteError(json.error ?? 'Failed to delete')
+      }
+    } finally {
+      setDeleting(null)
     }
   }
 
@@ -486,6 +506,13 @@ export default function AdminCruisesPage() {
                             : <Copy className="w-3.5 h-3.5" />
                           }
                         </button>
+                        <button
+                          onClick={() => { setDeleteError(null); setConfirmDelete(l) }}
+                          className="p-1.5 rounded hover:bg-red-50 text-zinc-400 hover:text-red-500 transition-colors"
+                          title="Delete listing"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -497,6 +524,50 @@ export default function AdminCruisesPage() {
           ) : null}
         </CardContent>
       </Card>
+
+      {/* Delete confirm modal */}
+      {confirmDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+          onClick={() => !deleting && setConfirmDelete(null)}
+        >
+          <div
+            className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5 text-red-500" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-zinc-900">Delete listing?</h2>
+                <p className="text-sm text-zinc-500 mt-0.5">{confirmDelete.title}</p>
+              </div>
+            </div>
+            <p className="text-sm text-zinc-600">
+              This permanently removes the listing. Bookings linked to it are not deleted, but the listing name will no longer resolve. This cannot be undone.
+            </p>
+            {deleteError && (
+              <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{deleteError}</p>
+            )}
+            <div className="flex justify-end gap-3 pt-1">
+              <Button variant="outline" size="sm" onClick={() => setConfirmDelete(null)} disabled={!!deleting}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => deleteListing(confirmDelete.id)}
+                disabled={!!deleting}
+                className="gap-1.5"
+              >
+                {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                {deleting ? 'Deleting…' : 'Delete listing'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

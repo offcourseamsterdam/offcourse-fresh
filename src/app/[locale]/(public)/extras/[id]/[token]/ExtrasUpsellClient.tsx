@@ -125,7 +125,7 @@ function ExtraCard({
 
         <div className="flex items-center justify-between gap-1">
           {isCounter ? (
-            <div className="flex items-center gap-1">
+            <div className="flex items-center justify-center gap-1 w-full">
               <button
                 type="button"
                 onClick={e => { e.stopPropagation(); const n = qty - 1; onQty(n < minQty ? 0 : n) }}

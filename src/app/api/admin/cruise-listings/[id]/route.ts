@@ -24,6 +24,29 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
   return apiOk(data)
 }
 
+// DELETE /api/admin/cruise-listings/[id]
+export async function DELETE(_req: NextRequest, { params }: RouteParams) {
+  const denied = await requireAdmin()
+  if (denied) return denied
+  const { id } = await params
+  const supabase = createAdminClient()
+
+  // Safety check: refuse if there are any confirmed/booked/pending bookings
+  const { count } = await supabase
+    .from('bookings')
+    .select('id', { count: 'exact', head: true })
+    .eq('listing_id', id)
+    .in('status', ['confirmed', 'booked', 'pending'])
+
+  if (count && count > 0) {
+    return apiError(`Cannot delete — ${count} active booking${count === 1 ? '' : 's'} linked to this listing.`, 409)
+  }
+
+  const { error } = await supabase.from('cruise_listings').delete().eq('id', id)
+  if (error) return apiError(error.message)
+  return apiOk({ deleted: true })
+}
+
 // PATCH /api/admin/cruise-listings/[id]
 export async function PATCH(req: NextRequest, { params }: RouteParams) {
   const denied = await requireAdmin()

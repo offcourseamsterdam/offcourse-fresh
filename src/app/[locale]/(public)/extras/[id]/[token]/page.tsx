@@ -82,7 +82,7 @@ export default async function ExtrasUpsellPage({ params }: Props) {
         {/* Booking summary card */}
         <div className="bg-[var(--color-primary)] text-white rounded-2xl p-6 mb-8">
           <p className="text-xs font-semibold uppercase tracking-widest text-white/60 mb-1">Your cruise</p>
-          <h1 className="text-xl font-bold mb-3">{booking.listing_title ?? 'Canal cruise'}</h1>
+          <h1 className="text-xl font-bold mb-3 lowercase">{booking.listing_title ?? 'Canal cruise'}</h1>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-white/80">
             {dateStr && <span>📅 {dateStr}</span>}
             {startTimeStr && <span>🕐 {startTimeStr}</span>}
@@ -94,7 +94,7 @@ export default async function ExtrasUpsellPage({ params }: Props) {
         {/* Heading */}
         {!alreadyOrdered && (
           <div className="mb-8">
-            <h2 className="text-2xl font-bold text-[var(--color-ink)] mb-2">
+            <h2 className="text-2xl font-bold text-[var(--color-ink)] mb-2 lowercase">
               Want to add food or drinks?
             </h2>
             <p className="text-[var(--color-muted)] text-sm leading-relaxed">
