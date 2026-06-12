@@ -276,6 +276,8 @@ export type Database = {
           total_vat_amount_cents: number | null
           tour_item_id: string | null
           tour_item_name: string | null
+          traffic_detail: string | null
+          traffic_source: string | null
           updated_at: string | null
         }
         Insert: {
@@ -329,6 +331,8 @@ export type Database = {
           total_vat_amount_cents?: number | null
           tour_item_id?: string | null
           tour_item_name?: string | null
+          traffic_detail?: string | null
+          traffic_source?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -382,6 +386,8 @@ export type Database = {
           total_vat_amount_cents?: number | null
           tour_item_id?: string | null
           tour_item_name?: string | null
+          traffic_detail?: string | null
+          traffic_source?: string | null
           updated_at?: string | null
         }
         Relationships: [
@@ -445,7 +451,7 @@ export type Database = {
             foreignKeyName: "campaign_clicks_campaign_id_fkey"
             columns: ["campaign_id"]
             isOneToOne: false
-            referencedRelation: "campaign_links"
+            referencedRelation: "campaigns"
             referencedColumns: ["id"]
           },
         ]
