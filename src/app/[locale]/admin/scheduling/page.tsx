@@ -3,17 +3,17 @@
 import { useState } from 'react'
 import { StaffTab } from './StaffTab'
 import { ShiftsTab } from './ShiftsTab'
+import { PayrollTab } from './PayrollTab'
 
 /**
- * Scheduling hub. Staff tab is live (M1); Shifts (M2) and Payroll (M5)
- * land here as the build progresses — the tab bar is the one piece of
- * chrome they all share.
+ * Scheduling hub. Staff (M1), Shifts (M2), and Payroll (M5) all live here;
+ * the tab bar is the one piece of chrome they share.
  */
 
 const TABS = [
   { key: 'shifts', label: 'Shifts', ready: true },
   { key: 'staff', label: 'Staff', ready: true },
-  { key: 'payroll', label: 'Payroll', ready: false },
+  { key: 'payroll', label: 'Payroll', ready: true },
 ] as const
 
 type TabKey = (typeof TABS)[number]['key']
@@ -53,6 +53,7 @@ export default function AdminSchedulingPage() {
 
       {tab === 'shifts' && <ShiftsTab />}
       {tab === 'staff' && <StaffTab />}
+      {tab === 'payroll' && <PayrollTab />}
     </div>
   )
 }

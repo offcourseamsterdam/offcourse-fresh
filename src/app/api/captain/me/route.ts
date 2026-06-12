@@ -37,7 +37,7 @@ export async function GET() {
     if (nextShiftRes.error) return apiError(nextShiftRes.error.message)
 
     return apiOk({
-      staff: { id: staff.id, name: staff.name, role: staff.role },
+      staff: { id: staff.id, name: staff.name, role: staff.role, calendar_token: staff.calendar_token },
       openEntry: entryRes.data[0] ?? null,
       nextShift: nextShiftRes.data[0] ?? null,
     })

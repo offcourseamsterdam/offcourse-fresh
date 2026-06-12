@@ -1,7 +1,7 @@
 'use client'
 
-import { useMemo } from 'react'
-import { Loader2 } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { CalendarPlus, Check, Copy, Loader2 } from 'lucide-react'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { formatAmsterdamTime } from '@/lib/utils'
 import { Unlinked, isUnlinked } from '../Unlinked'
@@ -32,6 +32,23 @@ function weekKey(date: string): string {
 
 export default function CaptainShiftsPage() {
   const { data, isLoading, error } = useAdminFetch<{ shifts: CaptainShift[] }>('/api/captain/shifts')
+  const { data: me } = useAdminFetch<{ staff: { calendar_token: string } }>('/api/captain/me')
+  const [copied, setCopied] = useState(false)
+
+  const feedUrl = me?.staff.calendar_token
+    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/api/calendar/${me.staff.calendar_token}.ics`
+    : null
+
+  async function copyFeed() {
+    if (!feedUrl) return
+    try {
+      await navigator.clipboard.writeText(feedUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      /* clipboard blocked — the link is still selectable below */
+    }
+  }
 
   const weeks = useMemo(() => {
     const map = new Map<string, CaptainShift[]>()
@@ -100,6 +117,31 @@ export default function CaptainShiftsPage() {
           </div>
         </section>
       ))}
+
+      {/* Calendar subscription */}
+      {feedUrl && (
+        <div className="bg-white rounded-2xl border border-zinc-200 p-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <CalendarPlus className="w-4 h-4 text-zinc-500" />
+            <h2 className="text-sm font-semibold text-zinc-700">Add to your calendar</h2>
+          </div>
+          <p className="text-xs text-zinc-500">
+            Subscribe once and your shifts show up in Apple/Google Calendar automatically — keep this link private.
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 text-[11px] text-zinc-600 bg-zinc-50 border border-zinc-200 rounded-lg px-2 py-2 overflow-x-auto whitespace-nowrap">
+              {feedUrl}
+            </code>
+            <button
+              onClick={copyFeed}
+              className="shrink-0 flex items-center gap-1.5 text-xs font-medium text-zinc-700 border border-zinc-200 rounded-lg px-3 py-2 hover:bg-zinc-50 min-h-[44px]"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
