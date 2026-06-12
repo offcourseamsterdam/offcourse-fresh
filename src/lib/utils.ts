@@ -122,6 +122,17 @@ export function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
+/** "now", "2m", "1h", "3d" — compact relative time for list rows (inbox, etc.). */
+export function timeAgoShort(iso: string, now: Date = new Date()): string {
+  const seconds = Math.max(0, Math.floor((now.getTime() - new Date(iso).getTime()) / 1000))
+  if (seconds < 60) return 'now'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h`
+  return `${Math.floor(hours / 24)}d`
+}
+
 // ── Amsterdam timezone formatting ─────────────────────────────────────────────
 
 /** Date (YYYY-MM-DD) as the boat crew experiences it — today in Amsterdam, optionally offset by days. */

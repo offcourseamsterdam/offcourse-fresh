@@ -13,6 +13,7 @@ const navSections: NavSection[] = [
     label: 'Operations',
     items: [
       { href: '/admin/bookings',  label: 'Bookings',  icon: 'bookings' },
+      { href: '/admin/inbox',     label: 'Inbox',     icon: 'inbox',     badge: 'inbox-open-count' },
       { href: '/admin/catering',  label: 'Catering',  icon: 'catering',  badge: 'pending-catering-count' },
       { href: '/admin/scheduling', label: 'Scheduling', icon: 'planning' },
       { href: '/admin/customers', label: 'Customers', icon: 'customers', comingSoon: true },

@@ -22,12 +22,20 @@ export interface UseAdminFetchResult<T> {
   mutate: (updater?: (prev: T | undefined) => T | undefined, opts?: { revalidate?: boolean }) => void
 }
 
-export function useAdminFetch<T>(url: string | null): UseAdminFetchResult<T> {
+export function useAdminFetch<T>(
+  url: string | null,
+  opts?: {
+    /** Poll the endpoint every N ms (e.g. the inbox keeps itself fresh). */
+    refreshInterval?: number
+  },
+): UseAdminFetchResult<T> {
   const { data, error, isLoading, isValidating, mutate } = useSWR<T>(url, adminFetcher, {
     keepPreviousData: true,
-    dedupingInterval: 30_000,
+    // Polling endpoints shouldn't dedupe away their own refreshes.
+    dedupingInterval: opts?.refreshInterval ? Math.min(opts.refreshInterval / 2, 30_000) : 30_000,
     revalidateOnFocus: false,
     errorRetryCount: 2,
+    refreshInterval: opts?.refreshInterval,
   })
 
   return {

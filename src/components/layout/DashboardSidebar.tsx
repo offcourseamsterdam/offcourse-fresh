@@ -30,6 +30,7 @@ import {
   Ticket,
   UtensilsCrossed,
   Receipt,
+  Inbox,
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react'
@@ -38,7 +39,7 @@ export interface NavItem {
   href: string
   label: string
   icon: string
-  badge?: 'pending-catering-count'
+  badge?: 'pending-catering-count' | 'inbox-open-count'
   comingSoon?: boolean
 }
 
@@ -75,6 +76,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   settings: Settings,
   promocodes: Ticket,
   finance: Receipt,
+  inbox: Inbox,
 }
 
 const PREFETCH_URLS: Record<string, string> = {
@@ -101,6 +103,10 @@ export default function DashboardSidebar({
   const [rail, setRail] = useState(false)
   const { data: cateringPending } = useAdminFetch<{ count: number }>('/api/admin/catering/pending-count')
   const pendingCateringCount = cateringPending?.count ?? 0
+  const { data: inboxOpen } = useAdminFetch<{ count: number }>('/api/admin/inbox/open-count', {
+    refreshInterval: 30_000,
+  })
+  const inboxOpenCount = inboxOpen?.count ?? 0
 
   useEffect(() => {
     setRail(localStorage.getItem(RAIL_STORAGE_KEY) === '1')
@@ -192,7 +198,12 @@ export default function DashboardSidebar({
                         </li>
                       )
                     }
-                    const badgeCount = item.badge === 'pending-catering-count' ? pendingCateringCount : 0
+                    const badgeCount =
+                      item.badge === 'pending-catering-count'
+                        ? pendingCateringCount
+                        : item.badge === 'inbox-open-count'
+                          ? inboxOpenCount
+                          : 0
                     return (
                       <li key={item.href}>
                         <Link
