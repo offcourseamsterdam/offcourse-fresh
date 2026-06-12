@@ -2,15 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { buildPayrollCsv, type CsvTimeEntry } from '@/lib/scheduling/payroll-csv'
-import type { PayrollStaff } from '@/lib/scheduling/payroll'
+import { fetchPayrollRange } from '@/lib/scheduling/payroll-query'
+import { buildPayrollCsv } from '@/lib/scheduling/payroll-csv'
 
 /**
  * GET /api/admin/scheduling/payroll/csv?from=YYYY-MM-DD&to=YYYY-MM-DD
  *
- * Streams a per-entry payroll CSV for the range as a file download. Cookie
- * auth carries through a browser navigation, so the Payroll tab can link
- * straight to this URL.
+ * The payroll period as a CSV file download. Cookie auth carries through a
+ * browser navigation, so the Payroll tab links straight to this URL.
  */
 export async function GET(request: NextRequest) {
   const denied = await requireAdmin()
@@ -24,22 +23,8 @@ export async function GET(request: NextRequest) {
     }
 
     const supabase = createAdminClient()
-    const [entriesRes, staffRes] = await Promise.all([
-      supabase
-        .from('time_entries')
-        .select('id, staff_id, clock_in_at, clock_out_at, hourly_rate_cents, flag, source, note')
-        .gte('clock_in_at', `${from}T00:00:00.000Z`)
-        .lte('clock_in_at', `${to}T23:59:59.999Z`)
-        .order('clock_in_at', { ascending: true }),
-      supabase.from('staff').select('id, name, role'),
-    ])
-    if (entriesRes.error) return apiError(entriesRes.error.message, 500)
-    if (staffRes.error) return apiError(staffRes.error.message, 500)
-
-    const csv = buildPayrollCsv(
-      (entriesRes.data ?? []) as CsvTimeEntry[],
-      (staffRes.data ?? []) as PayrollStaff[],
-    )
+    const { entries, staff } = await fetchPayrollRange(supabase, from, to)
+    const csv = buildPayrollCsv(entries, staff)
 
     return new NextResponse(csv, {
       status: 200,

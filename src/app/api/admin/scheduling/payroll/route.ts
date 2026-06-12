@@ -2,14 +2,15 @@ import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { aggregatePayroll, type PayrollTimeEntry } from '@/lib/scheduling/payroll'
+import { fetchPayrollRange } from '@/lib/scheduling/payroll-query'
 
 /**
  * GET /api/admin/scheduling/payroll?from=YYYY-MM-DD&to=YYYY-MM-DD
  *
- * Returns per-staff payroll lines plus the raw entries (for the detail/flag
- * view) over the date range, keyed on clock_in_at. Pay uses each entry's
- * snapshot rate — see lib/scheduling/payroll.ts.
+ * Raw time entries + staff for the range. The Payroll tab aggregates these
+ * client-side with lib/scheduling/payroll.ts (it needs the raw entries for
+ * the "needs review" panel anyway, so the per-staff lines are derived once,
+ * in one place). Pay always uses each entry's snapshot rate.
  */
 export async function GET(request: NextRequest) {
   const denied = await requireAdmin()
@@ -23,32 +24,8 @@ export async function GET(request: NextRequest) {
     }
 
     const supabase = createAdminClient()
-
-    // Range is inclusive of the whole `to` day (Amsterdam ≈ UTC+1/2; the day
-    // boundary blur is acceptable for a payroll period that spans weeks).
-    const fromIso = `${from}T00:00:00.000Z`
-    const toIso = `${to}T23:59:59.999Z`
-
-    const [entriesRes, staffRes] = await Promise.all([
-      supabase
-        .from('time_entries')
-        .select('id, staff_id, clock_in_at, clock_out_at, hourly_rate_cents, flag, source, note, shift_id')
-        .gte('clock_in_at', fromIso)
-        .lte('clock_in_at', toIso)
-        .order('clock_in_at', { ascending: true }),
-      supabase
-        .from('staff')
-        .select('id, name, role')
-        .order('name', { ascending: true }),
-    ])
-    if (entriesRes.error) return apiError(entriesRes.error.message, 500)
-    if (staffRes.error) return apiError(staffRes.error.message, 500)
-
-    const entries = entriesRes.data ?? []
-    const staff = staffRes.data ?? []
-    const lines = aggregatePayroll(entries as PayrollTimeEntry[], staff)
-
-    return apiOk({ lines, entries, staff, from, to })
+    const { entries, staff } = await fetchPayrollRange(supabase, from, to)
+    return apiOk({ entries, staff, from, to })
   } catch (err) {
     return apiError(err instanceof Error ? err.message : 'Failed to load payroll', 500)
   }

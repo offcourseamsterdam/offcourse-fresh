@@ -49,11 +49,16 @@ export function entryMinutes(entry: PayrollTimeEntry): number | null {
   return Math.round(ms / 60000)
 }
 
-/** Pay in cents for one entry (0 while open). Rounds to the nearest cent. */
+/** Pay in cents for worked minutes at an hourly rate. Rounds to the nearest cent. */
+export function payForMinutes(minutes: number, hourlyRateCents: number): number {
+  return Math.round((minutes / 60) * hourlyRateCents)
+}
+
+/** Pay in cents for one entry (0 while open). */
 export function entryPayCents(entry: PayrollTimeEntry): number {
   const minutes = entryMinutes(entry)
   if (minutes === null) return 0
-  return Math.round((minutes / 60) * entry.hourly_rate_cents)
+  return payForMinutes(minutes, entry.hourly_rate_cents)
 }
 
 /**
@@ -92,7 +97,7 @@ export function aggregatePayroll(
       line.openCount++
     } else {
       line.totalMinutes += minutes
-      line.totalPayCents += entryPayCents(entry)
+      line.totalPayCents += payForMinutes(minutes, entry.hourly_rate_cents)
     }
   }
 
