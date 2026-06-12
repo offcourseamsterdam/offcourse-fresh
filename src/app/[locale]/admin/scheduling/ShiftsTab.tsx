@@ -226,11 +226,13 @@ export function ShiftsTab() {
                           <span className="font-semibold block">
                             {formatAmsterdamTime(s.start_at)}–{formatAmsterdamTime(s.end_at)}
                           </span>
-                          <span className="block truncate">
-                            {s.staff?.name ?? 'open'}
-                            {s.bookings?.category === 'shared' && ' · shared'}
-                            {!s.booking_id && s.fareharbor_availability_pk == null && ' · manual'}
-                          </span>
+                          {s.bookings?.listing_title && (
+                            <span className="block truncate opacity-75">{s.bookings.listing_title}</span>
+                          )}
+                          {!s.booking_id && s.fareharbor_availability_pk == null && (
+                            <span className="block opacity-60">manual</span>
+                          )}
+                          <span className="block truncate">{s.staff?.name ?? 'open'}</span>
                         </button>
                       ))}
                     </div>
