@@ -79,7 +79,9 @@ const SHARED_DEFAULT_BOAT = 'curacao'
 
 /** "Curaçao" → "curacao": lowercase + strip diacritics, for name matching. */
 function normalizeName(name: string): string {
-  return name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+  // NFD splits "ç" into "c" + combining cedilla; U+0300–U+036F is the
+  // combining-marks block, so stripping it leaves plain ASCII letters.
+  return name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
 }
 
 /** "Diana - 1.5 Hours" → 90. Returns null if no duration is present. */

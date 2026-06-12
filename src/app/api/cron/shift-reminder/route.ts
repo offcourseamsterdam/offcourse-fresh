@@ -21,7 +21,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const supabase = createAdminClient()
 
   const now = new Date()
-  // Window: shifts starting between now+4min and now+11min (gives ~5min slack either side)
+  // Window: shifts starting between now+4min and now+11min. With a 5-minute
+  // cadence every shift falls inside TWO consecutive windows, so shifts that
+  // were already reminded (reminder_sent_at) are excluded — exactly one ping.
   const windowStart = new Date(now.getTime() + 4 * 60 * 1000).toISOString()
   const windowEnd   = new Date(now.getTime() + 11 * 60 * 1000).toISOString()
 
@@ -29,6 +31,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     .from('shifts')
     .select('id, start_at, end_at, staff_id, staff(name, slack_member_id), boats(name)')
     .in('status', ['assigned', 'confirmed'])
+    .is('reminder_sent_at', null)
     .gte('start_at', windowStart)
     .lte('start_at', windowEnd)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -58,6 +61,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     } else {
       await postToChannel(opsChannel, msg)
     }
+    // Stamp so the next run (whose window overlaps this one) skips the shift.
+    await supabase.from('shifts').update({ reminder_sent_at: now.toISOString() }).eq('id', shift.id)
     reminded++
   }
 

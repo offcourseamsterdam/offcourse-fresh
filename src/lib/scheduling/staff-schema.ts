@@ -20,3 +20,23 @@ export const staffBodySchema = z.object({
 })
 
 export type StaffBody = z.infer<typeof staffBodySchema>
+
+/**
+ * Parsed body → the row shape both POST (insert) and PUT (update) write.
+ * Optional-and-absent fields become explicit nulls/defaults: the form modal
+ * always submits every field, so absence means "cleared", not "unchanged".
+ */
+export function staffBodyToRow(body: StaffBody) {
+  return {
+    name: body.name,
+    phone: body.phone ?? null,
+    email: body.email ?? null,
+    role: body.role,
+    hourly_rate_cents: body.hourly_rate_cents,
+    slack_member_id: body.slack_member_id ?? null,
+    is_active: body.is_active ?? true,
+    max_shifts_per_week: body.max_shifts_per_week ?? null,
+    notes: body.notes ?? null,
+    user_id: body.user_id ?? null,
+  }
+}

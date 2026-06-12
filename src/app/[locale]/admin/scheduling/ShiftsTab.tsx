@@ -74,6 +74,18 @@ export function ShiftsTab() {
   const boats = data?.boats ?? []
   const staff = data?.staff ?? []
 
+  /** `${boatId}:${date}` → that cell's shifts, so the grid isn't re-filtering per cell. */
+  const shiftsByCell = useMemo(() => {
+    const map = new Map<string, GridShift[]>()
+    for (const s of shifts) {
+      const key = `${s.boat_id}:${s.date}`
+      const list = map.get(key)
+      if (list) list.push(s)
+      else map.set(key, [s])
+    }
+    return map
+  }, [shifts])
+
   const availability: AvailabilityMap = useMemo(() => {
     const map: AvailabilityMap = {}
     for (const a of data?.availability ?? []) map[`${a.staff_id}:${a.date}`] = a.status
@@ -202,7 +214,7 @@ export function ShiftsTab() {
                   {boat.name}
                 </div>
                 {days.map(d => {
-                  const cellShifts = shifts.filter(s => s.boat_id === boat.id && s.date === d)
+                  const cellShifts = shiftsByCell.get(`${boat.id}:${d}`) ?? []
                   return (
                     <div key={d} className={`p-1.5 space-y-1.5 min-h-[64px] ${d === today ? 'bg-zinc-50/60' : ''}`}>
                       {cellShifts.map(s => (
