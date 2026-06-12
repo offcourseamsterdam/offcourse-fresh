@@ -124,6 +124,13 @@ export function escapeHtml(str: string): string {
 
 // ── Amsterdam timezone formatting ─────────────────────────────────────────────
 
+/** Date (YYYY-MM-DD) as the boat crew experiences it — today in Amsterdam, optionally offset by days. */
+export function amsterdamToday(offsetDays = 0, now = new Date()): string {
+  const d = new Date(now)
+  d.setDate(d.getDate() + offsetDays)
+  return d.toLocaleDateString('en-CA', { timeZone: 'Europe/Amsterdam' })
+}
+
 /** Format an ISO datetime (or Date) as HH:MM in Amsterdam time (nl-NL). Returns '—' for null/undefined. */
 export function formatAmsterdamTime(value: string | number | Date | null | undefined): string {
   if (!value) return '—'

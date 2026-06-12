@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatPrice, formatDate, formatShortDate, formatDuration, categorizeListings, slugify } from './utils'
+import { formatPrice, formatDate, formatShortDate, formatDuration, categorizeListings, slugify, amsterdamToday, formatAmsterdamTime } from './utils'
 
 // ── formatPrice ─────────────────────────────────────────────────────────────
 
@@ -136,5 +136,31 @@ describe('slugify', () => {
 
   it('handles underscores', () => {
     expect(slugify('hello_world')).toBe('hello-world')
+  })
+})
+
+// ── Amsterdam timezone helpers ──────────────────────────────────────────────
+
+describe('amsterdamToday', () => {
+  it('formats a fixed instant as YYYY-MM-DD in Amsterdam time', () => {
+    // 23:30 UTC on June 11 is already June 12 in Amsterdam (CEST, UTC+2)
+    expect(amsterdamToday(0, new Date('2026-06-11T23:30:00Z'))).toBe('2026-06-12')
+  })
+
+  it('applies a day offset', () => {
+    const now = new Date('2026-06-12T10:00:00Z')
+    expect(amsterdamToday(-14, now)).toBe('2026-05-29')
+    expect(amsterdamToday(56, now)).toBe('2026-08-07')
+  })
+})
+
+describe('formatAmsterdamTime', () => {
+  it('formats an ISO instant as HH:MM Amsterdam local', () => {
+    expect(formatAmsterdamTime('2026-06-12T12:00:00Z')).toBe('14:00') // CEST = UTC+2
+  })
+
+  it('returns an em dash for null/undefined', () => {
+    expect(formatAmsterdamTime(null)).toBe('—')
+    expect(formatAmsterdamTime(undefined)).toBe('—')
   })
 })

@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { CalendarPlus, Check, Copy, Loader2 } from 'lucide-react'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
-import { formatAmsterdamTime } from '@/lib/utils'
+import { amsterdamToday, formatAmsterdamTime } from '@/lib/utils'
 import { Unlinked, isUnlinked } from '../Unlinked'
 
 interface CaptainShift {
@@ -63,7 +63,7 @@ export default function CaptainShiftsPage() {
 
   if (isUnlinked(error)) return <Unlinked />
 
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Amsterdam' })
+  const today = amsterdamToday()
 
   return (
     <div className="p-4 sm:p-8 max-w-lg mx-auto space-y-6">

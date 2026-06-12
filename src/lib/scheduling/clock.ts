@@ -10,6 +10,8 @@
  *   no open entry  + "out" → no-op, friendly message
  */
 
+import { formatAmsterdamTime } from '@/lib/utils'
+
 export interface OpenEntry {
   id: string
   clock_in_at: string
@@ -54,7 +56,7 @@ export function decideClockIn(
   if (openEntry) {
     return {
       ok: false,
-      message: `Already checked in since ${formatTime(openEntry.clock_in_at)} — reply "out" when you're done.`,
+      message: `Already checked in since ${formatAmsterdamTime(openEntry.clock_in_at)} — reply "out" when you're done.`,
     }
   }
   const shift = matchShift(todaysShifts, now)
@@ -69,12 +71,4 @@ export function decideClockOut(openEntry: OpenEntry | null): ClockResult {
     return { ok: false, message: 'You’re not checked in right now.' }
   }
   return { ok: true, decision: { action: 'close', entryId: openEntry.id } }
-}
-
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('nl-NL', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'Europe/Amsterdam',
-  })
 }

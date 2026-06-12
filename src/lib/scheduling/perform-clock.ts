@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { decideClockIn, decideClockOut } from '@/lib/scheduling/clock'
-import { formatAmsterdamTime } from '@/lib/utils'
+import { amsterdamToday, formatAmsterdamTime } from '@/lib/utils'
 
 type Staff = Pick<Database['public']['Tables']['staff']['Row'], 'id' | 'hourly_rate_cents'>
 type Source = 'slack' | 'portal' | 'admin'
@@ -12,11 +12,6 @@ export interface ClockOutcome {
   message: string
   /** present after a successful check-in */
   entryId?: string
-}
-
-/** Date (YYYY-MM-DD) as the boat crew experiences it. */
-export function amsterdamToday(now = new Date()): string {
-  return now.toLocaleDateString('en-CA', { timeZone: 'Europe/Amsterdam' })
 }
 
 /**
@@ -59,7 +54,7 @@ export async function performClock(
     .from('shifts')
     .select('id, start_at, end_at, boats(name)')
     .eq('staff_id', staff.id)
-    .eq('date', amsterdamToday(now))
+    .eq('date', amsterdamToday(0, now))
     .in('status', ['assigned', 'confirmed'])
   if (shiftsError) throw new Error(shiftsError.message)
 

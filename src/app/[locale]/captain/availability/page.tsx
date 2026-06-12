@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { adminMutate } from '@/hooks/useAdminSave'
+import { amsterdamToday } from '@/lib/utils'
 import { Unlinked, isUnlinked } from '../Unlinked'
 
 type Status = 'available' | 'prefer_not' | 'unavailable'
@@ -40,9 +41,7 @@ function shiftMonth(ym: string, delta: number): string {
 }
 
 export default function CaptainAvailabilityPage() {
-  const [month, setMonth] = useState(() =>
-    new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Amsterdam' }).slice(0, 7),
-  )
+  const [month, setMonth] = useState(() => amsterdamToday().slice(0, 7))
 
   const { days, from, to, leadingBlanks } = useMemo(() => {
     const [y, m] = month.split('-').map(Number)
@@ -64,7 +63,7 @@ export default function CaptainAvailabilityPage() {
   }, [data])
 
   const [saveError, setSaveError] = useState<string | null>(null)
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Amsterdam' })
+  const today = amsterdamToday()
 
   async function cycle(date: string) {
     const current = byDate[date] ?? 'unset'

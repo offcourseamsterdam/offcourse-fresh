@@ -1,3 +1,4 @@
+import { formatAmsterdamTime } from '@/lib/utils'
 import { entryMinutes, entryPayCents, type PayrollStaff } from './payroll'
 
 /**
@@ -23,15 +24,8 @@ function csvField(value: string): string {
   return value
 }
 
-const AMS = 'Europe/Amsterdam'
-
 function amsDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-CA', { timeZone: AMS }) // YYYY-MM-DD
-}
-function amsTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('nl-NL', {
-    hour: '2-digit', minute: '2-digit', timeZone: AMS,
-  })
+  return new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Europe/Amsterdam' }) // YYYY-MM-DD
 }
 function euros(cents: number): string {
   return (cents / 100).toFixed(2)
@@ -56,8 +50,8 @@ export function buildPayrollCsv(entries: CsvTimeEntry[], staff: PayrollStaff[]):
       s?.name ?? 'Unknown',
       s?.role ?? '',
       amsDate(e.clock_in_at),
-      amsTime(e.clock_in_at),
-      e.clock_out_at ? amsTime(e.clock_out_at) : '(open)',
+      formatAmsterdamTime(e.clock_in_at),
+      e.clock_out_at ? formatAmsterdamTime(e.clock_out_at) : '(open)',
       hours,
       euros(e.hourly_rate_cents),
       pay,

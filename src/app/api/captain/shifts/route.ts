@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { requireCaptain } from '@/lib/auth/require-captain'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { amsterdamToday } from '@/lib/utils'
 
 /**
  * GET /api/captain/shifts[?from=YYYY-MM-DD&to=YYYY-MM-DD]
@@ -15,15 +16,10 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const dateRe = /^\d{4}-\d{2}-\d{2}$/
-    const fallback = (days: number) => {
-      const d = new Date()
-      d.setDate(d.getDate() + days)
-      return d.toLocaleDateString('en-CA', { timeZone: 'Europe/Amsterdam' })
-    }
     const fromParam = searchParams.get('from')
     const toParam = searchParams.get('to')
-    const from = fromParam && dateRe.test(fromParam) ? fromParam : fallback(-14)
-    const to = toParam && dateRe.test(toParam) ? toParam : fallback(56)
+    const from = fromParam && dateRe.test(fromParam) ? fromParam : amsterdamToday(-14)
+    const to = toParam && dateRe.test(toParam) ? toParam : amsterdamToday(56)
 
     const supabase = createAdminClient()
     const { data, error } = await supabase

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireCronSecret } from '@/lib/auth/require-cron-secret'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { postDm, postToChannel } from '@/lib/slack/bot'
+import { formatAmsterdamTime } from '@/lib/utils'
 
 /**
  * Shift reminder cron — called every 5 minutes by Vercel (requires Pro plan)
@@ -49,10 +50,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     if (!shift.staff_id || alreadyIn.has(shift.staff_id)) continue
     const staffName = shift.staff?.name ?? 'Captain'
     const boatName  = shift.boats?.name ?? 'your boat'
-    const startTime = new Date(shift.start_at).toLocaleTimeString('nl-NL', {
-      hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam',
-    })
-    const msg = `⏰ ${staffName}, your shift starts at ${startTime} (${boatName}). Time to check in!`
+    const msg = `⏰ ${staffName}, your shift starts at ${formatAmsterdamTime(shift.start_at)} (${boatName}). Time to check in!`
 
     const memberId = shift.staff?.slack_member_id
     if (memberId) {

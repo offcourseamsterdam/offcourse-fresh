@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { adminMutate } from '@/hooks/useAdminSave'
-import { formatAmsterdamTime } from '@/lib/utils'
+import { formatAmsterdamTime, toDateStr } from '@/lib/utils'
 import type { Database } from '@/lib/supabase/types'
 import { ShiftFormModal } from './ShiftFormModal'
 
@@ -44,10 +44,6 @@ function mondayOf(d: Date): Date {
   return out
 }
 
-function isoDate(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
 export function ShiftsTab() {
   const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()))
   const [editingShift, setEditingShift] = useState<GridShift | null>(null)
@@ -60,7 +56,7 @@ export function ShiftsTab() {
       Array.from({ length: 7 }, (_, i) => {
         const d = new Date(weekStart)
         d.setDate(d.getDate() + i)
-        return isoDate(d)
+        return toDateStr(d)
       }),
     [weekStart],
   )
@@ -124,7 +120,7 @@ export function ShiftsTab() {
   }
 
   const weekLabel = `${new Date(`${from}T12:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${new Date(`${to}T12:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
-  const today = isoDate(new Date())
+  const today = toDateStr(new Date())
 
   return (
     <div className="space-y-4">
