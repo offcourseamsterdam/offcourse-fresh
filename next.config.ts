@@ -28,6 +28,19 @@ const securityHeaders = [
   { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
 ]
 
+// Derive the WordPress media host from WORDPRESS_URL so next/image can optimise
+// featured images served from the headless CMS. If unset (WP not configured yet),
+// this is simply skipped and no WP image pattern is added.
+const wpImageHost = (() => {
+  const raw = process.env.WORDPRESS_URL
+  if (!raw) return null
+  try {
+    return new URL(raw).hostname
+  } catch {
+    return null
+  }
+})()
+
 const nextConfig: NextConfig = {
   experimental: {
     turbopackFileSystemCacheForDev: false,
@@ -60,6 +73,8 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'offcourseamsterdam.com',
       },
+      // WordPress (WP SEO AI) media host — added only when WORDPRESS_URL is set.
+      ...(wpImageHost ? [{ protocol: 'https' as const, hostname: wpImageHost }] : []),
     ],
   },
 }

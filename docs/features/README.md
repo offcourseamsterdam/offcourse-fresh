@@ -18,3 +18,4 @@ One file per track or major feature. Written before every PR and kept up to date
 | WhatsApp click tracking (button usage analytics) | [whatsapp-click-tracking.md](whatsapp-click-tracking.md) | — | done |
 | Admin performance (cache + prefetch + parallel queries + images) | [admin-performance.md](admin-performance.md) | — | done |
 | Codebase refactoring plan | [codebase-refactoring-plan.md](codebase-refactoring-plan.md) | — | planned |
+| Headless WordPress blog (WP SEO AI) | [wordpress-blog.md](wordpress-blog.md) | — | done |

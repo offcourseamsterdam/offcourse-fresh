@@ -1,6 +1,7 @@
 import type { MetadataRoute } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { locales } from '@/lib/i18n/config'
+import { getAllPosts } from '@/lib/wp/client'
 import type { Database } from '@/lib/supabase/types'
 
 type ListingSlug = Pick<
@@ -76,6 +77,37 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       ...(imageUrl ? { images: [imageUrl] } : {}),
     })
   }
+
+  // Blog posts from WordPress (WP SEO AI) × all locales.
+  // getAllPosts() is resilient — returns [] if WordPress isn't configured or is
+  // unreachable, so the sitemap (and the build) never break on its account.
+  const posts = await getAllPosts()
+  for (const post of posts) {
+    entries.push({
+      url: `${BASE_URL}/en/blog/${post.slug}`,
+      lastModified: new Date(post.modified),
+      alternates: {
+        languages: Object.fromEntries(
+          locales.map(locale => [locale, `${BASE_URL}/${locale}/blog/${post.slug}`])
+        ),
+      },
+      changeFrequency: 'monthly',
+      priority: 0.7,
+    })
+  }
+
+  // Also list the blog archive itself.
+  entries.push({
+    url: `${BASE_URL}/en/blog`,
+    lastModified: new Date(),
+    alternates: {
+      languages: Object.fromEntries(
+        locales.map(locale => [locale, `${BASE_URL}/${locale}/blog`])
+      ),
+    },
+    changeFrequency: 'daily',
+    priority: 0.6,
+  })
 
   return entries
 }
