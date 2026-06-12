@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Loader2, Send, StickyNote } from 'lucide-react'
+import { ArrowLeft, Languages, Loader2, Send, StickyNote } from 'lucide-react'
 import { adminMutate } from '@/hooks/useAdminSave'
 import { formatAmsterdamTime } from '@/lib/utils'
 import type { InboxConversationDetail, InboxMessage } from './types'
@@ -13,6 +13,11 @@ interface Props {
   onBack: () => void
 }
 
+interface Translation {
+  text: string
+  language: string
+}
+
 /** Middle pane — the thread, chronological, plus the Reply/Note composer. */
 export function ThreadPane({ detail, onSent, onBack }: Props) {
   const { conversation, messages } = detail
@@ -20,7 +25,30 @@ export function ThreadPane({ detail, onSent, onBack }: Props) {
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [translations, setTranslations] = useState<Record<string, Translation>>({})
+  const [translating, setTranslating] = useState<Record<string, boolean>>({})
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  async function translate(msgId: string) {
+    setTranslating(prev => ({ ...prev, [msgId]: true }))
+    try {
+      const res = await adminMutate<{ translation: string | null; detected_language: string | null }>(
+        `/api/admin/inbox/conversations/${conversation.id}/messages/${msgId}/translate`,
+        'POST',
+        {},
+      )
+      if (res.translation) {
+        setTranslations(prev => ({ ...prev, [msgId]: { text: res.translation!, language: res.detected_language ?? 'Unknown' } }))
+      } else {
+        // Already English — show a note
+        setTranslations(prev => ({ ...prev, [msgId]: { text: '', language: 'English' } }))
+      }
+    } catch {
+      // silent — button stays available to retry
+    } finally {
+      setTranslating(prev => ({ ...prev, [msgId]: false }))
+    }
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView()
@@ -64,7 +92,13 @@ export function ThreadPane({ detail, onSent, onBack }: Props) {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-zinc-50/50">
         {messages.map(m => (
-          <MessageBubble key={m.id} message={m} />
+          <MessageBubble
+            key={m.id}
+            message={m}
+            translation={translations[m.id]}
+            translating={!!translating[m.id]}
+            onTranslate={() => translate(m.id)}
+          />
         ))}
         <div ref={bottomRef} />
       </div>
@@ -121,7 +155,17 @@ export function ThreadPane({ detail, onSent, onBack }: Props) {
   )
 }
 
-function MessageBubble({ message: m }: { message: InboxMessage }) {
+function MessageBubble({
+  message: m,
+  translation,
+  translating,
+  onTranslate,
+}: {
+  message: InboxMessage
+  translation?: Translation
+  translating?: boolean
+  onTranslate?: () => void
+}) {
   if (m.direction === 'note') {
     return (
       <div className="flex justify-center">
@@ -133,18 +177,49 @@ function MessageBubble({ message: m }: { message: InboxMessage }) {
   }
   const inbound = m.direction === 'in'
   return (
-    <div className={`flex ${inbound ? 'justify-start' : 'justify-end'}`}>
-      <div
-        className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap ${
-          inbound ? 'bg-white border border-zinc-200 text-zinc-800 rounded-bl-sm' : 'bg-primary text-white rounded-br-sm'
-        }`}
-      >
-        {m.body}
-        <span className={`block text-[10px] mt-1 ${inbound ? 'text-zinc-400' : 'text-white/60'}`}>
-          {!inbound && m.author_name ? `${m.author_name} · ` : ''}
-          {formatAmsterdamTime(m.created_at)}
-          {m.status === 'failed' && ' · ⚠ failed'}
-        </span>
+    <div className={`flex ${inbound ? 'justify-start' : 'justify-end'} group`}>
+      <div className="max-w-[75%] space-y-1">
+        <div
+          className={`rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap ${
+            inbound ? 'bg-white border border-zinc-200 text-zinc-800 rounded-bl-sm' : 'bg-primary text-white rounded-br-sm'
+          }`}
+        >
+          {m.body}
+          <span className={`block text-[10px] mt-1 ${inbound ? 'text-zinc-400' : 'text-white/60'}`}>
+            {!inbound && m.author_name ? `${m.author_name} · ` : ''}
+            {formatAmsterdamTime(m.created_at)}
+            {m.status === 'failed' && ' · ⚠ failed'}
+          </span>
+        </div>
+
+        {/* Translation */}
+        {inbound && (
+          <div className="pl-1">
+            {!translation && (
+              <button
+                onClick={onTranslate}
+                disabled={translating}
+                className="inline-flex items-center gap-1 text-[10px] text-zinc-400 hover:text-zinc-600 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+              >
+                {translating
+                  ? <Loader2 className="w-3 h-3 animate-spin" />
+                  : <Languages className="w-3 h-3" />}
+                {translating ? 'Translating…' : 'Translate'}
+              </button>
+            )}
+            {translation && translation.language === 'English' && (
+              <span className="text-[10px] text-zinc-400">Already in English</span>
+            )}
+            {translation && translation.language !== 'English' && translation.text && (
+              <div className="rounded-lg bg-indigo-50 border border-indigo-100 px-2.5 py-1.5 text-xs text-indigo-900">
+                <span className="block text-[9px] font-semibold text-indigo-400 uppercase tracking-wide mb-0.5">
+                  {translation.language} → English
+                </span>
+                <span className="whitespace-pre-wrap">{translation.text}</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
