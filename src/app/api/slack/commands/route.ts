@@ -1,14 +1,11 @@
 import { NextResponse } from 'next/server'
-import { verifySlackRequest } from '@/lib/slack/verify-request'
-import { createClient } from '@supabase/supabase-js'
-import type { Database } from '@/lib/supabase/types'
+import { verifySlackSignature } from '@/lib/slack/verify-request'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { performClock } from '@/lib/scheduling/perform-clock'
 
-function serviceClient() {
-  return createClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  )
+const COMMAND_ACTION: Record<string, 'in' | 'out'> = {
+  '/checkin': 'in',
+  '/checkout': 'out',
 }
 
 /** Respond to Slack immediately (3-second deadline) and return plain text. */
@@ -20,19 +17,23 @@ function slackText(text: string, ephemeral = true) {
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
-  // Slack re-sends the raw body for signature verification; clone before reading.
-  const cloned = req.clone()
-  const valid = await verifySlackRequest(cloned)
+  // Read the raw body ONCE — the signature is computed over these exact bytes.
+  const raw = await req.text()
+  const valid = verifySlackSignature(
+    raw,
+    req.headers.get('x-slack-request-timestamp'),
+    req.headers.get('x-slack-signature'),
+  )
   if (!valid) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const raw = await req.text()
   const params = new URLSearchParams(raw)
-  const command = params.get('command') ?? ''         // /checkin or /checkout
+  const command = params.get('command') ?? ''
   const slackUserId = params.get('user_id') ?? ''
 
-  const action: 'in' | 'out' = command === '/checkout' ? 'out' : 'in'
+  const action = COMMAND_ACTION[command]
+  if (!action) return slackText(`Unknown command ${command || '(none)'} — try /checkin or /checkout.`)
 
-  const supabase = serviceClient()
+  const supabase = createAdminClient()
   const { data: staffRow } = await supabase
     .from('staff')
     .select('id, hourly_rate_cents')

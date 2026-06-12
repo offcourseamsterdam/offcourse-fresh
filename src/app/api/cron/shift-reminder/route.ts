@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import type { Database } from '@/lib/supabase/types'
+import { NextRequest, NextResponse } from 'next/server'
+import { requireCronSecret } from '@/lib/auth/require-cron-secret'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { postDm, postToChannel } from '@/lib/slack/bot'
 
 /**
@@ -13,18 +13,11 @@ import { postDm, postToChannel } from '@/lib/slack/bot'
  * Vercel protects cron routes with a Bearer token it injects automatically:
  *   Authorization: Bearer $CRON_SECRET
  */
-export async function GET(req: Request): Promise<NextResponse> {
-  // Verify the request is from Vercel cron or an authorized caller.
-  const auth = req.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && auth !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  const denied = requireCronSecret(req)
+  if (denied) return denied
 
-  const supabase = createClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  )
+  const supabase = createAdminClient()
 
   const now = new Date()
   // Window: shifts starting between now+4min and now+11min (gives ~5min slack either side)

@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import type { Database } from '@/lib/supabase/types'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { buildShiftIcs, type IcsShift } from '@/lib/scheduling/ics'
 
 /**
@@ -26,10 +25,7 @@ export async function GET(
     return new NextResponse('Not found', { status: 404 })
   }
 
-  const supabase = createClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  )
+  const supabase = createAdminClient()
 
   const { data: staff } = await supabase
     .from('staff')
