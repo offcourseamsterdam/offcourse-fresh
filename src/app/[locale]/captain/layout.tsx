@@ -8,9 +8,9 @@ interface Props {
 
 const navSections = [
   { label: 'Captain', items: [
-    { href: '/captain',          label: 'My Schedule', icon: 'bookings' },
-    { href: '/captain/trips',    label: 'Trip Details', icon: 'cruises' },
-    { href: '/captain/profile',  label: 'Profile',      icon: 'users' },
+    { href: '/captain',              label: 'Home',         icon: 'dashboard' },
+    { href: '/captain/shifts',       label: 'My shifts',    icon: 'cruises' },
+    { href: '/captain/availability', label: 'Availability', icon: 'bookings' },
   ]},
 ]
 
