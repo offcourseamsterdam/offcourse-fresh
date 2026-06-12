@@ -675,6 +675,100 @@ export type Database = {
         }
         Relationships: []
       }
+      contacts: {
+        Row: {
+          created_at: string
+          email: string | null
+          id: string
+          locale: string | null
+          name: string
+          notes: string | null
+          phone_e164: string | null
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          id?: string
+          locale?: string | null
+          name: string
+          notes?: string | null
+          phone_e164?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          id?: string
+          locale?: string | null
+          name?: string
+          notes?: string | null
+          phone_e164?: string | null
+        }
+        Relationships: []
+      }
+      conversations: {
+        Row: {
+          assignee_profile_id: string | null
+          booking_id: string | null
+          channel: string
+          contact_id: string
+          created_at: string
+          id: string
+          last_message_at: string
+          status: string
+          subject: string | null
+          unread_count: number
+          webchat_token: string
+        }
+        Insert: {
+          assignee_profile_id?: string | null
+          booking_id?: string | null
+          channel: string
+          contact_id: string
+          created_at?: string
+          id?: string
+          last_message_at?: string
+          status?: string
+          subject?: string | null
+          unread_count?: number
+          webchat_token?: string
+        }
+        Update: {
+          assignee_profile_id?: string | null
+          booking_id?: string | null
+          channel?: string
+          contact_id?: string
+          created_at?: string
+          id?: string
+          last_message_at?: string
+          status?: string
+          subject?: string | null
+          unread_count?: number
+          webchat_token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversations_assignee_profile_id_fkey"
+            columns: ["assignee_profile_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversations_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversations_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cruise_listings: {
         Row: {
           allowed_customer_type_pks: number[] | null
@@ -1970,6 +2064,53 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      messages: {
+        Row: {
+          author_name: string | null
+          body: string
+          conversation_id: string
+          created_at: string
+          direction: string
+          error: string | null
+          id: string
+          provider: string
+          provider_message_id: string | null
+          status: string
+        }
+        Insert: {
+          author_name?: string | null
+          body: string
+          conversation_id: string
+          created_at?: string
+          direction: string
+          error?: string | null
+          id?: string
+          provider?: string
+          provider_message_id?: string | null
+          status?: string
+        }
+        Update: {
+          author_name?: string | null
+          body?: string
+          conversation_id?: string
+          created_at?: string
+          direction?: string
+          error?: string | null
+          id?: string
+          provider?: string
+          provider_message_id?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       notification_settings: {
         Row: {
