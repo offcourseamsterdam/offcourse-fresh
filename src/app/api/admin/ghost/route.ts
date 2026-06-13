@@ -26,7 +26,7 @@ export async function GET() {
         .order('created_at', { ascending: false })
         .limit(50),
       getAiSpendSummary(),
-      supabase.from('ghost_knowledge').select('id, question, answer, proposal_id, created_at').order('created_at', { ascending: false }),
+      supabase.from('ghost_knowledge').select('id, question, answer, proposal_id, pinned, created_at').order('created_at', { ascending: false }),
     ])
     if (error) return apiError(error.message)
 
@@ -61,7 +61,7 @@ export async function GET() {
       knowledgeEntries: knowledge.length,
     }
 
-    return apiOk({ proposals, spend, stats, openQuestions })
+    return apiOk({ proposals, spend, stats, openQuestions, knowledge })
   } catch (err) {
     return apiError(err instanceof Error ? err.message : 'Failed to load ghost proposals')
   }

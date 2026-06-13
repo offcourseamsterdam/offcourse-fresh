@@ -56,6 +56,29 @@ Two entry points, one flow:
 - Private listings show boat cards + duration selector; shared listings show per-person pricing
 - The whole flow uses FareHarbor API data filtered through the virtual product layer
 
+### Manual Bookings from External Platforms (GetYourGuide, TripAdvisor, etc.)
+
+When entering a booking that came in via an external platform (GYG, TripAdvisor, Withlocals, etc.):
+
+1. **Check FareHarbor availability first** — use the `/api/external/v1/companies/offcourse/items/{fh_pk}/minimal/availabilities/date/{date}/` endpoint
+2. **Get the full availability** to find the correct `customerTypeRatePk` — use `/api/external/v1/companies/offcourse/availabilities/{availPk}/`
+3. **Add extras on our side** — the external platform's extras (e.g. "Unlimited Drinks Package" on GYG) are NOT automatically synced. Look up the matching extra in our `extras` table and include it in `extrasSelected` in the booking payload. Never just put extras in the note.
+4. **Use `bookingSource: 'getyourguide'`** (or the relevant platform slug) — this marks it as internal, skips Stripe, and auto-attributes the booking to the right campaign
+5. **Confirm with Beer before submitting** — show the full booking summary including extras and ask for approval
+6. **Deposit amount** = what the platform paid us (shown on their booking confirmation email)
+
+To get cruise duration and departure location, always read from the `cruise_listings` table:
+- `duration_display` — human-readable duration (e.g. "1 hour & 30 minutes")
+- `departure_location` — exact departure address to include in confirmations
+- `max_guests` — capacity cap
+
+Key extras IDs:
+- Unlimited Drinks: `9fc55b42-14ea-4230-b8e2-d83434de2e54` (€10/person/hour, 21% VAT — multiply by guests × hours)
+- Bring Your Own Drinks: `2baeeb95-4d6f-40d7-98b3-62f15524972a` (€5/person, 21% VAT)
+- Bites Box Small (1-2p): `8cacd3a0-c64f-491b-ba31-d5eea3ddf5a4` (€20 fixed, 9% VAT)
+- Bites Box Medium (3-4p): `5dd45eea-134e-4b0f-ba2b-440896b342b3` (€35 fixed, 9% VAT)
+- Bites Box Large (6p): `a8a6adf0-6571-49e4-adf6-663d5d91e503` (€65 fixed, 9% VAT)
+
 ### Stripe Native Checkout
 Using Payment Intents (NOT Checkout Sessions) for Google Ads conversion tracking control.
 - PaymentIntent amounts in cents (€165 = 16500)
@@ -239,9 +262,17 @@ The Ghost is organized as **agents** (one per operation domain — registry in `
 ### When adding ANY new operational feature or admin action, answer two questions:
 
 1. **Can the Ghost shadow it?** If a human performs a recurring decision through the admin (assigning, ordering, replying, approving), give the matching agent a drafter: a new `kind` in `agent_proposals` owned by exactly one agent in `agents.ts`, a drafter (agentic via `runAgenticLoop` when it needs to look things up, single-call like `src/lib/ghost/ops-drafters.ts` when context is deterministic), and a card renderer in `/admin/ghost`. Always: read the truth from Postgres, payload + `reasoning`, status `'shadow'`, dedupe per target date, all errors swallowed. New read-only lookups become tools in `tools.ts` (compact results, descriptions that say WHEN to call).
-2. **Is it a money/irreversible action?** Then it may get a Ghost *proposal* later but NEVER auto-execution — refunds, FareHarbor bookings, payouts stay human-approved permanently.
+2. **Is it a money/irreversible action?** Then it may get a Ghost *proposal* and a `dry_run` verdict, but NEVER auto-execution — refunds, FareHarbor bookings, payouts stay human-approved permanently.
 
 Document the decision (even "not ghostable, because…") in the feature's `docs/features/*.md`.
+
+### Autonomy ladder & execution (MANDATORY)
+
+Per-kind autonomy lives in `src/lib/ghost/agents.ts`: `AUTONOMY_LEVEL` (current) ≤ `AUTONOMY_CEILING` (hard cap), levels `propose → dry_run → ask → auto`. `IRREVERSIBLE_KINDS` (booking, refunds, payouts) are pinned to a `dry_run` ceiling and a test in `agent-runtime.test.ts` fails CI if that's ever bumped.
+
+- **Dry-run = execute reversibly.** To prove an agent "executes well" without permanent effect, use the system's no-side-effect check, not create-then-delete. For bookings that's `fh.validateBooking` (`src/lib/ghost/dry-run.ts`) — it never creates, emails, or holds capacity. Store the verdict in `payload.verdict`; status stays `'shadow'`.
+- **Execution chokepoint.** Any future real action goes through one guarded handler (e.g. `/api/admin/ghost/dry-run` pattern), behind `requireAdmin`, that re-validates immediately before acting and refuses any kind above its ceiling. Agent tools stay read-only; the agent loop's only write is the shadow proposal.
+- **The learning is data, not code.** The Ghost's memory lives in `ghost_knowledge` (+ `agent_proposals.outcome`), selected into prompts at runtime — NEVER in CLAUDE.md. Selection ladder: recency + `pinned` (now) → pgvector relevance (~40–60 facts) → distilled playbook (~100–150). Match the machinery to the data volume; don't build pgvector/playbook early.
 
 ### AI cost discipline (MANDATORY)
 

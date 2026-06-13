@@ -1569,6 +1569,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           id: string
+          pinned: boolean
           proposal_id: string | null
           question: string
           source: string
@@ -1578,6 +1579,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          pinned?: boolean
           proposal_id?: string | null
           question: string
           source?: string
@@ -1587,6 +1589,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          pinned?: boolean
           proposal_id?: string | null
           question?: string
           source?: string

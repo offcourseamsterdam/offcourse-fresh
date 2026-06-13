@@ -13,6 +13,54 @@
 
 export type AgentStatus = 'active' | 'planned'
 
+/**
+ * The autonomy ladder — how far a proposal kind is trusted to act.
+ *   propose  — write a shadow proposal, nothing else (today's floor)
+ *   dry_run  — also run a NON-MUTATING check against the real system
+ *              (FareHarbor validate) and attach a verdict; still nothing
+ *              created, no email. "Would this have worked?"
+ *   ask      — surface an Approve button; a human click performs the real,
+ *              reversible action. NEVER reachable for irreversible kinds.
+ *   auto     — fires without a click (far future, lowest-stakes kinds only).
+ */
+export type AutonomyLevel = 'propose' | 'dry_run' | 'ask' | 'auto'
+
+const LEVEL_ORDER: AutonomyLevel[] = ['propose', 'dry_run', 'ask', 'auto']
+export function levelRank(level: AutonomyLevel): number {
+  return LEVEL_ORDER.indexOf(level)
+}
+
+/**
+ * Money / irreversible kinds. Their ceiling is pinned to 'dry_run' forever:
+ * the agent may VALIDATE a booking but can never create one, refund, or pay
+ * out without a human. Enforced by agents.test.ts + the execute chokepoint.
+ */
+export const IRREVERSIBLE_KINDS = ['booking_proposal'] as const
+
+/** The highest level a kind may EVER reach — the hard safety ceiling. */
+export const AUTONOMY_CEILING: Record<string, AutonomyLevel> = {
+  reply_draft: 'ask',
+  booking_proposal: 'dry_run', // irreversible — validate only, never create
+  catering_order: 'ask',
+  schedule_day: 'ask',
+  maintenance_task: 'ask',
+  stock_order: 'ask',
+}
+
+/** The kind's CURRENT operating level (must be ≤ its ceiling). */
+export const AUTONOMY_LEVEL: Record<string, AutonomyLevel> = {
+  reply_draft: 'propose',
+  booking_proposal: 'dry_run', // validates each proposal against FareHarbor
+  catering_order: 'propose',
+  schedule_day: 'propose',
+  maintenance_task: 'propose',
+  stock_order: 'propose',
+}
+
+export function autonomyForKind(kind: string): AutonomyLevel {
+  return AUTONOMY_LEVEL[kind] ?? 'propose'
+}
+
 export interface GhostAgent {
   key: string
   name: string
@@ -22,6 +70,14 @@ export interface GhostAgent {
   kinds: string[]
   /** What triggers it */
   trigger: string
+}
+
+/** An agent's current autonomy level = the max across the kinds it owns. */
+export function agentAutonomy(agent: GhostAgent): AutonomyLevel {
+  return agent.kinds.reduce<AutonomyLevel>((max, kind) => {
+    const level = autonomyForKind(kind)
+    return levelRank(level) > levelRank(max) ? level : max
+  }, 'propose')
 }
 
 export const GHOST_AGENTS: GhostAgent[] = [

@@ -17,7 +17,7 @@ import {
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { adminMutate } from '@/hooks/useAdminSave'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
-import { GHOST_AGENTS, agentForKind } from '@/lib/ghost/agents'
+import { GHOST_AGENTS, agentForKind, agentAutonomy } from '@/lib/ghost/agents'
 import { formatAmsterdamTime } from '@/lib/utils'
 
 /**
@@ -59,6 +59,15 @@ interface BookingAction {
   price_eur?: number
 }
 
+interface DryRunVerdict {
+  ran_at: string
+  is_bookable: boolean
+  code: string | null
+  error: string | null
+  receipt_total_eur: number | null
+  checked_avail_pk: number | null
+}
+
 interface GhostProposal {
   id: string
   kind: string
@@ -71,6 +80,7 @@ interface GhostProposal {
     orders?: CateringOrder[]
     booking?: BookingAction
     steps?: AgentStepLog[]
+    verdict?: DryRunVerdict
   }
   reasoning: string | null
   status: string
@@ -97,6 +107,7 @@ interface GhostData {
     knowledgeEntries: number
   }
   openQuestions: { proposal_id: string; question: string; created_at: string }[]
+  knowledge: { id: string; question: string; answer: string; pinned: boolean; created_at: string }[]
 }
 
 const POLL_MS = 15_000
@@ -190,6 +201,11 @@ export default function GhostPage() {
                 <p className={`text-xs font-medium leading-tight ${planned ? 'text-zinc-400' : 'text-zinc-700'}`}>
                   {agent.name}
                 </p>
+                {!planned && (
+                  <span className="inline-block mt-0.5 text-[9px] font-semibold uppercase tracking-wide text-violet-500">
+                    {AUTONOMY_LABEL[agentAutonomy(agent)]}
+                  </span>
+                )}
                 <p className="text-[10px] text-zinc-400 truncate">{agent.trigger}</p>
               </button>
             )
@@ -219,9 +235,14 @@ export default function GhostPage() {
 
       <div className="space-y-4">
         {proposals.map(p => (
-          <ProposalCard key={p.id} proposal={p} />
+          <ProposalCard key={p.id} proposal={p} onChanged={refresh} />
         ))}
       </div>
+
+      {/* The visible memory — every fact the team has taught the Ghost */}
+      {data && data.knowledge.length > 0 && (
+        <KnowledgePanel knowledge={data.knowledge} onChanged={refresh} />
+      )}
     </div>
   )
 }
@@ -328,7 +349,118 @@ const KIND_META: Record<string, { label: string; Icon: typeof Ghost }> = {
   catering_order: { label: 'Catering', Icon: UtensilsCrossed },
 }
 
-function ProposalCard({ proposal: p }: { proposal: GhostProposal }) {
+const AUTONOMY_LABEL: Record<string, string> = {
+  propose: 'shadow',
+  dry_run: 'dry-run',
+  ask: 'ask first',
+  auto: 'auto',
+}
+
+/** The dry-run verdict chip — "would this have booked?" with a Re-check button. */
+function DryRunVerdictChip({
+  proposalId,
+  verdict,
+  onRechecked,
+}: {
+  proposalId: string
+  verdict?: DryRunVerdict
+  onRechecked: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+
+  async function recheck() {
+    setBusy(true)
+    try {
+      await adminMutate('/api/admin/ghost/dry-run', 'POST', { proposalId })
+      onRechecked()
+    } catch {
+      /* leave the old verdict; user can retry */
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const base = 'mt-1.5 rounded-lg px-3 py-2 text-xs flex items-start justify-between gap-2'
+  if (!verdict) {
+    return (
+      <div className={`${base} bg-zinc-50 border border-zinc-200 text-zinc-500`}>
+        <span>Dry-run pending…</span>
+        <button onClick={recheck} disabled={busy} className="font-semibold text-zinc-600 hover:text-zinc-900 disabled:opacity-50 inline-flex items-center gap-1">
+          {busy && <Loader2 className="w-3 h-3 animate-spin" />} Check now
+        </button>
+      </div>
+    )
+  }
+  const ok = verdict.is_bookable
+  return (
+    <div className={`${base} ${ok ? 'bg-emerald-50 border border-emerald-200 text-emerald-900' : 'bg-amber-50 border border-amber-200 text-amber-900'}`}>
+      <span className="min-w-0">
+        <span className="font-semibold">
+          {ok ? '✓ Would book successfully' : '✗ Would NOT book'}
+        </span>
+        {ok && verdict.receipt_total_eur != null && <span> — FareHarbor quote €{verdict.receipt_total_eur}</span>}
+        {!ok && (verdict.error || verdict.code) && <span> — {verdict.error ?? verdict.code}</span>}
+        <span className="block text-[10px] opacity-70 mt-0.5">
+          validated, nothing created, no email · {formatAmsterdamTime(verdict.ran_at)}
+        </span>
+      </span>
+      <button onClick={recheck} disabled={busy} className="font-semibold hover:underline disabled:opacity-50 inline-flex items-center gap-1 shrink-0">
+        {busy && <Loader2 className="w-3 h-3 animate-spin" />} Re-check
+      </button>
+    </div>
+  )
+}
+
+/** The knowledge base — every taught fact, pinnable so it never falls off recency. */
+function KnowledgePanel({
+  knowledge,
+  onChanged,
+}: {
+  knowledge: GhostData['knowledge']
+  onChanged: () => void
+}) {
+  async function togglePin(id: string, pinned: boolean) {
+    try {
+      await adminMutate('/api/admin/ghost/knowledge', 'PATCH', { id, pinned })
+      onChanged()
+    } catch {
+      /* no-op; poll will reconcile */
+    }
+  }
+
+  return (
+    <div className="mt-6">
+      <h2 className="text-sm font-semibold text-zinc-900 inline-flex items-center gap-1.5 mb-1">
+        <BookOpen className="w-4 h-4 text-violet-500" /> What the Ghost knows
+      </h2>
+      <p className="text-xs text-zinc-400 mb-3">
+        Its memory lives here, not in the model. Pin a fact to inject it into every reply forever
+        (regardless of age) — use it for things like boat capacity or the refund policy.
+      </p>
+      <div className="space-y-1.5">
+        {knowledge.map(k => (
+          <div key={k.id} className="bg-white rounded-lg border border-zinc-200 px-3 py-2 flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-zinc-700">{k.question}</p>
+              <p className="text-xs text-zinc-500 mt-0.5">{k.answer}</p>
+            </div>
+            <button
+              onClick={() => togglePin(k.id, !k.pinned)}
+              title={k.pinned ? 'Pinned — always injected. Click to unpin.' : 'Pin so this is always injected.'}
+              className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full shrink-0 ${
+                k.pinned ? 'bg-violet-100 text-violet-700' : 'text-zinc-400 hover:bg-zinc-100'
+              }`}
+            >
+              {k.pinned ? '★ pinned' : '☆ pin'}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ProposalCard({ proposal: p, onChanged }: { proposal: GhostProposal; onChanged: () => void }) {
   const meta = KIND_META[p.kind] ?? { label: p.kind, Icon: Ghost }
   const agent = agentForKind(p.kind)
   const conversational = p.kind === 'reply_draft' || p.kind === 'booking_proposal'
@@ -422,10 +554,11 @@ function ProposalCard({ proposal: p }: { proposal: GhostProposal }) {
                     {p.payload.booking.option ? ` · ${p.payload.booking.option}` : ''}
                     {p.payload.booking.price_eur ? ` · €${p.payload.booking.price_eur}` : ''}
                   </span>
-                  <span className="block text-[11px] text-indigo-500 mt-1">
-                    Shadow — nothing booked. Approval-to-execute is the next trust-ladder rung.
-                  </span>
                 </div>
+                <DryRunVerdictChip proposalId={p.id} verdict={p.payload.verdict} onRechecked={onChanged} />
+                <p className="text-[11px] text-zinc-400 mt-1">
+                  Booking creation stays human-approved — the Ghost only validates (no booking, no email).
+                </p>
               </div>
             )}
 

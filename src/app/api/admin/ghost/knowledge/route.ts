@@ -42,3 +42,28 @@ export async function POST(req: NextRequest) {
     return apiError(err instanceof Error ? err.message : 'Failed to save knowledge')
   }
 }
+
+/**
+ * PATCH /api/admin/ghost/knowledge — pin/unpin a fact.
+ * Body: { id, pinned }
+ * Pinned facts are ALWAYS injected into draft prompts regardless of age, so
+ * critical facts never fall off the newest-20 recency window.
+ */
+export async function PATCH(req: NextRequest) {
+  const denied = await requireAdmin()
+  if (denied) return denied
+  try {
+    const json = await req.json().catch(() => null)
+    const id = typeof json?.id === 'string' ? json.id : ''
+    const pinned = Boolean(json?.pinned)
+    if (!id) return apiError('id is required', 400)
+
+    const supabase = createAdminClient()
+    const { error } = await supabase.from('ghost_knowledge').update({ pinned }).eq('id', id)
+    if (error) return apiError(error.message, 500)
+
+    return apiOk({ id, pinned })
+  } catch (err) {
+    return apiError(err instanceof Error ? err.message : 'Failed to update knowledge')
+  }
+}

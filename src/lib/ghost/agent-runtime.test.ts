@@ -1,7 +1,16 @@
 import { describe, it, expect } from 'vitest'
 import { clampToolResult, previewToolResult } from './agent-runtime'
 import { compactAvailability } from './tools'
-import { agentForKind, GHOST_AGENTS } from './agents'
+import {
+  agentForKind,
+  agentAutonomy,
+  AUTONOMY_CEILING,
+  AUTONOMY_LEVEL,
+  autonomyForKind,
+  GHOST_AGENTS,
+  IRREVERSIBLE_KINDS,
+  levelRank,
+} from './agents'
 
 describe('clampToolResult', () => {
   it('passes small results through as JSON', () => {
@@ -86,5 +95,39 @@ describe('agent registry', () => {
       'maintenance',
       'storage',
     ])
+  })
+})
+
+describe('autonomy ladder (the safety invariant)', () => {
+  it('every kind operates at or below its ceiling', () => {
+    for (const kind of Object.keys(AUTONOMY_LEVEL)) {
+      expect(levelRank(AUTONOMY_LEVEL[kind])).toBeLessThanOrEqual(levelRank(AUTONOMY_CEILING[kind]))
+    }
+  })
+
+  it('irreversible kinds are pinned to a dry_run ceiling — can NEVER auto-execute', () => {
+    for (const kind of IRREVERSIBLE_KINDS) {
+      expect(AUTONOMY_CEILING[kind]).toBe('dry_run')
+      // current level also cannot exceed it
+      expect(levelRank(AUTONOMY_LEVEL[kind])).toBeLessThanOrEqual(levelRank('dry_run'))
+    }
+  })
+
+  it('booking is the irreversible money kind and sits at dry_run', () => {
+    expect(IRREVERSIBLE_KINDS).toContain('booking_proposal')
+    expect(autonomyForKind('booking_proposal')).toBe('dry_run')
+  })
+
+  it('agentAutonomy reports the booking agent at dry_run, inbox at propose', () => {
+    const booking = GHOST_AGENTS.find(a => a.key === 'booking')!
+    const inbox = GHOST_AGENTS.find(a => a.key === 'inbox')!
+    expect(agentAutonomy(booking)).toBe('dry_run')
+    expect(agentAutonomy(inbox)).toBe('propose')
+  })
+
+  it('levelRank orders the ladder correctly', () => {
+    expect(levelRank('propose')).toBeLessThan(levelRank('dry_run'))
+    expect(levelRank('dry_run')).toBeLessThan(levelRank('ask'))
+    expect(levelRank('ask')).toBeLessThan(levelRank('auto'))
   })
 })

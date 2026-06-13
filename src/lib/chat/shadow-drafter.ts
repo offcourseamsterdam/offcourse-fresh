@@ -2,6 +2,8 @@ import { CLAUDE_MODEL } from '@/lib/ai/clients'
 import { OFF_COURSE_SYSTEM_PROMPT } from '@/lib/ai/context'
 import { runAgenticLoop } from '@/lib/ghost/agent-runtime'
 import { buildGhostTools } from '@/lib/ghost/tools'
+import { autonomyForKind, levelRank } from '@/lib/ghost/agents'
+import { dryRunBookingProposal } from '@/lib/ghost/dry-run'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
@@ -116,12 +118,20 @@ export async function draftShadowReply(conversationId: string, triggerMessageId:
     const contact = convo.contact
 
     // ── The learning inputs ──────────────────────────────────────────────
-    const { data: knowledge } = await supabase
-      .from('ghost_knowledge')
-      .select('question, answer')
-      .order('created_at', { ascending: false })
-      .limit(20)
-    const knowledgeBlock = knowledge?.length
+    // Recency selection (newest 20) PLUS pinned facts, which are always
+    // injected regardless of age — so a critical old fact (boat capacity,
+    // refund policy) never silently falls off the recency window.
+    const [recent, pinned] = await Promise.all([
+      supabase.from('ghost_knowledge').select('question, answer').order('created_at', { ascending: false }).limit(20),
+      supabase.from('ghost_knowledge').select('question, answer').eq('pinned', true),
+    ])
+    const seen = new Set<string>()
+    const knowledge = [...(pinned.data ?? []), ...(recent.data ?? [])].filter(k => {
+      if (seen.has(k.question)) return false
+      seen.add(k.question)
+      return true
+    })
+    const knowledgeBlock = knowledge.length
       ? `THINGS THE TEAM HAS TAUGHT YOU (treat as ground truth)\n${knowledge
           .map(k => `- Q: ${k.question}\n  A: ${k.answer}`)
           .join('\n')}\n\n`
@@ -174,7 +184,8 @@ RULES
 - Dates/availability/prices: NEVER from memory — use search_availability.
 - Customer's own bookings: use get_customer_bookings with their email.
 - Policies/amenities not in taught knowledge: don't invent — warm "let me check" + open_question.
-- Concrete booking request + availability confirmed → submit_booking_proposal. Everything else → submit_reply_draft.`,
+- Concrete booking request + availability confirmed → submit_booking_proposal. Everything else → submit_reply_draft.
+- A booking_proposal MUST be unambiguous: include the exact option (boat + duration, e.g. "Diana 2h") in booking.option, taken from search_availability. If the customer hasn't said which duration/boat and several fit, do NOT guess — submit_reply_draft asking them to pick, with the options + prices.`,
     })
     if (!result) return
 
@@ -182,27 +193,39 @@ RULES
     if (!parsed) return
 
     const isBooking = result.submittedVia === 'submit_booking_proposal' && parsed.booking
+    const kind = isBooking ? 'booking_proposal' : 'reply_draft'
 
     // ── Write the proposal — shadow status, nothing visible to customers ─
-    await supabase.from('agent_proposals').insert({
-      kind: isBooking ? 'booking_proposal' : 'reply_draft',
-      conversation_id: conversationId,
-      trigger_message_id: triggerMessageId,
-      // JSON round-trip: Supabase's Json type needs index signatures that
-      // AgentStep lacks; serializing guarantees a plain-JSON payload.
-      payload: JSON.parse(
-        JSON.stringify({
-          reply: parsed.reply,
-          language: parsed.language,
-          open_question: parsed.open_question,
-          ...(isBooking ? { booking: parsed.booking } : {}),
-          steps: result.steps,
-        }),
-      ),
-      reasoning: parsed.reasoning,
-      status: 'shadow',
-      model: CLAUDE_MODEL,
-    })
+    const { data: inserted } = await supabase
+      .from('agent_proposals')
+      .insert({
+        kind,
+        conversation_id: conversationId,
+        trigger_message_id: triggerMessageId,
+        // JSON round-trip: Supabase's Json type needs index signatures that
+        // AgentStep lacks; serializing guarantees a plain-JSON payload.
+        payload: JSON.parse(
+          JSON.stringify({
+            reply: parsed.reply,
+            language: parsed.language,
+            open_question: parsed.open_question,
+            ...(isBooking ? { booking: parsed.booking } : {}),
+            steps: result.steps,
+          }),
+        ),
+        reasoning: parsed.reasoning,
+        status: 'shadow',
+        model: CLAUDE_MODEL,
+      })
+      .select('id')
+      .single()
+
+    // Dry-run the booking proposal IF the kind's autonomy reaches dry_run:
+    // validate it against FareHarbor (no booking, no email) and attach a
+    // verdict. Best-effort — never blocks or breaks the shadow write.
+    if (isBooking && inserted && levelRank(autonomyForKind(kind)) >= levelRank('dry_run')) {
+      await dryRunBookingProposal(inserted.id)
+    }
   } catch (err) {
     // Shadow work is best-effort by definition.
     console.error('[shadow-drafter] failed:', err instanceof Error ? err.message : err)
