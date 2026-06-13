@@ -4,8 +4,14 @@ import { runAgenticLoop } from '@/lib/ghost/agent-runtime'
 import { buildGhostTools } from '@/lib/ghost/tools'
 import { autonomyForKind, levelRank } from '@/lib/ghost/agents'
 import { dryRunBookingProposal } from '@/lib/ghost/dry-run'
+import { translateToEnglish } from '@/lib/chat/translate'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { amsterdamToday } from '@/lib/utils'
+
+/** The team reads English + Dutch; everything else gets an English translation. */
+export function draftNeedsEnglish(language: string | null | undefined): boolean {
+  return !!language && !/^(english|dutch|en|nl)$/i.test(language.trim())
+}
 
 /**
  * The inbox agent (and its sidekick, the booking agent) — shadow mode.
@@ -201,6 +207,12 @@ RULES
     const isBooking = result.submittedVia === 'submit_booking_proposal' && parsed.booking
     const kind = isBooking ? 'booking_proposal' : 'reply_draft'
 
+    // The team reads English + Dutch — translate any other-language draft so it
+    // can actually be read and approved. Off the hot path (after()); metered.
+    const replyEn = draftNeedsEnglish(parsed.language)
+      ? (await translateToEnglish(parsed.reply))?.translation ?? null
+      : null
+
     // ── Write the proposal — shadow status, nothing visible to customers ─
     const { data: inserted } = await supabase
       .from('agent_proposals')
@@ -213,6 +225,7 @@ RULES
         payload: JSON.parse(
           JSON.stringify({
             reply: parsed.reply,
+            reply_en: replyEn,
             language: parsed.language,
             open_question: parsed.open_question,
             ...(isBooking ? { booking: parsed.booking } : {}),

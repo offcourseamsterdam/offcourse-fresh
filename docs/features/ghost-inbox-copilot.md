@@ -56,6 +56,27 @@ any FareHarbor logic.
 - The co-pilot card lives in the `xl:` right pane; the dedicated floating panel,
   in-panel chat, confidence surface, and event tracking are P1–P5 in the plan.
 
+## P0.1 — per-conversation co-pilot + ops dashboard
+
+Aligning the UI with the agreed model (one conversation agent; `/admin/ghost`
+demoted to an ops dashboard):
+
+- **`/admin/ghost` → ops dashboard.** The per-message conversational feed is
+  gone; the page now shows spend, learning stats, open questions, taught
+  knowledge, and only the **ops** proposals (catering, scheduling). The
+  inbox/booking agent tiles link into the inbox (their work lives there).
+- **Drafts translated to English.** Every non-English/Dutch draft gets an
+  English read-out: stored at draft time (`payload.reply_en` in
+  `shadow-drafter.ts`), and a `translate` action on the proposals route
+  backfills older drafts on demand. Shown under the suggested reply in the
+  co-pilot.
+- **Per-conversation learning trail.** The co-pilot shows "What it's learned
+  here" — past drafts vs what you actually sent, with the match / minor /
+  rewrote-it badge and the lesson. The feedback loop (use the draft, edit it,
+  or send something else) is captured automatically on send (the messages
+  route attaches your reply to the draft's `outcome`) and now visible in the
+  inbox, not just on the dev page.
+
 ## How to extend
 
 Next phases (see the plan): P1 floating collapsible panel, P2 in-panel co-pilot

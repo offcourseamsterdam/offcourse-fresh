@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter, useParams } from 'next/navigation'
 import {
   BookOpen,
   CalendarClock,
@@ -127,7 +128,12 @@ const POLL_MS = 15_000
 
 const PAGE_SIZE = 25
 
+const CONVO_AGENTS = ['inbox', 'booking']
+
 export default function GhostPage() {
+  const router = useRouter()
+  const params = useParams()
+  const locale = (params?.locale as string) ?? 'en'
   const [agentFilter, setAgentFilter] = useState<string | null>(null)
   const [unreviewedOnly, setUnreviewedOnly] = useState(false)
   const [limit, setLimit] = useState(PAGE_SIZE)
@@ -137,7 +143,10 @@ export default function GhostPage() {
     { refreshInterval: POLL_MS },
   )
 
-  const allProposals = data?.proposals ?? []
+  // Conversation drafts (reply_draft, booking_proposal) live in the inbox now —
+  // this page is the cross-conversation ops dashboard: ops proposals + stats.
+  const OPS_KINDS = ['schedule_day', 'catering_order']
+  const allProposals = (data?.proposals ?? []).filter(p => OPS_KINDS.includes(p.kind))
   const proposals = agentFilter
     ? allProposals.filter(p => agentForKind(p.kind)?.key === agentFilter)
     : allProposals
@@ -156,8 +165,8 @@ export default function GhostPage() {
             <Ghost className="w-6 h-6 text-violet-500" /> Ghost AI
           </h1>
           <p className="text-sm text-zinc-500 mt-1 max-w-xl">
-            Shadow mode — drafts logged, never executed. It learns from your real replies and from
-            the questions you answer below.
+            Ops dashboard — spend, what it&apos;s learned, and the ops agents (catering, scheduling).
+            Conversation drafts now live in the <strong>inbox</strong>, next to each customer.
           </p>
         </div>
 
@@ -198,9 +207,14 @@ export default function GhostPage() {
             return (
               <button
                 key={agent.key}
-                onClick={() => !planned && setAgentFilter(f => (f === agent.key ? null : agent.key))}
+                onClick={() => {
+                  if (planned) return
+                  // Conversation agents do their work in the inbox — go there.
+                  if (CONVO_AGENTS.includes(agent.key)) { router.push(`/${locale}/admin/inbox`); return }
+                  setAgentFilter(f => (f === agent.key ? null : agent.key))
+                }}
                 disabled={planned}
-                title={agent.description}
+                title={CONVO_AGENTS.includes(agent.key) ? `${agent.description} — open in the inbox` : agent.description}
                 className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${
                   planned
                     ? 'border-dashed border-zinc-200 bg-zinc-50 cursor-default'
@@ -247,7 +261,7 @@ export default function GhostPage() {
       {data && (
         <div className="flex items-center justify-between mb-2">
           <p className="text-sm font-semibold text-zinc-700">
-            Proposals
+            Ops proposals
             {agentFilter && (
               <button onClick={() => setAgentFilter(null)} className="ml-2 text-xs font-normal text-violet-600 hover:underline">
                 clear filter ✕
@@ -273,7 +287,7 @@ export default function GhostPage() {
               ? 'All caught up — nothing left to review.'
               : agentFilter
                 ? 'No proposals from this agent yet.'
-                : 'Nothing yet — the Ghost wakes up on customer messages and the daily ops cron.'}
+                : 'No ops proposals yet — the daily ops cron (catering + schedule) drafts these. Conversation drafts live in the inbox.'}
           </p>
         </div>
       )}

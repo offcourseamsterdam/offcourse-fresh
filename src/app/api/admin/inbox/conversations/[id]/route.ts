@@ -92,8 +92,12 @@ async function loadGhostProposals(supabase: ReturnType<typeof createAdminClient>
     .limit(20)
   const rows = data ?? []
   return {
+    // The current things to act on:
     replyDraft: rows.find(r => r.kind === 'reply_draft') ?? null,
     bookingProposal: rows.find(r => r.kind === 'booking_proposal') ?? null,
+    // The learning trail: past drafts the human already replied to — draft vs
+    // what was actually sent, so the feedback loop is visible in the inbox.
+    history: rows.filter(r => (r.outcome as { human_reply?: string } | null)?.human_reply),
   }
 }
 

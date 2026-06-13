@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { draftShadowReply } from '@/lib/chat/shadow-drafter'
 import { analyzeDifference } from '@/lib/ghost/compare'
+import { translateToEnglish } from '@/lib/chat/translate'
 import { prepareInboxBookingBody } from '@/lib/ghost/book-from-proposal'
 import type { BookingProposalInput } from '@/lib/ghost/dry-run'
 
@@ -67,6 +68,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const nextOutcome = JSON.parse(JSON.stringify({ ...outcome, comparison: analysis }))
       await supabase.from('agent_proposals').update({ outcome: nextOutcome }).eq('id', id)
       return apiOk({ comparison: analysis })
+    }
+
+    if (body.action === 'translate') {
+      const { data: p } = await supabase.from('agent_proposals').select('payload').eq('id', id).single()
+      const payload = (p?.payload ?? {}) as Record<string, unknown>
+      const reply = typeof payload.reply === 'string' ? payload.reply : ''
+      if (!reply) return apiError('Nothing to translate', 400)
+      const tr = await translateToEnglish(reply)
+      const reply_en = tr?.translation ?? reply // already English → show as-is
+      await supabase
+        .from('agent_proposals')
+        .update({ payload: JSON.parse(JSON.stringify({ ...payload, reply_en })) })
+        .eq('id', id)
+      return apiOk({ reply_en })
     }
 
     if (body.action === 'book') {

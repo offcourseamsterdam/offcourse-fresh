@@ -1,9 +1,17 @@
 'use client'
 
 import { useState } from 'react'
-import { CalendarDays, CalendarPlus, Check, Ghost, Globe, Loader2, Mail, Phone, Sparkles } from 'lucide-react'
+import { CalendarDays, CalendarPlus, Check, Ghost, Globe, Languages, Loader2, Mail, Phone, Sparkles } from 'lucide-react'
 import { adminMutate } from '@/hooks/useAdminSave'
+import { replySimilarity } from '@/lib/ghost/similarity'
 import type { InboxConversationDetail, InboxGhostProposal } from './types'
+
+const NL_EN = /^(english|dutch|en|nl)$/i
+const SIM_BADGE: Record<string, { text: string; cls: string }> = {
+  match: { text: '≈ matched', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  minor: { text: 'minor edits', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  different: { text: 'you rewrote it', cls: 'bg-rose-50 text-rose-700 border-rose-200' },
+}
 
 const STATUS_OPTIONS = ['open', 'pending', 'resolved'] as const
 
@@ -40,20 +48,10 @@ export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
             <Ghost className="w-3.5 h-3.5" /> Ghost co-pilot
           </p>
           {ghost.replyDraft?.payload.reply && (
-            <div className="mb-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 mb-1">Suggested reply</p>
-              <div className="rounded-lg bg-white border border-violet-100 px-3 py-2 text-xs text-zinc-700 whitespace-pre-wrap max-h-32 overflow-y-auto">
-                {ghost.replyDraft.payload.reply}
-              </div>
-              <button
-                onClick={() => onUseDraft(ghost.replyDraft!.payload.reply!)}
-                className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-violet-700 hover:underline"
-              >
-                <Sparkles className="w-3 h-3" /> Use this draft
-              </button>
-            </div>
+            <SuggestedReply proposal={ghost.replyDraft} onUseDraft={onUseDraft} onChanged={onChanged} />
           )}
           {ghost.bookingProposal && <BookingApproval proposal={ghost.bookingProposal} onChanged={onChanged} />}
+          {ghost.history.length > 0 && <LearningTrail history={ghost.history} />}
         </div>
       )}
 
@@ -131,6 +129,99 @@ export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
           ))}
         </div>
       </div>
+    </div>
+  )
+}
+
+/** The suggested reply — with an English read-out when it's not English/Dutch. */
+function SuggestedReply({
+  proposal,
+  onUseDraft,
+  onChanged,
+}: {
+  proposal: InboxGhostProposal
+  onUseDraft: (text: string) => void
+  onChanged: () => void
+}) {
+  const [translating, setTranslating] = useState(false)
+  const reply = proposal.payload.reply!
+  const replyEn = proposal.payload.reply_en
+  const otherLanguage = proposal.payload.language && !NL_EN.test(proposal.payload.language)
+
+  async function translate() {
+    setTranslating(true)
+    try {
+      await adminMutate(`/api/admin/ghost/proposals/${proposal.id}`, 'POST', { action: 'translate' })
+      onChanged()
+    } finally {
+      setTranslating(false)
+    }
+  }
+
+  return (
+    <div className="mb-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 mb-1">
+        Suggested reply{proposal.payload.language ? ` · ${proposal.payload.language}` : ''}
+      </p>
+      <div className="rounded-lg bg-white border border-violet-100 px-3 py-2 text-xs text-zinc-700 whitespace-pre-wrap max-h-32 overflow-y-auto">
+        {reply}
+      </div>
+      {/* You read English + Dutch — show English for anything else. */}
+      {otherLanguage && replyEn && (
+        <div className="mt-1 rounded-lg bg-zinc-50 border border-zinc-200 px-3 py-2 text-xs text-zinc-500 whitespace-pre-wrap max-h-28 overflow-y-auto">
+          <span className="text-[9px] font-semibold uppercase tracking-wide text-zinc-400 block mb-0.5">In English</span>
+          {replyEn}
+        </div>
+      )}
+      <div className="mt-1.5 flex items-center gap-3">
+        <button
+          onClick={() => onUseDraft(reply)}
+          className="inline-flex items-center gap-1 text-xs font-semibold text-violet-700 hover:underline"
+        >
+          <Sparkles className="w-3 h-3" /> Use this draft
+        </button>
+        {otherLanguage && !replyEn && (
+          <button
+            onClick={translate}
+            disabled={translating}
+            className="inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-700 disabled:opacity-50"
+          >
+            {translating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Languages className="w-3 h-3" />} Translate to English
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** The per-conversation learning trail: past drafts vs what you actually sent. */
+function LearningTrail({ history }: { history: InboxGhostProposal[] }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="mt-2 pt-2 border-t border-violet-100">
+      <button onClick={() => setOpen(o => !o)} className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 hover:text-zinc-600">
+        What it&apos;s learned here ({history.length}) {open ? '▾' : '▸'}
+      </button>
+      {open && (
+        <div className="mt-2 space-y-2">
+          {history.map(h => {
+            const draft = h.payload.reply ?? ''
+            const sent = h.outcome?.human_reply ?? ''
+            const sim = replySimilarity(draft, sent)
+            const badge = SIM_BADGE[sim.label]
+            return (
+              <div key={h.id} className="rounded-lg bg-white border border-zinc-200 px-2.5 py-2 text-[11px]">
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-medium ${badge.cls}`}>{badge.text}</span>
+                <p className="text-zinc-400 mt-1">It drafted: <span className="text-zinc-600">{draft.slice(0, 90)}{draft.length > 90 ? '…' : ''}</span></p>
+                <p className="text-zinc-400">You sent: <span className="text-zinc-700">{sent.slice(0, 90)}{sent.length > 90 ? '…' : ''}</span></p>
+                {h.outcome?.comparison && (
+                  <p className="text-violet-600 mt-1">✨ {h.outcome.comparison.summary}</p>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

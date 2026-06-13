@@ -51,6 +51,8 @@ export interface InboxGhostProposal {
   created_at: string
   payload: {
     reply?: string
+    /** English translation of the reply when it's not English/Dutch. */
+    reply_en?: string | null
     language?: string
     booking?: {
       listing_slug?: string
@@ -63,7 +65,12 @@ export interface InboxGhostProposal {
     }
     verdict?: { is_bookable: boolean; error: string | null; receipt_total_eur: number | null }
   }
-  outcome: { booking_id?: string; booked_by?: string } | null
+  outcome: {
+    booking_id?: string
+    booked_by?: string
+    human_reply?: string
+    comparison?: { verdict: 'match' | 'minor' | 'different'; summary: string }
+  } | null
 }
 
 export interface InboxConversationDetail {
@@ -80,6 +87,10 @@ export interface InboxConversationDetail {
   }
   messages: InboxMessage[]
   bookings: InboxBooking[]
-  /** The Ghost's latest unactioned suggestions for this thread (P0 co-pilot). */
-  ghost: { replyDraft: InboxGhostProposal | null; bookingProposal: InboxGhostProposal | null }
+  /** The Ghost's suggestions for this thread + the per-conversation learning trail. */
+  ghost: {
+    replyDraft: InboxGhostProposal | null
+    bookingProposal: InboxGhostProposal | null
+    history: InboxGhostProposal[]
+  }
 }
