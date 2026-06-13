@@ -13,7 +13,7 @@ import type { FHValidationResult } from '@/lib/fareharbor/types'
  *  - Calls ONLY fh.validateBooking (POST /bookings/validate/). It never
  *    references the create or rebook endpoints, and never POSTs to the real
  *    booking route. validate creates no booking, sends no email, holds no
- *    capacity — FareHarbor's contract. (A unit test grep-guards this file
+ *    capacity — FareHarbor's contract. (dry-run.test.ts grep-guards this file
  *    against the forbidden tokens, so even this comment avoids them.)
  *  - Fail-closed: is_bookable is true ONLY on a 200 with is_bookable===true.
  *    Any throw, ambiguity, or missing slot ⇒ is_bookable:false.

@@ -33,7 +33,7 @@ export function levelRank(level: AutonomyLevel): number {
 /**
  * Money / irreversible kinds. Their ceiling is pinned to 'dry_run' forever:
  * the agent may VALIDATE a booking but can never create one, refund, or pay
- * out without a human. Enforced by agents.test.ts + the execute chokepoint.
+ * out without a human. Enforced by agent-runtime.test.ts + the execute chokepoint.
  */
 export const IRREVERSIBLE_KINDS = ['booking_proposal'] as const
 

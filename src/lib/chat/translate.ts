@@ -1,14 +1,12 @@
-import { getClaude, CLAUDE_MODEL } from '@/lib/ai/clients'
-import { recordAiUsage } from '@/lib/ai/usage'
+import { CLAUDE_MODEL, firstText } from '@/lib/ai/clients'
+import { meteredMessage } from '@/lib/ai/usage'
 
 /**
  * Detect the language of a message and translate it to English.
  * Returns null if the message is already English or detection fails.
  */
 export async function translateToEnglish(text: string): Promise<{ translation: string; detected_language: string } | null> {
-  const claude = getClaude()
-
-  const response = await claude.messages.create({
+  const response = await meteredMessage('chat_translate', {
     model: CLAUDE_MODEL,
     max_tokens: 500,
     messages: [
@@ -30,14 +28,7 @@ ${text}
     ],
   })
 
-  await recordAiUsage({
-    feature: 'chat_translate',
-    model: CLAUDE_MODEL,
-    inputTokens: response.usage.input_tokens,
-    outputTokens: response.usage.output_tokens,
-  })
-
-  const raw = response.content[0]?.type === 'text' ? response.content[0].text.trim() : ''
+  const raw = firstText(response)
   if (!raw || raw === 'ENGLISH') return null
 
   const langMatch = raw.match(/^LANGUAGE:\s*(.+)/m)
@@ -68,9 +59,7 @@ export async function translateReply(text: string, targetLocale: string): Promis
   const targetLanguage = LOCALE_NAMES[targetLocale]
   if (!targetLanguage) return text
 
-  const claude = getClaude()
-
-  const response = await claude.messages.create({
+  const response = await meteredMessage('chat_translate', {
     model: CLAUDE_MODEL,
     max_tokens: 500,
     messages: [
@@ -86,12 +75,5 @@ ${text}
     ],
   })
 
-  await recordAiUsage({
-    feature: 'chat_translate',
-    model: CLAUDE_MODEL,
-    inputTokens: response.usage.input_tokens,
-    outputTokens: response.usage.output_tokens,
-  })
-
-  return response.content[0]?.type === 'text' ? response.content[0].text.trim() : text
+  return firstText(response) || text
 }

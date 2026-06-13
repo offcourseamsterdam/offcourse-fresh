@@ -1,5 +1,7 @@
+import type Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { postToChannel } from '@/lib/slack/bot'
+import { getClaude, CLAUDE_MODEL } from '@/lib/ai/clients'
 
 /**
  * The Ghost's fuel gauge — every AI call records its tokens and cost here.
@@ -86,6 +88,26 @@ export async function recordAiUsage({ feature, model, inputTokens, outputTokens 
   } catch (err) {
     console.error('[ai-usage] metering failed:', err instanceof Error ? err.message : err)
   }
+}
+
+/**
+ * Create a Claude message AND meter its token usage in one call, so the
+ * mandatory metering (CLAUDE.md) can never be forgotten at a call site.
+ * The agentic loop meters inline (it owns its own loop); every other Claude
+ * call should go through here.
+ */
+export async function meteredMessage(
+  feature: string,
+  params: Anthropic.MessageCreateParamsNonStreaming,
+): Promise<Anthropic.Message> {
+  const response = await getClaude().messages.create(params)
+  await recordAiUsage({
+    feature,
+    model: typeof params.model === 'string' ? params.model : CLAUDE_MODEL,
+    inputTokens: response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
+  })
+  return response
 }
 
 /** Spend summary for the Ghost page header. */

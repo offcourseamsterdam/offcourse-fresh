@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { apiError, apiOk } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
-import { AUTONOMY_CEILING, IRREVERSIBLE_KINDS, levelRank } from '@/lib/ghost/agents'
+import { AUTONOMY_CEILING, levelRank } from '@/lib/ghost/agents'
 import { dryRunBookingProposal } from '@/lib/ghost/dry-run'
 
 /**
@@ -23,8 +23,9 @@ export async function POST(req: NextRequest) {
     if (!proposalId) return apiError('proposalId is required', 400)
 
     // Defence in depth: the only kind this endpoint serves is booking_proposal,
-    // whose ceiling is 'dry_run'. Anything that could execute is unreachable here.
-    if (IRREVERSIBLE_KINDS.includes('booking_proposal') && levelRank(AUTONOMY_CEILING.booking_proposal) > levelRank('dry_run')) {
+    // whose ceiling is pinned to 'dry_run' — so nothing reachable here can ever
+    // execute a real booking. (The invariant itself is covered by agent-runtime.test.ts.)
+    if (levelRank(AUTONOMY_CEILING.booking_proposal) > levelRank('dry_run')) {
       return apiError('Safety ceiling violated', 500)
     }
 

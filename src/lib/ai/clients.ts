@@ -22,3 +22,9 @@ export function getGemini(): GoogleGenerativeAI {
 
 export const CLAUDE_MODEL = 'claude-sonnet-4-20250514'
 export const GEMINI_MODEL = 'gemini-2.5-flash'
+
+/** First text block of a Claude response, trimmed — or '' if there is none. */
+export function firstText(response: Anthropic.Message): string {
+  const block = response.content[0]
+  return block?.type === 'text' ? block.text.trim() : ''
+}

@@ -5,6 +5,7 @@ import { buildGhostTools } from '@/lib/ghost/tools'
 import { autonomyForKind, levelRank } from '@/lib/ghost/agents'
 import { dryRunBookingProposal } from '@/lib/ghost/dry-run'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { amsterdamToday } from '@/lib/utils'
 
 /**
  * The inbox agent (and its sidekick, the booking agent) — shadow mode.
@@ -165,7 +166,9 @@ export async function draftShadowReply(conversationId: string, triggerMessageId:
     const result = await runAgenticLoop({
       feature: 'ghost_agent_inbox',
       system: OFF_COURSE_SYSTEM_PROMPT,
-      tools: buildGhostTools().filter(t => t.name !== 'get_schedule'),
+      // The inbox agent reasons about replies + bookings, not staffing — give it
+      // exactly those tools (an explicit allow-list, so a new tool can't leak in).
+      tools: buildGhostTools().filter(t => t.name === 'search_availability' || t.name === 'get_customer_bookings'),
       submitTools: [SUBMIT_REPLY, SUBMIT_BOOKING],
       prompt: `You are the shadow inbox agent for Off Course Amsterdam. A customer sent a chat message; investigate what you need (tools), then submit the reply you WOULD send. This is SHADOW mode: nothing is sent or booked — the team compares your work against what a human actually does.
 
@@ -174,7 +177,7 @@ ${knowledgeBlock}${correctionsBlock}CUSTOMER
 - Email: ${contact.email ?? 'unknown'}
 - Locale: ${contact.locale ?? 'unknown'}
 - Internal notes: ${contact.notes ?? 'none'}
-- Today is ${new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Amsterdam' })} (Amsterdam)
+- Today is ${amsterdamToday()} (Amsterdam)
 
 CONVERSATION SO FAR
 ${transcript}

@@ -1,5 +1,5 @@
-import { getClaude, CLAUDE_MODEL } from '@/lib/ai/clients'
-import { recordAiUsage } from '@/lib/ai/usage'
+import { CLAUDE_MODEL, firstText } from '@/lib/ai/clients'
+import { meteredMessage } from '@/lib/ai/usage'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { filterCateringItems, hasCatering, type ExtrasLineItem } from '@/lib/catering/filter'
 import { amsterdamToday } from '@/lib/utils'
@@ -99,8 +99,7 @@ export async function draftTomorrowSchedule(): Promise<'drafted' | 'skipped'> {
       })
       .join('\n')
 
-    const claude = getClaude()
-    const response = await claude.messages.create({
+    const response = await meteredMessage('ghost_schedule_day', {
       model: CLAUDE_MODEL,
       max_tokens: 1000,
       messages: [
@@ -126,15 +125,7 @@ Return JSON only:
       ],
     })
 
-    await recordAiUsage({
-      feature: 'ghost_schedule_day',
-      model: CLAUDE_MODEL,
-      inputTokens: response.usage.input_tokens,
-      outputTokens: response.usage.output_tokens,
-    })
-
-    const raw = response.content[0]?.type === 'text' ? response.content[0].text.trim() : ''
-    const parsed = extractJson(raw)
+    const parsed = extractJson(firstText(response))
     if (!parsed || !Array.isArray(parsed.assignments)) return 'skipped'
 
     await supabase.from('agent_proposals').insert({
@@ -183,8 +174,7 @@ export async function draftCateringOrders(): Promise<'drafted' | 'skipped'> {
       })
       .join('\n')
 
-    const claude = getClaude()
-    const response = await claude.messages.create({
+    const response = await meteredMessage('ghost_catering_order', {
       model: CLAUDE_MODEL,
       max_tokens: 1000,
       messages: [
@@ -203,15 +193,7 @@ Return JSON only:
       ],
     })
 
-    await recordAiUsage({
-      feature: 'ghost_catering_order',
-      model: CLAUDE_MODEL,
-      inputTokens: response.usage.input_tokens,
-      outputTokens: response.usage.output_tokens,
-    })
-
-    const raw = response.content[0]?.type === 'text' ? response.content[0].text.trim() : ''
-    const parsed = extractJson(raw)
+    const parsed = extractJson(firstText(response))
     if (!parsed || !Array.isArray(parsed.orders)) return 'skipped'
 
     await supabase.from('agent_proposals').insert({
