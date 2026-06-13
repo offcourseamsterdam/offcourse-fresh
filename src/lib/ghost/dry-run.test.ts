@@ -8,7 +8,7 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }))
 vi.mock('@/lib/search/fetch-search-results', () => ({ fetchSearchResults: vi.fn() }))
 vi.mock('@/lib/fareharbor/client', () => ({ getFareHarborClient: vi.fn() }))
 
-import { resolveBookingSlot, toVerdict, abstainVerdict, parseOption, dryRunBookingProposal, PLACEHOLDER_CONTACT } from './dry-run'
+import { resolveBookingSlot, toVerdict, abstainVerdict, parseOption, dryRunBookingProposal, checkBookingViability, PLACEHOLDER_CONTACT } from './dry-run'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchSearchResults } from '@/lib/search/fetch-search-results'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
@@ -234,7 +234,7 @@ describe('dryRunBookingProposal', () => {
     vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
     const res = await dryRunBookingProposal('p1')
     expect(res).toMatchObject({ is_bookable: false })
-    expect(res!.error).toContain('missing slug/date/time')
+    expect(res!.error).toContain('missing a listing, date or time')
     // verdict stored, but ONLY the payload column is written — status is never touched
     expect(sb.update).toHaveBeenCalledTimes(1)
     const updateArg = sb.update.mock.calls[0][0]
@@ -288,5 +288,49 @@ describe('dryRunBookingProposal', () => {
     expect(updateArg.payload.verdict).toMatchObject({ is_bookable: true, receipt_total_eur: 400 })
     expect(updateArg.payload.reply).toBe('see you then') // existing payload preserved
     expect(updateArg.payload.booking).toBeTruthy()
+  })
+})
+
+// ── checkBookingViability — the shared core used by the agent's check_booking tool ──
+
+describe('checkBookingViability', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns a bookable verdict (with price) when the slot resolves and FareHarbor accepts', async () => {
+    vi.mocked(fetchSearchResults).mockResolvedValue(results([slot()]) as never)
+    vi.mocked(getFareHarborClient).mockReturnValue(fakeFh({ is_bookable: true, receipt_total: 40000 }).client as never)
+    const v = await checkBookingViability(BOOKING)
+    expect(v).toMatchObject({ is_bookable: true, receipt_total_eur: 400, checked_avail_pk: 9001 })
+  })
+
+  it('returns not-bookable (no FareHarbor call) when the slot no longer resolves', async () => {
+    vi.mocked(fetchSearchResults).mockResolvedValue(results([slot()]) as never)
+    const v = await checkBookingViability({ ...BOOKING, time: '3am' }) // no slot at 3am
+    expect(v.is_bookable).toBe(false)
+    expect(v.error).toContain('3am')
+    expect(getFareHarborClient).not.toHaveBeenCalled()
+  })
+
+  it('passes FareHarbor’s rejection reason straight through for the agent to act on', async () => {
+    vi.mocked(fetchSearchResults).mockResolvedValue(results([slot()]) as never)
+    vi.mocked(getFareHarborClient).mockReturnValue(fakeFh({ is_bookable: false, error: 'Minimum 6 guests on this date' }).client as never)
+    const v = await checkBookingViability(BOOKING)
+    expect(v).toMatchObject({ is_bookable: false, error: 'Minimum 6 guests on this date' })
+  })
+
+  it('abstains (no network) when the booking is missing date/time', async () => {
+    const v = await checkBookingViability({ listing_slug: 'x' })
+    expect(v.is_bookable).toBe(false)
+    expect(fetchSearchResults).not.toHaveBeenCalled()
+  })
+
+  it('sends only the placeholder contact (no PII) when it does validate', async () => {
+    vi.mocked(fetchSearchResults).mockResolvedValue(results([slot()]) as never)
+    const fh = fakeFh({ is_bookable: true, receipt_total: 40000 })
+    vi.mocked(getFareHarborClient).mockReturnValue(fh.client as never)
+    await checkBookingViability(BOOKING)
+    expect(fh.validateBooking.mock.calls[0][1].contact).toEqual(PLACEHOLDER_CONTACT)
   })
 })

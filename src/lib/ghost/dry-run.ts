@@ -154,6 +154,37 @@ export function abstainVerdict(reason: string, ranAt: string): DryRunVerdict {
  * Best-effort: never throws. Idempotent-friendly (callers may skip if a
  * verdict already exists). Returns the verdict (or null if not applicable).
  */
+/**
+ * Would this booking actually go through? Re-derives the exact FareHarbor slot
+ * from a human-readable booking request and runs a non-mutating validate.
+ * Returns a verdict — never stores anything. This is the shared core used both
+ * by the agent's in-loop `check_booking` tool (so it sees failures and
+ * self-corrects) and by the post-loop verdict recorder below.
+ *
+ * Calls ONLY fh.validateBooking — creates no booking, sends no email, holds no
+ * capacity. May throw (FareHarbor down); callers decide how to handle.
+ */
+export async function checkBookingViability(input: BookingProposalInput): Promise<DryRunVerdict> {
+  const ranAt = new Date().toISOString()
+  if (!input.listing_slug || !input.date || !input.time) {
+    return abstainVerdict('Booking is missing a listing, date or time', ranAt)
+  }
+
+  // Re-derive the exact FareHarbor slot from the human-readable request.
+  const results = await fetchSearchResults(input.date, Number(input.guests ?? 2))
+  const resolved = resolveBookingSlot(results, input)
+  if ('error' in resolved) return abstainVerdict(resolved.error, ranAt)
+
+  // The ONLY FareHarbor write this module performs — a non-mutating validate.
+  const fh = getFareHarborClient()
+  const validation = await fh.validateBooking(resolved.availPk, {
+    contact: PLACEHOLDER_CONTACT,
+    customers: [{ customer_type_rate: resolved.customerTypeRatePk }],
+    note: 'Ghost dry-run capability check — not a real booking',
+  })
+  return toVerdict(validation, resolved.availPk, ranAt)
+}
+
 export async function dryRunBookingProposal(proposalId: string): Promise<DryRunVerdict | null> {
   const ranAt = new Date().toISOString()
   try {
@@ -167,26 +198,7 @@ export async function dryRunBookingProposal(proposalId: string): Promise<DryRunV
 
     const payload = (proposal.payload ?? {}) as Record<string, unknown>
     const booking = (payload.booking ?? {}) as BookingProposalInput
-    if (!booking.listing_slug || !booking.date || !booking.time) {
-      return await storeVerdict(supabase, proposal.id, payload, abstainVerdict('Proposal missing slug/date/time', ranAt))
-    }
-
-    // Re-derive the exact FareHarbor slot from the human-readable proposal.
-    const results = await fetchSearchResults(booking.date, Number(booking.guests ?? 2))
-    const resolved = resolveBookingSlot(results, booking)
-    if ('error' in resolved) {
-      return await storeVerdict(supabase, proposal.id, payload, abstainVerdict(resolved.error, ranAt))
-    }
-
-    // The ONLY FareHarbor write this module performs — a non-mutating validate.
-    const fh = getFareHarborClient()
-    const validation = await fh.validateBooking(resolved.availPk, {
-      contact: PLACEHOLDER_CONTACT,
-      customers: [{ customer_type_rate: resolved.customerTypeRatePk }],
-      note: 'Ghost dry-run capability check — not a real booking',
-    })
-
-    const verdict = toVerdict(validation, resolved.availPk, ranAt)
+    const verdict = await checkBookingViability(booking)
     return await storeVerdict(supabase, proposal.id, payload, verdict)
   } catch (err) {
     console.error('[ghost/dry-run] failed:', err instanceof Error ? err.message : err)

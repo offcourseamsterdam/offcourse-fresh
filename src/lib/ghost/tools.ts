@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchSearchResults } from '@/lib/search/fetch-search-results'
 import { amsterdamToday } from '@/lib/utils'
+import { checkBookingViability } from './dry-run'
 import type { AgentTool } from './agent-runtime'
 
 /**
@@ -144,6 +145,34 @@ export function buildGhostTools(): AgentTool[] {
           staff: staff.data ?? [],
           availability: availability.data ?? [],
         }
+      },
+    },
+    {
+      name: 'check_booking',
+      description:
+        'Before you PROPOSE or PROMISE a specific booking, call this to confirm FareHarbor would actually accept it. Pass the exact slug, date, time, guests, and boat+duration option (from search_availability). Returns { bookable: true, price_eur } or { bookable: false, reason } (sold out, party too small/large, slot gone, ambiguous option). Never promise a booking you have not checked here — if it comes back not bookable, explain why and offer an alternative instead.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          listing_slug: { type: 'string' },
+          date: DATE_SCHEMA,
+          time: { type: 'string', description: 'Departure time exactly as shown by search_availability, e.g. 5pm' },
+          guests: { type: 'number', description: 'Party size' },
+          option: { type: 'string', description: 'Boat + duration, e.g. "Diana - 2 Hours"' },
+        },
+        required: ['listing_slug', 'date', 'time', 'guests'],
+      },
+      run: async input => {
+        const verdict = await checkBookingViability({
+          listing_slug: String(input.listing_slug ?? ''),
+          date: String(input.date ?? ''),
+          time: String(input.time ?? ''),
+          guests: Number(input.guests ?? 2),
+          option: input.option ? String(input.option) : undefined,
+        })
+        return verdict.is_bookable
+          ? { bookable: true, price_eur: verdict.receipt_total_eur }
+          : { bookable: false, reason: verdict.error ?? verdict.code ?? 'not bookable' }
       },
     },
   ]
