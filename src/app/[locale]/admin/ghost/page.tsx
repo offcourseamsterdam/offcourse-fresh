@@ -5,12 +5,16 @@ import {
   BookOpen,
   CalendarClock,
   CalendarPlus,
+  CheckCircle2,
+  Circle,
   Euro,
   Ghost,
   HelpCircle,
   Inbox,
   Loader2,
   Package,
+  RefreshCw,
+  Sparkles,
   UtensilsCrossed,
   Wrench,
 } from 'lucide-react'
@@ -18,6 +22,7 @@ import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { adminMutate } from '@/hooks/useAdminSave'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { GHOST_AGENTS, agentForKind, agentAutonomy } from '@/lib/ghost/agents'
+import { replySimilarity, type SimilarityLabel } from '@/lib/ghost/similarity'
 import { formatAmsterdamTime } from '@/lib/utils'
 
 /**
@@ -85,7 +90,13 @@ interface GhostProposal {
   reasoning: string | null
   status: string
   model: string | null
-  outcome: { human_reply?: string; replied_by?: string; replied_at?: string } | null
+  outcome: {
+    human_reply?: string
+    replied_by?: string
+    replied_at?: string
+    comparison?: { verdict: SimilarityLabel; summary: string }
+  } | null
+  reviewed_at: string | null
   created_at: string
   conversation: {
     id: string
@@ -97,26 +108,34 @@ interface GhostProposal {
 
 interface GhostData {
   proposals: GhostProposal[]
+  hasMore: boolean
   spend: { totalEur: number; last30dEur: number; calls: number }
   stats: {
     total: number
+    reviewed: number
     byKind: Record<string, number>
     corrected: number
     awaitingComparison: number
     openQuestions: number
     knowledgeEntries: number
   }
-  openQuestions: { proposal_id: string; question: string; created_at: string }[]
+  openQuestions: { proposal_id: string; question: string; contact: string | null; created_at: string }[]
   knowledge: { id: string; question: string; answer: string; pinned: boolean; created_at: string }[]
 }
 
 const POLL_MS = 15_000
 
+const PAGE_SIZE = 25
+
 export default function GhostPage() {
-  const { data, isLoading, error, refresh } = useAdminFetch<GhostData>('/api/admin/ghost', {
-    refreshInterval: POLL_MS,
-  })
   const [agentFilter, setAgentFilter] = useState<string | null>(null)
+  const [unreviewedOnly, setUnreviewedOnly] = useState(false)
+  const [limit, setLimit] = useState(PAGE_SIZE)
+
+  const { data, isLoading, error, refresh } = useAdminFetch<GhostData>(
+    `/api/admin/ghost?limit=${limit}&reviewed=${unreviewedOnly ? 'unreviewed' : 'all'}`,
+    { refreshInterval: POLL_MS },
+  )
 
   const allProposals = data?.proposals ?? []
   const proposals = agentFilter
@@ -162,7 +181,7 @@ export default function GhostPage() {
       {/* Stats strip — is it learning? */}
       {data && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
-          <StatCard label="Proposals" value={data.stats.total} sub={Object.entries(data.stats.byKind).map(([k, n]) => `${n} ${KIND_META[k]?.label?.toLowerCase() ?? k}`).join(' · ')} />
+          <StatCard label="Proposals" value={data.stats.total} sub={`${data.stats.reviewed} reviewed · ${data.stats.total - data.stats.reviewed} to review`} />
           <StatCard label="Corrected by you" value={data.stats.corrected} sub={`${data.stats.awaitingComparison} awaiting your reply`} accent="violet" />
           <StatCard label="Open questions" value={data.stats.openQuestions} sub="answer them below" accent={data.stats.openQuestions > 0 ? 'amber' : undefined} />
           <StatCard label="Things taught" value={data.stats.knowledgeEntries} sub="in every future draft" accent="emerald" />
@@ -224,11 +243,37 @@ export default function GhostPage() {
         </div>
       )}
 
+      {/* Proposal list header — filters */}
+      {data && (
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-sm font-semibold text-zinc-700">
+            Proposals
+            {agentFilter && (
+              <button onClick={() => setAgentFilter(null)} className="ml-2 text-xs font-normal text-violet-600 hover:underline">
+                clear filter ✕
+              </button>
+            )}
+          </p>
+          <button
+            onClick={() => { setUnreviewedOnly(v => !v); setLimit(PAGE_SIZE) }}
+            className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border transition-colors ${
+              unreviewedOnly ? 'border-violet-400 bg-violet-50 text-violet-700' : 'border-zinc-200 text-zinc-500 hover:bg-zinc-100'
+            }`}
+          >
+            <Circle className="w-3 h-3" /> Unreviewed only
+          </button>
+        </div>
+      )}
+
       {data && proposals.length === 0 && (
         <div className="rounded-xl border border-dashed border-zinc-300 p-10 text-center">
           <Ghost className="w-8 h-8 text-zinc-300 mx-auto mb-3" />
           <p className="text-sm text-zinc-500">
-            Nothing yet — the Ghost wakes up on customer messages and the daily ops cron.
+            {unreviewedOnly
+              ? 'All caught up — nothing left to review.'
+              : agentFilter
+                ? 'No proposals from this agent yet.'
+                : 'Nothing yet — the Ghost wakes up on customer messages and the daily ops cron.'}
           </p>
         </div>
       )}
@@ -238,6 +283,16 @@ export default function GhostPage() {
           <ProposalCard key={p.id} proposal={p} onChanged={refresh} />
         ))}
       </div>
+
+      {/* Pagination — grow the page; newest stay live-polled */}
+      {data?.hasMore && !agentFilter && (
+        <button
+          onClick={() => setLimit(l => l + PAGE_SIZE)}
+          className="mt-4 w-full rounded-lg border border-zinc-200 bg-white py-2.5 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
+        >
+          Load older proposals
+        </button>
+      )}
 
       {/* The visible memory — every fact the team has taught the Ghost */}
       {data && data.knowledge.length > 0 && (
@@ -264,7 +319,7 @@ function QuestionsPanel({
   questions,
   onAnswered,
 }: {
-  questions: { proposal_id: string; question: string; created_at: string }[]
+  questions: { proposal_id: string; question: string; contact: string | null; created_at: string }[]
   onAnswered: () => void
 }) {
   const [drafts, setDrafts] = useState<Record<string, string>>({})
@@ -305,6 +360,7 @@ function QuestionsPanel({
           <div key={q.proposal_id} className="bg-white rounded-lg border border-amber-200 p-3">
             <p className="text-sm text-zinc-800 mb-2">
               <span className="font-medium">{q.question}</span>
+              {q.contact && <span className="ml-2 text-[11px] text-amber-600">· from {q.contact}</span>}
               <span className="ml-2 text-[11px] text-zinc-400">{formatAmsterdamTime(q.created_at)}</span>
             </p>
             <div className="flex items-end gap-2">
@@ -460,13 +516,39 @@ function KnowledgePanel({
   )
 }
 
+const COMPARE_BADGE: Record<SimilarityLabel, { text: string; cls: string }> = {
+  match: { text: '≈ matched your reply', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  minor: { text: 'minor edits', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  different: { text: 'you rewrote it', cls: 'bg-rose-50 text-rose-700 border-rose-200' },
+}
+
 function ProposalCard({ proposal: p, onChanged }: { proposal: GhostProposal; onChanged: () => void }) {
   const meta = KIND_META[p.kind] ?? { label: p.kind, Icon: Ghost }
   const agent = agentForKind(p.kind)
   const conversational = p.kind === 'reply_draft' || p.kind === 'booking_proposal'
+  const reviewed = !!p.reviewed_at
+  const [busy, setBusy] = useState<'review' | 'redraft' | 'compare' | null>(null)
+
+  async function act(action: 'review' | 'redraft' | 'compare', extra: Record<string, unknown> = {}) {
+    setBusy(action)
+    try {
+      await adminMutate(`/api/admin/ghost/proposals/${p.id}`, 'POST', { action, ...extra })
+      onChanged()
+    } catch {
+      /* surfaced by the page error banner on next poll */
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  // The cheap, always-on "did it match?" badge (the deep AI explanation is on demand).
+  const sim =
+    conversational && p.payload.reply && p.outcome?.human_reply
+      ? replySimilarity(p.payload.reply, p.outcome.human_reply)
+      : null
 
   return (
-    <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
+    <div className={`bg-white rounded-xl border overflow-hidden ${reviewed ? 'border-zinc-200' : 'border-violet-200'}`}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-100 bg-zinc-50/60">
         <div className="flex items-center gap-2 min-w-0">
@@ -564,15 +646,33 @@ function ProposalCard({ proposal: p, onChanged }: { proposal: GhostProposal; onC
 
             {p.outcome?.human_reply && (
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-600 mb-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-600 mb-1 flex items-center gap-2">
                   {p.outcome.replied_by ?? 'You'} actually replied
+                  {sim && (
+                    <span className={`text-[9px] normal-case px-1.5 py-0.5 rounded-full border font-medium ${COMPARE_BADGE[sim.label].cls}`}>
+                      {COMPARE_BADGE[sim.label].text}
+                    </span>
+                  )}
                 </p>
                 <div className="rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2 text-sm text-emerald-900 whitespace-pre-wrap">
                   {p.outcome.human_reply}
                 </div>
-                <p className="text-[11px] text-zinc-400 mt-1">
-                  This pair is now a lesson — the Ghost sees it in future drafts.
-                </p>
+                {/* The lesson — what changed, on demand */}
+                {p.outcome.comparison ? (
+                  <p className="text-[11px] text-zinc-500 mt-1.5 bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-1.5">
+                    <Sparkles className="w-3 h-3 inline mr-1 -mt-0.5 text-violet-500" />
+                    <span className="font-semibold text-zinc-600">Lesson:</span> {p.outcome.comparison.summary}
+                  </p>
+                ) : (
+                  <button
+                    onClick={() => act('compare')}
+                    disabled={busy === 'compare'}
+                    className="text-[11px] text-violet-600 hover:underline mt-1.5 inline-flex items-center gap-1 disabled:opacity-50"
+                  >
+                    {busy === 'compare' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                    What did the Ghost learn from this?
+                  </button>
+                )}
               </div>
             )}
             {p.payload.open_question && (
@@ -634,6 +734,37 @@ function ProposalCard({ proposal: p, onChanged }: { proposal: GhostProposal; onC
             <span className="font-semibold text-zinc-600">Reasoning:</span> {p.reasoning}
           </p>
         )}
+
+        {/* Actions — review triage + re-draft */}
+        <div className="flex items-center gap-2 pt-2 border-t border-zinc-100">
+          <button
+            onClick={() => act('review', { reviewed: !reviewed })}
+            disabled={busy === 'review'}
+            className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md transition-colors disabled:opacity-50 ${
+              reviewed ? 'text-emerald-600 hover:bg-emerald-50' : 'text-zinc-500 hover:bg-zinc-100'
+            }`}
+          >
+            {busy === 'review' ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : reviewed ? (
+              <CheckCircle2 className="w-3.5 h-3.5" />
+            ) : (
+              <Circle className="w-3.5 h-3.5" />
+            )}
+            {reviewed ? 'Reviewed' : 'Mark reviewed'}
+          </button>
+          {conversational && (
+            <button
+              onClick={() => act('redraft')}
+              disabled={busy === 'redraft'}
+              title="Re-run the agent for this conversation — e.g. after you teach it something"
+              className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md text-zinc-500 hover:bg-zinc-100 transition-colors disabled:opacity-50"
+            >
+              {busy === 'redraft' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              Re-draft
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

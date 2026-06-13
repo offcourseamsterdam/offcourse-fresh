@@ -84,9 +84,9 @@ describe('admin route auth contract', () => {
     //    + 7 /api/admin/scheduling/** routes (staff, staff/[id], sync, shifts, shifts/[id], payroll, payroll/csv)
     //    + 4 /api/admin/inbox/** routes (conversations, conversations/[id], …/messages, open-count)
     //    + 1 /api/admin/inbox/conversations/[id]/messages/[msgId]/translate
-    //    + 3 /api/admin/ghost/** (proposals read-only, knowledge POST/PATCH, dry-run POST)
+    //    + 4 /api/admin/ghost/** (proposals read-only, knowledge POST/PATCH, dry-run POST, proposals/[id] actions)
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`90`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`91`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {

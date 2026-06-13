@@ -64,6 +64,7 @@ export type Database = {
           outcome: Json | null
           payload: Json
           reasoning: string | null
+          reviewed_at: string | null
           status: string
           trigger_message_id: string | null
         }
@@ -77,6 +78,7 @@ export type Database = {
           outcome?: Json | null
           payload: Json
           reasoning?: string | null
+          reviewed_at?: string | null
           status?: string
           trigger_message_id?: string | null
         }
@@ -90,6 +92,7 @@ export type Database = {
           outcome?: Json | null
           payload?: Json
           reasoning?: string | null
+          reviewed_at?: string | null
           status?: string
           trigger_message_id?: string | null
         }
@@ -3309,6 +3312,7 @@ export type Database = {
     }
     Functions: {
       get_translatable_columns: { Args: never; Returns: Json }
+      ghost_stats: { Args: never; Returns: Json }
       set_section_text_color: {
         Args: { p_role: string; p_section: string; p_value: string }
         Returns: {
