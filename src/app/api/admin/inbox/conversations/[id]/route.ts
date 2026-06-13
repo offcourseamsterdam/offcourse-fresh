@@ -33,7 +33,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     if (error) return apiError(error.message)
     if (!conversation) return apiError('Conversation not found', 404)
 
-    const [{ data: messages, error: msgError }, bookings] = await Promise.all([
+    const [{ data: messages, error: msgError }, bookings, ghost] = await Promise.all([
       supabase
         .from('messages')
         .select('id, direction, body, author_name, status, error, created_at')
@@ -41,6 +41,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
         .order('created_at', { ascending: true })
         .limit(500),
       loadContactBookings(supabase, conversation.contact),
+      loadGhostProposals(supabase, id),
     ])
     if (msgError) return apiError(msgError.message)
 
@@ -49,7 +50,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
       await supabase.from('conversations').update({ unread_count: 0 }).eq('id', id)
     }
 
-    return apiOk({ conversation, messages: messages ?? [], bookings })
+    return apiOk({ conversation, messages: messages ?? [], bookings, ghost })
   } catch (err) {
     return apiError(err instanceof Error ? err.message : 'Failed to load conversation')
   }
@@ -74,6 +75,26 @@ async function loadContactBookings(
     .order('booking_date', { ascending: false })
     .limit(10)
   return data ?? []
+}
+
+/**
+ * The Ghost's latest unactioned suggestions for this conversation (P0 co-pilot):
+ * the newest reply_draft and the newest booking_proposal, surfaced in the inbox
+ * so the human can act on them where the work happens.
+ */
+async function loadGhostProposals(supabase: ReturnType<typeof createAdminClient>, conversationId: string) {
+  const { data } = await supabase
+    .from('agent_proposals')
+    .select('id, kind, status, reasoning, payload, outcome, created_at')
+    .eq('conversation_id', conversationId)
+    .in('kind', ['reply_draft', 'booking_proposal'])
+    .order('created_at', { ascending: false })
+    .limit(20)
+  const rows = data ?? []
+  return {
+    replyDraft: rows.find(r => r.kind === 'reply_draft') ?? null,
+    bookingProposal: rows.find(r => r.kind === 'booking_proposal') ?? null,
+  }
 }
 
 export async function PATCH(req: NextRequest, { params }: RouteParams) {

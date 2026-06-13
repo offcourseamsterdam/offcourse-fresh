@@ -1,20 +1,22 @@
 'use client'
 
 import { useState } from 'react'
-import { CalendarDays, Globe, Mail, Phone } from 'lucide-react'
+import { CalendarDays, CalendarPlus, Check, Ghost, Globe, Loader2, Mail, Phone, Sparkles } from 'lucide-react'
 import { adminMutate } from '@/hooks/useAdminSave'
-import type { InboxConversationDetail } from './types'
+import type { InboxConversationDetail, InboxGhostProposal } from './types'
 
 const STATUS_OPTIONS = ['open', 'pending', 'resolved'] as const
 
 interface Props {
   detail: InboxConversationDetail
   onChanged: () => void
+  /** Drop a suggested reply into the composer. */
+  onUseDraft: (text: string) => void
 }
 
-/** Right pane — who you're talking to: contact card, their bookings, workflow. */
-export function ContextPane({ detail, onChanged }: Props) {
-  const { conversation, bookings } = detail
+/** Right pane — who you're talking to: Ghost co-pilot, contact card, bookings, workflow. */
+export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
+  const { conversation, bookings, ghost } = detail
   const contact = conversation.contact
   const [saving, setSaving] = useState(false)
 
@@ -31,6 +33,30 @@ export function ContextPane({ detail, onChanged }: Props) {
 
   return (
     <div className="h-full overflow-y-auto p-4 space-y-5">
+      {/* Ghost co-pilot — act on what the agent suggests, where the work happens */}
+      {(ghost?.replyDraft || ghost?.bookingProposal) && (
+        <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-3">
+          <p className="text-[10px] font-semibold tracking-widest uppercase text-violet-500 mb-2 inline-flex items-center gap-1.5">
+            <Ghost className="w-3.5 h-3.5" /> Ghost co-pilot
+          </p>
+          {ghost.replyDraft?.payload.reply && (
+            <div className="mb-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 mb-1">Suggested reply</p>
+              <div className="rounded-lg bg-white border border-violet-100 px-3 py-2 text-xs text-zinc-700 whitespace-pre-wrap max-h-32 overflow-y-auto">
+                {ghost.replyDraft.payload.reply}
+              </div>
+              <button
+                onClick={() => onUseDraft(ghost.replyDraft!.payload.reply!)}
+                className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-violet-700 hover:underline"
+              >
+                <Sparkles className="w-3 h-3" /> Use this draft
+              </button>
+            </div>
+          )}
+          {ghost.bookingProposal && <BookingApproval proposal={ghost.bookingProposal} onChanged={onChanged} />}
+        </div>
+      )}
+
       {/* Workflow */}
       <div>
         <p className="text-[10px] font-semibold tracking-widest uppercase text-zinc-400 mb-2">Status</p>
@@ -105,6 +131,79 @@ export function ContextPane({ detail, onChanged }: Props) {
           ))}
         </div>
       </div>
+    </div>
+  )
+}
+
+/** The money action: approve a validated booking_proposal → create it for real. */
+function BookingApproval({ proposal, onChanged }: { proposal: InboxGhostProposal; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState(false)
+  const b = proposal.payload.booking
+  const verdict = proposal.payload.verdict
+  const executed = proposal.status === 'executed'
+  if (!b) return null
+
+  async function createBooking() {
+    setBusy(true)
+    setError(null)
+    try {
+      await adminMutate(`/api/admin/ghost/proposals/${proposal.id}`, 'POST', { action: 'book' })
+      onChanged()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create the booking')
+      setConfirming(false)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 mb-1">Proposed booking</p>
+      <div className="rounded-lg bg-white border border-indigo-100 px-3 py-2 text-xs text-indigo-900">
+        <span className="font-semibold">{b.listing_title}</span>
+        <span className="block mt-0.5 text-zinc-600">
+          {b.date} · {b.time} · {b.guests} guests{b.option ? ` · ${b.option}` : ''}{b.price_eur ? ` · €${b.price_eur}` : ''}
+        </span>
+      </div>
+
+      {executed ? (
+        <p className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
+          <Check className="w-3.5 h-3.5" /> Booked
+        </p>
+      ) : verdict && !verdict.is_bookable ? (
+        <p className="mt-1.5 text-xs text-amber-700">Not bookable right now — {verdict.error ?? 'unavailable'}.</p>
+      ) : confirming ? (
+        <div className="mt-1.5">
+          <p className="text-[11px] text-zinc-500 mb-1.5">
+            This creates a <span className="font-semibold">real FareHarbor booking</span> (recorded as
+            complimentary — no payment taken) and sends the customer a confirmation email. Continue?
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={createBooking}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CalendarPlus className="w-3.5 h-3.5" />}
+              Yes, create it
+            </button>
+            <button onClick={() => setConfirming(false)} disabled={busy} className="text-xs text-zinc-500 hover:text-zinc-700">
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => setConfirming(true)}
+          className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-indigo-700"
+        >
+          <CalendarPlus className="w-3.5 h-3.5" /> Approve &amp; create booking
+        </button>
+      )}
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
     </div>
   )
 }

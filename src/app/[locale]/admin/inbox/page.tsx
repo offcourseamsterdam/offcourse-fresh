@@ -21,6 +21,8 @@ const THREAD_POLL_MS = 5_000
 export default function AdminInboxPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('open')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // "Use this draft" in the Ghost co-pilot drops text into the thread composer.
+  const [composerPrefill, setComposerPrefill] = useState<string | null>(null)
 
   const list = useAdminFetch<{ conversations: InboxListItem[] }>(
     `/api/admin/inbox/conversations?status=${statusFilter}`,
@@ -80,14 +82,20 @@ export default function AdminInboxPage() {
               </div>
             )}
             {selectedId && detail.data && (
-              <ThreadPane detail={detail.data} onSent={refreshAll} onBack={() => setSelectedId(null)} />
+              <ThreadPane
+                detail={detail.data}
+                onSent={refreshAll}
+                onBack={() => setSelectedId(null)}
+                prefill={composerPrefill}
+                onPrefillConsumed={() => setComposerPrefill(null)}
+              />
             )}
           </div>
 
           {/* Right — customer context (desktop only; xl) */}
           {selectedId && detail.data && (
             <div className="hidden xl:block w-72 border-l border-zinc-100 shrink-0">
-              <ContextPane detail={detail.data} onChanged={refreshAll} />
+              <ContextPane detail={detail.data} onChanged={refreshAll} onUseDraft={setComposerPrefill} />
             </div>
           )}
         </div>

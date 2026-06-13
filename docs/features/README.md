@@ -21,3 +21,4 @@ One file per track or major feature. Written before every PR and kept up to date
 | Headless WordPress blog (WP SEO AI) | [wordpress-blog.md](wordpress-blog.md) | — | done |
 | Customer chat & unified inbox (webchat phase 1) | [customer-chat-inbox.md](customer-chat-inbox.md) | — | done |
 | Ghost shadow AI (proposals, ops drafters, cost meter) | [ghost-shadow-ai.md](ghost-shadow-ai.md) | — | done |
+| Ghost inbox co-pilot (P0: act from the inbox) | [ghost-inbox-copilot.md](ghost-inbox-copilot.md) | — | done |

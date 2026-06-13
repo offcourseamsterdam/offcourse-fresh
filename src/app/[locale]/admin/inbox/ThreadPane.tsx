@@ -13,6 +13,9 @@ interface Props {
   onSent: () => void
   /** Mobile drill-in: go back to the list. */
   onBack: () => void
+  /** Text pushed in from the Ghost co-pilot's "Use this draft". */
+  prefill?: string | null
+  onPrefillConsumed?: () => void
 }
 
 interface Translation {
@@ -21,10 +24,20 @@ interface Translation {
 }
 
 /** Middle pane — the thread, chronological, plus the Reply/Note composer. */
-export function ThreadPane({ detail, onSent, onBack }: Props) {
+export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed }: Props) {
   const { conversation, messages } = detail
   const [mode, setMode] = useState<'out' | 'note'>('out')
   const [draft, setDraft] = useState('')
+
+  // A "Use this draft" click in the co-pilot drops its text into the composer.
+  useEffect(() => {
+    if (prefill) {
+      setDraft(prefill)
+      setMode('out')
+      onPrefillConsumed?.()
+    }
+  }, [prefill, onPrefillConsumed])
+
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [translations, setTranslations] = useState<Record<string, Translation>>({})
