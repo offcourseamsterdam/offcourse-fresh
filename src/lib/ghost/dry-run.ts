@@ -29,7 +29,7 @@ import type { FHValidationResult } from '@/lib/fareharbor/types'
 // VALID format though: FareHarbor's validate rejects malformed contacts (the
 // .invalid TLD and all-zero phone fail its check), so we use a syntactically
 // valid, role-based address on our own domain + a valid-format NL mobile.
-const PLACEHOLDER_CONTACT = {
+export const PLACEHOLDER_CONTACT = {
   name: 'Ghost dry-run (capability check)',
   email: 'ghost-dryrun@offcourseamsterdam.com',
   phone: '+31612345678',

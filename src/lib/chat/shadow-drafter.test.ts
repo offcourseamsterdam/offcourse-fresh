@@ -1,5 +1,11 @@
-import { describe, it, expect } from 'vitest'
-import { validateSubmission } from './shadow-drafter'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+// Mock the DB client so we can force a failure and prove the drafter swallows it.
+// vitest hoists vi.mock above all imports.
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }))
+
+import { validateSubmission, draftShadowReply } from './shadow-drafter'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 describe('validateSubmission', () => {
   it('accepts a complete reply submission', () => {
@@ -54,5 +60,21 @@ describe('validateSubmission', () => {
 
   it('drops non-object booking values', () => {
     expect(validateSubmission({ reply: 'Hi', booking: 'tomorrow' })?.booking).toBeUndefined()
+  })
+})
+
+describe('draftShadowReply — never breaks the customer flow', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  it('swallows errors and resolves without throwing', async () => {
+    // The drafter runs in after() on the customer's send path — a failure here
+    // must never surface. Force the very first DB call to throw.
+    vi.mocked(createAdminClient).mockImplementation(() => {
+      throw new Error('db unreachable')
+    })
+    await expect(draftShadowReply('conv-1', 'msg-1')).resolves.toBeUndefined()
   })
 })

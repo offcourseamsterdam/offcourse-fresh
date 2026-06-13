@@ -1,8 +1,19 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { resolveBookingSlot, toVerdict, abstainVerdict, parseOption } from './dry-run'
+
+// Mock the orchestrator's I/O so dryRunBookingProposal runs with no network.
+// vitest hoists vi.mock above all imports.
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }))
+vi.mock('@/lib/search/fetch-search-results', () => ({ fetchSearchResults: vi.fn() }))
+vi.mock('@/lib/fareharbor/client', () => ({ getFareHarborClient: vi.fn() }))
+
+import { resolveBookingSlot, toVerdict, abstainVerdict, parseOption, dryRunBookingProposal, PLACEHOLDER_CONTACT } from './dry-run'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { fetchSearchResults } from '@/lib/search/fetch-search-results'
+import { getFareHarborClient } from '@/lib/fareharbor/client'
 import type { SearchResult } from '@/types'
+import type { FHValidationResult } from '@/lib/fareharbor/types'
 
 function slot(over: Partial<SearchResult['availableSlots'][0]> = {}) {
   return {
@@ -173,5 +184,109 @@ describe('SAFETY: dry-run module never reaches the create path', () => {
     expect(src).not.toContain('booking-flow/book')
     // It DOES use the non-mutating validate.
     expect(src).toContain('validateBooking')
+  })
+})
+
+// ── dryRunBookingProposal — orchestration (mocked Supabase + FareHarbor + search) ──
+
+/** Chainable Supabase stub: read = from().select().eq().single(); write = from().update().eq(). */
+function fakeSupabase(proposal: unknown) {
+  const eqUpdate = vi.fn().mockResolvedValue({ error: null })
+  const update = vi.fn().mockReturnValue({ eq: eqUpdate })
+  const single = vi.fn().mockResolvedValue({ data: proposal })
+  const from = vi.fn().mockReturnValue({
+    select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ single }) }),
+    update,
+  })
+  return { client: { from }, update, from }
+}
+
+function fakeFh(validation: FHValidationResult) {
+  const validateBooking = vi.fn().mockResolvedValue(validation)
+  return { client: { validateBooking }, validateBooking }
+}
+
+const BOOKING = {
+  listing_slug: 'private-hidden-gems-cruise',
+  date: '2026-06-20',
+  time: '5pm',
+  guests: 4,
+  option: 'Diana 2h',
+}
+
+describe('dryRunBookingProposal', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  it('returns null for a non-booking proposal (and never touches FareHarbor)', async () => {
+    const sb = fakeSupabase({ id: 'p1', kind: 'reply_draft', payload: {} })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    const res = await dryRunBookingProposal('p1')
+    expect(res).toBeNull()
+    expect(getFareHarborClient).not.toHaveBeenCalled()
+    expect(sb.update).not.toHaveBeenCalled()
+  })
+
+  it('stores an abstain verdict (status stays shadow) when slug/date/time is missing', async () => {
+    const sb = fakeSupabase({ id: 'p1', kind: 'booking_proposal', payload: { booking: { guests: 4 } } })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    const res = await dryRunBookingProposal('p1')
+    expect(res).toMatchObject({ is_bookable: false })
+    expect(res!.error).toContain('missing slug/date/time')
+    // verdict stored, but ONLY the payload column is written — status is never touched
+    expect(sb.update).toHaveBeenCalledTimes(1)
+    const updateArg = sb.update.mock.calls[0][0]
+    expect(Object.keys(updateArg)).toEqual(['payload'])
+    expect(updateArg.payload.verdict.is_bookable).toBe(false)
+    // never reached availability or FareHarbor
+    expect(fetchSearchResults).not.toHaveBeenCalled()
+    expect(getFareHarborClient).not.toHaveBeenCalled()
+  })
+
+  it('sends ONLY the placeholder contact to FareHarbor — never real customer PII', async () => {
+    const sb = fakeSupabase({ id: 'p1', kind: 'booking_proposal', payload: { booking: BOOKING } })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(fetchSearchResults).mockResolvedValue(results([slot()]) as never)
+    const fh = fakeFh({ is_bookable: true, receipt_total: 40000 })
+    vi.mocked(getFareHarborClient).mockReturnValue(fh.client as never)
+
+    await dryRunBookingProposal('p1')
+
+    expect(fh.validateBooking).toHaveBeenCalledTimes(1)
+    const [availPk, request] = fh.validateBooking.mock.calls[0]
+    expect(availPk).toBe(9001)
+    expect(request.contact).toEqual(PLACEHOLDER_CONTACT)
+    expect(request.contact.email).toBe('ghost-dryrun@offcourseamsterdam.com')
+    expect(request.customers).toEqual([{ customer_type_rate: 7001 }])
+  })
+
+  it('returns an abstain verdict WITHOUT storing when something throws (leaves it pending)', async () => {
+    const sb = fakeSupabase({ id: 'p1', kind: 'booking_proposal', payload: { booking: BOOKING } })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(fetchSearchResults).mockRejectedValue(new Error('FareHarbor down'))
+
+    const res = await dryRunBookingProposal('p1')
+    expect(res).toMatchObject({ is_bookable: false })
+    expect(res!.error).toContain('Dry-run errored')
+    expect(sb.update).not.toHaveBeenCalled() // not stored — verdict left pending
+  })
+
+  it('happy path: resolves the slot, validates, and stores the verdict (status unchanged)', async () => {
+    const sb = fakeSupabase({ id: 'p1', kind: 'booking_proposal', payload: { booking: BOOKING, reply: 'see you then' } })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(fetchSearchResults).mockResolvedValue(results([slot()]) as never)
+    vi.mocked(getFareHarborClient).mockReturnValue(fakeFh({ is_bookable: true, receipt_total: 40000 }).client as never)
+
+    const res = await dryRunBookingProposal('p1')
+    expect(res).toMatchObject({ is_bookable: true, receipt_total_eur: 400, checked_avail_pk: 9001 })
+
+    expect(sb.update).toHaveBeenCalledTimes(1)
+    const updateArg = sb.update.mock.calls[0][0]
+    expect(Object.keys(updateArg)).toEqual(['payload']) // status never written
+    expect(updateArg.payload.verdict).toMatchObject({ is_bookable: true, receipt_total_eur: 400 })
+    expect(updateArg.payload.reply).toBe('see you then') // existing payload preserved
+    expect(updateArg.payload.booking).toBeTruthy()
   })
 })
