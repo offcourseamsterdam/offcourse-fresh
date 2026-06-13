@@ -1,10 +1,23 @@
 'use client'
 
 import { useState } from 'react'
-import { BookOpen, CalendarClock, Euro, Ghost, HelpCircle, Loader2, UtensilsCrossed } from 'lucide-react'
+import {
+  BookOpen,
+  CalendarClock,
+  CalendarPlus,
+  Euro,
+  Ghost,
+  HelpCircle,
+  Inbox,
+  Loader2,
+  Package,
+  UtensilsCrossed,
+  Wrench,
+} from 'lucide-react'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { adminMutate } from '@/hooks/useAdminSave'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
+import { GHOST_AGENTS, agentForKind } from '@/lib/ghost/agents'
 import { formatAmsterdamTime } from '@/lib/utils'
 
 /**
@@ -30,6 +43,22 @@ interface CateringOrder {
   urgent_unsent: number
 }
 
+interface AgentStepLog {
+  tool: string
+  input: Record<string, unknown>
+  result_preview: string
+}
+
+interface BookingAction {
+  listing_slug?: string
+  listing_title?: string
+  date?: string
+  time?: string
+  guests?: number
+  option?: string
+  price_eur?: number
+}
+
 interface GhostProposal {
   id: string
   kind: string
@@ -40,6 +69,8 @@ interface GhostProposal {
     target_date?: string
     assignments?: ScheduleAssignment[]
     orders?: CateringOrder[]
+    booking?: BookingAction
+    steps?: AgentStepLog[]
   }
   reasoning: string | null
   status: string
@@ -74,7 +105,18 @@ export default function GhostPage() {
   const { data, isLoading, error, refresh } = useAdminFetch<GhostData>('/api/admin/ghost', {
     refreshInterval: POLL_MS,
   })
-  const proposals = data?.proposals ?? []
+  const [agentFilter, setAgentFilter] = useState<string | null>(null)
+
+  const allProposals = data?.proposals ?? []
+  const proposals = agentFilter
+    ? allProposals.filter(p => agentForKind(p.kind)?.key === agentFilter)
+    : allProposals
+
+  function agentCount(agentKey: string): number {
+    const agent = GHOST_AGENTS.find(a => a.key === agentKey)
+    if (!agent || !data) return 0
+    return agent.kinds.reduce((sum, kind) => sum + (data.stats.byKind[kind] ?? 0), 0)
+  }
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl">
@@ -113,6 +155,45 @@ export default function GhostPage() {
           <StatCard label="Corrected by you" value={data.stats.corrected} sub={`${data.stats.awaitingComparison} awaiting your reply`} accent="violet" />
           <StatCard label="Open questions" value={data.stats.openQuestions} sub="answer them below" accent={data.stats.openQuestions > 0 ? 'amber' : undefined} />
           <StatCard label="Things taught" value={data.stats.knowledgeEntries} sub="in every future draft" accent="emerald" />
+        </div>
+      )}
+
+      {/* The agent fleet — one agent per operation domain, click to filter */}
+      {data && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-5">
+          {GHOST_AGENTS.map(agent => {
+            const Icon = AGENT_ICONS[agent.key] ?? Ghost
+            const planned = agent.status === 'planned'
+            const active = agentFilter === agent.key
+            return (
+              <button
+                key={agent.key}
+                onClick={() => !planned && setAgentFilter(f => (f === agent.key ? null : agent.key))}
+                disabled={planned}
+                title={agent.description}
+                className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                  planned
+                    ? 'border-dashed border-zinc-200 bg-zinc-50 cursor-default'
+                    : active
+                      ? 'border-violet-400 bg-violet-50'
+                      : 'border-zinc-200 bg-white hover:border-violet-200'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-0.5">
+                  <Icon className={`w-4 h-4 ${planned ? 'text-zinc-300' : 'text-violet-500'}`} />
+                  {planned ? (
+                    <span className="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">soon</span>
+                  ) : (
+                    <span className="text-sm font-semibold text-zinc-900">{agentCount(agent.key)}</span>
+                  )}
+                </div>
+                <p className={`text-xs font-medium leading-tight ${planned ? 'text-zinc-400' : 'text-zinc-700'}`}>
+                  {agent.name}
+                </p>
+                <p className="text-[10px] text-zinc-400 truncate">{agent.trigger}</p>
+              </button>
+            )
+          })}
         </div>
       )}
 
@@ -231,14 +312,26 @@ function QuestionsPanel({
   )
 }
 
+const AGENT_ICONS: Record<string, typeof Ghost> = {
+  inbox: Inbox,
+  booking: CalendarPlus,
+  catering: UtensilsCrossed,
+  scheduling: CalendarClock,
+  maintenance: Wrench,
+  storage: Package,
+}
+
 const KIND_META: Record<string, { label: string; Icon: typeof Ghost }> = {
-  reply_draft: { label: 'Reply draft', Icon: Ghost },
+  reply_draft: { label: 'Reply draft', Icon: Inbox },
+  booking_proposal: { label: 'Booking', Icon: CalendarPlus },
   schedule_day: { label: 'Schedule', Icon: CalendarClock },
   catering_order: { label: 'Catering', Icon: UtensilsCrossed },
 }
 
 function ProposalCard({ proposal: p }: { proposal: GhostProposal }) {
   const meta = KIND_META[p.kind] ?? { label: p.kind, Icon: Ghost }
+  const agent = agentForKind(p.kind)
+  const conversational = p.kind === 'reply_draft' || p.kind === 'booking_proposal'
 
   return (
     <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
@@ -246,8 +339,10 @@ function ProposalCard({ proposal: p }: { proposal: GhostProposal }) {
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-100 bg-zinc-50/60">
         <div className="flex items-center gap-2 min-w-0">
           <meta.Icon className="w-3.5 h-3.5 text-violet-500 shrink-0" />
-          <span className="text-xs font-semibold text-violet-600 uppercase tracking-wide">{meta.label}</span>
-          {p.kind === 'reply_draft' ? (
+          <span className="text-xs font-semibold text-violet-600 uppercase tracking-wide">
+            {agent?.name ?? meta.label}
+          </span>
+          {conversational ? (
             <>
               <span className="text-sm font-medium text-zinc-800 truncate">
                 {p.conversation?.contact?.name ?? 'Unknown'}
@@ -273,8 +368,8 @@ function ProposalCard({ proposal: p }: { proposal: GhostProposal }) {
       </div>
 
       <div className="p-4 space-y-3">
-        {/* Reply draft — customer message + draft + the human correction */}
-        {p.kind === 'reply_draft' && (
+        {/* Inbox/booking — customer message + investigation + draft + correction */}
+        {conversational && (
           <>
             {p.trigger && (
               <div>
@@ -286,6 +381,25 @@ function ProposalCard({ proposal: p }: { proposal: GhostProposal }) {
                 </div>
               </div>
             )}
+
+            {/* The chain of actions — what the agent looked up before deciding */}
+            {(p.payload.steps?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 mb-1">
+                  Agent investigated
+                </p>
+                <ol className="space-y-1">
+                  {p.payload.steps!.map((s, i) => (
+                    <li key={i} className="text-xs text-zinc-600 bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-1.5 font-mono">
+                      <span className="text-violet-600 font-semibold">{i + 1}. {s.tool}</span>
+                      <span className="text-zinc-400">({JSON.stringify(s.input)})</span>
+                      <span className="block text-zinc-500 truncate" title={s.result_preview}>→ {s.result_preview}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-500 mb-1">
                 Ghost would reply
@@ -294,6 +408,27 @@ function ProposalCard({ proposal: p }: { proposal: GhostProposal }) {
                 {p.payload.reply ?? '—'}
               </div>
             </div>
+
+            {/* The proposed booking action — what a human would approve */}
+            {p.payload.booking && (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-600 mb-1">
+                  Proposed action — create booking
+                </p>
+                <div className="rounded-lg bg-indigo-50 border border-indigo-200 px-3 py-2 text-sm text-indigo-900">
+                  <span className="font-semibold">{p.payload.booking.listing_title}</span>
+                  <span className="block mt-0.5">
+                    {p.payload.booking.date} · {p.payload.booking.time} · {p.payload.booking.guests} guests
+                    {p.payload.booking.option ? ` · ${p.payload.booking.option}` : ''}
+                    {p.payload.booking.price_eur ? ` · €${p.payload.booking.price_eur}` : ''}
+                  </span>
+                  <span className="block text-[11px] text-indigo-500 mt-1">
+                    Shadow — nothing booked. Approval-to-execute is the next trust-ladder rung.
+                  </span>
+                </div>
+              </div>
+            )}
+
             {p.outcome?.human_reply && (
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-600 mb-1">

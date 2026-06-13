@@ -69,7 +69,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const { data: openDraft } = await supabase
         .from('agent_proposals')
         .select('id')
-        .eq('kind', 'reply_draft')
+        .in('kind', ['reply_draft', 'booking_proposal'])
         .eq('conversation_id', id)
         .is('outcome', null)
         .order('created_at', { ascending: false })

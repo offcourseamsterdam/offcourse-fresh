@@ -34,12 +34,12 @@ export async function GET() {
     const knowledge = knowledgeRes.data ?? []
     const answeredProposalIds = new Set(knowledge.map(k => k.proposal_id).filter(Boolean))
 
-    // Open questions = reply drafts where the Ghost asked something and no
+    // Open questions = proposals where an agent asked something and no
     // knowledge entry answers that proposal yet.
     const openQuestions = proposals
       .filter(p => {
         const q = (p.payload as { open_question?: string | null })?.open_question
-        return p.kind === 'reply_draft' && typeof q === 'string' && q && !answeredProposalIds.has(p.id)
+        return typeof q === 'string' && q && !answeredProposalIds.has(p.id)
       })
       .map(p => ({
         proposal_id: p.id,
@@ -48,15 +48,15 @@ export async function GET() {
       }))
 
     // Learning stats — the "is it learning?" dashboard.
-    const replyDrafts = proposals.filter(p => p.kind === 'reply_draft')
+    const conversational = proposals.filter(p => p.kind === 'reply_draft' || p.kind === 'booking_proposal')
     const stats = {
       total: proposals.length,
       byKind: proposals.reduce<Record<string, number>>((acc, p) => {
         acc[p.kind] = (acc[p.kind] ?? 0) + 1
         return acc
       }, {}),
-      corrected: replyDrafts.filter(p => p.outcome != null).length,
-      awaitingComparison: replyDrafts.filter(p => p.outcome == null).length,
+      corrected: conversational.filter(p => p.outcome != null).length,
+      awaitingComparison: conversational.filter(p => p.outcome == null).length,
       openQuestions: openQuestions.length,
       knowledgeEntries: knowledge.length,
     }

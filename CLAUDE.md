@@ -234,9 +234,11 @@ Use clear headings, short paragraphs, and code snippets where helpful. Write for
 
 The Ghost is the shadow-mode AI layer (see `docs/plans/ai-operations-vision.md` §8-B2 and `/admin/ghost`). It reads the database (never the UI), drafts what it *would* do as rows in `agent_proposals` with status `'shadow'`, and never executes anything. Current kinds: `reply_draft` (per inbound chat message), `schedule_day` + `catering_order` (daily `/api/cron/ghost-ops`).
 
+The Ghost is organized as **agents** (one per operation domain — registry in `src/lib/ghost/agents.ts`; inbox/booking/catering/scheduling active, maintenance/storage planned). Agentic runs use the Anthropic tool-use loop in `src/lib/ghost/agent-runtime.ts` with read-only tools from `src/lib/ghost/tools.ts`; the agent's terminal `submit_*` tool call IS the proposal (no JSON parsing).
+
 ### When adding ANY new operational feature or admin action, answer two questions:
 
-1. **Can the Ghost shadow it?** If a human performs a recurring decision through the admin (assigning, ordering, replying, approving), add a Ghost drafter for it: a new `kind` in `agent_proposals`, a drafter in `src/lib/ghost/` (or a trigger in the relevant flow), and a card renderer in `/admin/ghost`. Follow the pattern in `src/lib/ghost/ops-drafters.ts`: read the truth from Postgres, one Claude call, JSON-parsed payload + `reasoning`, status `'shadow'`, dedupe per target date, all errors swallowed.
+1. **Can the Ghost shadow it?** If a human performs a recurring decision through the admin (assigning, ordering, replying, approving), give the matching agent a drafter: a new `kind` in `agent_proposals` owned by exactly one agent in `agents.ts`, a drafter (agentic via `runAgenticLoop` when it needs to look things up, single-call like `src/lib/ghost/ops-drafters.ts` when context is deterministic), and a card renderer in `/admin/ghost`. Always: read the truth from Postgres, payload + `reasoning`, status `'shadow'`, dedupe per target date, all errors swallowed. New read-only lookups become tools in `tools.ts` (compact results, descriptions that say WHEN to call).
 2. **Is it a money/irreversible action?** Then it may get a Ghost *proposal* later but NEVER auto-execution — refunds, FareHarbor bookings, payouts stay human-approved permanently.
 
 Document the decision (even "not ghostable, because…") in the feature's `docs/features/*.md`.

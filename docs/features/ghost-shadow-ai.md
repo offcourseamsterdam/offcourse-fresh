@@ -1,4 +1,36 @@
-# Ghost Shadow AI — proposals, ops drafters & cost metering
+# Ghost Shadow AI — agents, proposals, learning loop & cost metering
+
+## The agent layer (C11)
+
+The Ghost is organized as **six agents, one per operation domain**, registered
+in `src/lib/ghost/agents.ts`: inbox, booking, catering, scheduling (active) +
+maintenance, storage (planned — they activate when their tables exist, vision
+doc §3/§9). The Ghost page shows the fleet; each proposal is attributed to its
+agent via `agentForKind()`.
+
+What makes them *agents* rather than text models (per Anthropic's "Building
+Effective Agents": *"LLMs using tools based on environmental feedback in a
+loop"*):
+
+- `src/lib/ghost/agent-runtime.ts` — the canonical Anthropic tool-use loop:
+  Claude gets a goal + tool definitions; on `stop_reason: 'tool_use'` we
+  execute the requested read-only tools and feed `tool_result` blocks back
+  (errors flagged `is_error: true` so the model self-corrects); the run ends
+  when the agent calls a terminal `submit_*` tool whose schema-validated
+  input IS the proposal. Guardrails: max 6 turns, `max_tokens` 1200/step,
+  clamped tool results, every call metered, all failures → null.
+- `src/lib/ghost/tools.ts` — the toolbox: `search_availability` (live
+  FareHarbor through the 3-layer filters), `get_customer_bookings`,
+  `get_schedule`. Few, consolidated, compact results — per Anthropic tool-
+  design guidance.
+- The inbox agent (`src/lib/chat/shadow-drafter.ts`) investigates before
+  drafting — e.g. observed re-checking availability with guests=5 when the
+  customer said "4 people plus the dog". If a customer wants a concrete,
+  *confirmed-available* slot it ends with `submit_booking_proposal` →
+  a `booking_proposal` row (booking agent) carrying the action chain; the
+  Ghost card renders "AGENT INVESTIGATED" steps + the proposed booking.
+- Execution stays OFF: tools are read-only; the only write is the proposal.
+  Approval-to-execute is the next trust-ladder rung, per kind.
 
 ## What was built
 
