@@ -163,14 +163,16 @@ export const getCruisePageData = cache(async function getCruisePageData(listing:
   const serializedFood = foodAndDrinkExtras.filter((e) => e.category === 'food').map(serializeExtra)
   const serializedDrinks = foodAndDrinkExtras.filter((e) => e.category === 'drinks').map(serializeExtra)
 
-  // ── Combined review stats (Google + TripAdvisor) ──────────────────────────
-  // The public count is the COMBINED total across both sources (e.g. 49 + 48 = 97),
-  // so every "X reviews" display on the page matches the homepage.
+  // ── Combined review stats (all platforms) ─────────────────────────────────
+  // Google and TA use admin-configured counts (the real platform totals, even if not
+  // every review is imported). Withlocals and GYG are fully imported so reviewCount
+  // already includes them. We take whichever is larger so the number always reflects
+  // all platforms and grows automatically as new reviews are added.
   const googleTotal = googleConfig?.total_reviews ?? null
   const taTotal = googleConfig?.tripadvisor_total_reviews ?? null
-  const combinedConfigTotal =
-    googleTotal != null || taTotal != null ? (googleTotal ?? 0) + (taTotal ?? 0) : null
-  const totalReviews = combinedConfigTotal ?? reviewCount ?? reviews?.length ?? 0
+  const configPlatformTotal =
+    googleTotal != null || taTotal != null ? (googleTotal ?? 0) + (taTotal ?? 0) : 0
+  const totalReviews = Math.max(configPlatformTotal, reviewCount ?? 0) || (reviews?.length ?? 0)
 
   // Rating: weight each source's average by its review count when both exist;
   // otherwise fall back to whichever single rating we have, then to row average.
