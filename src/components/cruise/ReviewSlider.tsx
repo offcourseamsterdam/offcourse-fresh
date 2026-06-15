@@ -100,9 +100,7 @@ export function ReviewSlider({ reviews, totalReviews }: ReviewSliderProps) {
           <div className="flex gap-1">
             {(['all', ...availableSources] as SourceFilter[]).map(f => (
               <button key={f} type="button" onClick={() => setFilter(f)} className={tab(filter === f)}>
-                {f === 'all'
-                  ? `All (${reviews.length})`
-                  : `${sourceDisplayName(f)} (${reviews.filter(r => r.source === f).length})`}
+                {f === 'all' ? 'All' : sourceDisplayName(f)}
               </button>
             ))}
           </div>

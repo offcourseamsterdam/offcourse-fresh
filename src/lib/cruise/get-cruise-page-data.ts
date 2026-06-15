@@ -61,17 +61,18 @@ export const getCruisePageData = cache(async function getCruisePageData(listing:
     ...rawImages.map(i => i.image_asset_id ?? null),
   ].filter((id): id is string => Boolean(id))
 
-  const [reviewsResult, reviewCountResult, allExtrasResult, listingExtrasResult, allBoatsResult, googleConfigResult, fhItemResult, assetsResult] = await Promise.all([
-    // Fetch the 20 most recent active reviews — enough for the ReviewSlider (3 at a time)
-    // and ReviewPopup (capped at 6). The GalleryModal fetches the full list on open via
-    // /api/reviews so it doesn't bloat the initial page RSC payload.
-    // Selecting only the columns we actually use (all 7 locale text columns + metadata)
-    // avoids fetching unused admin/internal fields and cuts JSON payload ~50-80%.
-    supabase.from('social_proof_reviews')
-      .select('id, reviewer_name, rating, source, author_photo_url, review_image_url, publish_time, review_text, review_text_nl, review_text_de, review_text_fr, review_text_es, review_text_pt, review_text_zh')
-      .eq('is_active', true)
-      .order('publish_time', { ascending: false, nullsFirst: false })
-      .limit(20),
+  // Columns needed by the ReviewSlider — 7 locale text columns + display metadata.
+  const REVIEW_COLS = 'id, reviewer_name, rating, source, author_photo_url, review_image_url, publish_time, review_text, review_text_nl, review_text_de, review_text_fr, review_text_es, review_text_pt, review_text_zh' as const
+
+  const [googleRvResult, taRvResult, wlRvResult, gygRvResult, reviewCountResult, allExtrasResult, listingExtrasResult, allBoatsResult, googleConfigResult, fhItemResult, assetsResult] = await Promise.all([
+    // Fetch 5 most recent per source so every platform appears in the slider tabs.
+    // A single date-sorted LIMIT 20 would exclude TripAdvisor entirely when newer
+    // platforms (Withlocals, GYG) have more recent reviews.
+    // The GalleryModal fetches the full list on open via /api/reviews.
+    supabase.from('social_proof_reviews').select(REVIEW_COLS).eq('is_active', true).eq('source', 'google').order('publish_time', { ascending: false, nullsFirst: false }).limit(5),
+    supabase.from('social_proof_reviews').select(REVIEW_COLS).eq('is_active', true).eq('source', 'tripadvisor').order('publish_time', { ascending: false, nullsFirst: false }).limit(5),
+    supabase.from('social_proof_reviews').select(REVIEW_COLS).eq('is_active', true).eq('source', 'withlocals').order('publish_time', { ascending: false, nullsFirst: false }).limit(5),
+    supabase.from('social_proof_reviews').select(REVIEW_COLS).eq('is_active', true).eq('source', 'getyourguide').order('publish_time', { ascending: false, nullsFirst: false }).limit(5),
     supabase.from('social_proof_reviews').select('*', { count: 'exact', head: true }).eq('is_active', true),
     adminSupabase.from('extras').select('*').eq('is_active', true).in('category', ['food', 'drinks']).order('sort_order', { ascending: true }),
     adminSupabase.from('listing_extras').select('extra_id, is_enabled').eq('listing_id', listing.id),
@@ -83,7 +84,18 @@ export const getCruisePageData = cache(async function getCruisePageData(listing:
       : Promise.resolve({ data: [] as ImageAsset[] }),
   ])
 
-  const reviews = reviewsResult.data
+  // Merge per-source results and re-sort by date so the slider stays chronological.
+  const reviews = [
+    ...(googleRvResult.data ?? []),
+    ...(taRvResult.data ?? []),
+    ...(wlRvResult.data ?? []),
+    ...(gygRvResult.data ?? []),
+  ].sort((a, b) => {
+    if (!a.publish_time && !b.publish_time) return 0
+    if (!a.publish_time) return 1
+    if (!b.publish_time) return -1
+    return new Date(b.publish_time).getTime() - new Date(a.publish_time).getTime()
+  })
   const reviewCount = reviewCountResult.count
   const googleConfig = googleConfigResult.data
   // Cancellation policy is owned by the parent FH item; falls back to DEFAULT_TIERS when null/invalid.
