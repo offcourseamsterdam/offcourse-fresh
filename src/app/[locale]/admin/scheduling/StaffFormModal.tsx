@@ -98,7 +98,13 @@ export function StaffFormModal({ editing, captainProfiles, onClose, onSaved }: S
 
       <div className="grid grid-cols-2 gap-3">
         <TextField label="Phone" type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+31 6 …" />
-        <TextField label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} />
+        <TextField
+          label="Email"
+          type="email"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          hint={!editing?.user_id ? "They'll receive a login invite automatically" : undefined}
+        />
       </div>
 
       <TextField
@@ -113,7 +119,7 @@ export function StaffFormModal({ editing, captainProfiles, onClose, onSaved }: S
       <div className="grid grid-cols-2 gap-3">
         <SelectField
           label="Linked login"
-          hint="Lets them use the captain portal"
+          hint="Auto-linked on save — override here if needed"
           value={userId}
           onChange={e => setUserId(e.target.value)}
         >

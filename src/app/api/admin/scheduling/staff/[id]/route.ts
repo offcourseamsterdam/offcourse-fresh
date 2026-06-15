@@ -3,6 +3,7 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { staffBodySchema, staffBodyToRow } from '@/lib/scheduling/staff-schema'
+import { inviteCaptain } from '@/lib/scheduling/invite-captain'
 
 /**
  * PUT    /api/admin/scheduling/staff/[id] — update a staff member.
@@ -31,6 +32,17 @@ export async function PUT(request: NextRequest, { params }: Params) {
       .single()
 
     if (error) return apiError(error.message)
+
+    // Auto-invite: if email is now set and no login is linked (either from a
+    // previous session or manually chosen in the form), send the invite.
+    if (body.email && !data.user_id) {
+      const captainUserId = await inviteCaptain(body.email, body.name)
+      if (captainUserId) {
+        await supabase.from('staff').update({ user_id: captainUserId }).eq('id', id)
+        data.user_id = captainUserId
+      }
+    }
+
     return apiOk({ staff: data })
   } catch (err) {
     return apiError(err instanceof Error ? err.message : 'Unknown error')
