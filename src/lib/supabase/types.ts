@@ -53,6 +53,111 @@ export type Database = {
         }
         Relationships: []
       }
+      agent_proposals: {
+        Row: {
+          conversation_id: string | null
+          created_at: string
+          human_edits: Json | null
+          id: string
+          kind: string
+          model: string | null
+          outcome: Json | null
+          payload: Json
+          reasoning: string | null
+          reviewed_at: string | null
+          status: string
+          trigger_message_id: string | null
+        }
+        Insert: {
+          conversation_id?: string | null
+          created_at?: string
+          human_edits?: Json | null
+          id?: string
+          kind: string
+          model?: string | null
+          outcome?: Json | null
+          payload: Json
+          reasoning?: string | null
+          reviewed_at?: string | null
+          status?: string
+          trigger_message_id?: string | null
+        }
+        Update: {
+          conversation_id?: string | null
+          created_at?: string
+          human_edits?: Json | null
+          id?: string
+          kind?: string
+          model?: string | null
+          outcome?: Json | null
+          payload?: Json
+          reasoning?: string | null
+          reviewed_at?: string | null
+          status?: string
+          trigger_message_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_proposals_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_proposals_trigger_message_id_fkey"
+            columns: ["trigger_message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_usage: {
+        Row: {
+          cost_eur_cents: number
+          created_at: string
+          feature: string
+          id: string
+          input_tokens: number
+          model: string
+          output_tokens: number
+        }
+        Insert: {
+          cost_eur_cents: number
+          created_at?: string
+          feature: string
+          id?: string
+          input_tokens?: number
+          model: string
+          output_tokens?: number
+        }
+        Update: {
+          cost_eur_cents?: number
+          created_at?: string
+          feature?: string
+          id?: string
+          input_tokens?: number
+          model?: string
+          output_tokens?: number
+        }
+        Relationships: []
+      }
+      ai_usage_alerts: {
+        Row: {
+          notified_at: string
+          threshold_eur: number
+        }
+        Insert: {
+          notified_at?: string
+          threshold_eur: number
+        }
+        Update: {
+          notified_at?: string
+          threshold_eur?: number
+        }
+        Relationships: []
+      }
       analytics_sessions: {
         Row: {
           browser_name: string | null
@@ -674,6 +779,100 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      contacts: {
+        Row: {
+          created_at: string
+          email: string | null
+          id: string
+          locale: string | null
+          name: string
+          notes: string | null
+          phone_e164: string | null
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          id?: string
+          locale?: string | null
+          name: string
+          notes?: string | null
+          phone_e164?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          id?: string
+          locale?: string | null
+          name?: string
+          notes?: string | null
+          phone_e164?: string | null
+        }
+        Relationships: []
+      }
+      conversations: {
+        Row: {
+          assignee_profile_id: string | null
+          booking_id: string | null
+          channel: string
+          contact_id: string
+          created_at: string
+          id: string
+          last_message_at: string
+          status: string
+          subject: string | null
+          unread_count: number
+          webchat_token: string
+        }
+        Insert: {
+          assignee_profile_id?: string | null
+          booking_id?: string | null
+          channel: string
+          contact_id: string
+          created_at?: string
+          id?: string
+          last_message_at?: string
+          status?: string
+          subject?: string | null
+          unread_count?: number
+          webchat_token?: string
+        }
+        Update: {
+          assignee_profile_id?: string | null
+          booking_id?: string | null
+          channel?: string
+          contact_id?: string
+          created_at?: string
+          id?: string
+          last_message_at?: string
+          status?: string
+          subject?: string | null
+          unread_count?: number
+          webchat_token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversations_assignee_profile_id_fkey"
+            columns: ["assignee_profile_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversations_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversations_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       cruise_listings: {
         Row: {
@@ -1367,6 +1566,47 @@ export type Database = {
         }
         Relationships: []
       }
+      ghost_knowledge: {
+        Row: {
+          answer: string
+          created_at: string
+          created_by: string | null
+          id: string
+          pinned: boolean
+          proposal_id: string | null
+          question: string
+          source: string
+        }
+        Insert: {
+          answer: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          pinned?: boolean
+          proposal_id?: string | null
+          question: string
+          source?: string
+        }
+        Update: {
+          answer?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          pinned?: boolean
+          proposal_id?: string | null
+          question?: string
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ghost_knowledge_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "agent_proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       google_ads_campaign_listings: {
         Row: {
           campaign_id: string
@@ -1471,6 +1711,7 @@ export type Database = {
           tripadvisor_total_reviews: number | null
           tripadvisor_url: string | null
           updated_at: string
+          withlocals_experience_short_id: string | null
         }
         Insert: {
           created_at?: string
@@ -1485,6 +1726,7 @@ export type Database = {
           tripadvisor_total_reviews?: number | null
           tripadvisor_url?: string | null
           updated_at?: string
+          withlocals_experience_short_id?: string | null
         }
         Update: {
           created_at?: string
@@ -1499,6 +1741,7 @@ export type Database = {
           tripadvisor_total_reviews?: number | null
           tripadvisor_url?: string | null
           updated_at?: string
+          withlocals_experience_short_id?: string | null
         }
         Relationships: []
       }
@@ -1887,6 +2130,78 @@ export type Database = {
           },
         ]
       }
+      maintenance_tasks: {
+        Row: {
+          boat_id: string | null
+          created_at: string
+          description: string | null
+          id: string
+          photo_descriptions: string[]
+          photo_urls: string[]
+          priority: string
+          proposal_id: string | null
+          reporter: string | null
+          source: string
+          source_channel: string | null
+          source_slack_event_id: string | null
+          status: string
+          technician_emailed_at: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          boat_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          photo_descriptions?: string[]
+          photo_urls?: string[]
+          priority?: string
+          proposal_id?: string | null
+          reporter?: string | null
+          source?: string
+          source_channel?: string | null
+          source_slack_event_id?: string | null
+          status?: string
+          technician_emailed_at?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          boat_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          photo_descriptions?: string[]
+          photo_urls?: string[]
+          priority?: string
+          proposal_id?: string | null
+          reporter?: string | null
+          source?: string
+          source_channel?: string | null
+          source_slack_event_id?: string | null
+          status?: string
+          technician_emailed_at?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_tasks_boat_id_fkey"
+            columns: ["boat_id"]
+            isOneToOne: false
+            referencedRelation: "boats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_tasks_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "agent_proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       merch_products: {
         Row: {
           created_at: string
@@ -1970,6 +2285,53 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      messages: {
+        Row: {
+          author_name: string | null
+          body: string
+          conversation_id: string
+          created_at: string
+          direction: string
+          error: string | null
+          id: string
+          provider: string
+          provider_message_id: string | null
+          status: string
+        }
+        Insert: {
+          author_name?: string | null
+          body: string
+          conversation_id: string
+          created_at?: string
+          direction: string
+          error?: string | null
+          id?: string
+          provider?: string
+          provider_message_id?: string | null
+          status?: string
+        }
+        Update: {
+          author_name?: string | null
+          body?: string
+          conversation_id?: string
+          created_at?: string
+          direction?: string
+          error?: string | null
+          id?: string
+          provider?: string
+          provider_message_id?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       notification_settings: {
         Row: {
@@ -2421,6 +2783,214 @@ export type Database = {
           },
         ]
       }
+      review_bonus_conflicts: {
+        Row: {
+          awarded_staff_id: string | null
+          candidate_staff_ids: string[]
+          created_at: string
+          id: string
+          matched_name: string
+          resolved_at: string | null
+          review_id: string
+        }
+        Insert: {
+          awarded_staff_id?: string | null
+          candidate_staff_ids: string[]
+          created_at?: string
+          id?: string
+          matched_name: string
+          resolved_at?: string | null
+          review_id: string
+        }
+        Update: {
+          awarded_staff_id?: string | null
+          candidate_staff_ids?: string[]
+          created_at?: string
+          id?: string
+          matched_name?: string
+          resolved_at?: string | null
+          review_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "review_bonus_conflicts_awarded_staff_id_fkey"
+            columns: ["awarded_staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "review_bonus_conflicts_review_id_fkey"
+            columns: ["review_id"]
+            isOneToOne: false
+            referencedRelation: "social_proof_reviews"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      review_bonuses: {
+        Row: {
+          amount_cents: number
+          awarded_at: string
+          id: string
+          review_id: string
+          staff_id: string
+        }
+        Insert: {
+          amount_cents?: number
+          awarded_at?: string
+          id?: string
+          review_id: string
+          staff_id: string
+        }
+        Update: {
+          amount_cents?: number
+          awarded_at?: string
+          id?: string
+          review_id?: string
+          staff_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "review_bonuses_review_id_fkey"
+            columns: ["review_id"]
+            isOneToOne: false
+            referencedRelation: "social_proof_reviews"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "review_bonuses_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shifts: {
+        Row: {
+          boat_id: string
+          booking_id: string | null
+          created_at: string
+          date: string
+          end_at: string
+          fareharbor_availability_pk: number | null
+          id: string
+          notes: string | null
+          reminder_sent_at: string | null
+          staff_id: string | null
+          start_at: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          boat_id: string
+          booking_id?: string | null
+          created_at?: string
+          date: string
+          end_at: string
+          fareharbor_availability_pk?: number | null
+          id?: string
+          notes?: string | null
+          reminder_sent_at?: string | null
+          staff_id?: string | null
+          start_at: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          boat_id?: string
+          booking_id?: string | null
+          created_at?: string
+          date?: string
+          end_at?: string
+          fareharbor_availability_pk?: number | null
+          id?: string
+          notes?: string | null
+          reminder_sent_at?: string | null
+          staff_id?: string | null
+          start_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shifts_boat_id_fkey"
+            columns: ["boat_id"]
+            isOneToOne: false
+            referencedRelation: "boats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shifts_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: true
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shifts_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      slack_message_log: {
+        Row: {
+          channel: string | null
+          direction: string
+          id: string
+          message_preview: string | null
+          notification_type: string | null
+          recipient_type: string | null
+          sent_at: string
+          triggered_by: string | null
+        }
+        Insert: {
+          channel?: string | null
+          direction?: string
+          id?: string
+          message_preview?: string | null
+          notification_type?: string | null
+          recipient_type?: string | null
+          sent_at?: string
+          triggered_by?: string | null
+        }
+        Update: {
+          channel?: string | null
+          direction?: string
+          id?: string
+          message_preview?: string | null
+          notification_type?: string | null
+          recipient_type?: string | null
+          sent_at?: string
+          triggered_by?: string | null
+        }
+        Relationships: []
+      }
+      slack_notification_settings: {
+        Row: {
+          enabled: boolean
+          id: string
+          notes: string | null
+          updated_at: string
+        }
+        Insert: {
+          enabled?: boolean
+          id: string
+          notes?: string | null
+          updated_at?: string
+        }
+        Update: {
+          enabled?: boolean
+          id?: string
+          notes?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       social_proof_reviews: {
         Row: {
           author_photo_url: string | null
@@ -2431,6 +3001,7 @@ export type Database = {
           is_active: boolean
           language: string | null
           original_text: string | null
+          possible_duplicate_of: string | null
           publish_time: string | null
           rating: number
           review_image_url: string | null
@@ -2455,6 +3026,7 @@ export type Database = {
           is_active?: boolean
           language?: string | null
           original_text?: string | null
+          possible_duplicate_of?: string | null
           publish_time?: string | null
           rating?: number
           review_image_url?: string | null
@@ -2479,6 +3051,7 @@ export type Database = {
           is_active?: boolean
           language?: string | null
           original_text?: string | null
+          possible_duplicate_of?: string | null
           publish_time?: string | null
           rating?: number
           review_image_url?: string | null
@@ -2494,7 +3067,106 @@ export type Database = {
           source?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "social_proof_reviews_possible_duplicate_of_fkey"
+            columns: ["possible_duplicate_of"]
+            isOneToOne: false
+            referencedRelation: "social_proof_reviews"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staff: {
+        Row: {
+          calendar_token: string
+          created_at: string
+          email: string | null
+          hourly_rate_cents: number
+          id: string
+          is_active: boolean
+          max_shifts_per_week: number | null
+          name: string
+          notes: string | null
+          phone: string | null
+          role: string
+          slack_member_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          calendar_token?: string
+          created_at?: string
+          email?: string | null
+          hourly_rate_cents?: number
+          id?: string
+          is_active?: boolean
+          max_shifts_per_week?: number | null
+          name: string
+          notes?: string | null
+          phone?: string | null
+          role: string
+          slack_member_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          calendar_token?: string
+          created_at?: string
+          email?: string | null
+          hourly_rate_cents?: number
+          id?: string
+          is_active?: boolean
+          max_shifts_per_week?: number | null
+          name?: string
+          notes?: string | null
+          phone?: string | null
+          role?: string
+          slack_member_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staff_availability: {
+        Row: {
+          created_at: string
+          date: string
+          id: string
+          note: string | null
+          staff_id: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          id?: string
+          note?: string | null
+          staff_id: string
+          status: string
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          id?: string
+          note?: string | null
+          staff_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_availability_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       stage_config: {
         Row: {
@@ -2525,6 +3197,72 @@ export type Database = {
           key?: string
           label?: string
           order_index?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      stock_items: {
+        Row: {
+          active: boolean
+          category: string
+          counted_via: string | null
+          created_at: string
+          current_count: number
+          id: string
+          last_counted_at: string | null
+          last_reordered_at: string | null
+          location: string | null
+          name: string
+          pack_size: number | null
+          pack_unit: string | null
+          reorder_qty: number
+          reorder_threshold: number
+          sort_order: number
+          supplier_email: string | null
+          supplier_name: string | null
+          unit: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          category?: string
+          counted_via?: string | null
+          created_at?: string
+          current_count?: number
+          id?: string
+          last_counted_at?: string | null
+          last_reordered_at?: string | null
+          location?: string | null
+          name: string
+          pack_size?: number | null
+          pack_unit?: string | null
+          reorder_qty?: number
+          reorder_threshold?: number
+          sort_order?: number
+          supplier_email?: string | null
+          supplier_name?: string | null
+          unit?: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          category?: string
+          counted_via?: string | null
+          created_at?: string
+          current_count?: number
+          id?: string
+          last_counted_at?: string | null
+          last_reordered_at?: string | null
+          location?: string | null
+          name?: string
+          pack_size?: number | null
+          pack_unit?: string | null
+          reorder_qty?: number
+          reorder_threshold?: number
+          sort_order?: number
+          supplier_email?: string | null
+          supplier_name?: string | null
+          unit?: string
           updated_at?: string
         }
         Relationships: []
@@ -2573,6 +3311,70 @@ export type Database = {
           tag_name?: string
         }
         Relationships: []
+      }
+      time_entries: {
+        Row: {
+          clock_in_at: string
+          clock_out_at: string | null
+          created_at: string
+          flag: string | null
+          flag_resolved_by: string | null
+          hourly_rate_cents: number
+          id: string
+          note: string | null
+          shift_id: string | null
+          source: string
+          staff_id: string
+        }
+        Insert: {
+          clock_in_at?: string
+          clock_out_at?: string | null
+          created_at?: string
+          flag?: string | null
+          flag_resolved_by?: string | null
+          hourly_rate_cents: number
+          id?: string
+          note?: string | null
+          shift_id?: string | null
+          source: string
+          staff_id: string
+        }
+        Update: {
+          clock_in_at?: string
+          clock_out_at?: string | null
+          created_at?: string
+          flag?: string | null
+          flag_resolved_by?: string | null
+          hourly_rate_cents?: number
+          id?: string
+          note?: string | null
+          shift_id?: string | null
+          source?: string
+          staff_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "time_entries_flag_resolved_by_fkey"
+            columns: ["flag_resolved_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_entries_shift_id_fkey"
+            columns: ["shift_id"]
+            isOneToOne: false
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_entries_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       tracking_events: {
         Row: {
@@ -2658,6 +3460,9 @@ export type Database = {
           id: string
           payload: Json
           processed: boolean | null
+          processed_at: string | null
+          provider_event_id: string | null
+          signature_valid: boolean | null
           source: string | null
         }
         Insert: {
@@ -2667,6 +3472,9 @@ export type Database = {
           id?: string
           payload: Json
           processed?: boolean | null
+          processed_at?: string | null
+          provider_event_id?: string | null
+          signature_valid?: boolean | null
           source?: string | null
         }
         Update: {
@@ -2676,6 +3484,9 @@ export type Database = {
           id?: string
           payload?: Json
           processed?: boolean | null
+          processed_at?: string | null
+          provider_event_id?: string | null
+          signature_valid?: boolean | null
           source?: string | null
         }
         Relationships: []
@@ -2791,6 +3602,7 @@ export type Database = {
     }
     Functions: {
       get_translatable_columns: { Args: never; Returns: Json }
+      ghost_stats: { Args: never; Returns: Json }
       set_section_text_color: {
         Args: { p_role: string; p_section: string; p_value: string }
         Returns: {

@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { scrapeGoogleReviews, scrapeTripadvisorReviews } from '@/lib/outscraper/client'
 import { outscraperWebhookToken } from '@/lib/outscraper/webhook-token'
+import { syncWithlocalsReviews } from '@/lib/withlocals/sync'
 import { env } from '@/env'
 
 /**
@@ -25,7 +26,7 @@ export async function POST(request: NextRequest) {
   const supabase = createAdminClient()
   const { data: config } = await supabase
     .from('google_reviews_config')
-    .select('place_id, tripadvisor_url')
+    .select('place_id, tripadvisor_url, withlocals_experience_short_id')
     .limit(1)
     .single()
 
@@ -62,9 +63,24 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // ── Withlocals (synchronous — results available immediately) ────────────────
+  let withlocalsResult: { imported: number; flagged: number; skipped: number } | null = null
+  if (config.withlocals_experience_short_id) {
+    try {
+      withlocalsResult = await syncWithlocalsReviews(config.withlocals_experience_short_id)
+      started.push('withlocals')
+    } catch (err) {
+      errors.push(`withlocals: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
   if (started.length === 0 && errors.length > 0) {
     return apiError(errors.join('; '), 502)
   }
 
-  return apiOk({ started, errors: errors.length > 0 ? errors : undefined })
+  return apiOk({
+    started,
+    withlocals: withlocalsResult ?? undefined,
+    errors: errors.length > 0 ? errors : undefined,
+  })
 }
