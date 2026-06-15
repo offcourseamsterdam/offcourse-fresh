@@ -8,7 +8,18 @@ import { GoogleConfigBar } from '@/components/admin/GoogleConfigBar'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { useReviews } from './useReviews'
 
-type SourceFilter = 'all' | 'google' | 'tripadvisor'
+type SourceFilter = 'all' | 'google' | 'tripadvisor' | 'withlocals' | 'getyourguide'
+
+const KNOWN_SOURCES: Array<Exclude<SourceFilter, 'all'>> = ['google', 'tripadvisor', 'withlocals', 'getyourguide']
+
+function tabLabel(f: SourceFilter): string {
+  if (f === 'all') return 'All'
+  if (f === 'google') return '⭐ Google'
+  if (f === 'tripadvisor') return '🦉 TripAdvisor'
+  if (f === 'withlocals') return '🏠 Withlocals'
+  if (f === 'getyourguide') return '🌍 GetYourGuide'
+  return f
+}
 
 export default function AdminReviewsPage() {
   const {
@@ -25,18 +36,18 @@ export default function AdminReviewsPage() {
     handleDelete,
     googleReviews,
     taReviews,
+    withlocalsReviews,
     activeReviews,
   } = useReviews()
 
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
 
-  const hasGoogle = googleReviews.length > 0
-  const hasTa = taReviews.length > 0
-  const showTabs = hasGoogle && hasTa
+  const availableSources = KNOWN_SOURCES.filter(s => reviews.some(r => r.source === s))
+  const showTabs = availableSources.length > 1
 
   const filteredReviews = sourceFilter === 'all'
     ? reviews
-    : reviews.filter(r => r.source === (sourceFilter === 'google' ? 'google' : 'tripadvisor'))
+    : reviews.filter(r => r.source === sourceFilter)
 
   return (
     <div className="p-4 sm:p-8 max-w-5xl space-y-6">
@@ -90,22 +101,23 @@ export default function AdminReviewsPage() {
         <span>{activeReviews.length} active</span>
         {googleReviews.length > 0 && <span>{googleReviews.length} Google</span>}
         {taReviews.length > 0 && <span>{taReviews.length} TripAdvisor</span>}
+        {withlocalsReviews.length > 0 && <span>{withlocalsReviews.length} Withlocals</span>}
       </div>
 
       {/* Source filter tabs */}
       {showTabs && (
         <div className="flex gap-1 border-b border-zinc-200">
-          {(['all', 'google', 'tripadvisor'] as SourceFilter[]).map(f => (
+          {(['all', ...availableSources] as SourceFilter[]).map(f => (
             <button
               key={f}
               onClick={() => setSourceFilter(f)}
-              className={`px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2 -mb-px ${
+              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
                 sourceFilter === f
                   ? 'border-zinc-900 text-zinc-900'
                   : 'border-transparent text-zinc-400 hover:text-zinc-600'
               }`}
             >
-              {f === 'all' ? 'All' : f === 'google' ? '⭐ Google' : '🦉 TripAdvisor'}
+              {tabLabel(f)}
             </button>
           ))}
         </div>

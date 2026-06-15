@@ -71,6 +71,10 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
+        hostname: 'withlocals-com-res.cloudinary.com',
+      },
+      {
+        protocol: 'https',
         hostname: 'offcourseamsterdam.com',
       },
       // WordPress (WP SEO AI) media host — added only when WORDPRESS_URL is set.
