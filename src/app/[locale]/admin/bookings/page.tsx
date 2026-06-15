@@ -275,6 +275,8 @@ export default function BookingsPage() {
                             depositAmountCents={b.deposit_amount_cents}
                             extrasSelected={b.extras_selected}
                             bookingSource={b.booking_source}
+                            trafficSource={b.traffic_source}
+                            trafficDetail={b.traffic_detail}
                             campaignName={b.campaign_name}
                             promoCode={b.promo_code}
                             discountAmountCents={b.discount_amount_cents}

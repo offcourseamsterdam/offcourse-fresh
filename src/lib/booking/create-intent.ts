@@ -4,6 +4,7 @@ import { calculateQuote } from '@/lib/booking/calculate-quote'
 import { type ExtrasCalculation } from '@/lib/extras/calculate'
 import { fmtEuros } from '@/lib/utils'
 import { toClickType } from '@/lib/tracking/click-ids'
+import { formatTrafficSource } from '@/lib/tracking/traffic-source'
 
 interface CreateIntentInput {
   /**
@@ -150,9 +151,13 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
       consent_marketing: marketingConsent ? 'yes' : 'no',
       ...(sessionId ? { session_id: String(sessionId) } : {}),
       ...(gclid ? { gclid: String(gclid), click_type: toClickType(clickType) } : {}),
-      // Where the customer came from (first-party attribution, derived at checkout)
+      // Where the customer came from (first-party attribution, derived at checkout).
+      // traffic_source/detail are the atomic fields the booking row copies; traffic_label
+      // is the combined human-readable form so the PI reads "Referral — instagram.com"
+      // at a glance in the Stripe dashboard.
       ...(trafficSource ? { traffic_source: String(trafficSource).slice(0, 100) } : {}),
       ...(trafficDetail ? { traffic_detail: String(trafficDetail).slice(0, 200) } : {}),
+      ...(trafficSource ? { traffic_label: formatTrafficSource(trafficSource, trafficDetail).slice(0, 200) } : {}),
       ...(quoteRow.promo_code_id
         ? {
             promo_code_id: String(quoteRow.promo_code_id),

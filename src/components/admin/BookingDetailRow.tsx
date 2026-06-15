@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { Pencil, Ban, CalendarDays, UtensilsCrossed, Megaphone, Tag } from 'lucide-react'
+import { Pencil, Ban, CalendarDays, UtensilsCrossed, Megaphone, Tag, MapPin } from 'lucide-react'
 import { EXTRAS_CATEGORIES } from '@/lib/constants'
 import { fmtAdminAmount } from '@/lib/admin/format'
 import { BookingSourceBadge } from '@/components/admin/BookingSourceBadge'
+import { formatTrafficSource } from '@/lib/tracking/traffic-source'
 
 import { CancelBookingModal } from '@/components/admin/booking-actions/CancelBookingModal'
 import { EditBookingModal } from '@/components/admin/booking-actions/EditBookingModal'
@@ -37,6 +38,8 @@ interface BookingDetailRowProps {
   depositAmountCents: number | null
   extrasSelected: AdminExtraLineItem[] | null
   bookingSource: string | null
+  trafficSource: string | null
+  trafficDetail: string | null
   campaignName: string | null
   promoCode: string | null
   discountAmountCents: number | null
@@ -70,6 +73,8 @@ export function BookingDetailRow({
   depositAmountCents,
   extrasSelected,
   bookingSource,
+  trafficSource,
+  trafficDetail,
   campaignName,
   promoCode,
   discountAmountCents,
@@ -131,6 +136,17 @@ export function BookingDetailRow({
           <div className="mt-2">
             <BookingSourceBadge source={bookingSource} />
           </div>
+
+          {/* Attribution — where the customer came from (referral + the referrer site).
+              Only website bookings carry this; internal sources have their own badge. */}
+          {isWebsiteBooking && trafficSource && (
+            <div className="flex items-center gap-1.5 mt-1.5">
+              <MapPin className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+              <span className="text-xs text-sky-700 font-medium">
+                {formatTrafficSource(trafficSource, trafficDetail)}
+              </span>
+            </div>
+          )}
 
           {/* Partner */}
           {partnerName && (

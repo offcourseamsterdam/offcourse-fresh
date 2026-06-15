@@ -36,6 +36,10 @@ export interface AdminBooking {
   payment_status: string | null
   guest_note: string | null
   booking_source: string | null
+  /** Derived attribution channel (referral/google-ads/social/direct…). */
+  traffic_source: string | null
+  /** The specific origin behind the channel: referrer host, campaign slug, utm_source. */
+  traffic_detail: string | null
   deposit_amount_cents: number | null
   extras_selected: AdminExtraLineItem[] | null
   base_amount_cents: number | null

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { deriveTrafficSource, parseFirstTouch } from './traffic-source'
+import { deriveTrafficSource, parseFirstTouch, formatTrafficSource } from './traffic-source'
 
 describe('deriveTrafficSource', () => {
   it('gclid wins over everything → google-ads', () => {
@@ -55,6 +55,31 @@ describe('deriveTrafficSource', () => {
 
   it('first-touch with only landing path (direct visit) → direct', () => {
     expect(deriveTrafficSource({ firstTouch: { lp: '/en' } })).toEqual({ source: 'direct', detail: null })
+  })
+})
+
+describe('formatTrafficSource', () => {
+  it('names both the channel and the referrer host', () => {
+    expect(formatTrafficSource('referral', 'www.instagram.com')).toBe('Referral — www.instagram.com')
+  })
+
+  it('maps slugs to friendly channel names', () => {
+    expect(formatTrafficSource('google-ads', 'summer-campaign')).toBe('Google Ads — summer-campaign')
+  })
+
+  it('shows just the channel when there is no detail', () => {
+    expect(formatTrafficSource('referral', null)).toBe('Referral')
+    expect(formatTrafficSource('campaign')).toBe('Campaign')
+  })
+
+  it('falls back to "Direct" for a missing/blank source', () => {
+    expect(formatTrafficSource(null)).toBe('Direct')
+    expect(formatTrafficSource('', 'ignored-when-no-channel')).toBe('Direct — ignored-when-no-channel')
+    expect(formatTrafficSource('direct', null)).toBe('Direct')
+  })
+
+  it('capitalises an unknown slug rather than dropping it', () => {
+    expect(formatTrafficSource('newsletter', 'spring')).toBe('Newsletter — spring')
   })
 })
 

@@ -35,6 +35,7 @@ export async function GET(request: Request) {
           guest_count, category, listing_title,
           stripe_payment_intent_id, stripe_amount, status, payment_status,
           guest_note, booking_source, deposit_amount_cents,
+          traffic_source, traffic_detail,
           extras_selected, base_amount_cents, extras_amount_cents,
           base_vat_amount_cents, extras_vat_amount_cents, total_vat_amount_cents,
           fareharbor_customer_type_rate_pk, customer_type_name,

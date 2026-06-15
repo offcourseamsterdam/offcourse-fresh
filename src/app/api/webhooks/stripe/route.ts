@@ -4,6 +4,9 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { sendConfirmationEmail } from '@/lib/booking/send-confirmation-email'
 import { getExtrasFromQuote } from '@/lib/booking/recover-from-pi'
+import { claimBooking, finalizeBooking, releaseClaim } from '@/lib/booking/claim'
+import { sendCriticalAlert } from '@/lib/alerts/critical-alert'
+import { logWebhookEvent } from '@/lib/webhooks/log'
 import { notifyCateringOrder } from '@/lib/catering/notify'
 import { buildFHBookingNote } from '@/lib/catering/build-fh-note'
 import type { ExtrasLineItem } from '@/lib/catering/filter'
@@ -12,6 +15,7 @@ import { reportBookingConversion } from '@/lib/google-ads/report-conversion'
 import { reportRefundAdjustment } from '@/lib/google-ads/report-refund'
 import { postSlackText } from '@/lib/slack/send-notification'
 import { formatAmsterdamTime } from '@/lib/utils'
+import { formatTrafficSource } from '@/lib/tracking/traffic-source'
 import type Stripe from 'stripe'
 
 export async function POST(request: NextRequest) {
@@ -33,6 +37,15 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = createAdminClient()
+
+  // Durable audit/replay breadcrumb. Best-effort — never blocks event handling.
+  await logWebhookEvent(supabase, {
+    source: 'stripe',
+    providerEventId: event.id,
+    signatureValid: true,
+    payload: event,
+    processed: true,
+  })
 
   // ── checkout.session.completed ────────────────────────────────────────────
   // Fires when a customer completes payment on a Stripe Checkout Session.
@@ -233,7 +246,7 @@ export async function POST(request: NextRequest) {
     // Retrieve extras line items from the stored quote breakdown.
     const extrasSelected = await getExtrasFromQuote(meta.quote_id)
 
-    // Create the FareHarbor booking
+    // Build the FareHarbor booking request.
     const fh = getFareHarborClient()
     const isPrivate = meta.category === 'private'
     const guestCount = Number(meta.guest_count ?? 1)
@@ -251,29 +264,11 @@ export async function POST(request: NextRequest) {
       ...(fhNote ? { note: fhNote } : {}),
     }
 
-    let fhBookingUuid: string | undefined
-    try {
-      const validation = await fh.validateBooking(Number(meta.avail_pk), bookingBody)
-      if (!validation.is_bookable) {
-        console.error('[stripe-webhook] FH validation failed:', validation.error)
-        await alertWebhookFailure(pi, `FareHarbor validation failed: ${validation.error ?? 'unknown'}`)
-        return NextResponse.json({ received: true })
-      }
-      const booking = await fh.createBooking(Number(meta.avail_pk), bookingBody)
-      fhBookingUuid = booking?.uuid
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.error('[stripe-webhook] FH createBooking failed:', msg)
-      await alertWebhookFailure(pi, `FareHarbor error: ${msg}`)
-      return NextResponse.json({ received: true })
-    }
-
-    // Save to Supabase
-    const serverBaseAmount = Number(meta.server_base_amount_cents ?? 0)
-    const extrasAmountCents = Number(meta.extras_amount_cents ?? 0)
     // VAT fields may be absent from PI metadata (older intents, browser-side
     // omissions, etc.). Fall back to server-side compute: 9% on base, 21% on
     // extras. City tax is 0% VAT (municipal levy).
+    const serverBaseAmount = Number(meta.server_base_amount_cents ?? 0)
+    const extrasAmountCents = Number(meta.extras_amount_cents ?? 0)
     const baseVatAmountCents = Number(meta.base_vat_amount_cents)
       || extractVat(serverBaseAmount, 9)
     const extrasVatAmountCents = Number(meta.extras_vat_amount_cents)
@@ -281,9 +276,13 @@ export async function POST(request: NextRequest) {
     const totalVatAmountCents = Number(meta.total_vat_amount_cents)
       || (baseVatAmountCents + extrasVatAmountCents)
 
-    const { error: dbError } = await supabase.from('bookings').insert({
+    // The full booking row. We claim it in pending_payment BEFORE creating the
+    // FareHarbor booking, so the UNIQUE(stripe_payment_intent_id) constraint
+    // serializes us against the browser /book path — exactly one creates the
+    // FareHarbor booking. claimBooking forces status + nulls booking_uuid.
+    const bookingRow = {
       booking_id: pi.id,
-      booking_uuid: fhBookingUuid ?? null,
+      booking_uuid: null,
       fareharbor_availability_pk: Number(meta.avail_pk),
       fareharbor_customer_type_rate_pk: Number(meta.customer_type_rate_pk),
       customer_type_name: meta.customer_type_name || null,
@@ -316,11 +315,60 @@ export async function POST(request: NextRequest) {
       traffic_detail: meta.traffic_detail || null,
       promo_code_id: meta.promo_code_id || null,
       discount_amount_cents: Number(meta.discount_amount_cents ?? 0),
-    })
+    }
 
-    if (dbError) {
-      console.error('[stripe-webhook] DB save failed for PI', pi.id, dbError)
-      await alertWebhookFailure(pi, `DB save failed: ${dbError.message}`)
+    // Claim the PaymentIntent FIRST — before touching FareHarbor (race guard).
+    // Losing the claim means the browser /book path already owns this payment, so
+    // we back off SILENTLY. This ordering is what stops the loser of an iDEAL race
+    // from hitting FareHarbor, seeing the boat already taken, and firing a false
+    // "booking failed" alert when the booking actually succeeded on the other path.
+    const claim = await claimBooking(supabase, bookingRow)
+    if (claim.outcome === 'lost') {
+      console.log('[stripe-webhook] PI already claimed by another path, skipping:', pi.id)
+      return NextResponse.json({ received: true })
+    }
+    if (claim.outcome === 'error') {
+      await alertWebhookFailure(pi, `DB claim failed: ${claim.error}`)
+      return NextResponse.json({ received: true })
+    }
+
+    // We own the claim — validate (read-only). Reaching here means we are NOT the
+    // loser of a race, so a not-bookable result is a GENUINE failure. Release the
+    // claim first so Stripe's 72h retry can re-attempt cleanly.
+    try {
+      const validation = await fh.validateBooking(Number(meta.avail_pk), bookingBody)
+      if (!validation.is_bookable) {
+        console.error('[stripe-webhook] FH validation failed:', validation.error)
+        await releaseClaim(supabase, pi.id)
+        await alertWebhookFailure(pi, `FareHarbor validation failed: ${validation.error ?? 'unknown'}`)
+        return NextResponse.json({ received: true })
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[stripe-webhook] FH validate failed:', msg)
+      await releaseClaim(supabase, pi.id)
+      await alertWebhookFailure(pi, `FareHarbor error: ${msg}`)
+      return NextResponse.json({ received: true })
+    }
+
+    // Validation passed — create the FareHarbor booking, then promote the row.
+    let fhBookingUuid: string | undefined
+    try {
+      const booking = await fh.createBooking(Number(meta.avail_pk), bookingBody)
+      fhBookingUuid = booking?.uuid
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[stripe-webhook] FH createBooking failed:', msg)
+      // Release the claim so Stripe's retry (72h) can re-attempt cleanly.
+      await releaseClaim(supabase, pi.id)
+      await alertWebhookFailure(pi, `FareHarbor error: ${msg}`)
+      return NextResponse.json({ received: true })
+    }
+
+    const fin = await finalizeBooking(supabase, pi.id, { bookingUuid: fhBookingUuid ?? null })
+    if (fin.ok === false) {
+      console.error('[stripe-webhook] finalize failed for PI', pi.id, fin.error)
+      await alertWebhookFailure(pi, `DB finalize failed: ${fin.error}`)
       // Don't return early — still send Slack + email so we know the cruise is booked
     }
 
@@ -333,6 +381,7 @@ export async function POST(request: NextRequest) {
       `👥 ${guestCount} guest${guestCount !== 1 ? 's' : ''} · ${meta.category}`,
       `💰 €${(pi.amount / 100).toFixed(0)}`,
       `👤 ${meta.guest_name} · ${meta.guest_email}`,
+      meta.traffic_source ? `📍 ${formatTrafficSource(meta.traffic_source, meta.traffic_detail)}` : '',
       fhBookingUuid ? `🎫 FH: ${fhBookingUuid}` : '',
       `💳 PI: ${pi.id}`,
     ].filter(Boolean).join('\n')
@@ -415,7 +464,7 @@ export async function POST(request: NextRequest) {
     const dispute = event.data.object as Stripe.Dispute
     const chargeId = typeof dispute.charge === 'string' ? dispute.charge : (dispute.charge as Stripe.Charge)?.id
 
-    await postSlackText([
+    await sendCriticalAlert([
       '🚨 *CHARGEBACK OPENED* 🚨',
       '_A customer disputed a charge. Respond in Stripe within 7 days to avoid auto-losing._',
       '',
@@ -425,7 +474,7 @@ export async function POST(request: NextRequest) {
       `Dispute: \`${dispute.id}\``,
       '',
       `https://dashboard.stripe.com/disputes/${dispute.id}`,
-    ].join('\n'))
+    ].join('\n'), { subject: '🚨 Off Course chargeback opened — respond within 7 days' })
   }
 
   // ── payment_intent.payment_failed ──────────────────────────────────────────
@@ -450,8 +499,9 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Alert Slack when the webhook can't complete a booking for a paid PI.
- * This is critical — Stripe confirmed the money, but FareHarbor or Supabase failed.
+ * Alert when the webhook can't complete a booking for a paid PI.
+ * Critical — Stripe confirmed the money, but FareHarbor or Supabase failed.
+ * Fans out to Slack AND email so a single dead channel can't swallow it.
  */
 async function alertWebhookFailure(pi: Stripe.PaymentIntent, reason: string) {
   const meta = pi.metadata ?? {}
@@ -469,9 +519,5 @@ async function alertWebhookFailure(pi: Stripe.PaymentIntent, reason: string) {
     '_Manually create the FareHarbor booking and send a confirmation email._',
   ].join('\n')
 
-  if (process.env.SLACK_WEBHOOK_URL) {
-    await postSlackText(text)
-  } else {
-    console.error('[stripe-webhook] CRITICAL (no Slack configured):', text)
-  }
+  await sendCriticalAlert(text, { subject: '🚨 CRITICAL: Off Course webhook booking failed' })
 }

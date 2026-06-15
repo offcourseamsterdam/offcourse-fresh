@@ -73,6 +73,42 @@ export function deriveTrafficSource(input: TrafficSourceInput): TrafficSource {
   return { source: 'direct', detail: null }
 }
 
+/** Friendly channel names for the raw source slugs deriveTrafficSource emits. */
+const SOURCE_LABELS: Record<string, string> = {
+  'google-ads': 'Google Ads',
+  campaign: 'Campaign',
+  social: 'Social',
+  email: 'Email',
+  organic: 'Organic',
+  referral: 'Referral',
+  partners: 'Partners',
+  direct: 'Direct',
+}
+
+/**
+ * Human-readable attribution label that names BOTH the channel and the specific
+ * origin behind it:
+ *
+ *   ('referral', 'www.instagram.com') → "Referral — www.instagram.com"
+ *   ('google-ads', 'summer-campaign') → "Google Ads — summer-campaign"
+ *   ('direct', null)                  → "Direct"
+ *
+ * One formatter shared by the Stripe PI metadata, the admin booking detail, and
+ * the Slack booking alert, so the wording can never drift between them. A missing
+ * source reads as "Direct" (the same fallback deriveTrafficSource uses).
+ */
+export function formatTrafficSource(
+  source: string | null | undefined,
+  detail?: string | null,
+): string {
+  const slug = source?.trim()
+  const channel = slug
+    ? (SOURCE_LABELS[slug] ?? slug.charAt(0).toUpperCase() + slug.slice(1))
+    : 'Direct'
+  const origin = detail?.trim()
+  return origin ? `${channel} — ${origin}` : channel
+}
+
 /**
  * Parse the oc_src cookie value defensively — it's client-writable, so treat
  * it as untrusted input: must be a JSON object, strings only, length-capped.
