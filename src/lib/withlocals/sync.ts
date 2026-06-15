@@ -2,7 +2,6 @@ import 'server-only'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { resolveExperienceUuid, fetchAllWithlocalsReviews } from './client'
 import { parseWithlocalsReview } from './parse'
-import { awardReviewBonuses } from '@/lib/scheduling/review-bonuses'
 
 // Two reviews are considered the same if 70%+ of their meaningful words overlap.
 const DUPLICATE_THRESHOLD = 0.7
@@ -121,24 +120,6 @@ export async function syncWithlocalsReviews(shortId: string): Promise<SyncWithlo
   }
 
   const flagged = enriched.filter(r => r.possible_duplicate_of != null).length
-
-  // Run staff-name bonus scanning on newly inserted rows only
-  const newExternalIds = newRows
-    .map(r => r.external_review_id)
-    .filter((id): id is string => id != null)
-
-  if (newExternalIds.length > 0) {
-    const { data: inserted } = await supabase
-      .from('social_proof_reviews')
-      .select('id, review_text, original_text')
-      .eq('source', 'withlocals')
-      .in('external_review_id', newExternalIds)
-
-    for (const row of inserted ?? []) {
-      const text = [row.review_text, row.original_text].filter(Boolean).join(' ')
-      await awardReviewBonuses(row.id, text)
-    }
-  }
 
   await supabase
     .from('google_reviews_config')
