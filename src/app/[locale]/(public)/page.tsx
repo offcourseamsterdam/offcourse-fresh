@@ -46,7 +46,7 @@ export default async function HomePage({ params }: Props) {
   // google_reviews_config is RLS-protected (service-role only). Bypass for the public stats + source URLs.
   const adminSupabase = createAdminClient()
 
-  const [listingsResult, reviewsResult, slidesResult, boatsResult, prioritiesResult, googleConfigResult, sectionStylesResult] = await Promise.all([
+  const [listingsResult, reviewsResult, slidesResult, boatsResult, prioritiesResult, googleConfigResult, reviewsCountResult, sectionStylesResult] = await Promise.all([
     supabase
       .from('cruise_listings')
       .select('id, slug, category, hero_image_url, title, tagline, price_display, duration_display')
@@ -83,6 +83,11 @@ export default async function HomePage({ params }: Props) {
       .select('total_reviews, tripadvisor_total_reviews')
       .limit(1)
       .maybeSingle(),
+    // Count of ALL active reviews across every platform (Google + TA + Withlocals + GYG)
+    adminSupabase
+      .from('social_proof_reviews')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_active', true),
     // Per-section custom backgrounds + text colours (admin-managed appearance)
     supabase
       .from('homepage_section_styles')
@@ -95,11 +100,14 @@ export default async function HomePage({ params }: Props) {
   const slides = rawSlides.map(s => ({ src: s.image_url, alt: s.alt_text ?? '', caption: s.caption ?? '' }))
   const boats = boatsResult.data ?? []
   const priorities = prioritiesResult.data ?? []
-  // Combined total across both sources (fall back to actual loaded counts per source).
+  // Combined total across all platforms. Google and TA use admin-configured counts (the
+  // real platform totals, even if not every review is imported). Withlocals and GYG are
+  // fully imported, so the DB count covers them. We take whichever is larger to avoid
+  // showing a lower number as new platforms are added.
   const allReviews = reviews ?? []
   const googleTotal = googleConfigResult.data?.total_reviews ?? allReviews.filter(r => r.source === 'google').length
   const taTotal = googleConfigResult.data?.tripadvisor_total_reviews ?? allReviews.filter(r => r.source === 'tripadvisor').length
-  const totalReviewCount = googleTotal + taTotal
+  const totalReviewCount = Math.max(googleTotal + taTotal, reviewsCountResult.count ?? 0)
 
   // Look up an admin-set background/text-colour style for a homepage section.
   const sectionStyle = (key: string): SectionStyle | undefined => {

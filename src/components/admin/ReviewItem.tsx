@@ -14,7 +14,14 @@ export interface ReviewItemProps {
 }
 
 export function ReviewItem({ review, onToggleActive, onDelete }: ReviewItemProps) {
-  const isTa = review.source === 'tripadvisor'
+  function sourceBadge(source: string): { label: string; variant: 'default' | 'secondary' | 'outline' } {
+    if (source === 'tripadvisor') return { label: '🦉 TripAdvisor', variant: 'secondary' }
+    if (source === 'withlocals') return { label: '🏠 Withlocals', variant: 'outline' }
+    if (source === 'getyourguide') return { label: '🌍 GetYourGuide', variant: 'outline' }
+    return { label: '⭐ Google', variant: 'default' }
+  }
+
+  const badge = sourceBadge(review.source)
 
   return (
     <li className="px-6 py-4 space-y-3">
@@ -43,10 +50,10 @@ export function ReviewItem({ review, onToggleActive, onDelete }: ReviewItemProps
             <span className="font-medium text-sm text-zinc-900">{review.reviewer_name}</span>
             <StarRating rating={review.rating} className="[&_svg]:w-3 [&_svg]:h-3" />
             <Badge
-              variant={isTa ? 'secondary' : 'default'}
+              variant={badge.variant}
               className="text-[10px] px-1.5 py-0"
             >
-              {isTa ? '🦉 TripAdvisor' : '⭐ Google'}
+              {badge.label}
             </Badge>
             {review.google_profile_url && (
               <a href={review.google_profile_url} target="_blank" rel="noopener noreferrer" className="text-zinc-300 hover:text-zinc-500 transition-colors">

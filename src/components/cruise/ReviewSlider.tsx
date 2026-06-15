@@ -17,7 +17,17 @@ export type SliderReview = {
   publish_time: string | null
 }
 
-type SourceFilter = 'all' | 'google' | 'tripadvisor'
+type SourceFilter = 'all' | 'google' | 'tripadvisor' | 'withlocals' | 'getyourguide'
+
+const KNOWN_SOURCES: Array<Exclude<SourceFilter, 'all'>> = ['google', 'tripadvisor', 'withlocals', 'getyourguide']
+
+function sourceDisplayName(source: string): string {
+  if (source === 'google') return 'Google'
+  if (source === 'tripadvisor') return 'TripAdvisor'
+  if (source === 'withlocals') return 'Withlocals'
+  if (source === 'getyourguide') return 'GetYourGuide'
+  return source
+}
 
 interface ReviewSliderProps {
   reviews: SliderReview[]
@@ -42,9 +52,8 @@ export function ReviewSlider({ reviews, totalReviews }: ReviewSliderProps) {
     })
   }
 
-  const googleCount = reviews.filter((r) => r.source === 'google').length
-  const taCount = reviews.filter((r) => r.source === 'tripadvisor').length
-  const showSourceTabs = googleCount > 0 && taCount > 0
+  const availableSources = KNOWN_SOURCES.filter(s => reviews.some(r => r.source === s))
+  const showSourceTabs = availableSources.length > 1
   const headlineCount = totalReviews ?? reviews.length
   const filtered = filter === 'all' ? reviews : reviews.filter((r) => r.source === filter)
 
@@ -89,13 +98,9 @@ export function ReviewSlider({ reviews, totalReviews }: ReviewSliderProps) {
 
         {showSourceTabs && (
           <div className="flex gap-1">
-            {([
-              ['all', `All (${reviews.length})`],
-              ['google', `Google (${googleCount})`],
-              ['tripadvisor', `TripAdvisor (${taCount})`],
-            ] as [SourceFilter, string][]).map(([f, label]) => (
+            {(['all', ...availableSources] as SourceFilter[]).map(f => (
               <button key={f} type="button" onClick={() => setFilter(f)} className={tab(filter === f)}>
-                {label}
+                {f === 'all' ? 'All' : sourceDisplayName(f)}
               </button>
             ))}
           </div>
@@ -160,8 +165,8 @@ export function ReviewSlider({ reviews, totalReviews }: ReviewSliderProps) {
             {/* Source + read more */}
             <div className="flex items-center justify-between mt-2">
               {review.source && (
-                <span className="text-xs text-[var(--color-muted)] capitalize">
-                  {review.source}
+                <span className="text-xs text-[var(--color-muted)]">
+                  {sourceDisplayName(review.source)}
                 </span>
               )}
               <span className="text-xs text-[var(--color-primary)] font-semibold ml-auto">
@@ -263,8 +268,8 @@ function ReviewModal({
 
         {/* Source */}
         {review.source && (
-          <p className="text-xs text-[var(--color-muted)] mt-4 capitalize">
-            Posted on {review.source}
+          <p className="text-xs text-[var(--color-muted)] mt-4">
+            via {sourceDisplayName(review.source)}
           </p>
         )}
       </div>

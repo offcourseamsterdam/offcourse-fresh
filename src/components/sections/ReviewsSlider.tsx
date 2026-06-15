@@ -26,14 +26,27 @@ export interface SliderReview {
   publish_time: string | null
 }
 
-type SourceFilter = 'all' | 'google' | 'tripadvisor'
+type SourceFilter = 'all' | 'google' | 'tripadvisor' | 'withlocals' | 'getyourguide'
+
+const KNOWN_SOURCES: Array<Exclude<SourceFilter, 'all'>> = ['google', 'tripadvisor', 'withlocals', 'getyourguide']
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+function sourceTabLabel(source: SourceFilter): string {
+  if (source === 'all') return 'All'
+  if (source === 'google') return 'Google'
+  if (source === 'tripadvisor') return 'TripAdvisor'
+  if (source === 'withlocals') return 'Withlocals'
+  if (source === 'getyourguide') return 'GetYourGuide'
+  return source
+}
 
 /** Honest source attribution (per SEO decision — cite the third-party source). */
 function sourceLabel(source: string): string {
   if (source === 'tripadvisor') return 'via TripAdvisor'
   if (source === 'google') return 'via Google'
+  if (source === 'withlocals') return 'via Withlocals'
+  if (source === 'getyourguide') return 'via GetYourGuide'
   return ''
 }
 
@@ -210,6 +223,7 @@ export function ReviewsSlider({
     el.scrollBy({ left: dir === 'right' ? 340 : -340, behavior: 'smooth' })
   }, [])
 
+  const availableSources = KNOWN_SOURCES.filter(s => reviews.some(r => r.source === s))
   const filtered = filter === 'all' ? reviews : reviews.filter(r => r.source === filter)
   // The slider is a preview; the full set lives in the "See all reviews" modal.
   const preview = filtered.slice(0, 12)
@@ -217,9 +231,9 @@ export function ReviewsSlider({
   return (
     <div className="space-y-5">
       {/* Source filter tabs */}
-      {showSourceTabs && (
+      {showSourceTabs && availableSources.length > 0 && (
         <div className="flex items-center justify-center gap-1">
-          {(['all', 'google', 'tripadvisor'] as SourceFilter[]).map(f => (
+          {(['all', ...availableSources] as SourceFilter[]).map(f => (
             <button
               key={f}
               onClick={() => setFilter(f)}
@@ -229,7 +243,7 @@ export function ReviewsSlider({
                   : 'bg-white text-[var(--color-muted)] hover:text-[var(--color-primary)] border border-gray-200'
               }`}
             >
-              {f === 'all' ? 'All' : f === 'google' ? 'Google' : 'TripAdvisor'}
+              {sourceTabLabel(f)}
             </button>
           ))}
         </div>

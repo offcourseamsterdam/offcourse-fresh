@@ -7,18 +7,19 @@ import type { ReviewsConfig } from '@/app/[locale]/admin/reviews/types'
 
 interface Props {
   config: ReviewsConfig
-  onSave: (placeId: string, tripadvisorUrl: string) => Promise<boolean>
+  onSave: (placeId: string, tripadvisorUrl: string, withlocalsShortId: string) => Promise<boolean>
 }
 
 export function GoogleConfigBar({ config, onSave }: Props) {
   const [editing, setEditing] = useState(false)
   const [placeId, setPlaceId] = useState(config.place_id ?? '')
   const [taUrl, setTaUrl] = useState(config.tripadvisor_url ?? '')
+  const [wlShortId, setWlShortId] = useState(config.withlocals_experience_short_id ?? '')
   const [saving, setSaving] = useState(false)
 
   async function handleSave() {
     setSaving(true)
-    const ok = await onSave(placeId.trim(), taUrl.trim())
+    const ok = await onSave(placeId.trim(), taUrl.trim(), wlShortId.trim())
     setSaving(false)
     if (ok) setEditing(false)
   }
@@ -88,6 +89,16 @@ export function GoogleConfigBar({ config, onSave }: Props) {
               onChange={e => setTaUrl(e.target.value)}
             />
             <p className="text-[10px] text-zinc-400 mt-0.5">Full URL from your TripAdvisor listing page. Leave blank to skip TripAdvisor.</p>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-zinc-600 block mb-1">Withlocals experience short ID</label>
+            <input
+              className="w-full text-sm border border-zinc-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-zinc-300"
+              placeholder="e.g. abc123"
+              value={wlShortId}
+              onChange={e => setWlShortId(e.target.value)}
+            />
+            <p className="text-[10px] text-zinc-400 mt-0.5">Short ID from your Withlocals experience URL. Leave blank to skip Withlocals.</p>
           </div>
           <Button size="sm" onClick={handleSave} disabled={saving || !placeId.trim()}>
             {saving ? 'Saving…' : 'Save config'}
