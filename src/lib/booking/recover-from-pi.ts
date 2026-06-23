@@ -14,6 +14,7 @@
 
 import { getStripe } from '@/lib/stripe/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { claimPaymentIntent, releaseClaim } from './booking-claims'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { sendConfirmationEmail } from '@/lib/booking/send-confirmation-email'
 import { notifyCateringOrder } from '@/lib/catering/notify'
@@ -199,6 +200,25 @@ export async function recoverBookingFromPi(
     // Refund lookup failing shouldn't block recovery — proceed.
   }
 
+  // 3c. Claim the payment-intent BEFORE creating the FareHarbor booking, so a
+  //     racing path (the webhook, or a second /recover) can never create a
+  //     second FH booking. See src/lib/booking/booking-claims.ts.
+  const claim = await claimPaymentIntent(supabase, pi.id)
+  if (claim === 'duplicate') {
+    const listingSlug = await getListingSlug(meta.listing_id)
+    return { ok: true, listingSlug, fhBookingUuid: null, outcome: 'existing' }
+  }
+  if (claim === 'in_flight') {
+    // Another live path is finishing this booking; the confirmation page polls
+    // until its row appears. Returning 'processing' parks the customer there.
+    const listingSlug = await getListingSlug(meta.listing_id)
+    return { ok: false, listingSlug, fhBookingUuid: null, outcome: 'processing' }
+  }
+  // 'won' → we own the PI; release the claim on every terminal path below.
+  // 'unavailable' → claim layer is down; proceed anyway (the bookings unique
+  // constraint stays the backstop) and don't release someone else's claim.
+  const claimed = claim === 'won'
+
   // 3b. Extras from quote
   const extrasSelected = await getExtrasFromQuote(meta.quote_id)
 
@@ -222,6 +242,7 @@ export async function recoverBookingFromPi(
   try {
     const validation = await fh.validateBooking(Number(meta.avail_pk), bookingBody)
     if (!validation.is_bookable) {
+      if (claimed) await releaseClaim(supabase, pi.id)
       return {
         ok: false, listingSlug: null, fhBookingUuid: null, outcome: 'failed',
         error: `FareHarbor validation failed: ${validation.error ?? 'unknown'}`,
@@ -231,6 +252,7 @@ export async function recoverBookingFromPi(
     fhBookingUuid = booking?.uuid
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
+    if (claimed) await releaseClaim(supabase, pi.id)
     return { ok: false, listingSlug: null, fhBookingUuid: null, outcome: 'failed', error: `FareHarbor error: ${msg}` }
   }
 
@@ -284,7 +306,10 @@ export async function recoverBookingFromPi(
       // webhook, or the browser /book) saved this payment's booking while we
       // were creating ours. Ours is a duplicate — cancel it in FareHarbor so
       // the boat isn't blocked twice. The winning path sends the notifications.
-      console.warn('[recover-from-pi] duplicate booking for PI', pi.id, '— cancelling our FH booking', fhBookingUuid)
+      // Backstop: unexpected under the claim model (we won the claim, so no other
+      // path should have inserted this PI). If it fires, cancel our FH booking so
+      // the boat isn't blocked twice.
+      console.warn('[recover-from-pi] 23505 despite claim for PI', pi.id, '— cancelling our FH booking', fhBookingUuid)
       if (fhBookingUuid) {
         try {
           await fh.cancelBooking(fhBookingUuid)
@@ -296,6 +321,7 @@ export async function recoverBookingFromPi(
           ].join('\n'))
         }
       }
+      if (claimed) await releaseClaim(supabase, pi.id)
       const listingSlug = await getListingSlug(meta.listing_id)
       return { ok: true, listingSlug, fhBookingUuid: null, outcome: 'existing' }
     }
@@ -352,7 +378,8 @@ export async function recoverBookingFromPi(
     }),
   ])
 
-  // 7. Return slug for browser redirect
+  // 7. Release the claim and return slug for browser redirect
+  if (claimed) await releaseClaim(supabase, pi.id)
   const listingSlug = await getListingSlug(meta.listing_id)
 
   return { ok: true, listingSlug, fhBookingUuid, outcome: 'created' }

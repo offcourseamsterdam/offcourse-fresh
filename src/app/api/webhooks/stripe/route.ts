@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { sendConfirmationEmail } from '@/lib/booking/send-confirmation-email'
 import { getExtrasFromQuote, parseMetaCents } from '@/lib/booking/recover-from-pi'
+import { claimPaymentIntent, releaseClaim } from '@/lib/booking/booking-claims'
 import { notifyCateringOrder } from '@/lib/catering/notify'
 import { buildFHBookingNote } from '@/lib/catering/build-fh-note'
 import type { ExtrasLineItem } from '@/lib/catering/filter'
@@ -240,6 +241,48 @@ export async function POST(request: NextRequest) {
 
     console.log('[stripe-webhook] payment_intent.succeeded — creating booking for PI:', pi.id)
 
+    // Refund guard (mirrors /recover): never (re)book a payment that has already
+    // been refunded — e.g. an earlier failed attempt auto-refunded it and Stripe
+    // re-delivered this event.
+    try {
+      const refunds = await stripe.refunds.list({ payment_intent: pi.id, limit: 1 })
+      if (refunds.data.length > 0) {
+        console.log('[stripe-webhook] PI already refunded — not booking:', pi.id)
+        return NextResponse.json({ received: true })
+      }
+    } catch {
+      // A refund-lookup failure must not block a legitimate booking — proceed.
+    }
+
+    // Claim the PI BEFORE creating the FareHarbor booking so a racing browser
+    // /book or /recover can never create a second booking. See booking-claims.ts.
+    let claim = await claimPaymentIntent(supabase, pi.id)
+    if (claim === 'duplicate') {
+      console.log('[stripe-webhook] booking already exists for PI — skipping:', pi.id)
+      return NextResponse.json({ received: true })
+    }
+    if (claim === 'in_flight') {
+      // Another live path holds the claim but hasn't inserted yet. Wait the same
+      // recheck window the refund path uses, then look again: if its booking
+      // landed we're done; if it stalled (crashed mid-flight) we take over — the
+      // bookings unique constraint + the 23505 branch below stay the final guard.
+      await new Promise(resolve => setTimeout(resolve, BOOKING_RECHECK_DELAY_MS))
+      const { data: landed } = await supabase
+        .from('bookings')
+        .select('id')
+        .eq('stripe_payment_intent_id', pi.id)
+        .maybeSingle()
+      if (landed) {
+        console.log('[stripe-webhook] booking completed by another path — skipping:', pi.id)
+        return NextResponse.json({ received: true })
+      }
+      console.warn('[stripe-webhook] claim owner stalled — taking over PI:', pi.id)
+      claim = 'won'
+    }
+    // 'won' → release the claim on every terminal below. 'unavailable' → claim
+    // layer down; proceed anyway (the unique constraint is the backstop), nothing to release.
+    const claimed = claim === 'won'
+
     // Retrieve extras line items from the stored quote breakdown.
     const extrasSelected = await getExtrasFromQuote(meta.quote_id)
 
@@ -266,6 +309,7 @@ export async function POST(request: NextRequest) {
       const validation = await fh.validateBooking(Number(meta.avail_pk), bookingBody)
       if (!validation.is_bookable) {
         console.error('[stripe-webhook] FH validation failed:', validation.error)
+        if (claimed) await releaseClaim(supabase, pi.id)
         await refundFailedBooking(stripe, supabase, pi, `FareHarbor validation failed: ${validation.error ?? 'unknown'}`)
         return NextResponse.json({ received: true })
       }
@@ -274,6 +318,7 @@ export async function POST(request: NextRequest) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('[stripe-webhook] FH createBooking failed:', msg)
+      if (claimed) await releaseClaim(supabase, pi.id)
       await refundFailedBooking(stripe, supabase, pi, `FareHarbor error: ${msg}`)
       return NextResponse.json({ received: true })
     }
@@ -331,11 +376,11 @@ export async function POST(request: NextRequest) {
 
     if (dbError) {
       if (dbError.code === '23505') {
-        // Unique violation on stripe_payment_intent_id: the browser-side /book
-        // or /recover saved this payment's booking while we were creating ours.
-        // Ours is the duplicate — cancel it in FareHarbor so the boat isn't
-        // blocked twice. The winning path already sent Slack + email.
-        console.warn('[stripe-webhook] duplicate booking for PI', pi.id, '— cancelling our FH booking', fhBookingUuid)
+        // Backstop: unexpected under the claim model (we hold the claim, so no
+        // other path should have inserted this PI). If it still fires, another
+        // path won — cancel our FareHarbor booking so the boat isn't blocked
+        // twice. The winning path already sent Slack + email.
+        console.warn('[stripe-webhook] 23505 despite claim for PI', pi.id, '— cancelling our FH booking', fhBookingUuid)
         if (fhBookingUuid) {
           try {
             await fh.cancelBooking(fhBookingUuid)
@@ -347,12 +392,25 @@ export async function POST(request: NextRequest) {
             )
           }
         }
+        if (claimed) await releaseClaim(supabase, pi.id)
         return NextResponse.json({ received: true })
       }
       console.error('[stripe-webhook] DB save failed for PI', pi.id, dbError)
-      await alertWebhookFailure(pi, `DB save failed: ${dbError.message}`)
+      // The FareHarbor booking EXISTS — only our DB record failed. Tell ops to
+      // REPAIR the row, not to recreate the booking.
+      await alertWebhookFailure(
+        pi,
+        `DB save failed: ${dbError.message}`,
+        fhBookingUuid
+          ? `_The FareHarbor booking EXISTS (\`${fhBookingUuid}\`). Add the booking row in Supabase — do NOT recreate the FareHarbor booking._`
+          : '_Add the booking row in Supabase manually._',
+      )
       // Don't return early — still send Slack + email so we know the cruise is booked
     }
+
+    // Booking recorded (or FH exists + ops alerted) — release the claim so the
+    // PI is no longer held.
+    if (claimed) await releaseClaim(supabase, pi.id)
 
     const startTime = formatAmsterdamTime(meta.start_at)
     const endTime = formatAmsterdamTime(meta.end_at)

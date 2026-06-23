@@ -29,12 +29,15 @@ const h = vi.hoisted(() => ({
   notifyCateringOrder: vi.fn().mockResolvedValue(undefined),
   postSlackText: vi.fn().mockResolvedValue(undefined),
   getExtrasFromQuote: vi.fn().mockResolvedValue([]),
+  claimPaymentIntent: vi.fn().mockResolvedValue('won'),
+  releaseClaim: vi.fn().mockResolvedValue(undefined),
+  refundsList: vi.fn().mockResolvedValue({ data: [] }),
 }))
 
 vi.mock('@/lib/stripe/server', () => ({
   getStripe: () => ({
     webhooks: { constructEvent: h.constructEvent },
-    refunds: { create: h.refundsCreate },
+    refunds: { create: h.refundsCreate, list: h.refundsList },
   }),
 }))
 vi.mock('@/lib/supabase/admin', () => ({
@@ -58,6 +61,10 @@ vi.mock('@/lib/fareharbor/client', () => ({
 vi.mock('@/lib/booking/send-confirmation-email', () => ({ sendConfirmationEmail: h.sendConfirmationEmail }))
 vi.mock('@/lib/catering/notify', () => ({ notifyCateringOrder: h.notifyCateringOrder }))
 vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText }))
+vi.mock('@/lib/booking/booking-claims', () => ({
+  claimPaymentIntent: h.claimPaymentIntent,
+  releaseClaim: h.releaseClaim,
+}))
 vi.mock('@/lib/booking/recover-from-pi', () => ({
   getExtrasFromQuote: h.getExtrasFromQuote,
   // Real implementation is trivial — duplicate it so route VAT math behaves normally.
@@ -371,5 +378,114 @@ describe('stripe webhook — paid-but-unbookable safety net', () => {
     // The winning path already sent notifications — this one must stay silent.
     expect(h.sendConfirmationEmail).not.toHaveBeenCalled()
     expect(h.refundsCreate).not.toHaveBeenCalled()
+  })
+})
+
+// ── payment_intent.succeeded — claim mutex (race prevention) ──────────────────
+
+describe('stripe webhook — payment_intent.succeeded claim mutex', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubEnv('STRIPE_WEBHOOK_SECRET', 'whsec_test')
+    vi.stubEnv('SLACK_WEBHOOK_URL', 'https://hooks.slack.test/x')
+    h.maybeSingle.mockResolvedValue({ data: null })
+    h.refundsList.mockResolvedValue({ data: [] })
+    h.claimPaymentIntent.mockResolvedValue('won')
+    h.fhValidateBooking.mockResolvedValue({ is_bookable: true })
+    h.fhCreateBooking.mockResolvedValue({ uuid: 'fh-new' })
+    h.insert.mockResolvedValue({ error: null })
+  })
+
+  function makePi() {
+    return {
+      type: 'payment_intent.succeeded',
+      data: { object: { id: 'pi_claim', amount: 16500, metadata: {
+        avail_pk: '1001', customer_type_rate_pk: '2002', guest_count: '2',
+        category: 'private', guest_name: 'Eve', guest_email: 'eve@example.com',
+        listing_title: 'Canal Cruise', date: '2026-06-22',
+      } } },
+    }
+  }
+
+  it('does NOT touch FareHarbor when the claim is lost (duplicate)', async () => {
+    h.constructEvent.mockReturnValue(makePi())
+    h.claimPaymentIntent.mockResolvedValue('duplicate')
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.fhValidateBooking).not.toHaveBeenCalled()
+    expect(h.fhCreateBooking).not.toHaveBeenCalled()
+    expect(h.refundsCreate).not.toHaveBeenCalled()
+  })
+
+  it('creates exactly one FareHarbor booking when the claim is won', async () => {
+    h.constructEvent.mockReturnValue(makePi())
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.fhCreateBooking).toHaveBeenCalledTimes(1)
+    expect(h.releaseClaim).toHaveBeenCalledWith(expect.anything(), 'pi_claim')
+  })
+
+  it('does NOT book a payment that was already refunded (refund guard)', async () => {
+    h.constructEvent.mockReturnValue(makePi())
+    h.refundsList.mockResolvedValue({ data: [{ id: 're_1' }] })
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.claimPaymentIntent).not.toHaveBeenCalled()
+    expect(h.fhCreateBooking).not.toHaveBeenCalled()
+  })
+
+  it('redelivery after success: idempotency early-return, no claim attempted', async () => {
+    h.constructEvent.mockReturnValue(makePi())
+    h.maybeSingle.mockResolvedValue({ data: { id: 'existing' } })
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.claimPaymentIntent).not.toHaveBeenCalled()
+    expect(h.fhCreateBooking).not.toHaveBeenCalled()
+    expect(h.reportBookingConversion).toHaveBeenCalledTimes(1)
+  })
+
+  // in_flight = another live path holds the claim. The webhook waits one recheck
+  // window, then either steps aside (owner finished) or takes over (owner stalled).
+  describe('in_flight recheck / takeover', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+
+    async function runThroughRecheck() {
+      const resPromise = POST(mockReq())
+      await vi.advanceTimersByTimeAsync(10_000)
+      return resPromise
+    }
+
+    it('steps aside (no FareHarbor) when the owner finishes during the recheck', async () => {
+      h.constructEvent.mockReturnValue(makePi())
+      h.claimPaymentIntent.mockResolvedValue('in_flight')
+      h.maybeSingle
+        .mockResolvedValueOnce({ data: null })            // idempotency
+        .mockResolvedValueOnce({ data: { id: 'b-other' } }) // recheck: owner's row landed
+
+      const res = await runThroughRecheck()
+
+      expect(res.status).toBe(200)
+      expect(h.fhCreateBooking).not.toHaveBeenCalled()
+    })
+
+    it('takes over and books when the owner stalled (no row after recheck)', async () => {
+      h.constructEvent.mockReturnValue(makePi())
+      h.claimPaymentIntent.mockResolvedValue('in_flight')
+      h.maybeSingle.mockResolvedValue({ data: null }) // never appears
+
+      const res = await runThroughRecheck()
+
+      expect(res.status).toBe(200)
+      expect(h.fhCreateBooking).toHaveBeenCalledTimes(1)
+    })
   })
 })

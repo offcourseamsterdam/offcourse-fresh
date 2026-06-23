@@ -329,6 +329,21 @@ export type Database = {
         }
         Relationships: []
       }
+      booking_claims: {
+        Row: {
+          created_at: string
+          payment_intent_id: string
+        }
+        Insert: {
+          created_at?: string
+          payment_intent_id: string
+        }
+        Update: {
+          created_at?: string
+          payment_intent_id?: string
+        }
+        Relationships: []
+      }
       bookings: {
         Row: {
           base_amount_cents: number | null
