@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { AdminFormModal } from '@/components/admin/ui/AdminFormModal'
 import { TextField, TextAreaField, Field } from '@/components/admin/ui/fields'
 import { useAdminSave, adminMutate } from '@/hooks/useAdminSave'
@@ -54,6 +55,7 @@ export function EditBookingModal({
         body.deposit_amount_cents = Math.round(parseFloat(depositInput) * 100)
       }
       await adminMutate(`/api/admin/bookings/${bookingId}`, 'PATCH', body)
+      toast.success('Booking updated', { description: 'Guest details saved.' })
       onSuccess()
     })
   }

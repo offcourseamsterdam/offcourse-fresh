@@ -1,3 +1,4 @@
+import { Toaster } from 'sonner'
 import ProtectedLayout from '@/components/auth/ProtectedLayout'
 import DashboardSidebar from '@/components/layout/DashboardSidebar'
 import type { NavSection } from '@/components/layout/DashboardSidebar'
@@ -73,6 +74,7 @@ export default async function AdminLayout({ children, params }: Props) {
           <AdminDataPreloader />
           <DashboardSidebar locale={locale} profile={profile} portalName="Admin Panel" navSections={navSections} />
           <main className="flex-1 overflow-auto">{children}</main>
+          <Toaster richColors position="bottom-right" />
         </div>
       )}
     </ProtectedLayout>
