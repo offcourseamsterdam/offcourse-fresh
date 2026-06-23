@@ -61,17 +61,30 @@ export async function POST(
       return apiError(validation.error ?? 'New slot is not available', 422)
     }
 
-    // Create new FH booking (with rebooking link to old if we have one)
-    let newFhBooking
+    // Cancel old FH booking BEFORE creating the new one.
+    // FareHarbor holds the boat as a resource — if we create first, it sees
+    // the same boat already booked and rejects with "Unable to satisfy resources".
     if (booking.booking_uuid) {
-      newFhBooking = await fh.rebookBooking(newAvailPk, bookingData, booking.booking_uuid)
-    } else {
-      newFhBooking = await fh.createBooking(newAvailPk, bookingData)
+      try {
+        await fh.cancelBooking(booking.booking_uuid)
+      } catch (err) {
+        if (!(err instanceof FHNotFoundError)) throw err
+        // Already gone in FH — continue
+      }
     }
 
-    // Update Supabase FIRST — if this fails, we still know the new FH UUID
-    // and can recover. Cancelling before the DB update is the root cause of
-    // orphaned bookings (new UUID created in FH but lost from our system).
+    // Create new FH booking now that the resource is free
+    let newFhBooking
+    try {
+      newFhBooking = await fh.createBooking(newAvailPk, bookingData)
+    } catch (err) {
+      // Old is cancelled but new creation failed. Log old UUID for manual recovery.
+      console.error('[rebook] new booking creation failed after cancelling old:', booking.booking_uuid, err)
+      throw err
+    }
+
+    // Update Supabase — log new UUID before attempting so it's recoverable if this fails
+    console.log('[rebook] new FH booking created:', newFhBooking.uuid, 'replacing:', booking.booking_uuid)
     const { error: updateError } = await supabase
       .from('bookings')
       .update({
@@ -87,16 +100,6 @@ export async function POST(
       .eq('id', id)
 
     if (updateError) return apiError(updateError.message)
-
-    // Cancel original FH booking only after the DB is safely updated
-    if (booking.booking_uuid) {
-      try {
-        await fh.cancelBooking(booking.booking_uuid)
-      } catch (err) {
-        if (!(err instanceof FHNotFoundError)) throw err
-        // Already gone in FH — continue
-      }
-    }
 
     // Send reschedule confirmation email — only when explicitly requested
     if (sendEmail !== false) sendRescheduleEmail({
