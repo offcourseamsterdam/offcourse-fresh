@@ -4,6 +4,7 @@ import { getFareHarborClient } from '@/lib/fareharbor/client'
 import type { FHBookingResponse } from '@/lib/fareharbor/types'
 import { resolveCustomerTypeName } from '@/lib/fareharbor/customer-type-name'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { claimPaymentIntent, releaseClaim } from '@/lib/booking/booking-claims'
 import { getStripe } from '@/lib/stripe/server'
 import type { BookingSource } from '@/lib/constants'
 import { requireAdmin } from '@/lib/auth/require-admin'
@@ -78,6 +79,9 @@ export function pickBookingSessionId(
 }
 
 export async function POST(request: NextRequest) {
+  // Tracks a payment-intent claim we hold, so the finally block can release it on
+  // any exit (success, dedup, FareHarbor failure, or a thrown error).
+  let claimedPi: string | null = null
   try {
     const body = await request.json()
     const {
@@ -155,6 +159,20 @@ export async function POST(request: NextRequest) {
         .maybeSingle()
       if (existing) {
         return apiOk({ booking: existing, deduplicated: true })
+      }
+
+      // Website checkout races the Stripe webhook + /recover for iDEAL payments.
+      // Claim the PI before touching FareHarbor so only one path ever creates a
+      // booking. Internal/partner/stripe_recovery sources are single-path (admin
+      // initiated) and skip the claim. The finally block releases claimedPi.
+      if (!isInternal) {
+        const claim = await claimPaymentIntent(supabase, stripePaymentIntentId)
+        if (claim === 'duplicate' || claim === 'in_flight') {
+          // Another path is creating (or created) this booking; the confirmation
+          // page polls until the row appears. Don't create a second FH booking.
+          return apiOk({ deduplicated: true })
+        }
+        if (claim === 'won') claimedPi = stripePaymentIntentId
       }
     }
 
@@ -277,8 +295,23 @@ export async function POST(request: NextRequest) {
 
     const saveResult = await saveToSupabase(bookingPayload)
     if (!saveResult.ok) {
-      // URGENT: customer paid, boat is reserved, but we have no DB record.
-      // Alert so an admin can manually recover within minutes.
+      if (saveResult.code === '23505') {
+        // A concurrent path (webhook/recover) already saved this payment's booking.
+        // Ours is the duplicate — cancel our FareHarbor booking so the boat isn't
+        // blocked twice (parity with the webhook + recover paths). This is a
+        // cleanly-handled race, NOT a failure: no CRITICAL alert. Claim released in finally.
+        console.warn('[book] 23505 — concurrent path won; cancelling our FH booking', booking?.uuid)
+        if (booking?.uuid) {
+          try {
+            await fh.cancelBooking(booking.uuid)
+          } catch (err) {
+            console.error('[book] failed to cancel duplicate FH booking', booking.uuid, err)
+          }
+        }
+        return apiOk({ deduplicated: true })
+      }
+      // Genuine DB failure: the FareHarbor booking EXISTS but our record didn't
+      // save. Alert ops to REPAIR the row (the alert wording reflects this).
       await alertBookingSaveFailure(bookingPayload, saveResult.error)
       // Still return success to customer — they got what they paid for.
     }
@@ -351,6 +384,11 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return apiError(message)
+  } finally {
+    // Release our PI claim on every exit. No-op when we didn't win one
+    // (duplicate/in_flight returns leave claimedPi null so we never delete
+    // another path's claim).
+    if (claimedPi) await releaseClaim(createAdminClient(), claimedPi)
   }
 }
 
@@ -711,7 +749,7 @@ async function resolveAttribution(params: {
  * Caller is responsible for alerting on failure — this is the money-path,
  * we MUST know when it breaks.
  */
-async function saveToSupabase(p: BookingPayload): Promise<{ ok: true } | { ok: false; error: string }> {
+async function saveToSupabase(p: BookingPayload): Promise<{ ok: true } | { ok: false; error: string; code?: string }> {
   try {
     const supabase = createAdminClient()
     const isInternal = p.bookingSource !== 'website'
@@ -785,7 +823,7 @@ async function saveToSupabase(p: BookingPayload): Promise<{ ok: true } | { ok: f
 
     if (error) {
       console.error('[book] saveToSupabase Supabase error:', error)
-      return { ok: false, error: error.message ?? 'Unknown Supabase error' }
+      return { ok: false, error: error.message ?? 'Unknown Supabase error', code: error.code }
     }
 
     // Non-fatal: increment uses_count + rotate if max reached.
@@ -873,12 +911,12 @@ async function alertBookingSaveFailure(p: BookingPayload, dbError: string) {
   }
 
   const text = [
-    '🚨 *CRITICAL: BOOKING SAVE FAILED* 🚨',
-    '_Customer paid + FareHarbor booked, but NOT in Supabase._',
+    '🚨 *CRITICAL: BOOKING DB SAVE FAILED* 🚨',
+    '_Customer paid and the FareHarbor booking EXISTS — only our Supabase record failed to save._',
     '',
     `*Error:* \`${dbError}\``,
     '',
-    '*Manually recover this booking:*',
+    '*Repair — add the booking row in Supabase. Do NOT recreate the FareHarbor booking:*',
     `• FareHarbor UUID: \`${p.fhBookingUuid ?? 'unknown'}\``,
     `• Stripe Payment Intent: \`${p.stripePaymentIntentId ?? 'internal'}\``,
     `• Customer: ${p.contact.name} · ${p.contact.email} · ${p.contact.phone}`,

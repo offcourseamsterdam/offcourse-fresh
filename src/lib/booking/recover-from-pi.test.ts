@@ -24,6 +24,8 @@ const h = vi.hoisted(() => ({
   sendConfirmationEmail: vi.fn().mockResolvedValue(undefined),
   notifyCateringOrder: vi.fn().mockResolvedValue(undefined),
   postSlackText: vi.fn().mockResolvedValue(undefined),
+  claimPaymentIntent: vi.fn(),
+  releaseClaim: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/lib/stripe/server', () => ({
@@ -55,6 +57,10 @@ vi.mock('@/lib/fareharbor/client', () => ({
 vi.mock('@/lib/booking/send-confirmation-email', () => ({ sendConfirmationEmail: h.sendConfirmationEmail }))
 vi.mock('@/lib/catering/notify', () => ({ notifyCateringOrder: h.notifyCateringOrder }))
 vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText }))
+vi.mock('./booking-claims', () => ({
+  claimPaymentIntent: h.claimPaymentIntent,
+  releaseClaim: h.releaseClaim,
+}))
 
 import { recoverBookingFromPi, parseMetaCents } from './recover-from-pi'
 
@@ -79,6 +85,7 @@ describe('recoverBookingFromPi', () => {
     h.quoteLookup.mockResolvedValue({ data: null })
     h.insert.mockResolvedValue({ error: null })
     h.fhCancel.mockResolvedValue(undefined)
+    h.claimPaymentIntent.mockResolvedValue('won')
   })
 
   it("returns the 'processing' outcome (with slug) when the payment is still settling", async () => {
@@ -152,6 +159,30 @@ describe('recoverBookingFromPi', () => {
     expect(h.postSlackText).toHaveBeenCalledWith(
       expect.stringContaining('New booking confirmed'),
     )
+    expect(h.releaseClaim).toHaveBeenCalledWith(expect.anything(), 'pi_5')
+  })
+
+  it('does NOT create a booking when the claim is a duplicate', async () => {
+    h.piRetrieve.mockResolvedValue({ id: 'pi_dup', status: 'succeeded', amount: 16500, metadata: PI_META })
+    h.claimPaymentIntent.mockResolvedValue('duplicate')
+
+    const result = await recoverBookingFromPi('pi_dup')
+
+    expect(result.ok).toBe(true)
+    expect(result.outcome).toBe('existing')
+    expect(h.fhValidate).not.toHaveBeenCalled()
+    expect(h.fhCreate).not.toHaveBeenCalled()
+  })
+
+  it("returns 'processing' when another path holds the claim (in_flight)", async () => {
+    h.piRetrieve.mockResolvedValue({ id: 'pi_inf', status: 'succeeded', amount: 16500, metadata: PI_META })
+    h.claimPaymentIntent.mockResolvedValue('in_flight')
+
+    const result = await recoverBookingFromPi('pi_inf')
+
+    expect(result.ok).toBe(false)
+    expect(result.outcome).toBe('processing')
+    expect(h.fhCreate).not.toHaveBeenCalled()
   })
 })
 
