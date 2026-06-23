@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { toast } from 'sonner'
 import { Loader2, CalendarDays } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { fmtAdminTime } from '@/lib/admin/format'
@@ -163,6 +164,9 @@ export function RescheduleBookingModal({
       })
       const json = await res.json()
       if (!json.ok) throw new Error(json.error ?? 'Rebook failed')
+      toast.success('Booking rescheduled', {
+        description: `${date} at ${fmtAdminTime(selectedSlot.start_at)} · ${sendEmail ? 'confirmation email sent' : 'no email sent'}`,
+      })
       onSuccess()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')

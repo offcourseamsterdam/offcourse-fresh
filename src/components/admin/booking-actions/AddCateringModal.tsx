@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { toast } from 'sonner'
 import { Loader2, X, UtensilsCrossed } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { fmtEuros } from '@/lib/utils'
@@ -176,6 +177,12 @@ export function AddCateringModal({
         throw new Error((json as Record<string, string>).error ?? 'Save failed')
       }
 
+      toast.success(
+        selectedCount === 0 ? 'Catering removed' : 'Catering updated',
+        selectedCount === 0
+          ? undefined
+          : { description: `${selectedCount} item${selectedCount !== 1 ? 's' : ''} · ${fmtEuros(selectedTotal)}` },
+      )
       onSuccess()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
