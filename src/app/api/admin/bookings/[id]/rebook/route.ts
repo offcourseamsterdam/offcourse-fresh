@@ -5,6 +5,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { FHNotFoundError } from '@/lib/fareharbor/types'
 import { sendRescheduleEmail } from '@/lib/booking/send-confirmation-email'
+import { postSlackText } from '@/lib/slack/send-notification'
+import { formatAmsterdamTime } from '@/lib/utils'
 
 export async function POST(
   request: NextRequest,
@@ -32,7 +34,7 @@ export async function POST(
     const supabase = createAdminClient()
     const { data: booking } = await supabase
       .from('bookings')
-      .select('id, booking_uuid, status, customer_name, customer_email, customer_phone, guest_note, category, guest_count, listing_title, base_amount_cents')
+      .select('id, booking_uuid, status, customer_name, customer_email, customer_phone, guest_note, category, guest_count, listing_title, base_amount_cents, booking_date, start_time')
       .eq('id', id)
       .single()
 
@@ -61,26 +63,34 @@ export async function POST(
       return apiError(validation.error ?? 'New slot is not available', 422)
     }
 
-    // Cancel old FH booking BEFORE creating the new one.
-    // FareHarbor holds the boat as a resource — if we create first, it sees
-    // the same boat already booked and rejects with "Unable to satisfy resources".
+    // Create the new FH booking first, linking it to the old one via the `rebooking` field.
+    // This tells FareHarbor it's a reschedule (not a new booking) so it sends a rescheduled
+    // notification instead of a "new booking confirmed" email. FH also uses the link to
+    // release the old slot's resource before allocating the new one, avoiding the
+    // "Unable to satisfy resources" conflict we previously worked around by cancelling first.
+    // If there's no old FH UUID (admin-created booking), fall back to a plain createBooking.
+    let newFhBooking
+    try {
+      if (booking.booking_uuid) {
+        newFhBooking = await fh.rebookBooking(newAvailPk, bookingData, booking.booking_uuid)
+      } else {
+        newFhBooking = await fh.createBooking(newAvailPk, bookingData)
+      }
+    } catch (err) {
+      console.error('[rebook] FH booking creation failed:', err)
+      throw err
+    }
+
+    // Cancel the old FH booking now that the new one is confirmed.
+    // FH may already have handled this internally via the rebooking link, but we
+    // cancel explicitly to be safe. FHNotFoundError = already gone, ignore it.
     if (booking.booking_uuid) {
       try {
         await fh.cancelBooking(booking.booking_uuid)
       } catch (err) {
         if (!(err instanceof FHNotFoundError)) throw err
-        // Already gone in FH — continue
+        // Already cleaned up by FH — continue
       }
-    }
-
-    // Create new FH booking now that the resource is free
-    let newFhBooking
-    try {
-      newFhBooking = await fh.createBooking(newAvailPk, bookingData)
-    } catch (err) {
-      // Old is cancelled but new creation failed. Log old UUID for manual recovery.
-      console.error('[rebook] new booking creation failed after cancelling old:', booking.booking_uuid, err)
-      throw err
     }
 
     // Update Supabase — log new UUID before attempting so it's recoverable if this fails
@@ -100,6 +110,15 @@ export async function POST(
       .eq('id', id)
 
     if (updateError) return apiError(updateError.message)
+
+    // Slack — best-effort, never blocks the response
+    postSlackText([
+      `📅 *Booking rescheduled (admin)*`,
+      `*${booking.listing_title ?? 'Canal Cruise'}*`,
+      `👤 ${booking.customer_name ?? '—'} · ${booking.customer_email ?? '—'}`,
+      `${booking.booking_date ?? '—'} → ${newDate} · ${formatAmsterdamTime(newStartAt)}`,
+      `🎫 FH: ${newFhBooking.uuid}`,
+    ].join('\n')).catch(err => console.error('[rebook] Slack error (ignored):', err))
 
     // Send reschedule confirmation email — only when explicitly requested
     if (sendEmail !== false) sendRescheduleEmail({

@@ -5,6 +5,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { getStripe } from '@/lib/stripe/server'
 import { FHNotFoundError, FHValidationError } from '@/lib/fareharbor/types'
+import { postSlackText } from '@/lib/slack/send-notification'
+import { formatAmsterdamTime } from '@/lib/utils'
 
 export async function POST(
   request: NextRequest,
@@ -23,7 +25,7 @@ export async function POST(
     const supabase = createAdminClient()
     const { data: booking, error: fetchError } = await supabase
       .from('bookings')
-      .select('id, booking_uuid, status, booking_source, stripe_payment_intent_id, stripe_amount')
+      .select('id, booking_uuid, status, booking_source, stripe_payment_intent_id, stripe_amount, customer_name, customer_email, listing_title, booking_date, start_time')
       .eq('id', id)
       .single()
 
@@ -75,6 +77,21 @@ export async function POST(
         console.error('[cancel-booking] Stripe refund failed for booking', id, err)
       }
     }
+
+    // Slack — best-effort, never blocks the response
+    const refundLabel = refundOption === 'none'
+      ? 'no refund'
+      : refundOption === 'partial' && partialAmountCents
+        ? `partial €${(partialAmountCents / 100).toFixed(0)}`
+        : `full €${((booking.stripe_amount ?? 0) / 100).toFixed(0)}`
+    postSlackText([
+      `❌ *Booking cancelled (admin)*`,
+      `*${booking.listing_title ?? '—'}*`,
+      `👤 ${booking.customer_name ?? '—'} · ${booking.customer_email ?? '—'}`,
+      `📅 ${booking.booking_date ?? '—'} · ${formatAmsterdamTime(booking.start_time)}`,
+      `💰 Refund: ${refundLabel}`,
+      booking.booking_uuid ? `🎫 FH: ${booking.booking_uuid}` : '',
+    ].filter(Boolean).join('\n')).catch(err => console.error('[cancel-booking] Slack error (ignored):', err))
 
     return apiOk({ cancelled: true, refundId, refundError })
   } catch (err) {
