@@ -22,3 +22,4 @@ One file per track or major feature. Written before every PR and kept up to date
 | Payment flow hardening (iDEAL recovery, auto-refund, polling confirmation) | [payment-flow-hardening.md](payment-flow-hardening.md) | D | done |
 | Booking claim mutex (one payment → one FareHarbor booking) | [booking-claim-mutex.md](booking-claim-mutex.md) | D | done |
 | Withlocals reviews sync (weekly import, dedup, admin tab, frontend) | [withlocals-reviews.md](withlocals-reviews.md) | — | done |
+| Shared-cruise multi-ticket pricing + adults-only extras | [shared-cruise-pricing.md](shared-cruise-pricing.md) | D | done |

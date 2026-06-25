@@ -108,17 +108,18 @@ export function BookingPanelDesktop(props: BookingPanelProps) {
   const hasBoatSelected = isPrivate ? !!state.selectedCustomerType : state.totalTickets > 0
   const showExtras = state.step === 'extras'
 
-  // Enforce FareHarbor minimum party size for shared cruises — mirrors the
-  // server-side check so the user can't proceed to checkout with fewer
-  // tickets than FareHarbor will accept (avoids a charged-but-unbooked state).
-  //
-  // Exception: if the slot already has other bookings (remaining capacity <
-  // boat maximum), the cruise is already "happening" and a solo add-on is fine.
-  const minParty = !isPrivate && state.selectedSlot
-    ? Math.max(...state.selectedSlot.customerTypes.map(ct => ct.minimumParty ?? 1), 1)
-    : 1
+  // Enforce minimum party size for shared cruises. FareHarbor's minimal
+  // availability endpoint always returns minimum_party_size=1, but FH
+  // rejects solo bookings on empty slots at booking time. We mirror that
+  // rule in the UI: empty shared slots require at least 2 guests.
+  // Exception: if the slot already has bookings the cruise is "happening"
+  // and a solo add-on is fine.
   const slotHasExistingBookings = !isPrivate && !!props.maxGuests && !!state.selectedSlot
     && state.selectedSlot.capacity < props.maxGuests
+  const fhMinParty = !isPrivate && state.selectedSlot
+    ? Math.max(...state.selectedSlot.customerTypes.map(ct => ct.minimumParty ?? 1), 1)
+    : 1
+  const minParty = (!isPrivate && !slotHasExistingBookings) ? Math.max(fhMinParty, 2) : fhMinParty
   const belowMinParty = !slotHasExistingBookings && !isPrivate && state.totalTickets > 0 && state.totalTickets < minParty
 
   // ── Fetch slots for private on mount (hook only auto-fetches for shared) ──
@@ -233,7 +234,10 @@ export function BookingPanelDesktop(props: BookingPanelProps) {
                   <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-1">
                     Ticket
                   </h3>
-                  {props.cancellationPolicy && <CancellationLine text={props.cancellationPolicy} />}
+                  {belowMinParty
+                    ? <CancellationLine text="Minimum two guests for this time slot." />
+                    : props.cancellationPolicy && <CancellationLine text={props.cancellationPolicy} />
+                  }
                   <TicketStep
                     customerTypes={state.selectedSlot!.customerTypes}
                     ticketCounts={state.ticketCounts}

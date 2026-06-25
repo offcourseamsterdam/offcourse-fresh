@@ -63,6 +63,24 @@ interface PromoResult {
   isFull: boolean
 }
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function buildCustomerTypeRates(data: BookingData) {
+  // NOTE the two distinct PKs on AvailabilityCustomerType:
+  //   ct.pk            = the customer_type_RATE pk (what FareHarbor availability is keyed by)
+  //   ct.customerTypePk = the customer_TYPE pk (what ticketCounts is keyed by, see TicketStep)
+  // The server + FH booking need the RATE pk, so we send ct.pk while reading counts by customerTypePk.
+  const customerTypeRates = data.category === 'shared'
+    ? data.selectedSlot.customerTypes
+        .filter(ct => (data.ticketCounts?.[ct.customerTypePk] ?? 0) > 0)
+        .map(ct => ({ pk: ct.pk, count: data.ticketCounts[ct.customerTypePk] }))
+    : undefined
+  const customerTypeRatePk = data.category === 'private'
+    ? data.selectedCustomerType?.pk
+    : (customerTypeRates?.[0]?.pk ?? data.selectedSlot.customerTypes[0]?.pk)
+  return { customerTypeRates, customerTypeRatePk }
+}
+
 // ── Props ────────────────────────────────────────────────────────────────────
 
 interface CheckoutFlowProps {
@@ -408,9 +426,7 @@ export function CheckoutFlow({
     const controller = new AbortController()
     fetchQuoteRef.current = controller
 
-    const customerTypeRatePk = data.category === 'private'
-      ? data.selectedCustomerType?.pk
-      : data.selectedSlot.customerTypes[0]?.pk
+    const { customerTypeRates, customerTypeRatePk } = buildCustomerTypeRates(data)
 
     if (!customerTypeRatePk) {
       setQuoteError('Booking is missing a customer type — please go back and re-select.')
@@ -428,6 +444,7 @@ export function CheckoutFlow({
           listingId: data.listingId,
           availPk: data.selectedSlot.pk,
           customerTypeRatePk,
+          customerTypeRates,
           guestCount: data.guests,
           category: data.category,
           durationMinutes: data.durationMinutes ?? data.selectedCustomerType?.durationMinutes ?? 90,
@@ -546,9 +563,7 @@ export function CheckoutFlow({
     setError(null)
     try {
       const fresh = await refreshQuote(bookingData, promoResult)
-      const customerTypeRatePk = bookingData.category === 'private'
-        ? bookingData.selectedCustomerType?.pk
-        : bookingData.selectedSlot.customerTypes[0]?.pk
+      const { customerTypeRates, customerTypeRatePk } = buildCustomerTypeRates(bookingData)
 
       const extrasTotalCents = fresh?.extrasCalculation.extras_amount_cents
         ?? bookingData.extrasCalculation?.extras_amount_cents
@@ -560,6 +575,7 @@ export function CheckoutFlow({
         body: JSON.stringify({
           availPk: bookingData.selectedSlot.pk,
           customerTypeRatePk,
+          customerTypeRates,
           guestCount: bookingData.guests,
           category: bookingData.category,
           contact: details,
@@ -649,9 +665,7 @@ export function CheckoutFlow({
     }
 
     try {
-      const customerTypeRatePk = data.category === 'private'
-        ? data.selectedCustomerType?.pk
-        : data.selectedSlot.customerTypes[0]?.pk
+      const { customerTypeRates, customerTypeRatePk } = buildCustomerTypeRates(data)
 
       const extrasTotalCents = data.extrasCalculation
         ? data.extrasCalculation.line_items.reduce((s, li) => s + li.amount_cents, 0)
@@ -668,6 +682,7 @@ export function CheckoutFlow({
         body: JSON.stringify({
           availPk: data.selectedSlot.pk,
           customerTypeRatePk,
+          customerTypeRates,
           guestCount: data.guests,
           category: data.category,
           contact: contactData,
@@ -744,6 +759,18 @@ export function CheckoutFlow({
 
   const boat = BOATS.find(b => b.id === bookingData.selectedBoat)
   const boatName = boat?.name ?? null
+
+  // Per-type ticket breakdown for the checkout summary (adult × N, child × N).
+  // Plain derivation — must stay below the early returns above, so NOT a hook.
+  const ticketBreakdown = bookingData.category === 'shared' && bookingData.selectedSlot
+    ? bookingData.selectedSlot.customerTypes
+        .filter(ct => (bookingData.ticketCounts?.[ct.customerTypePk] ?? 0) > 0)
+        .map(ct => ({
+          label: ct.name || 'Adult',
+          count: bookingData.ticketCounts[ct.customerTypePk],
+          priceCents: ct.priceCents,
+        }))
+    : undefined
   // Prefer the hero image chosen on the virtual listing (what the customer
   // actually browsed), falling back to the boat's stock photo only if unset.
   const boatImageUrl = bookingData.listingHeroImageUrl ?? boat?.imageUrl ?? null
@@ -880,6 +907,7 @@ export function CheckoutFlow({
                 cityTaxCents={cityTaxCents > 0 ? cityTaxCents : undefined}
                 cruiseLabel={cruiseLabel}
                 discountAmountCents={discountAmountCents > 0 ? discountAmountCents : undefined}
+                ticketBreakdown={ticketBreakdown}
               />
               {/* Cancellation cutoff card — only shown when there's a useful upcoming deadline (full or 50% refund). */}
               {cancellationTiers && cancellationTiers.length > 0 && bookingData.selectedSlot.startAt && (

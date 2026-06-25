@@ -38,7 +38,11 @@ export function formatPriceLabel(
   guestCount: number,
   baseAmountCents: number,
   durationMinutes: number = DEFAULT_DURATION_MINUTES,
+  adultCount?: number,
 ): string {
+  // adults_only extras (e.g. Unlimited Drinks — alcohol) advertise the adult-only
+  // price so the headline matches what calculateExtras actually charges.
+  const headcount = extra.adults_only ? (adultCount ?? guestCount) : guestCount
   if (extra.price_type === 'fixed_cents') {
     return fmtEuros(extra.price_value)
   }
@@ -47,12 +51,12 @@ export function formatPriceLabel(
     if (extra.min_people && extra.min_people > 0) {
       return `${fmtEuros(extra.price_value)} per person`
     }
-    // Legacy: applies to all guests automatically
-    return fmtEuros(extra.price_value * guestCount)
+    // Legacy: applies to all guests automatically (adults only when flagged)
+    return fmtEuros(extra.price_value * headcount)
   }
   if (extra.price_type === 'per_person_per_hour_cents') {
     const hours = durationMinutes / 60
-    return fmtEuros(Math.round(extra.price_value * guestCount * hours))
+    return fmtEuros(Math.round(extra.price_value * headcount * hours))
   }
   if (extra.price_type === 'percentage') {
     const approxCents = Math.round(baseAmountCents * extra.price_value / 100)
@@ -165,9 +169,18 @@ export function ExtraCard({
 
           {/* Text */}
           <div className="flex-1 min-w-0">
-            <p className={`text-sm font-medium truncate ${selected ? 'text-white' : 'text-zinc-900'}`}>
-              {extra.name}
-            </p>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <p className={`text-sm font-medium truncate ${selected ? 'text-white' : 'text-zinc-900'}`}>
+                {extra.name}
+              </p>
+              {extra.adults_only && (
+                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                  selected ? 'bg-white/20 text-white' : 'bg-zinc-100 text-zinc-500'
+                }`}>
+                  adults only
+                </span>
+              )}
+            </div>
             {extra.description && (
               <p className={`text-xs mt-0.5 line-clamp-1 ${selected ? 'text-zinc-300' : 'text-zinc-400'}`}>
                 {extra.description}
@@ -226,7 +239,7 @@ export function ExtraCard({
             <p className={`text-sm font-semibold ${selected ? 'text-white' : 'text-zinc-900'}`}>
               {perPersonPick && selected
                 ? fmtEuros(extra.price_value * quantity)
-                : formatPriceLabel(extra, guestCount, baseAmountCents, durationMinutes)}
+                : formatPriceLabel(extra, guestCount, baseAmountCents, durationMinutes, adults)}
             </p>
             {perPersonPick && selected && (
               <p className="text-xs text-zinc-300 mt-0.5">

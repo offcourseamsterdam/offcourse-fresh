@@ -116,6 +116,122 @@ describe('calculateQuote — city tax', () => {
   })
 })
 
+// ── Multi-rate shared cruises (Gertjan's adult + child case) ───────────────
+
+describe('calculateQuote — customerTypeRates (mixed ticket types)', () => {
+  // Two distinct RATE pks on the availability — adult €35, child €20.
+  const adultRatePk = 8495737075
+  const childRatePk = 8719714190
+
+  beforeEach(() => {
+    getAvailabilityDetail.mockResolvedValue({
+      customer_type_rates: [
+        { pk: adultRatePk, customer_type: { singular: 'Adult (13+)' }, customer_prototype: { total_including_tax: 3500 } },
+        { pk: childRatePk, customer_type: { singular: 'Child (0-12)' }, customer_prototype: { total_including_tax: 2000 } },
+      ],
+    })
+  })
+
+  it('prices each ticket type at its own rate — child is NOT charged as adult (regression: WhatsApp €15 jump)', async () => {
+    const result = await calculateQuote({
+      ...baseInput,
+      category: 'shared',
+      guestCount: 2,
+      customerTypeRatePk: adultRatePk,
+      customerTypeRates: [
+        { pk: adultRatePk, count: 1 },
+        { pk: childRatePk, count: 1 },
+      ],
+    })
+
+    // base = 3500 (adult) + 2000 (child) = 5500 — NOT 2 × 3500
+    expect(result.basePriceCents).toBe(5500)
+    // city tax = 2 guests × 260 = 520
+    expect(result.cityTaxCents).toBe(520)
+    expect(result.totalCents).toBe(6020) // €60.20 — matches the displayed quote
+  })
+
+  it('multiplies by per-type count (2 adults + 1 child)', async () => {
+    const result = await calculateQuote({
+      ...baseInput,
+      category: 'shared',
+      guestCount: 3,
+      customerTypeRatePk: adultRatePk,
+      customerTypeRates: [
+        { pk: adultRatePk, count: 2 },
+        { pk: childRatePk, count: 1 },
+      ],
+    })
+
+    // base = 2 × 3500 + 1 × 2000 = 9000; city tax = 3 × 260 = 780
+    expect(result.basePriceCents).toBe(9000)
+    expect(result.totalCents).toBe(9780)
+  })
+
+  it('snapshots the primary rate name from customerTypeRatePk', async () => {
+    const result = await calculateQuote({
+      ...baseInput,
+      category: 'shared',
+      guestCount: 2,
+      customerTypeRatePk: childRatePk, // primary = child here
+      customerTypeRates: [
+        { pk: adultRatePk, count: 1 },
+        { pk: childRatePk, count: 1 },
+      ],
+    })
+
+    expect(result.customerTypeName).toBe('Child (0-12)')
+  })
+
+  it('throws when a rate pk is not on the availability (the error Gertjan saw with a type pk)', async () => {
+    await expect(calculateQuote({
+      ...baseInput,
+      category: 'shared',
+      guestCount: 1,
+      customerTypeRatePk: 393287, // a customer_TYPE pk, not a rate pk
+      customerTypeRates: [{ pk: 393287, count: 1 }],
+    })).rejects.toThrow(/Could not find customer type rate 393287/)
+  })
+
+  it('prices adults_only extras (Unlimited Drinks) for adults only, derived from rate names', async () => {
+    const unlimitedDrinks = {
+      id: 'drinks-id',
+      name: 'Unlimited Drinks',
+      category: 'drinks',
+      price_type: 'per_person_per_hour_cents',
+      price_value: 1000, // €10/person/hour
+      vat_rate: 21,
+      is_required: false,
+      quantity_mode: 'toggle',
+      adults_only: true,
+    }
+    supabaseFrom.mockReturnValue({
+      select: () => ({
+        in: () => ({ eq: () => Promise.resolve({ data: [unlimitedDrinks] }) }),
+      }),
+    })
+
+    // 1 adult + 1 child, 1.5h cruise, Unlimited Drinks selected
+    const result = await calculateQuote({
+      ...baseInput,
+      category: 'shared',
+      guestCount: 2,
+      durationMinutes: 90,
+      customerTypeRatePk: adultRatePk,
+      customerTypeRates: [
+        { pk: adultRatePk, count: 1 },
+        { pk: childRatePk, count: 1 },
+      ],
+      selectedExtraIds: ['drinks-id'],
+      extraQuantities: { 'drinks-id': 1 },
+    })
+
+    // base = 5500; drinks = 1 adult × €10 × 1.5h = 1500 (NOT 2 × = 3000); city tax = 520
+    expect(result.extrasCalculation.extras_amount_cents).toBe(1500)
+    expect(result.totalCents).toBe(5500 + 1500 + 520)
+  })
+})
+
 // ── Per-person-per-hour extras (Sophie's case) ─────────────────────────────
 
 describe('calculateQuote — Unlimited Bar drift scenario', () => {

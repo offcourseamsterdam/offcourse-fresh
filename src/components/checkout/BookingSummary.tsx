@@ -5,6 +5,12 @@ import { fmtEuros, formatDate } from '@/lib/utils'
 import { vatSummaryText } from '@/lib/extras/format'
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
 
+interface TicketLineItem {
+  label: string
+  count: number
+  priceCents: number
+}
+
 interface BookingSummaryProps {
   listingTitle: string
   imageUrl: string | null
@@ -19,6 +25,8 @@ interface BookingSummaryProps {
   cityTaxCents?: number
   cruiseLabel?: string
   discountAmountCents?: number
+  /** Per-ticket-type breakdown for shared cruises (adult × N, child × N, etc.) */
+  ticketBreakdown?: TicketLineItem[]
 }
 
 function fmtDuration(minutes: number): string {
@@ -42,6 +50,7 @@ export function BookingSummary({
   cityTaxCents,
   cruiseLabel,
   discountAmountCents,
+  ticketBreakdown,
 }: BookingSummaryProps) {
   const extrasTotalCents = extrasCalculation?.extras_amount_cents ?? 0
   const grossCents = basePriceCents + extrasTotalCents + (cityTaxCents ?? 0)
@@ -91,18 +100,36 @@ export function BookingSummary({
               <span className="font-medium text-zinc-800">{fmtDuration(durationMinutes)}</span>
             </div>
           )}
-          <div className="flex justify-between">
-            <span className="text-zinc-500">Guests</span>
-            <span className="font-medium text-zinc-800">{guestCount}</span>
-          </div>
+          {ticketBreakdown && ticketBreakdown.length > 0 ? (
+            ticketBreakdown.map(t => (
+              <div key={t.label} className="flex justify-between">
+                <span className="text-zinc-500">{t.label}</span>
+                <span className="font-medium text-zinc-800">×{t.count}</span>
+              </div>
+            ))
+          ) : (
+            <div className="flex justify-between">
+              <span className="text-zinc-500">Guests</span>
+              <span className="font-medium text-zinc-800">{guestCount}</span>
+            </div>
+          )}
         </div>
 
         {/* Price breakdown */}
         <div className="border-t border-zinc-100 pt-3 space-y-1.5 text-sm">
-          <div className="flex justify-between text-zinc-600">
-            <span>{cruiseLabel || 'Cruise'}</span>
-            <span>{fmtEuros(basePriceCents)}</span>
-          </div>
+          {ticketBreakdown && ticketBreakdown.length > 0 ? (
+            ticketBreakdown.map(t => (
+              <div key={t.label} className="flex justify-between text-zinc-600">
+                <span>{t.label} ×{t.count}</span>
+                <span>{fmtEuros(t.priceCents * t.count)}</span>
+              </div>
+            ))
+          ) : (
+            <div className="flex justify-between text-zinc-600">
+              <span>{cruiseLabel || 'Cruise'}</span>
+              <span>{fmtEuros(basePriceCents)}</span>
+            </div>
+          )}
 
           {extrasCalculation?.line_items.map(li => {
             const qty = li.quantity

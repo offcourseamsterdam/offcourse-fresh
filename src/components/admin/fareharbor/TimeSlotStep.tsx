@@ -12,10 +12,13 @@ interface TimeSlotStepProps {
   selectedSlot: Slot | null
   selectedRate: Rate | null
   guestCount: number
+  /** Per-rate ticket counts for shared cruises (ratePk → count). */
+  ticketCounts: Record<number, number>
   onBack: () => void
   onPickSlot: (slot: Slot) => void
   onPickRate: (rate: Rate) => void
   onGuestCountChange: (count: number) => void
+  onTicketCountChange: (ratePk: number, count: number) => void
   onContinue: () => void
 }
 
@@ -25,12 +28,17 @@ export function TimeSlotStep({
   selectedSlot,
   selectedRate,
   guestCount,
+  ticketCounts,
   onBack,
   onPickSlot,
   onPickRate,
   onGuestCountChange,
+  onTicketCountChange,
   onContinue,
 }: TimeSlotStepProps) {
+  const isShared = listing.category === 'shared'
+  const totalTickets = Object.values(ticketCounts).reduce((s, c) => s + c, 0)
+  const canContinue = selectedSlot && (isShared ? totalTickets > 0 : !!selectedRate)
   return (
     <div className="space-y-4">
       <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-700 transition-colors mb-2">
@@ -79,61 +87,113 @@ export function TimeSlotStep({
       {selectedSlot && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Pick a duration & boat</CardTitle>
-            <CardDescription className="text-xs">Each option is a different boat + duration combo</CardDescription>
+            {isShared ? (
+              <>
+                <CardTitle className="text-sm">Tickets</CardTitle>
+                <CardDescription className="text-xs">Set how many of each ticket type</CardDescription>
+              </>
+            ) : (
+              <>
+                <CardTitle className="text-sm">Pick a duration & boat</CardTitle>
+                <CardDescription className="text-xs">Each option is a different boat + duration combo</CardDescription>
+              </>
+            )}
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              {selectedSlot.customer_type_rates.map(rate => {
-                const price = ratePrice(rate)
-                return (
-                  <button
-                    key={rate.pk}
-                    onClick={() => onPickRate(rate)}
-                    className={`w-full flex items-center justify-between p-4 rounded-lg border text-left transition-all ${
-                      selectedRate?.pk === rate.pk
-                        ? 'border-zinc-900 bg-zinc-900 text-white'
-                        : 'border-zinc-200 bg-white hover:border-zinc-400'
-                    }`}
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{rate.customer_type.singular}</p>
-                      <p className="text-xs mt-0.5 text-zinc-400">
-                        Rate PK {rate.pk} · capacity {rate.capacity}
-                      </p>
+            {isShared ? (
+              /* Shared cruise — counter per ticket type */
+              <div className="space-y-2">
+                {selectedSlot.customer_type_rates.map(rate => {
+                  const price = ratePrice(rate)
+                  const count = ticketCounts[rate.pk] ?? 0
+                  return (
+                    <div
+                      key={rate.pk}
+                      className="flex items-center justify-between p-4 rounded-lg border border-zinc-200 bg-white"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-zinc-800">{rate.customer_type.singular}</p>
+                        {price !== undefined && (
+                          <p className="text-xs text-zinc-400 mt-0.5">{fmtPrice(price)} per person</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => onTicketCountChange(rate.pk, Math.max(0, count - 1))}
+                          disabled={count <= 0}
+                          className="w-8 h-8 rounded-full border border-zinc-200 text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 transition-colors text-sm font-bold"
+                        >−</button>
+                        <span className="w-6 text-center text-sm font-semibold tabular-nums">{count}</span>
+                        <button
+                          type="button"
+                          onClick={() => onTicketCountChange(rate.pk, count + 1)}
+                          className="w-8 h-8 rounded-full border border-zinc-200 text-zinc-600 hover:bg-zinc-100 transition-colors text-sm font-bold"
+                        >+</button>
+                      </div>
                     </div>
-                    {price !== undefined && (
-                      <p className={`text-sm font-semibold ${selectedRate?.pk === rate.pk ? 'text-white' : 'text-zinc-900'}`}>
-                        {fmtPrice(price)}
-                      </p>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-
-            {selectedRate && (
-              <div className="pt-2 flex items-center gap-4">
-                <label className="text-sm font-medium text-zinc-700">Number of guests</label>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => onGuestCountChange(Math.max(1, guestCount - 1))}
-                    className="w-8 h-8 rounded-full border border-zinc-200 text-zinc-600 hover:bg-zinc-100 transition-colors text-sm font-bold"
-                  >−</button>
-                  <span className="w-6 text-center text-sm font-semibold">{guestCount}</span>
-                  <button
-                    onClick={() => onGuestCountChange(Math.min(12, guestCount + 1))}
-                    className="w-8 h-8 rounded-full border border-zinc-200 text-zinc-600 hover:bg-zinc-100 transition-colors text-sm font-bold"
-                  >+</button>
-                </div>
+                  )
+                })}
+                {totalTickets > 0 && (
+                  <p className="text-xs text-zinc-400 pt-1">{totalTickets} ticket{totalTickets !== 1 ? 's' : ''} selected</p>
+                )}
               </div>
+            ) : (
+              /* Private cruise — radio button per boat+duration */
+              <>
+                <div className="space-y-2">
+                  {selectedSlot.customer_type_rates.map(rate => {
+                    const price = ratePrice(rate)
+                    return (
+                      <button
+                        key={rate.pk}
+                        onClick={() => onPickRate(rate)}
+                        className={`w-full flex items-center justify-between p-4 rounded-lg border text-left transition-all ${
+                          selectedRate?.pk === rate.pk
+                            ? 'border-zinc-900 bg-zinc-900 text-white'
+                            : 'border-zinc-200 bg-white hover:border-zinc-400'
+                        }`}
+                      >
+                        <div>
+                          <p className="text-sm font-medium">{rate.customer_type.singular}</p>
+                          <p className="text-xs mt-0.5 text-zinc-400">
+                            Rate PK {rate.pk} · capacity {rate.capacity}
+                          </p>
+                        </div>
+                        {price !== undefined && (
+                          <p className={`text-sm font-semibold ${selectedRate?.pk === rate.pk ? 'text-white' : 'text-zinc-900'}`}>
+                            {fmtPrice(price)}
+                          </p>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {selectedRate && (
+                  <div className="pt-2 flex items-center gap-4">
+                    <label className="text-sm font-medium text-zinc-700">Number of guests</label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => onGuestCountChange(Math.max(1, guestCount - 1))}
+                        className="w-8 h-8 rounded-full border border-zinc-200 text-zinc-600 hover:bg-zinc-100 transition-colors text-sm font-bold"
+                      >−</button>
+                      <span className="w-6 text-center text-sm font-semibold">{guestCount}</span>
+                      <button
+                        onClick={() => onGuestCountChange(Math.min(12, guestCount + 1))}
+                        className="w-8 h-8 rounded-full border border-zinc-200 text-zinc-600 hover:bg-zinc-100 transition-colors text-sm font-bold"
+                      >+</button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
       )}
 
       <div className="flex justify-end">
-        <Button disabled={!selectedSlot || !selectedRate} onClick={onContinue}>
+        <Button disabled={!canContinue} onClick={onContinue}>
           Continue to guest info
           <ChevronRight className="w-4 h-4" />
         </Button>

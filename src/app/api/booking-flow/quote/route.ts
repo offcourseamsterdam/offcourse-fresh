@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
       extraQuantities = {},
       promoCodeId,
       discountAmountCents,
+      customerTypeRates,
     } = body
 
     if (!listingId || !availPk || !customerTypeRatePk) {
@@ -56,6 +57,11 @@ export async function POST(request: NextRequest) {
       extraQuantities: extraQuantities && typeof extraQuantities === 'object' ? extraQuantities : {},
       promoCodeId: promoCodeId ?? null,
       discountAmountCents: discountAmountCents != null ? Number(discountAmountCents) : 0,
+      customerTypeRates: Array.isArray(customerTypeRates)
+        ? customerTypeRates.map((r: { pk: number; count: number }) => ({
+            pk: Number(r.pk), count: Number(r.count),
+          }))
+        : undefined,
     })
 
     // Persist the quote so create-intent can reference it by id.
@@ -87,6 +93,8 @@ export async function POST(request: NextRequest) {
           cityTaxCents: quote.cityTaxCents,
           discountAmountCents: quote.discountAmountCents,
           totalCents: quote.totalCents,
+          // Stored so create-intent can pass them to its recomputation and to PI metadata.
+          customerTypeRates: customerTypeRates ?? null,
         })),
       })
       .select('id, expires_at')

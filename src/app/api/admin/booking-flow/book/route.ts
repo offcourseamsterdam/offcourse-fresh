@@ -94,6 +94,9 @@ export async function POST(request: NextRequest) {
       depositAmountCents,
       partnerCode,
       promoCodeId,
+      // When a shared booking has multiple ticket types (adult + child), this
+      // array carries the per-type breakdown so FH records the correct ticket types.
+      customerTypeRates,
       // Stripe recovery only: skip FareHarbor validate+create, record revenue locally.
       // Use when FH rejects due to minimum party size — admin creates in FH manually.
       overrideMinParty = false,
@@ -180,12 +183,19 @@ export async function POST(request: NextRequest) {
 
     // Private boats: book the boat once (quantity=1) — the customer type rate IS the duration.
     // Shared boats: each guest is a separate customer entry.
+    // When customerTypeRates is provided (e.g. adult + child mix), build one entry per
+    // ticket using the correct rate pk — fixing child tickets being priced as adults.
     const isPrivate = category === 'private'
     const customerCount = isPrivate ? 1 : Number(guestCount)
 
-    const customers = Array.from({ length: customerCount }, () => ({
-      customer_type_rate: Number(customerTypeRatePk),
-    }))
+    const multiRates = !isPrivate && Array.isArray(customerTypeRates) && customerTypeRates.length > 0
+    const customers = multiRates
+      ? (customerTypeRates as Array<{ pk: number; count: number }>).flatMap(({ pk, count }) =>
+          Array.from({ length: count }, () => ({ customer_type_rate: Number(pk) }))
+        )
+      : Array.from({ length: customerCount }, () => ({
+          customer_type_rate: Number(customerTypeRatePk),
+        }))
 
     const bookingData = {
       contact: {

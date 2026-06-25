@@ -43,19 +43,14 @@ export function TicketStep({
   //
   // Exception: if the slot already has other bookings (hasExistingBookings),
   // the cruise is already "happening" — a solo add-on is fine and we skip the gate.
-  const minParty = Math.max(...customerTypes.map(ct => ct.minimumParty ?? 1), 1)
+  const fhMinParty = Math.max(...customerTypes.map(ct => ct.minimumParty ?? 1), 1)
+  const minParty = !hasExistingBookings ? Math.max(fhMinParty, 2) : fhMinParty
   const enforceMinParty = !hasExistingBookings && minParty > 1
   const belowMinimum = enforceMinParty && totalTickets > 0 && totalTickets < minParty
 
   return (
     <div className="space-y-3">
       <p className="text-xs text-zinc-500 mb-1">Select your tickets</p>
-
-      {enforceMinParty && (
-        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          This cruise requires a minimum of <strong>{minParty} tickets</strong> per booking.
-        </p>
-      )}
 
       {customerTypes.map((ct, index) => {
         const count = ticketCounts[ct.customerTypePk] || 0

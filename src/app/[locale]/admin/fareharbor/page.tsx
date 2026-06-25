@@ -50,6 +50,8 @@ export default function BookingFlowPage() {
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null)
   const [selectedRate, setSelectedRate] = useState<Rate | null>(null)
   const [guestCount, setGuestCount] = useState(2)
+  // For shared cruises: per-ticket-type counts (ratePk → count)
+  const [ticketCounts, setTicketCounts] = useState<Record<number, number>>({})
 
   // Step 3
   const [contact, setContact] = useState<Contact>({ name: '', email: '', phone: '', note: '' })
@@ -151,37 +153,63 @@ export default function BookingFlowPage() {
   function pickSlot(slot: Slot) {
     setSelectedSlot(slot)
     setSelectedRate(null)
+    setTicketCounts({})
   }
+
+  function handleTicketCountChange(ratePk: number, count: number) {
+    setTicketCounts(prev => ({ ...prev, [ratePk]: count }))
+  }
+
+  // For shared cruises, derive guestCount and selectedRate from ticketCounts.
+  // selectedRate stays null for shared — booking creation uses customerTypeRates instead.
+  const isSharedListing = selectedListing?.category === 'shared'
+  const effectiveGuestCount = isSharedListing
+    ? Object.values(ticketCounts).reduce((s, c) => s + c, 0)
+    : guestCount
+
+  // For shared: build the customerTypeRates array for the book endpoint
+  const customerTypeRates = isSharedListing && selectedSlot
+    ? selectedSlot.customer_type_rates
+        .filter(r => (ticketCounts[r.pk] ?? 0) > 0)
+        .map(r => ({ pk: r.pk, count: ticketCounts[r.pk] }))
+    : undefined
+
+  // For shared: primary rate = first non-zero ticket type (used for ExtrasStep baseAmount)
+  const primarySharedRate = isSharedListing && selectedSlot
+    ? selectedSlot.customer_type_rates.find(r => (ticketCounts[r.pk] ?? 0) > 0) ?? null
+    : null
+
+  // Base amount in cents for the booking
+  const sharedBaseAmountCents = isSharedListing && selectedSlot
+    ? selectedSlot.customer_type_rates.reduce((sum, r) => {
+        const count = ticketCounts[r.pk] ?? 0
+        const price = ratePrice(r) ?? 0
+        return sum + price * count
+      }, 0)
+    : null
 
   // ── Step 4 → 5: Extras confirmed ────────────────────────────────────────
 
   async function handleExtrasContinue(selectedExtraIds: string[], calculation: ExtrasCalculation) {
-    if (!selectedSlot || !selectedRate || !selectedListing) return
+    const activeRate = isSharedListing ? primarySharedRate : selectedRate
+    if (!selectedSlot || !activeRate || !selectedListing) return
     setExtrasStep({ selectedExtraIds, calculation })
 
     if (bookingSource === 'payment_link') {
-      // Payment link booking: show price step, we'll create FH booking + Stripe session there
       setStep(5)
       return
     }
 
     if (isInternal) {
-      // Internal booking: skip Stripe, go straight to deposit step (or confirm for comp)
-      if (bookingSource === 'complimentary') {
-        // Complimentary: no deposit, confirm immediately
-        setStep(5)
-      } else {
-        // Platform booking: show deposit amount step
-        setStep(5)
-      }
+      setStep(5)
       return
     }
 
-    // Website booking: create Stripe PaymentIntent as before
+    // Website booking: create Stripe PaymentIntent
     setCreatingIntent(true)
     setIntentError(null)
 
-    const baseAmountCents = ratePrice(selectedRate)
+    const baseAmountCents = isSharedListing ? sharedBaseAmountCents : ratePrice(activeRate)
     if (!baseAmountCents) {
       setIntentError('Price not available for this option')
       setCreatingIntent(false)
@@ -197,8 +225,9 @@ export default function BookingFlowPage() {
           listingId: selectedListing.id,
           listingTitle: selectedListing.title,
           availPk: selectedSlot.pk,
-          customerTypeRatePk: selectedRate.pk,
-          guestCount,
+          customerTypeRatePk: activeRate.pk,
+          customerTypeRates,
+          guestCount: effectiveGuestCount,
           category: selectedListing.category,
           date,
           contact: {
@@ -227,12 +256,13 @@ export default function BookingFlowPage() {
   // ── Internal: confirm booking directly (no Stripe) ──────────────────────
 
   async function handleInternalConfirm() {
-    if (!selectedSlot || !selectedRate || !selectedListing) return
+    const activeRate = isSharedListing ? primarySharedRate : selectedRate
+    if (!selectedSlot || !activeRate || !selectedListing) return
     const calc = extrasStep?.calculation ?? null
-    const baseAmountCents = ratePrice(selectedRate) ?? 0
+    const baseAmountCents = isSharedListing
+      ? (sharedBaseAmountCents ?? 0)
+      : (ratePrice(activeRate) ?? 0)
 
-    // For Stripe recovery: amount paid = admin-entered (defaults to computed total).
-    // For all other internal sources: amount is 0 (no Stripe charge).
     const recoveryCents = Math.round((parseFloat(recoveryAmountInput) || 0) * 100)
 
     setBookingLoading(true)
@@ -245,8 +275,9 @@ export default function BookingFlowPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           availPk: selectedSlot.pk,
-          customerTypeRatePk: selectedRate.pk,
-          guestCount,
+          customerTypeRatePk: activeRate.pk,
+          customerTypeRates,
+          guestCount: effectiveGuestCount,
           category: selectedListing.category,
           contact: {
             name: contact.name,
@@ -294,16 +325,18 @@ export default function BookingFlowPage() {
   // ── Step 5 → 6: Create FH booking after Stripe payment succeeds ─────────
 
   async function handlePaymentSuccess(piId: string) {
-    if (!selectedSlot || !selectedRate || !selectedListing) return
+    const activeRate = isSharedListing ? primarySharedRate : selectedRate
+    if (!selectedSlot || !activeRate || !selectedListing) return
     await createFHBooking(piId, {
       availPk: selectedSlot.pk,
-      customerTypeRatePk: selectedRate.pk,
-      guestCount,
+      customerTypeRatePk: activeRate.pk,
+      customerTypeRates,
+      guestCount: effectiveGuestCount,
       category: selectedListing.category,
       contact,
       selectedListing,
       selectedSlot,
-      selectedRate,
+      selectedRate: activeRate,
       date,
       selectedExtraIds: extrasStep?.selectedExtraIds ?? [],
       extrasCalculation: extrasStep?.calculation ?? null,
@@ -329,6 +362,7 @@ export default function BookingFlowPage() {
         body: JSON.stringify({
           availPk: payload.availPk,
           customerTypeRatePk: payload.customerTypeRatePk,
+          customerTypeRates: payload.customerTypeRates,
           guestCount: payload.guestCount,
           category: payload.category,
           contact: {
@@ -381,6 +415,7 @@ export default function BookingFlowPage() {
     setSelectedListing(null)
     setSelectedSlot(null)
     setSelectedRate(null)
+    setTicketCounts({})
     setContact({ name: '', email: '', phone: '', note: '' })
     setExtrasStep(null)
     setClientSecret(null)
@@ -442,10 +477,12 @@ export default function BookingFlowPage() {
           selectedSlot={selectedSlot}
           selectedRate={selectedRate}
           guestCount={guestCount}
+          ticketCounts={ticketCounts}
           onBack={() => setStep(1)}
           onPickSlot={pickSlot}
           onPickRate={setSelectedRate}
           onGuestCountChange={setGuestCount}
+          onTicketCountChange={handleTicketCountChange}
           onContinue={() => setStep(3)}
         />
       )}
@@ -464,11 +501,11 @@ export default function BookingFlowPage() {
         />
       )}
 
-      {step === 4 && selectedListing && selectedRate && (
+      {step === 4 && selectedListing && (isSharedListing ? !!primarySharedRate : !!selectedRate) && (
         <ExtrasStepPanel
           listing={selectedListing}
-          rate={selectedRate}
-          guestCount={guestCount}
+          rate={(isSharedListing ? primarySharedRate : selectedRate)!}
+          guestCount={effectiveGuestCount}
           creatingIntent={creatingIntent}
           intentError={intentError}
           onContinue={handleExtrasContinue}
@@ -477,13 +514,13 @@ export default function BookingFlowPage() {
       )}
 
       {/* Step 5 — Website: Stripe payment */}
-      {step === 5 && !isInternal && clientSecret && selectedRate && selectedListing && selectedSlot && (
+      {step === 5 && !isInternal && clientSecret && (isSharedListing ? !!primarySharedRate : !!selectedRate) && selectedListing && selectedSlot && (
         <PaymentStep
           clientSecret={clientSecret}
           selectedListing={selectedListing}
           selectedSlot={selectedSlot}
-          selectedRate={selectedRate}
-          guestCount={guestCount}
+          selectedRate={(isSharedListing ? primarySharedRate : selectedRate)!}
+          guestCount={effectiveGuestCount}
           date={date}
           contact={contact}
           grandTotalCents={grandTotalCents}

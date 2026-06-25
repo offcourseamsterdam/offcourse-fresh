@@ -107,9 +107,9 @@ export function ExtrasStep({
     const allSelected = extras.filter(e =>
       e.is_required || (e.price_type !== 'informational' && selectedIds.has(e.id))
     )
-    const calc = calculateExtras(baseAmountCents, guestCount, allSelected, durationMinutes, quantities)
+    const calc = calculateExtras(baseAmountCents, guestCount, allSelected, durationMinutes, quantities, adults)
     onExtrasChange(allSelected.map(e => e.id), calc)
-  }, [selectedIds, quantities, extras, baseAmountCents, guestCount, durationMinutes, onExtrasChange])
+  }, [selectedIds, quantities, extras, baseAmountCents, guestCount, durationMinutes, adults, onExtrasChange])
 
   // ── Derived sets ─────────────────────────────────────────────────────────
 
@@ -281,6 +281,7 @@ export function ExtrasStep({
               selectedIds={selectedIds}
               onToggle={toggleExtra}
               guestCount={guestCount}
+              adultCount={adults}
               baseAmountCents={baseAmountCents}
               durationMinutes={durationMinutes}
               quantities={quantities}
@@ -295,6 +296,7 @@ export function ExtrasStep({
               selectedIds={selectedIds}
               onToggle={toggleExtra}
               guestCount={guestCount}
+              adultCount={adults}
               baseAmountCents={baseAmountCents}
               durationMinutes={durationMinutes}
               quantities={quantities}

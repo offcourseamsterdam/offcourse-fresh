@@ -43,6 +43,7 @@ export interface Contact {
 export interface PendingBooking {
   availPk: number
   customerTypeRatePk: number
+  customerTypeRates?: Array<{ pk: number; count: number }>
   guestCount: number
   category: string
   contact: Contact

@@ -20,6 +20,7 @@
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { calculateExtras, type ExtrasCalculation, type Extra } from '@/lib/extras/calculate'
+import { isChildLabel } from '@/lib/booking/adult-count'
 import { DEFAULT_DURATION_MINUTES } from '@/lib/constants'
 
 export interface QuoteInput {
@@ -39,6 +40,13 @@ export interface QuoteInput {
    * code and compute the discount entirely server-side.
    */
   discountAmountCents?: number
+  /**
+   * For shared cruises with multiple ticket types (e.g. adult + child).
+   * When provided, the server verifies each rate individually and sums the
+   * totals — fixing the bug where child tickets were priced as adults.
+   * Not used for private cruises (the rate IS the whole boat price).
+   */
+  customerTypeRates?: Array<{ pk: number; count: number }>
 }
 
 export interface QuoteResult {
@@ -70,33 +78,63 @@ export async function calculateQuote(input: QuoteInput): Promise<QuoteResult> {
     selectedExtraIds = [],
     extraQuantities = {},
     discountAmountCents: rawDiscount = 0,
+    customerTypeRates,
   } = input
 
   // 1. Verify base price from FareHarbor (gross, incl. VAT).
   //    Using `total` (NET) instead of `total_including_tax` would under-charge by 9%.
   const fh = getFareHarborClient()
   const availDetail = await fh.getAvailabilityDetail(availPk)
-  const matchingRate = availDetail.customer_type_rates?.find(
-    (r: { pk: number }) => r.pk === customerTypeRatePk,
-  )
-  // The human-readable label the guest picked (e.g. "Diana - 2 Hours"). Snapshotted
-  // onto the booking so we never have to map the volatile rate PK back to a name.
-  const customerTypeName = matchingRate?.customer_type?.singular ?? null
-  const verifiedBaseCents =
-    matchingRate?.customer_prototype?.total_including_tax
-    ?? matchingRate?.customer_prototype?.total
-    ?? 0
 
-  if (verifiedBaseCents <= 0) {
-    throw new Error(
-      `Could not verify price for customer type rate ${customerTypeRatePk} on availability ${availPk}.`,
-    )
-  }
-
-  // For shared cruises, FH returns per-person rates → multiply by guest count.
-  // For private, the rate IS the boat price → keep as-is.
   const isPrivate = category === 'private'
-  const serverBaseAmount = isPrivate ? verifiedBaseCents : verifiedBaseCents * guestCount
+
+  let verifiedBaseCents: number
+  let serverBaseAmount: number
+  let customerTypeName: string | null
+  // Headcount used to price adults_only extras (e.g. Unlimited Drinks). For shared
+  // cruises we count only the non-child ticket types; private has no child concept.
+  let adultCount = guestCount
+
+  if (!isPrivate && customerTypeRates && customerTypeRates.length > 0) {
+    // Shared cruise with multiple ticket types (e.g. adult + child).
+    // Verify each rate individually and sum — fixes child-as-adult mispricing.
+    serverBaseAmount = 0
+    customerTypeName = null
+    adultCount = 0
+    for (const { pk, count } of customerTypeRates) {
+      const rate = availDetail.customer_type_rates?.find((r: { pk: number }) => r.pk === pk)
+      if (!rate) throw new Error(`Could not find customer type rate ${pk} on availability ${availPk}`)
+      const priceCents =
+        rate.customer_prototype?.total_including_tax ?? rate.customer_prototype?.total ?? 0
+      if (priceCents <= 0) throw new Error(`Could not verify price for customer type rate ${pk}`)
+      serverBaseAmount += priceCents * count
+      if (pk === customerTypeRatePk) customerTypeName = rate.customer_type?.singular ?? null
+      if (!isChildLabel(rate.customer_type?.singular)) adultCount += count
+    }
+    verifiedBaseCents = serverBaseAmount
+  } else {
+    // Private booking or single-rate shared — original path.
+    const matchingRate = availDetail.customer_type_rates?.find(
+      (r: { pk: number }) => r.pk === customerTypeRatePk,
+    )
+    // The human-readable label the guest picked (e.g. "Diana - 2 Hours"). Snapshotted
+    // onto the booking so we never have to map the volatile rate PK back to a name.
+    customerTypeName = matchingRate?.customer_type?.singular ?? null
+    verifiedBaseCents =
+      matchingRate?.customer_prototype?.total_including_tax
+      ?? matchingRate?.customer_prototype?.total
+      ?? 0
+
+    if (verifiedBaseCents <= 0) {
+      throw new Error(
+        `Could not verify price for customer type rate ${customerTypeRatePk} on availability ${availPk}.`,
+      )
+    }
+
+    // For shared cruises, FH returns per-person rates → multiply by guest count.
+    // For private, the rate IS the boat price → keep as-is.
+    serverBaseAmount = isPrivate ? verifiedBaseCents : verifiedBaseCents * guestCount
+  }
 
   // 2. Fetch active extras from the DB (only the ones the user selected).
   //    Filtering by is_active means a deactivated extra silently drops — we
@@ -144,6 +182,7 @@ export async function calculateQuote(input: QuoteInput): Promise<QuoteResult> {
     extras,
     durationMinutes,
     quantities,
+    adultCount,
   )
 
   // 4. City tax (municipality levy, not in FareHarbor — applies to all cruise types).

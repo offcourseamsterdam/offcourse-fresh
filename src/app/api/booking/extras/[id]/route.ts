@@ -8,6 +8,7 @@ import { filterCateringItems, type ExtrasLineItem } from '@/lib/catering/filter'
 import { calculateExtras } from '@/lib/extras/calculate'
 import type { Extra } from '@/lib/extras/calculate'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
+import { countAdultsFromFHCustomers } from '@/lib/booking/adult-count'
 import { postSlackText } from '@/lib/slack/send-notification'
 import { Resend } from 'resend'
 
@@ -134,12 +135,32 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (ms > 0) durationMinutes = Math.round(ms / 60000)
   }
 
+  // adults_only extras (e.g. Unlimited Drinks) must be priced for adults only — a
+  // child can't take unlimited alcohol. The booking row doesn't store the adult/child
+  // split, so reconstruct it from the FareHarbor booking (source of truth) ONLY when it
+  // matters: a shared cruise with an adults_only extra selected. Private cruises have no
+  // child concept (adults = guests); failures fall back to guest_count (never under-charge).
+  const guestCount = booking.guest_count ?? 2
+  let adultCount = guestCount
+  const needsAdultSplit = booking.category === 'shared'
+    && (extrasData as Extra[]).some(e => e.adults_only)
+  if (needsAdultSplit && booking.booking_uuid) {
+    try {
+      const fhBooking = await getFareHarborClient().getBooking(booking.booking_uuid)
+      const fhCustomers = fhBooking.customers ?? []
+      if (fhCustomers.length > 0) adultCount = countAdultsFromFHCustomers(fhCustomers)
+    } catch (err) {
+      console.error('[extras-upsell] adult-count derivation failed; using guest_count', err)
+    }
+  }
+
   const calc = calculateExtras(
     booking.base_amount_cents ?? 0,
-    booking.guest_count ?? 2,
+    guestCount,
     extrasData as Extra[],
     durationMinutes,
     quantities,
+    adultCount,
   )
 
   const newItems: ExtrasLineItem[] = calc.line_items.map(li => ({

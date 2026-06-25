@@ -290,9 +290,17 @@ export async function POST(request: NextRequest) {
     const fh = getFareHarborClient()
     const isPrivate = meta.category === 'private'
     const guestCount = Number(meta.guest_count ?? 1)
-    const customers = Array.from({ length: isPrivate ? 1 : guestCount }, () => ({
-      customer_type_rate: Number(meta.customer_type_rate_pk),
-    }))
+    const storedRates = meta.customer_type_rates
+      ? (JSON.parse(meta.customer_type_rates) as Array<{ pk: number; count: number }>)
+      : null
+    const multiRates = !isPrivate && storedRates && storedRates.length > 0
+    const customers = multiRates
+      ? storedRates.flatMap(({ pk, count }) =>
+          Array.from({ length: count }, () => ({ customer_type_rate: Number(pk) }))
+        )
+      : Array.from({ length: isPrivate ? 1 : guestCount }, () => ({
+          customer_type_rate: Number(meta.customer_type_rate_pk),
+        }))
     const fhNote = buildFHBookingNote(null, (extrasSelected ?? []) as unknown as ExtrasLineItem[])
     const bookingBody = {
       contact: {

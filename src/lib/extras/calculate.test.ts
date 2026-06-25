@@ -315,6 +315,70 @@ describe('calculateExtras — per_person_per_hour_cents', () => {
   })
 })
 
+// ── adults_only headcount (children don't count) ───────────────────────────
+
+describe('calculateExtras — adults_only', () => {
+  it('per_person_per_hour adults_only bills adultCount, not guestCount (Unlimited Drinks)', () => {
+    const drinks = makeExtra({
+      name: 'Unlimited Drinks',
+      price_type: 'per_person_per_hour_cents',
+      price_value: 1000, // €10/person/hour
+      vat_rate: 21,
+      adults_only: true,
+    })
+
+    // 2 guests (1 adult + 1 child), 1.5h. adults_only → 1 adult × €10 × 1.5h = €15
+    const result = calculateExtras(5500, 2, [drinks], 90, new Map(), 1)
+    expect(result.line_items[0].amount_cents).toBe(1500)
+    expect(result.line_items[0].guest_count).toBe(1)
+  })
+
+  it('per_person_per_hour WITHOUT adults_only still bills all guests', () => {
+    const drinks = makeExtra({
+      name: 'Unlimited Bar',
+      price_type: 'per_person_per_hour_cents',
+      price_value: 1000,
+      vat_rate: 21,
+      // adults_only not set
+    })
+
+    // adultCount passed as 1 but flag is false → uses guestCount (2): 2 × €10 × 1.5h = €30
+    const result = calculateExtras(5500, 2, [drinks], 90, new Map(), 1)
+    expect(result.line_items[0].amount_cents).toBe(3000)
+    expect(result.line_items[0].guest_count).toBe(2)
+  })
+
+  it('legacy per_person adults_only bills adultCount', () => {
+    const pkg = makeExtra({
+      name: 'Welcome bubbles',
+      price_type: 'per_person_cents',
+      price_value: 800, // €8/person
+      vat_rate: 21,
+      adults_only: true,
+      // no min_people → legacy "applies to all guests" path, now adult-gated
+    })
+
+    // 3 guests, 2 adults → 2 × €8 = €16
+    const result = calculateExtras(5500, 3, [pkg], 90, new Map(), 2)
+    expect(result.line_items[0].amount_cents).toBe(1600)
+    expect(result.line_items[0].guest_count).toBe(2)
+  })
+
+  it('adultCount omitted → falls back to guestCount (backwards compatible)', () => {
+    const drinks = makeExtra({
+      name: 'Unlimited Drinks',
+      price_type: 'per_person_per_hour_cents',
+      price_value: 1000,
+      vat_rate: 21,
+      adults_only: true,
+    })
+
+    // No adultCount arg → adults = guestCount = 2 → 2 × €10 × 1.5h = €30
+    const result = calculateExtras(5500, 2, [drinks], 90)
+    expect(result.line_items[0].amount_cents).toBe(3000)
+  })
+})
+
 // ── Per-person extras WITH min_people (customer picks people count) ────────
 
 describe('calculateExtras — per_person_cents with min_people', () => {

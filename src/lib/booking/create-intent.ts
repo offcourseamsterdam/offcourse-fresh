@@ -100,6 +100,8 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
   // 3. Defence-in-depth: re-run the calculation with the same inputs.
   //    If it differs, refuse — something changed (price, deactivated extra) since
   //    the quote was issued.
+  const quoteBreakdown = quoteRow.breakdown as Record<string, unknown> | null
+  const storedRates = quoteBreakdown?.customerTypeRates as Array<{ pk: number; count: number }> | null | undefined
   const recomputed = await calculateQuote({
     listingId: String(quoteRow.listing_id ?? ''),
     availPk: Number(quoteRow.avail_pk),
@@ -111,6 +113,7 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
     extraQuantities: (quoteRow.extra_quantities as Record<string, number>) ?? {},
     promoCodeId: quoteRow.promo_code_id,
     discountAmountCents: Number(quoteRow.discount_amount_cents ?? 0),
+    customerTypeRates: storedRates ?? undefined,
   })
 
   if (recomputed.totalCents !== quoteRow.total_cents) {
@@ -145,6 +148,7 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
       customer_type_rate_pk: String(quoteRow.customer_type_rate_pk ?? ''),
       customer_type_name: String(recomputed.customerTypeName ?? ''),
       guest_count: String(quoteRow.guest_count),
+      ...(storedRates?.length ? { customer_type_rates: JSON.stringify(storedRates) } : {}),
       category: String(quoteRow.category),
       date: String(date ?? ''),
       start_at: String(startAt ?? ''),
