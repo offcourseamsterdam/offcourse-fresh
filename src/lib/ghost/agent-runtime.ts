@@ -1,5 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk'
-import { getClaude, CLAUDE_MODEL } from '@/lib/ai/clients'
+import { getClaude, CLAUDE_DRAFTER_MODEL } from '@/lib/ai/clients'
 import { recordAiUsage } from '@/lib/ai/usage'
 
 /**
@@ -100,7 +100,7 @@ export async function runAgenticLoop(opts: {
     for (let turn = 1; turn <= maxTurns; turn++) {
       const lastTurn = turn === maxTurns
       const response = await claude.messages.create({
-        model: CLAUDE_MODEL,
+        model: CLAUDE_DRAFTER_MODEL,
         max_tokens: 1200,
         system,
         messages,
@@ -111,7 +111,7 @@ export async function runAgenticLoop(opts: {
 
       await recordAiUsage({
         feature,
-        model: CLAUDE_MODEL,
+        model: CLAUDE_DRAFTER_MODEL,
         inputTokens: response.usage.input_tokens,
         outputTokens: response.usage.output_tokens,
       })

@@ -1,4 +1,4 @@
-import { CLAUDE_MODEL, firstText } from '@/lib/ai/clients'
+import { CLAUDE_DRAFTER_MODEL, firstText } from '@/lib/ai/clients'
 import { meteredMessage } from '@/lib/ai/usage'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { filterCateringItems, hasCatering, type ExtrasLineItem } from '@/lib/catering/filter'
@@ -100,7 +100,7 @@ export async function draftTomorrowSchedule(): Promise<'drafted' | 'skipped'> {
       .join('\n')
 
     const response = await meteredMessage('ghost_schedule_day', {
-      model: CLAUDE_MODEL,
+      model: CLAUDE_DRAFTER_MODEL,
       max_tokens: 1000,
       messages: [
         {
@@ -133,7 +133,7 @@ Return JSON only:
       payload: { target_date: tomorrow, assignments: parsed.assignments },
       reasoning: typeof parsed.summary === 'string' ? parsed.summary : null,
       status: 'shadow',
-      model: CLAUDE_MODEL,
+      model: CLAUDE_DRAFTER_MODEL,
     })
     return 'drafted'
   } catch (err) {
@@ -175,7 +175,7 @@ export async function draftCateringOrders(): Promise<'drafted' | 'skipped'> {
       .join('\n')
 
     const response = await meteredMessage('ghost_catering_order', {
-      model: CLAUDE_MODEL,
+      model: CLAUDE_DRAFTER_MODEL,
       max_tokens: 1000,
       messages: [
         {
@@ -201,7 +201,7 @@ Return JSON only:
       payload: { target_date: today, orders: parsed.orders },
       reasoning: typeof parsed.summary === 'string' ? parsed.summary : null,
       status: 'shadow',
-      model: CLAUDE_MODEL,
+      model: CLAUDE_DRAFTER_MODEL,
     })
     return 'drafted'
   } catch (err) {

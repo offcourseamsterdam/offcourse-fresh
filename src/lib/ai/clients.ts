@@ -20,7 +20,13 @@ export function getGemini(): GoogleGenerativeAI {
   return geminiClient
 }
 
-export const CLAUDE_MODEL = 'claude-sonnet-4-20250514'
+// Quality text (translations, blog, image metadata, customer-facing reply
+// translation). Sonnet 4 retired 2026-06-15; 4.6 is the same tier, cheaper
+// and more capable.
+export const CLAUDE_MODEL = 'claude-sonnet-4-6'
+// High-volume Ghost reasoning (inbox/booking/ops drafters, draft-vs-actual
+// comparison). Haiku 4.5 is ~3x cheaper and ample for these internal tasks.
+export const CLAUDE_DRAFTER_MODEL = 'claude-haiku-4-5'
 export const GEMINI_MODEL = 'gemini-2.5-flash'
 
 /** First text block of a Claude response, trimmed — or '' if there is none. */

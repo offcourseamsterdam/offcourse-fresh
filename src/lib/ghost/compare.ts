@@ -1,4 +1,4 @@
-import { CLAUDE_MODEL, firstText } from '@/lib/ai/clients'
+import { CLAUDE_DRAFTER_MODEL, firstText } from '@/lib/ai/clients'
 import { meteredMessage } from '@/lib/ai/usage'
 import type { SimilarityLabel } from './similarity'
 
@@ -21,7 +21,7 @@ export async function analyzeDifference(
 ): Promise<DifferenceAnalysis | null> {
   try {
     const response = await meteredMessage('ghost_compare', {
-      model: CLAUDE_MODEL,
+      model: CLAUDE_DRAFTER_MODEL,
       max_tokens: 300,
       messages: [
         {

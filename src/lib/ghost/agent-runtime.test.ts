@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Mock the model client + usage meter so the agentic loop runs with scripted
 // responses and no network. vitest hoists vi.mock above all imports.
-vi.mock('@/lib/ai/clients', () => ({ getClaude: vi.fn(), CLAUDE_MODEL: 'claude-test' }))
+vi.mock('@/lib/ai/clients', () => ({ getClaude: vi.fn(), CLAUDE_MODEL: 'claude-test', CLAUDE_DRAFTER_MODEL: 'claude-test' }))
 vi.mock('@/lib/ai/usage', () => ({ recordAiUsage: vi.fn().mockResolvedValue(undefined) }))
 
 import { clampToolResult, previewToolResult, runAgenticLoop, type AgentTool } from './agent-runtime'

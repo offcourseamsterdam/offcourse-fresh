@@ -1,4 +1,4 @@
-import { CLAUDE_MODEL } from '@/lib/ai/clients'
+import { CLAUDE_DRAFTER_MODEL } from '@/lib/ai/clients'
 import { OFF_COURSE_SYSTEM_PROMPT } from '@/lib/ai/context'
 import { runAgenticLoop } from '@/lib/ghost/agent-runtime'
 import { buildGhostTools } from '@/lib/ghost/tools'
@@ -234,7 +234,7 @@ RULES
         ),
         reasoning: parsed.reasoning,
         status: 'shadow',
-        model: CLAUDE_MODEL,
+        model: CLAUDE_DRAFTER_MODEL,
       })
       .select('id')
       .single()
