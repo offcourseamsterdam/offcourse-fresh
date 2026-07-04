@@ -7,6 +7,7 @@ import { ReviewItem } from '@/components/admin/ReviewItem'
 import { GoogleConfigBar } from '@/components/admin/GoogleConfigBar'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { useReviews } from './useReviews'
+import { BonusConflictCards } from './BonusConflictCards'
 
 type SourceFilter = 'all' | 'google' | 'tripadvisor'
 
@@ -125,6 +126,9 @@ export default function AdminReviewsPage() {
           <p>No reviews yet. Click <strong>Sync</strong> to import reviews from Outscraper.</p>
         </div>
       )}
+
+      {/* Bonus conflicts — surfaces when two staff share a first name */}
+      <BonusConflictCards />
 
       {/* Reviews list */}
       {filteredReviews.length > 0 && (

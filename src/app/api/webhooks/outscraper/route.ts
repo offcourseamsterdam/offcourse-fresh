@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createHmac } from 'crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { parseOutscraperPayload } from '@/lib/outscraper/parse'
 import { outscraperWebhookToken } from '@/lib/outscraper/webhook-token'
 import { postSlackText } from '@/lib/slack/send-notification'
+import { awardReviewBonuses } from '@/lib/scheduling/review-bonuses'
 
 /**
  * POST /api/webhooks/outscraper
@@ -126,6 +127,28 @@ export async function POST(request: NextRequest) {
 
     // PostgREST requires a WHERE clause on UPDATE; there is a single config row.
     await supabase.from('google_reviews_config').update(configUpdate).not('id', 'is', null)
+
+    // Fetch the IDs of reviews we just upserted so we can scan them for staff names.
+    const externalIds = uniqueReviews
+      .map(r => r.external_review_id)
+      .filter((id): id is string => typeof id === 'string')
+
+    if (externalIds.length > 0) {
+      const { data: upsertedRows } = await supabase
+        .from('social_proof_reviews')
+        .select('id, review_text, original_text')
+        .eq('source', source)
+        .in('external_review_id', externalIds)
+
+      if (upsertedRows?.length) {
+        after(async () => {
+          for (const row of upsertedRows) {
+            const text = [row.review_text, row.original_text].filter(Boolean).join(' ')
+            await awardReviewBonuses(row.id, text)
+          }
+        })
+      }
+    }
 
     await postSlackText(`✅ Outscraper ${source}: imported ${uniqueReviews.length} review(s).`).catch(() => {})
     return NextResponse.json({ received: true, upserted: uniqueReviews.length })

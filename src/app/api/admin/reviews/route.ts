@@ -14,10 +14,10 @@ export async function GET() {
     supabase
       .from('social_proof_reviews')
       .select('*')
-      .order('sort_order', { ascending: true }),
+      .order('publish_time', { ascending: false, nullsFirst: false }),
     supabase
       .from('google_reviews_config')
-      .select('place_id, place_name, overall_rating, total_reviews, last_synced_at, tripadvisor_url, tripadvisor_rating, tripadvisor_total_reviews')
+      .select('place_id, place_name, overall_rating, total_reviews, last_synced_at, tripadvisor_url, tripadvisor_rating, tripadvisor_total_reviews, withlocals_experience_short_id')
       .limit(1)
       .maybeSingle(),
   ])
@@ -36,7 +36,7 @@ export async function PUT(request: NextRequest) {
   if (denied) return denied
 
   const body = await request.json().catch(() => ({})) as Record<string, unknown>
-  const { place_id, tripadvisor_url } = body
+  const { place_id, tripadvisor_url, withlocals_experience_short_id } = body
 
   if (!place_id || typeof place_id !== 'string') {
     return apiError('place_id is required', 400)
@@ -50,6 +50,7 @@ export async function PUT(request: NextRequest) {
       {
         place_id: place_id.trim(),
         tripadvisor_url: typeof tripadvisor_url === 'string' ? tripadvisor_url.trim() || null : null,
+        withlocals_experience_short_id: typeof withlocals_experience_short_id === 'string' ? withlocals_experience_short_id.trim() || null : null,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'place_id' }
