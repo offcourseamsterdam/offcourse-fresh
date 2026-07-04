@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { getStripe } from '@/lib/stripe/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
@@ -8,6 +8,7 @@ import { claimBooking, finalizeBooking, releaseClaim } from '@/lib/booking/claim
 import { sendCriticalAlert } from '@/lib/alerts/critical-alert'
 import { logWebhookEvent } from '@/lib/webhooks/log'
 import { emitOpsEvent } from '@/lib/ops/events'
+import { draftGuestMoveForNewBooking } from '@/lib/ghost/guest-move-drafter'
 import { notifyCateringOrder } from '@/lib/catering/notify'
 import { buildFHBookingNote } from '@/lib/catering/build-fh-note'
 import type { ExtrasLineItem } from '@/lib/catering/filter'
@@ -116,6 +117,16 @@ export async function POST(request: NextRequest) {
         source: 'webhooks/stripe:checkout.session.completed',
         payload: { category: booking.category, guest_count: booking.guest_count, booking_date: booking.booking_date },
       })
+      // Off the response path: does this new booking reveal a gap-closing
+      // guest-move opportunity today? (Beer 2026-07-04 — every new booking
+      // checks its own date immediately, not just the nightly scan.)
+      if (booking.booking_date) {
+        after(() =>
+          draftGuestMoveForNewBooking(booking.booking_date as string).catch(err =>
+            console.error('[stripe-webhook] guest-move check failed:', err),
+          ),
+        )
+      }
     }
 
     const guestCount = Number(booking.guest_count ?? 1)
@@ -391,6 +402,15 @@ export async function POST(request: NextRequest) {
           booking_date: meta.date,
         },
       })
+      // Off the response path: does this new booking reveal a gap-closing
+      // guest-move opportunity today?
+      if (meta.date) {
+        after(() =>
+          draftGuestMoveForNewBooking(meta.date as string).catch(err =>
+            console.error('[stripe-webhook] guest-move check failed:', err),
+          ),
+        )
+      }
     }
 
     const startTime = formatAmsterdamTime(meta.start_at)

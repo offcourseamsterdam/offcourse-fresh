@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, after } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import type { FHBookingResponse } from '@/lib/fareharbor/types'
@@ -18,6 +18,8 @@ import { extractVat } from '@/lib/extras/calculate'
 import { formatAmsterdamTime } from '@/lib/utils'
 import { postSlackText } from '@/lib/slack/send-notification'
 import { formatTrafficSource } from '@/lib/tracking/traffic-source'
+import { emitOpsEvent } from '@/lib/ops/events'
+import { draftGuestMoveForNewBooking } from '@/lib/ghost/guest-move-drafter'
 import type { Json } from '@/lib/supabase/types'
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -314,6 +316,22 @@ export async function POST(request: NextRequest) {
         // The row exists (pending_payment, full data captured) but couldn't be
         // promoted. Alert with the FH UUID so an admin can flip it manually.
         await alertBookingSaveFailure({ ...claimPayload, fhBookingUuid: booking?.uuid }, fin.error ?? 'finalize update failed')
+      } else {
+        await emitOpsEvent({
+          eventType: 'booking_confirmed',
+          actorType: 'system',
+          source: 'admin/booking-flow/book:claim',
+          payload: { category: category ?? null, guest_count: Number(guestCount), booking_date: date ?? null },
+        })
+        // Off the response path: does this new booking reveal a gap-closing
+        // guest-move opportunity today?
+        if (date) {
+          after(() =>
+            draftGuestMoveForNewBooking(String(date)).catch(err =>
+              console.error('[book] guest-move check failed:', err),
+            ),
+          )
+        }
       }
 
       // Promo usage bump (lived inside saveToSupabase for the insert path).
@@ -362,6 +380,23 @@ export async function POST(request: NextRequest) {
       const saveResult = await saveToSupabase(bookingPayload)
       if (!saveResult.ok) {
         await alertBookingSaveFailure(bookingPayload, saveResult.error)
+      } else {
+        await emitOpsEvent({
+          eventType: 'booking_confirmed',
+          actorType: 'system',
+          source: 'admin/booking-flow/book',
+          payload: { category: category ?? null, guest_count: Number(guestCount), booking_date: date ?? null },
+        })
+        // Off the response path: does this new booking reveal a gap-closing
+        // guest-move opportunity today? (Beer 2026-07-04 — every new booking
+        // checks its own date immediately, not just the nightly scan.)
+        if (date) {
+          after(() =>
+            draftGuestMoveForNewBooking(String(date)).catch(err =>
+              console.error('[book] guest-move check failed:', err),
+            ),
+          )
+        }
       }
     }
 

@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { hasCatering, type ExtrasLineItem } from '@/lib/catering/filter'
 import { deriveOperationalProfile } from '@/lib/ops/profile'
 import { emitOpsEvent } from '@/lib/ops/events'
+import { syncShiftsForRange } from '@/lib/scheduling/sync-shifts'
 import { computeDayFacts, type OpsReviewShift } from './ops-review'
 import { extractJson } from './ops-drafters'
 import {
@@ -19,12 +20,19 @@ import { amsterdamToday, formatAmsterdamTime } from '@/lib/utils'
  * Guest-move drafter — the outreach half of the AI Operations Engine (PRD
  * "Smart Guest Suggestions" + "Decision Engine", sequential outreach).
  *
- * When tomorrow has a paid gap big enough to matter, the Ghost picks ONE
+ * When a day has a paid gap big enough to matter, the Ghost picks ONE
  * booking that could close it, and drafts the ask: an SMS + email with the
  * offer (new time, same price, an incentive on us) and a tokened response
  * link. A human approves the send; the guest taps Yes / Let me check / Keep
  * my time; every answer lands in ops_events — the future acceptance-
  * probability training data.
+ *
+ * Two triggers, one shared core (craftAndInsertMoveProposal):
+ *   - draftGuestMoveRequest() — nightly, scans the whole horizon, drafts the
+ *     single best opportunity across it.
+ *   - draftGuestMoveForNewBooking(date) — event-driven (Beer 2026-07-04:
+ *     "every time a new booking comes in"), fired right after a booking is
+ *     confirmed, scoped to just that booking's date.
  *
  * HARD RULES, all enforced here in code (never in the prompt):
  *   - sequential: at most ONE open move request per day, ever. Guests are
@@ -164,6 +172,95 @@ function resolveSingleBooking(
 
 type AdminClient = ReturnType<typeof createAdminClient>
 
+const SHIFT_SELECT =
+  'id, date, start_at, end_at, status, staff_id, booking_id, fareharbor_availability_pk, staff(name, hourly_rate_cents), boats(name, max_capacity)'
+const BOOKING_SELECT =
+  'id, booking_date, category, customer_name, customer_email, customer_phone, extras_selected, listing_title, guest_count, receipt_total, base_amount_cents, extras_amount_cents, fareharbor_availability_pk'
+
+type RawShiftRow = {
+  id: string
+  start_at: string
+  end_at: string
+  status: string
+  staff_id: string | null
+  booking_id: string | null
+  fareharbor_availability_pk: number | null
+  staff: unknown
+  boats: unknown
+}
+type RawBookingRow = {
+  id: string
+  category: string | null
+  customer_name: string | null
+  customer_email: string | null
+  customer_phone: string | null
+  extras_selected: unknown
+  listing_title: string | null
+  guest_count: number | null
+  receipt_total: number | null
+  base_amount_cents: number | null
+  extras_amount_cents: number | null
+  fareharbor_availability_pk: number | null
+}
+
+function toMoveBooking(b: RawBookingRow): MoveBooking {
+  return {
+    id: b.id,
+    category: b.category,
+    customerName: b.customer_name,
+    customerEmail: b.customer_email,
+    customerPhone: b.customer_phone,
+    extrasSelected: (b.extras_selected as ExtrasLineItem[] | null) ?? null,
+    listingTitle: b.listing_title,
+    guestCount: b.guest_count,
+    totalCents: b.receipt_total ?? (b.base_amount_cents ?? 0) + (b.extras_amount_cents ?? 0),
+    fareharborAvailabilityPk: b.fareharbor_availability_pk,
+  }
+}
+
+/**
+ * The core candidate computation, shared by the nightly horizon scan and the
+ * new-booking trigger — both end up with the same shape of raw rows for a
+ * single day, just fetched differently (one big batched query vs. one
+ * targeted single-day query).
+ */
+function candidateFromDayRows(rawShifts: RawShiftRow[], dayBookings: MoveBooking[]): MoveCandidate | null {
+  if (rawShifts.length < 2) return null // nothing to compare against yet
+
+  const bookingsById = new Map(dayBookings.map(b => [b.id, b]))
+  const bookingsByAvailPk = new Map<number, MoveBooking[]>()
+  for (const b of dayBookings) {
+    if (b.fareharborAvailabilityPk == null) continue
+    const list = bookingsByAvailPk.get(b.fareharborAvailabilityPk) ?? []
+    list.push(b)
+    bookingsByAvailPk.set(b.fareharborAvailabilityPk, list)
+  }
+
+  const shifts: ShiftWithBooking[] = rawShifts.map(s => {
+    const staff = s.staff as { name?: string; hourly_rate_cents?: number } | null
+    const boat = s.boats as { name?: string; max_capacity?: number | null } | null
+    const booking = s.booking_id ? bookingsById.get(s.booking_id) : null
+    return {
+      id: s.id,
+      boat: boat?.name ?? '?',
+      boatCapacity: boat?.max_capacity ?? null,
+      startAt: s.start_at,
+      endAt: s.end_at,
+      status: s.status,
+      staffId: s.staff_id,
+      staffName: staff?.name ?? null,
+      hourlyRateCents: staff?.hourly_rate_cents ?? null,
+      category: booking?.category ?? null,
+      guestCount: booking?.guestCount ?? null,
+      listingTitle: booking?.listingTitle ?? null,
+      bookingId: s.booking_id,
+      availabilityPk: s.fareharbor_availability_pk,
+    }
+  })
+
+  return selectMoveCandidate(shifts, bookingsById, bookingsByAvailPk)
+}
+
 /** Sequential invariant: any not-yet-settled move request blocks a new one for that date. */
 async function openMoveRequestExists(supabase: AdminClient, targetDate: string): Promise<boolean> {
   const { data } = await supabase
@@ -176,6 +273,95 @@ async function openMoveRequestExists(supabase: AdminClient, targetDate: string):
   return (data?.length ?? 0) > 0
 }
 
+/**
+ * Claude drafts the SMS + email, then the shadow proposal is written and
+ * logged. Shared by the nightly scan and the new-booking trigger — the only
+ * difference between them is HOW a candidate + reasoning suffix were found,
+ * never how the ask itself gets drafted.
+ */
+async function craftAndInsertMoveProposal(
+  supabase: AdminClient,
+  targetDate: string,
+  candidate: MoveCandidate,
+  opts: { reasoningSuffix: string; source: string },
+): Promise<'drafted' | 'skipped'> {
+  const currentTime = formatAmsterdamTime(candidate.currentStartAt)
+  const proposedTime = formatAmsterdamTime(candidate.proposedStartAt)
+  const totalEur = ((candidate.booking.totalCents ?? 0) / 100).toFixed(2)
+
+  const response = await meteredMessage('ghost_guest_move', {
+    model: CLAUDE_DRAFTER_MODEL,
+    max_tokens: 1000,
+    messages: [
+      {
+        role: 'user',
+        content: `${GUEST_MOVE_PROMPT}
+
+THE ASK
+- Guest: ${candidate.booking.customerName ?? 'guest'} · ${candidate.booking.guestCount ?? '?'} people · ${candidate.booking.listingTitle ?? 'cruise'} on ${targetDate}
+- Current departure: ${currentTime} · proposed: ${proposedTime} (same boat: ${candidate.boat}, same duration, same price: €${totalEur})
+
+Return JSON only:
+{"sms_text": "<SMS incl {{link}}>", "email_subject": "<subject>", "email_body": "<plain-text email incl {{link}}, with a one-line summary of their booking (date, time ${currentTime} → ${proposedTime}, party size, price unchanged €${totalEur})>"}`,
+      },
+    ],
+  })
+
+  const parsed = extractJson(firstText(response))
+  const smsText = typeof parsed?.sms_text === 'string' ? parsed.sms_text : null
+  const emailSubject = typeof parsed?.email_subject === 'string' ? parsed.email_subject : null
+  const emailBody = typeof parsed?.email_body === 'string' ? parsed.email_body : null
+  if (!smsText || !emailSubject || !emailBody) return 'skipped'
+  if (!smsText.includes('{{link}}') || !emailBody.includes('{{link}}')) return 'skipped'
+
+  const { data: inserted } = await supabase
+    .from('agent_proposals')
+    .insert({
+      kind: 'guest_move_request',
+      payload: JSON.parse(
+        JSON.stringify({
+          target_date: targetDate,
+          booking_id: candidate.bookingId,
+          shift_id: candidate.shiftId,
+          guest_name: candidate.booking.customerName,
+          guest_email: candidate.booking.customerEmail,
+          guest_phone: candidate.booking.customerPhone,
+          cruise_title: candidate.booking.listingTitle,
+          guest_count: candidate.booking.guestCount,
+          boat: candidate.boat,
+          current_start_at: candidate.currentStartAt,
+          proposed_start_at: candidate.proposedStartAt,
+          proposed_end_at: candidate.proposedEndAt,
+          gap_minutes: candidate.gapMinutes,
+          est_saving_cents: candidate.estSavingCents,
+          total_cents: candidate.booking.totalCents,
+          incentive: 'a bottle of wine on the house',
+          sms_text: smsText,
+          email_subject: emailSubject,
+          email_body: emailBody,
+        }),
+      ),
+      reasoning: `Closing the ${candidate.gapMinutes} min gap on ${candidate.boat} (${targetDate}) saves ≈ €${(candidate.estSavingCents / 100).toFixed(2)} in paid waiting — ${opts.reasoningSuffix}. No catering aboard, single-party departure — safe to ask. Sequential: this is the only open ask for ${targetDate}.`,
+      status: 'shadow',
+      model: CLAUDE_DRAFTER_MODEL,
+    })
+    .select('id')
+    .single()
+
+  await emitOpsEvent({
+    eventType: 'recommendation_created',
+    actorType: 'agent',
+    actorId: 'operations',
+    proposalId: inserted?.id ?? null,
+    bookingId: candidate.bookingId,
+    shiftId: candidate.shiftId,
+    source: opts.source,
+    payload: { target_date: targetDate, est_saving_cents: candidate.estSavingCents, gap_minutes: candidate.gapMinutes },
+  })
+
+  return 'drafted'
+}
+
 export async function draftGuestMoveRequest(): Promise<'drafted' | 'skipped'> {
   try {
     const supabase = createAdminClient()
@@ -186,40 +372,30 @@ export async function draftGuestMoveRequest(): Promise<'drafted' | 'skipped'> {
     const [shiftsRes, bookingsRes] = await Promise.all([
       supabase
         .from('shifts')
-        .select('id, date, start_at, end_at, status, staff_id, booking_id, fareharbor_availability_pk, staff(name, hourly_rate_cents), boats(name, max_capacity)')
+        .select(`${SHIFT_SELECT}, date`)
         .gte('date', from)
         .lte('date', to)
         .in('status', ['open', 'assigned', 'confirmed'])
         .order('start_at'),
       supabase
         .from('bookings')
-        .select('id, booking_date, category, customer_name, customer_email, customer_phone, extras_selected, listing_title, guest_count, receipt_total, base_amount_cents, extras_amount_cents, fareharbor_availability_pk')
+        .select(BOOKING_SELECT)
         .gte('booking_date', from)
         .lte('booking_date', to)
         .in('status', ['confirmed', 'booked']),
     ])
 
     const bookingsByDate = new Map<string, MoveBooking[]>()
-    for (const b of bookingsRes.data ?? []) {
-      if (!b.booking_date) continue
-      const list = bookingsByDate.get(b.booking_date) ?? []
-      list.push({
-        id: b.id,
-        category: b.category,
-        customerName: b.customer_name,
-        customerEmail: b.customer_email,
-        customerPhone: b.customer_phone,
-        extrasSelected: (b.extras_selected as ExtrasLineItem[] | null) ?? null,
-        listingTitle: b.listing_title,
-        guestCount: b.guest_count,
-        totalCents: b.receipt_total ?? (b.base_amount_cents ?? 0) + (b.extras_amount_cents ?? 0),
-        fareharborAvailabilityPk: b.fareharbor_availability_pk,
-      })
-      bookingsByDate.set(b.booking_date, list)
+    for (const b of (bookingsRes.data ?? []) as RawBookingRow[]) {
+      const date = (b as RawBookingRow & { booking_date: string | null }).booking_date
+      if (!date) continue
+      const list = bookingsByDate.get(date) ?? []
+      list.push(toMoveBooking(b))
+      bookingsByDate.set(date, list)
     }
 
-    const rawShiftsByDate = new Map<string, NonNullable<typeof shiftsRes.data>>()
-    for (const s of shiftsRes.data ?? []) {
+    const rawShiftsByDate = new Map<string, RawShiftRow[]>()
+    for (const s of (shiftsRes.data ?? []) as (RawShiftRow & { date: string })[]) {
       const list = rawShiftsByDate.get(s.date) ?? []
       list.push(s)
       rawShiftsByDate.set(s.date, list)
@@ -229,41 +405,7 @@ export async function draftGuestMoveRequest(): Promise<'drafted' | 'skipped'> {
     // has no gap to close). Best saving across the whole window wins.
     const candidates: Array<{ date: string; candidate: MoveCandidate }> = []
     for (const [date, rawShifts] of rawShiftsByDate) {
-      if (rawShifts.length < 2) continue
-
-      const dayBookings = bookingsByDate.get(date) ?? []
-      const bookingsById = new Map(dayBookings.map(b => [b.id, b]))
-      const bookingsByAvailPk = new Map<number, MoveBooking[]>()
-      for (const b of dayBookings) {
-        if (b.fareharborAvailabilityPk == null) continue
-        const list = bookingsByAvailPk.get(b.fareharborAvailabilityPk) ?? []
-        list.push(b)
-        bookingsByAvailPk.set(b.fareharborAvailabilityPk, list)
-      }
-
-      const shifts: ShiftWithBooking[] = rawShifts.map(s => {
-        const staff = s.staff as { name?: string; hourly_rate_cents?: number } | null
-        const boat = s.boats as { name?: string; max_capacity?: number | null } | null
-        const booking = s.booking_id ? bookingsById.get(s.booking_id) : null
-        return {
-          id: s.id,
-          boat: boat?.name ?? '?',
-          boatCapacity: boat?.max_capacity ?? null,
-          startAt: s.start_at,
-          endAt: s.end_at,
-          status: s.status,
-          staffId: s.staff_id,
-          staffName: staff?.name ?? null,
-          hourlyRateCents: staff?.hourly_rate_cents ?? null,
-          category: booking?.category ?? null,
-          guestCount: booking?.guestCount ?? null,
-          listingTitle: booking?.listingTitle ?? null,
-          bookingId: s.booking_id,
-          availabilityPk: s.fareharbor_availability_pk,
-        }
-      })
-
-      const candidate = selectMoveCandidate(shifts, bookingsById, bookingsByAvailPk)
+      const candidate = candidateFromDayRows(rawShifts, bookingsByDate.get(date) ?? [])
       if (candidate) candidates.push({ date, candidate })
     }
     if (!candidates.length) return 'skipped' // optimal (or unaskable) days are a good outcome
@@ -279,85 +421,62 @@ export async function draftGuestMoveRequest(): Promise<'drafted' | 'skipped'> {
       }
     }
     if (!picked) return 'skipped'
-    const { date: targetDate, candidate } = picked
 
-    const currentTime = formatAmsterdamTime(candidate.currentStartAt)
-    const proposedTime = formatAmsterdamTime(candidate.proposedStartAt)
-    const totalEur = ((candidate.booking.totalCents ?? 0) / 100).toFixed(2)
-
-    const response = await meteredMessage('ghost_guest_move', {
-      model: CLAUDE_DRAFTER_MODEL,
-      max_tokens: 1000,
-      messages: [
-        {
-          role: 'user',
-          content: `${GUEST_MOVE_PROMPT}
-
-THE ASK
-- Guest: ${candidate.booking.customerName ?? 'guest'} · ${candidate.booking.guestCount ?? '?'} people · ${candidate.booking.listingTitle ?? 'cruise'} on ${targetDate}
-- Current departure: ${currentTime} · proposed: ${proposedTime} (same boat: ${candidate.boat}, same duration, same price: €${totalEur})
-
-Return JSON only:
-{"sms_text": "<SMS incl {{link}}>", "email_subject": "<subject>", "email_body": "<plain-text email incl {{link}}, with a one-line summary of their booking (date, time ${currentTime} → ${proposedTime}, party size, price unchanged €${totalEur})>"}`,
-        },
-      ],
+    return await craftAndInsertMoveProposal(supabase, picked.date, picked.candidate, {
+      reasoningSuffix: `the best opportunity in the next ${OPTIMIZE_HORIZON_DAYS} days`,
+      source: 'ghost/guest-move-drafter:nightly',
     })
-
-    const parsed = extractJson(firstText(response))
-    const smsText = typeof parsed?.sms_text === 'string' ? parsed.sms_text : null
-    const emailSubject = typeof parsed?.email_subject === 'string' ? parsed.email_subject : null
-    const emailBody = typeof parsed?.email_body === 'string' ? parsed.email_body : null
-    if (!smsText || !emailSubject || !emailBody) return 'skipped'
-    if (!smsText.includes('{{link}}') || !emailBody.includes('{{link}}')) return 'skipped'
-
-    const { data: inserted } = await supabase
-      .from('agent_proposals')
-      .insert({
-        kind: 'guest_move_request',
-        payload: JSON.parse(
-          JSON.stringify({
-            target_date: targetDate,
-            booking_id: candidate.bookingId,
-            shift_id: candidate.shiftId,
-            guest_name: candidate.booking.customerName,
-            guest_email: candidate.booking.customerEmail,
-            guest_phone: candidate.booking.customerPhone,
-            cruise_title: candidate.booking.listingTitle,
-            guest_count: candidate.booking.guestCount,
-            boat: candidate.boat,
-            current_start_at: candidate.currentStartAt,
-            proposed_start_at: candidate.proposedStartAt,
-            proposed_end_at: candidate.proposedEndAt,
-            gap_minutes: candidate.gapMinutes,
-            est_saving_cents: candidate.estSavingCents,
-            total_cents: candidate.booking.totalCents,
-            incentive: 'a bottle of wine on the house',
-            sms_text: smsText,
-            email_subject: emailSubject,
-            email_body: emailBody,
-          }),
-        ),
-        reasoning: `Closing the ${candidate.gapMinutes} min gap on ${candidate.boat} (${targetDate}) saves ≈ €${(candidate.estSavingCents / 100).toFixed(2)} in paid waiting — the best opportunity in the next ${OPTIMIZE_HORIZON_DAYS} days. Shared cruise, no catering aboard, single-party departure — safe to ask. Sequential: this is the only open ask for ${targetDate}.`,
-        status: 'shadow',
-        model: CLAUDE_DRAFTER_MODEL,
-      })
-      .select('id')
-      .single()
-
-    await emitOpsEvent({
-      eventType: 'recommendation_created',
-      actorType: 'agent',
-      actorId: 'operations',
-      proposalId: inserted?.id ?? null,
-      bookingId: candidate.bookingId,
-      shiftId: candidate.shiftId,
-      source: 'ghost/guest-move-drafter',
-      payload: { target_date: targetDate, est_saving_cents: candidate.estSavingCents, gap_minutes: candidate.gapMinutes },
-    })
-
-    return 'drafted'
   } catch (err) {
     console.error('[ghost/guest_move] failed:', err instanceof Error ? err.message : err)
+    return 'skipped'
+  }
+}
+
+/**
+ * Event-driven check (Beer 2026-07-04): "every time a new booking comes in"
+ * — fired fire-and-forget right after a booking is confirmed (webhooks/stripe,
+ * admin/booking-flow/book), scoped to just THAT booking's date. A new booking
+ * can only ever create a gap-closing opportunity on its own date, so this
+ * never re-scans the whole horizon — skip-first stays true (no second
+ * booking on the date yet → zero DB writes, zero AI calls).
+ *
+ * Syncs shifts for the single date first: the new booking's shift may not
+ * exist yet (shift generation is normally a nightly/manual batch job), and
+ * gap analysis needs it to be there before it means anything.
+ */
+export async function draftGuestMoveForNewBooking(bookingDate: string): Promise<'drafted' | 'skipped'> {
+  try {
+    const supabase = createAdminClient()
+
+    if (await openMoveRequestExists(supabase, bookingDate)) return 'skipped'
+
+    const sync = await syncShiftsForRange(supabase, bookingDate, bookingDate)
+    if ('error' in sync) {
+      console.error('[ghost/guest_move] new-booking shift sync failed:', sync.error)
+      return 'skipped'
+    }
+
+    const [shiftsRes, bookingsRes] = await Promise.all([
+      supabase
+        .from('shifts')
+        .select(SHIFT_SELECT)
+        .eq('date', bookingDate)
+        .in('status', ['open', 'assigned', 'confirmed'])
+        .order('start_at'),
+      supabase.from('bookings').select(BOOKING_SELECT).eq('booking_date', bookingDate).in('status', ['confirmed', 'booked']),
+    ])
+
+    const rawShifts = (shiftsRes.data ?? []) as RawShiftRow[]
+    const dayBookings = ((bookingsRes.data ?? []) as RawBookingRow[]).map(toMoveBooking)
+    const candidate = candidateFromDayRows(rawShifts, dayBookings)
+    if (!candidate) return 'skipped'
+
+    return await craftAndInsertMoveProposal(supabase, bookingDate, candidate, {
+      reasoningSuffix: 'a new booking just revealed this opportunity',
+      source: 'ghost/guest-move-drafter:new-booking',
+    })
+  } catch (err) {
+    console.error('[ghost/guest_move] new-booking check failed:', err instanceof Error ? err.message : err)
     return 'skipped'
   }
 }

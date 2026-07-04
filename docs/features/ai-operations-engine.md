@@ -12,9 +12,12 @@ existing Ghost agent framework. Three pillars:
    Distinct from `admin_event_log` (human-facing audit feed) by design — different
    retention, different query patterns, no severity/message semantics.
 2. **Operational profiles** — the PRD's shared-vs-private flexibility rules as a
-   pure function: shared cruises are `flexible` (time change / merge / boat swap
-   allowed), private cruises are `protected` (nothing moves without a human asking
-   the guest). Enforced in code, never in prompts.
+   pure function: shared cruises are `flexible` (time change, merge, boat swap
+   all allowed); private cruises are `protected` from **merging** only — a
+   private booking is never combined onto another party's departure, but it
+   CAN be time/boat moved at the same threshold as shared (Beer 2026-07-04).
+   Every move still requires a human to approve the actual send. Enforced in
+   code, never in prompts.
 3. **The operations optimizer** — the seventh Ghost agent (`ops_review` kind).
    Every evening (ghost-ops cron, 15:00 UTC) it reviews tomorrow: TypeScript
    computes the deterministic facts (gaps between sailings, paid idle minutes and
@@ -43,19 +46,35 @@ never reasons over a stale roster.
 
    Hard rules, all in `selectMoveCandidate()` (code, never prompts):
    - **sequential** — at most one open ask per day, ever, and at most ONE new
-     draft per cron run;
-   - **private cruises**: never asked;
+     draft per triggering run;
+   - **private cruises CAN be asked** (Beer 2026-07-04, same €/minute threshold
+     as shared) — but only a TIME or boat change, **never merged** onto
+     another party's departure (`allowMerge` stays false for private —
+     exclusivity is what the guest paid for; this drafter never merges anyone
+     anyway, it only ever moves one booking's own time);
    - **bookings with catering/drinks aboard: never asked** (Beer 2026-07-04 —
      the supplier order is already placed);
    - **multi-booking departures**: never asked (would race several parties);
    - a guest **yes never rebooks by itself** — Slack pings the team to perform
      the FareHarbor rebook via admin. Unanswered asks expire after 48h (cron).
 
-   **Horizon (Beer 2026-07-04):** the drafter scans the next
+   **Horizon (Beer 2026-07-04):** the nightly scan covers the next
    `OPTIMIZE_HORIZON_DAYS` (14) days, only days where a SECOND booking exists,
    and drafts the single most valuable ask across the window — asking two
    weeks out is friendlier and likelier to succeed than the evening before.
    The cron's shift sync covers the same window.
+
+   **Event-driven trigger (Beer 2026-07-04 — "every time a new booking comes
+   in"):** `draftGuestMoveForNewBooking(date)` fires fire-and-forget
+   (`after()`) right after a booking is confirmed — the Stripe webhook (both
+   flows) and the admin `/booking-flow/book` route (both its claim-based
+   website path and its internal/recovery path) — scoped to just that
+   booking's own date. It syncs that single day's shifts first (the new
+   booking's shift may not exist yet), then runs the same candidate check as
+   the nightly scan. Skip-first holds: no second booking yet on that date →
+   zero DB writes, zero AI calls. Shares its Claude-drafting and insert logic
+   with the nightly scan via `craftAndInsertMoveProposal()` — only the
+   "how was this candidate found" reasoning differs between the two.
 
 5. **Snackbox upsell** (`catering_upsell` kind, catering agent). Guests whose
    catering is EXACTLY the unlimited-drinks package (`isDrinksOnlyBooking()` in
@@ -104,7 +123,7 @@ never reasons over a stale roster.
 |---|---|
 | `supabase/migrations/083_ops_events.sql` | Append-only event log — RLS on, zero policies, no update/delete path |
 | `src/lib/ops/events.ts` | `emitOpsEvent()` — typed union, fire-and-forget, never throws, never blocks the money path |
-| `src/lib/ops/profile.ts` | `deriveOperationalProfile()` — shared=flexible, private=protected, unknown=protected |
+| `src/lib/ops/profile.ts` | `deriveOperationalProfile()` — shared=flexible (merge ok), private=protected (no merge, time/boat moves ok), unknown=protected |
 | `src/lib/ghost/ops-review.ts` | The agent: `computeDayFacts()` (pure, tested) + `draftOpsReview()` (loop + proposal) |
 | `src/lib/scheduling/sync-shifts.ts` | `syncShiftsForRange()` — extracted from the manual sync route, shared with the cron |
 | `src/app/api/cron/ghost-ops/route.ts` | Now: sync shifts → then draft schedule + catering + ops review in parallel |

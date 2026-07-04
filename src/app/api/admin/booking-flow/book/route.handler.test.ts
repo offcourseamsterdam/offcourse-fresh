@@ -42,6 +42,14 @@ vi.mock('@/lib/booking/notify-booking-failure', () => ({ notifyBookingFailure: h
 vi.mock('@/lib/booking/send-confirmation-email', () => ({ sendConfirmationEmail: h.sendConfirmationEmail }))
 vi.mock('@/lib/catering/notify', () => ({ notifyCateringOrder: h.notifyCateringOrder }))
 vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText }))
+vi.mock('@/lib/ops/events', () => ({ emitOpsEvent: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@/lib/ghost/guest-move-drafter', () => ({ draftGuestMoveForNewBooking: vi.fn().mockResolvedValue('skipped') }))
+// after() requires a real Next.js request scope, absent when calling POST directly
+// in a unit test — run the callback inline instead (fire-and-forget → forget-now).
+vi.mock('next/server', async importOriginal => {
+  const actual = await importOriginal<typeof import('next/server')>()
+  return { ...actual, after: (cb: () => unknown) => cb() }
+})
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from: () => ({
