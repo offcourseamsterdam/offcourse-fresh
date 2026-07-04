@@ -56,7 +56,7 @@ export const AUTONOMY_LEVEL: Record<string, AutonomyLevel> = {
   booking_proposal: 'dry_run', // validates each proposal against FareHarbor
   catering_order: 'propose',
   catering_upsell: 'propose', // draft only; the send button is the 'ask' rung
-  schedule_day: 'propose',
+  schedule_day: 'ask', // owner-approved 2026-07-04: Approve assigns the captains (one click, reversible)
   maintenance_task: 'propose',
   stock_reorder: 'propose',
   ops_review: 'propose', // shadow-only until its outcome history earns a climb

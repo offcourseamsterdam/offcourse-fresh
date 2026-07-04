@@ -11,6 +11,8 @@ import { sendSms } from '@/lib/sms/send-sms'
 import { moveResponseUrl } from '@/lib/ops/move-token'
 import { postSlackText } from '@/lib/slack/send-notification'
 import { emitOpsEvent } from '@/lib/ops/events'
+import { autonomyForKind, levelRank } from '@/lib/ghost/agents'
+import { notifyShiftAssigned } from '@/lib/scheduling/notify-assignment'
 import type { BookingProposalInput, AltSlot } from '@/lib/ghost/dry-run'
 
 /**
@@ -287,6 +289,100 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         // Release the claim so the human can retry after fixing the cause.
         await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
         throw sendErr
+      }
+    }
+
+    if (body.action === 'apply_schedule') {
+      // Runtime autonomy guard: applying is the 'ask' rung — refuse when the
+      // kind hasn't been granted that level (mirrors the dry-run route).
+      if (levelRank(autonomyForKind('schedule_day')) < levelRank('ask')) {
+        return apiError('schedule_day is not at the ask level', 403)
+      }
+
+      const { data: p } = await supabase
+        .from('agent_proposals')
+        .select('id, kind, status, payload')
+        .eq('id', id)
+        .single()
+      if (!p || p.kind !== 'schedule_day') return apiError('Not a schedule proposal', 400)
+      if (p.status === 'executed') return apiError('This schedule was already applied.', 409)
+
+      const payload = (p.payload ?? {}) as {
+        target_date?: string
+        assignments?: { shift_id?: string; staff_id?: string; staff_name?: string }[]
+      }
+      const assignments = (payload.assignments ?? []).filter(a => a.shift_id && a.staff_id)
+      if (!assignments.length) return apiError('No assignments in this proposal.', 422)
+
+      // ATOMIC CLAIM: 'shadow' → 'booking' (transient), so a double click can
+      // never assign twice.
+      const { data: claimed } = await supabase
+        .from('agent_proposals')
+        .update({ status: 'booking' })
+        .eq('id', id)
+        .eq('status', 'shadow')
+        .select('id')
+      if (!claimed?.length) return apiError('This schedule is already being applied (or was applied).', 409)
+
+      try {
+        const applied: { shift_id: string; staff_name?: string }[] = []
+        const skippedShifts: { shift_id: string; reason: string }[] = []
+
+        for (const a of assignments) {
+          // A manual assignment made AFTER the draft always wins: only shifts
+          // that are still OPEN get the proposed captain.
+          const { data: updated } = await supabase
+            .from('shifts')
+            .update({ staff_id: a.staff_id, status: 'assigned' })
+            .eq('id', a.shift_id!)
+            .eq('status', 'open')
+            .is('staff_id', null)
+            .select('id')
+          if (updated?.length) {
+            applied.push({ shift_id: a.shift_id!, staff_name: a.staff_name })
+            await notifyShiftAssigned(supabase, a.shift_id!)
+            await emitOpsEvent({
+              eventType: 'shift_assigned',
+              actorType: 'human',
+              shiftId: a.shift_id!,
+              staffId: a.staff_id ?? null,
+              proposalId: id,
+              source: 'admin/ghost/proposals/[id]:apply_schedule',
+            })
+          } else {
+            skippedShifts.push({ shift_id: a.shift_id!, reason: 'no longer open (manual change wins)' })
+          }
+        }
+
+        await supabase
+          .from('agent_proposals')
+          .update({
+            status: 'executed',
+            outcome: JSON.parse(
+              JSON.stringify({ applied_at: new Date().toISOString(), applied, skipped: skippedShifts }),
+            ),
+          })
+          .eq('id', id)
+
+        await emitOpsEvent({
+          eventType: 'recommendation_approved',
+          actorType: 'human',
+          proposalId: id,
+          source: 'admin/ghost/proposals/[id]:apply_schedule',
+          payload: { applied: applied.length, skipped: skippedShifts.length },
+        })
+        try {
+          await postSlackText(
+            `🗓️ *Ghost schedule applied* for ${payload.target_date}: ${applied.length} captain${applied.length === 1 ? '' : 's'} assigned${skippedShifts.length ? ` · ${skippedShifts.length} skipped (already assigned manually)` : ''}.`,
+            { type: 'schedule-applied', triggeredBy: 'admin' },
+          )
+        } catch {
+          /* swallow */
+        }
+        return apiOk({ applied, skipped: skippedShifts })
+      } catch (applyErr) {
+        await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
+        throw applyErr
       }
     }
 
