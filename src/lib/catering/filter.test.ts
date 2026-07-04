@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { filterCateringItems, hasCatering, cateringAmountCents } from './filter'
+import { filterCateringItems, hasCatering, cateringAmountCents, isDrinksOnlyBooking } from './filter'
 import type { ExtrasLineItem } from './filter'
 
 // Catering = food + drinks (both need to be pre-ordered from the supplier).
@@ -103,5 +103,32 @@ describe('cateringAmountCents', () => {
 
   it('handles single food item', () => {
     expect(cateringAmountCents([food])).toBe(1500)
+  })
+})
+
+describe('isDrinksOnlyBooking (the snackbox upsell audience)', () => {
+  const unlimited: ExtrasLineItem = { name: 'Unlimited Drinks Package', amount_cents: 4320, category: 'drinks', quantity: 4 }
+  const byod: ExtrasLineItem = { name: 'Bring Your Own Drinks', amount_cents: 2000, category: 'drinks', quantity: 4 }
+
+  it('true: exactly the unlimited drinks package, nothing else', () => {
+    expect(isDrinksOnlyBooking([unlimited])).toBe(true)
+  })
+
+  it('true: unlimited drinks + city tax/protection (non-catering items are ignored)', () => {
+    expect(isDrinksOnlyBooking([unlimited, protection, taxItem])).toBe(true)
+  })
+
+  it('false: unlimited drinks WITH food — they already have something to eat', () => {
+    expect(isDrinksOnlyBooking([unlimited, food])).toBe(false)
+  })
+
+  it('false: drinks but not the unlimited package (BYOD only)', () => {
+    expect(isDrinksOnlyBooking([byod])).toBe(false)
+  })
+
+  it('false: no catering at all (that audience belongs to the extras-upsell cron)', () => {
+    expect(isDrinksOnlyBooking([protection, taxItem])).toBe(false)
+    expect(isDrinksOnlyBooking([])).toBe(false)
+    expect(isDrinksOnlyBooking(null)).toBe(false)
   })
 })

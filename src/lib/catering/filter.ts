@@ -37,6 +37,21 @@ export function hasCatering(extras: ExtrasLineItem[] | null | undefined): boolea
   return filterCateringItems(extras).length > 0
 }
 
+/**
+ * True when a booking's catering is EXACTLY the unlimited-drinks package and
+ * nothing else — no food, no other drinks. These guests sorted their drinks
+ * but have nothing to eat aboard: the snackbox upsell audience
+ * (Beer 2026-07-04). The existing extras-upsell cron only targets bookings
+ * with ZERO catering, so the two audiences never overlap.
+ */
+export function isDrinksOnlyBooking(extras: ExtrasLineItem[] | null | undefined): boolean {
+  const catering = filterCateringItems(extras)
+  if (!catering.length) return false
+  const allDrinks = catering.every(e => e.category === 'drinks')
+  const hasUnlimited = catering.some(e => /unlimited/i.test(e.name))
+  return allDrinks && hasUnlimited
+}
+
 /** Sum the amount_cents of all catering items (food + drinks). */
 export function cateringAmountCents(
   extras: ExtrasLineItem[] | null | undefined,

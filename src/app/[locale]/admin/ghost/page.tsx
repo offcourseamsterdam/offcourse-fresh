@@ -126,6 +126,8 @@ interface GhostProposal {
     total_cents?: number | null
     incentive?: string
     sms_text?: string
+    // catering_upsell (shares guest_name/cruise_title/recipient/email_* fields)
+    guest_count?: number | null
     // ops_review
     recommendations?: OpsRecommendation[]
     facts?: {
@@ -203,6 +205,7 @@ const FEATURE_LABEL: Record<string, string> = {
   ghost_stock_reorder: 'Stock reorders',
   ghost_ops_review: 'Operations reviews',
   ghost_guest_move: 'Guest move requests',
+  ghost_catering_upsell: 'Snackbox upsells',
 }
 
 function featureLabel(feature: string): string {
@@ -224,7 +227,7 @@ export default function GhostPage() {
 
   // Conversation drafts (reply_draft, booking_proposal) live in the inbox now —
   // this page is the cross-conversation ops dashboard: ops proposals + stats.
-  const OPS_KINDS = ['schedule_day', 'catering_order', 'maintenance_task', 'stock_reorder', 'ops_review', 'guest_move_request']
+  const OPS_KINDS = ['schedule_day', 'catering_order', 'catering_upsell', 'maintenance_task', 'stock_reorder', 'ops_review', 'guest_move_request']
   const allProposals = (data?.proposals ?? []).filter(p => OPS_KINDS.includes(p.kind))
   const proposals = agentFilter
     ? allProposals.filter(p => agentForKind(p.kind)?.key === agentFilter)
@@ -532,6 +535,7 @@ const KIND_META: Record<string, { label: string; Icon: typeof Ghost }> = {
   stock_reorder: { label: 'Stock reorder', Icon: Package },
   ops_review: { label: 'Ops review', Icon: Ship },
   guest_move_request: { label: 'Guest move', Icon: Send },
+  catering_upsell: { label: 'Snackbox upsell', Icon: UtensilsCrossed },
 }
 
 /** Chip colours + labels per ops-review recommendation type. */
@@ -1153,6 +1157,55 @@ function ProposalCard({ proposal: p, onChanged }: { proposal: GhostProposal; onC
                 {confirmSend ? 'Confirm — text & email the guest' : 'Approve & contact guest'}
               </button>
             )}
+          </div>
+        )}
+
+        {/* Snackbox upsell — drinks-only guest, drafted offer email, one-click send */}
+        {p.kind === 'catering_upsell' && (
+          <div className="space-y-3">
+            <div className="rounded-lg bg-violet-50 border border-violet-100 px-3 py-2 text-sm">
+              <p className="font-semibold text-violet-900">
+                {p.payload.guest_name ?? 'Guest'} · {p.payload.cruise_title ?? 'cruise'} · {p.payload.target_date}
+                {p.payload.guest_count ? ` · ${p.payload.guest_count} guests` : ''}
+              </p>
+              <p className="text-violet-700 mt-0.5">Drinks sorted (unlimited package) — nothing to eat aboard yet.</p>
+            </div>
+
+            {p.payload.email_body && (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-500 mb-1">
+                  Ghost would email the guest ({p.payload.recipient ?? 'no email'})
+                </p>
+                <div className="rounded-lg bg-zinc-50 border border-zinc-200 px-3 py-2 text-xs text-zinc-700">
+                  {p.payload.email_subject && <p className="font-semibold mb-1">{p.payload.email_subject}</p>}
+                  <p className="whitespace-pre-wrap">{p.payload.email_body}</p>
+                </div>
+                <p className="text-[11px] text-zinc-400 mt-1">
+                  The link is their existing pre-order page — no payment until the day. Sending stays human-approved.
+                </p>
+              </div>
+            )}
+
+            {p.status === 'executed' ? (
+              <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 inline-flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Offer sent
+                {p.outcome?.sent_at ? ` · ${formatAmsterdamTime(p.outcome.sent_at)}` : ''}
+              </p>
+            ) : p.payload.email_body ? (
+              <button
+                onClick={() => {
+                  if (!confirmSend) { setConfirmSend(true); return }
+                  act('send')
+                }}
+                disabled={busy === 'send'}
+                className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors disabled:opacity-50 ${
+                  confirmSend ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-zinc-900 text-white hover:bg-zinc-800'
+                }`}
+              >
+                {busy === 'send' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                {confirmSend ? 'Confirm — email the guest' : 'Approve & send offer'}
+              </button>
+            ) : null}
           </div>
         )}
 

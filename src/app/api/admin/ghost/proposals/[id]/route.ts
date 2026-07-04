@@ -182,8 +182,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         .select('id, kind, status, payload')
         .eq('id', id)
         .single()
-      // Both maintenance_task and stock_reorder are "draft email → approve → send".
-      if (!p || (p.kind !== 'maintenance_task' && p.kind !== 'stock_reorder')) {
+      // maintenance_task, stock_reorder and catering_upsell are all
+      // "draft email → approve → send" (catering_upsell mails the GUEST,
+      // via payload.recipient).
+      if (!p || (p.kind !== 'maintenance_task' && p.kind !== 'stock_reorder' && p.kind !== 'catering_upsell')) {
         return apiError('Not a sendable email proposal', 400)
       }
       if (p.status === 'executed') return apiError('This email was already sent.', 409)
@@ -194,14 +196,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         recipient?: string
         maintenance_task_id?: string
         item_ids?: string[]
+        booking_id?: string
+        guest_name?: string | null
       }
       const isStock = p.kind === 'stock_reorder'
-      const recipient =
-        payload.recipient ||
-        (isStock ? process.env.STOCK_EMAIL_RECIPIENT : process.env.MAINTENANCE_EMAIL_RECIPIENT)
+      const isUpsell = p.kind === 'catering_upsell'
+      // Upsell mails the guest: payload.recipient only, never an env fallback.
+      const recipient = isUpsell
+        ? payload.recipient
+        : payload.recipient ||
+          (isStock ? process.env.STOCK_EMAIL_RECIPIENT : process.env.MAINTENANCE_EMAIL_RECIPIENT)
       const subject = payload.email_subject
       const emailBody = payload.email_body
       if (!recipient) {
+        if (isUpsell) return apiError('No guest email on this booking.', 422)
         const envVar = isStock ? 'STOCK_EMAIL_RECIPIENT' : 'MAINTENANCE_EMAIL_RECIPIENT'
         return apiError(`No recipient email configured — set ${envVar} or the item's supplier email.`, 400)
       }
@@ -246,11 +254,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             .update({ last_reordered_at: new Date().toISOString() })
             .in('id', payload.item_ids)
         }
+        // Upsell: stamp the booking so no other upsell path ever mails this
+        // guest again (the extras-upsell cron checks the same column).
+        if (isUpsell && payload.booking_id) {
+          await supabase
+            .from('bookings')
+            .update({ extras_upsell_sent_at: new Date().toISOString() })
+            .eq('id', payload.booking_id)
+        }
         // Best-effort confirmation — a Slack hiccup must never undo a sent email.
         try {
-          const label = isStock ? '📦 *Stock reorder email sent*' : '🔧 *Maintenance email sent*'
+          const label = isUpsell
+            ? `🍱 *Snackbox upsell sent* to ${payload.guest_name ?? 'guest'}`
+            : isStock
+              ? '📦 *Stock reorder email sent*'
+              : '🔧 *Maintenance email sent*'
           await postSlackText(`${label} to ${recipient}\n*${subject}*`, {
-            type: isStock ? 'stock-reorder-sent' : 'maintenance-email-sent',
+            type: isUpsell ? 'catering-upsell-sent' : isStock ? 'stock-reorder-sent' : 'maintenance-email-sent',
             triggeredBy: 'admin',
           })
         } catch {

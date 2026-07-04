@@ -1,8 +1,10 @@
 import { CLAUDE_DRAFTER_MODEL, firstText } from '@/lib/ai/clients'
 import { meteredMessage } from '@/lib/ai/usage'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { filterCateringItems, hasCatering, type ExtrasLineItem } from '@/lib/catering/filter'
-import { amsterdamToday } from '@/lib/utils'
+import { filterCateringItems, hasCatering, isDrinksOnlyBooking, type ExtrasLineItem } from '@/lib/catering/filter'
+import { extrasPageUrl } from '@/lib/booking/extras-token'
+import { emitOpsEvent } from '@/lib/ops/events'
+import { amsterdamToday, formatAmsterdamTime } from '@/lib/utils'
 
 /**
  * Ghost ops drafters — shadow proposals for the operations section
@@ -10,6 +12,7 @@ import { amsterdamToday } from '@/lib/utils'
  *
  *   schedule_day     — who should captain tomorrow's open shifts
  *   catering_order   — what to order for upcoming cruises with catering
+ *   catering_upsell  — snackbox offer for guests who ONLY booked drinks
  *
  * Same hard rules as the reply drafter: status 'shadow', nothing executes,
  * all errors swallowed, every Claude call metered via recordAiUsage().
@@ -206,6 +209,139 @@ Return JSON only:
     return 'drafted'
   } catch (err) {
     console.error('[ghost/catering_order] failed:', err instanceof Error ? err.message : err)
+    return 'skipped'
+  }
+}
+
+// ── catering_upsell — snackbox offer for drinks-only bookings ────────────────
+
+/**
+ * Guests who booked ONLY the unlimited drinks package sorted their drinks but
+ * have nothing to eat aboard — the perfect bites-box audience (Beer
+ * 2026-07-04). The Ghost drafts a personal offer email with the guest's
+ * existing pre-order page link; a human clicks Approve & send on /admin/ghost.
+ * Disjoint from the automated extras-upsell cron, which only mails bookings
+ * with ZERO catering — and both stamp extras_upsell_sent_at, so a guest can
+ * only ever get one upsell email.
+ */
+const UPSELL_LEAD_DAYS = 2
+
+export async function draftCateringUpsells(): Promise<'drafted' | 'skipped'> {
+  try {
+    const supabase = createAdminClient()
+    const targetDate = amsterdamToday(UPSELL_LEAD_DAYS)
+
+    const { data: bookings } = await supabase
+      .from('bookings')
+      .select('id, customer_name, customer_email, listing_title, booking_date, start_time, guest_count, extras_selected')
+      .eq('booking_date', targetDate)
+      .in('status', ['confirmed', 'booked'])
+      .is('extras_upsell_sent_at', null)
+      .not('customer_email', 'is', null)
+
+    const drinksOnly = (bookings ?? []).filter(b =>
+      isDrinksOnlyBooking(b.extras_selected as ExtrasLineItem[] | null),
+    )
+    if (!drinksOnly.length) return 'skipped'
+
+    // One proposal per booking, ever (re-runs are no-ops).
+    const { data: existing } = await supabase
+      .from('agent_proposals')
+      .select('payload')
+      .eq('kind', 'catering_upsell')
+      .eq('payload->>target_date', targetDate)
+    const alreadyProposed = new Set(
+      (existing ?? []).map(p => (p.payload as { booking_id?: string } | null)?.booking_id).filter(Boolean),
+    )
+
+    // Ground the email in REAL menu items + prices — never invented.
+    const { data: foodExtras } = await supabase
+      .from('extras')
+      .select('name, description, price_type, price_value')
+      .eq('is_active', true)
+      .eq('category', 'food')
+      .order('sort_order', { ascending: true })
+      .limit(3)
+    if (!foodExtras?.length) return 'skipped'
+    const menuLines = foodExtras
+      .map(e => `- ${e.name} · €${Number(e.price_value).toFixed(2)}${e.price_type === 'per_person' ? ' p.p.' : ''}${e.description ? ` · ${e.description}` : ''}`)
+      .join('\n')
+
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://offcourseamsterdam.com'
+    let drafted = 0
+
+    for (const b of drinksOnly) {
+      if (alreadyProposed.has(b.id)) continue
+
+      const orderUrl = extrasPageUrl(b.id, siteUrl)
+      const response = await meteredMessage('ghost_catering_upsell', {
+        model: CLAUDE_DRAFTER_MODEL,
+        max_tokens: 800,
+        messages: [
+          {
+            role: 'user',
+            content: `You write for Off Course Amsterdam ("your friend with a boat" — warm, casual, dry humour, never salesy or corporate). Draft a short upsell email. This is a SHADOW draft: a human approves before sending.
+
+THE GUEST
+- ${b.customer_name ?? 'Guest'} · ${b.listing_title ?? 'cruise'} on ${b.booking_date}${b.start_time ? ` at ${formatAmsterdamTime(b.start_time)}` : ''} · ${b.guest_count ?? '?'} people
+- They booked the unlimited drinks package — drinks are sorted, but nothing to eat aboard yet.
+
+THE OFFER — real menu, real prices (never invent items or amounts):
+${menuLines}
+
+They pre-order on their personal page (no payment until the day): ${orderUrl}
+
+Keep it 4-6 sentences: drinks sorted ✓, something to nibble makes it better, the menu highlights, the link. Easy to ignore — one nudge, no pressure. English.
+
+Return JSON only:
+{"email_subject": "<subject>", "email_body": "<plain-text email including the link>"}`,
+          },
+        ],
+      })
+
+      const parsed = extractJson(firstText(response))
+      const emailSubject = typeof parsed?.email_subject === 'string' ? parsed.email_subject : null
+      const emailBody = typeof parsed?.email_body === 'string' ? parsed.email_body : null
+      if (!emailSubject || !emailBody || !emailBody.includes(orderUrl)) continue
+
+      const { data: inserted } = await supabase
+        .from('agent_proposals')
+        .insert({
+          kind: 'catering_upsell',
+          payload: JSON.parse(
+            JSON.stringify({
+              target_date: targetDate,
+              booking_id: b.id,
+              guest_name: b.customer_name,
+              cruise_title: b.listing_title,
+              guest_count: b.guest_count,
+              recipient: b.customer_email,
+              email_subject: emailSubject,
+              email_body: emailBody,
+            }),
+          ),
+          reasoning: `${b.customer_name ?? 'Guest'} (${b.guest_count ?? '?'} p) booked ONLY the unlimited drinks package for ${targetDate} — drinks sorted, nothing to eat. Snackbox offer via their existing pre-order page.`,
+          status: 'shadow',
+          model: CLAUDE_DRAFTER_MODEL,
+        })
+        .select('id')
+        .single()
+
+      await emitOpsEvent({
+        eventType: 'recommendation_created',
+        actorType: 'agent',
+        actorId: 'catering',
+        proposalId: inserted?.id ?? null,
+        bookingId: b.id,
+        source: 'ghost/catering-upsell',
+        payload: { target_date: targetDate },
+      })
+      drafted++
+    }
+
+    return drafted > 0 ? 'drafted' : 'skipped'
+  } catch (err) {
+    console.error('[ghost/catering_upsell] failed:', err instanceof Error ? err.message : err)
     return 'skipped'
   }
 }

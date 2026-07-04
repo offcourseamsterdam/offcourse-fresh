@@ -42,6 +42,7 @@ export const AUTONOMY_CEILING: Record<string, AutonomyLevel> = {
   reply_draft: 'ask',
   booking_proposal: 'dry_run', // irreversible — validate only, never create
   catering_order: 'ask',
+  catering_upsell: 'ask', // guest-facing email — always a human click
   schedule_day: 'ask',
   maintenance_task: 'ask',
   stock_reorder: 'ask',
@@ -54,6 +55,7 @@ export const AUTONOMY_LEVEL: Record<string, AutonomyLevel> = {
   reply_draft: 'propose',
   booking_proposal: 'dry_run', // validates each proposal against FareHarbor
   catering_order: 'propose',
+  catering_upsell: 'propose', // draft only; the send button is the 'ask' rung
   schedule_day: 'propose',
   maintenance_task: 'propose',
   stock_reorder: 'propose',
@@ -107,9 +109,9 @@ export const GHOST_AGENTS: GhostAgent[] = [
     key: 'catering',
     name: 'Catering agent',
     description:
-      'Watches upcoming cruises with catering extras and proposes the consolidated supplier order, flagging unsent supplier emails.',
+      'Watches upcoming cruises with catering extras and proposes the consolidated supplier order, flagging unsent supplier emails. Also drafts snackbox offers for guests who only booked drinks.',
     status: 'active',
-    kinds: ['catering_order'],
+    kinds: ['catering_order', 'catering_upsell'],
     trigger: 'daily ops cron (15:00 UTC)',
   },
   {
