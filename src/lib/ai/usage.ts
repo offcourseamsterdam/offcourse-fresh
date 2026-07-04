@@ -23,6 +23,9 @@ import { getClaude, CLAUDE_MODEL } from '@/lib/ai/clients'
 // alerting, not bookkeeping.
 const PRICING_USD_PER_MTOK: Record<string, { input: number; output: number }> = {
   'claude-sonnet-4-20250514': { input: 3, output: 15 },
+  // Gemini 2.5 Flash — vision (photo descriptions). Estimate for the spend
+  // alert, not bookkeeping; update if Google's pricing moves.
+  'gemini-2.5-flash': { input: 0.3, output: 2.5 },
 }
 const DEFAULT_PRICING = { input: 3, output: 15 }
 const USD_TO_EUR = 0.92
@@ -110,15 +113,47 @@ export async function meteredMessage(
   return response
 }
 
-/** Spend summary for the Ghost page header. */
-export async function getAiSpendSummary(): Promise<{ totalEur: number; last30dEur: number; calls: number }> {
+/** All-time spend for one feature tag (one Ghost agent / AI surface). */
+export interface FeatureSpend {
+  feature: string
+  totalEur: number
+  calls: number
+}
+
+export interface AiSpendSummary {
+  totalEur: number
+  last30dEur: number
+  calls: number
+  /** Per-feature breakdown, highest spend first. Turns the single total into a
+   *  steerable line item — you can see which agent actually costs money. */
+  byFeature: FeatureSpend[]
+}
+
+/** Spend summary for the Ghost page header + the per-agent breakdown. */
+export async function getAiSpendSummary(): Promise<AiSpendSummary> {
   const supabase = createAdminClient()
-  const { data: rows } = await supabase.from('ai_usage').select('cost_eur_cents, created_at')
+  // The `feature` column is indexed (072_ai_usage). Reading it alongside the
+  // existing cost/created_at scan adds the per-agent breakdown for free — one
+  // query, no GROUP BY round-trip.
+  const { data: rows } = await supabase.from('ai_usage').select('cost_eur_cents, created_at, feature')
   const all = rows ?? []
   const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000
   const totalCents = all.reduce((s, r) => s + Number(r.cost_eur_cents), 0)
   const last30Cents = all
     .filter(r => new Date(r.created_at).getTime() >= cutoff)
     .reduce((s, r) => s + Number(r.cost_eur_cents), 0)
-  return { totalEur: totalCents / 100, last30dEur: last30Cents / 100, calls: all.length }
+
+  const byFeatureMap = new Map<string, { cents: number; calls: number }>()
+  for (const r of all) {
+    const key = (r.feature as string | null) || 'unknown'
+    const agg = byFeatureMap.get(key) ?? { cents: 0, calls: 0 }
+    agg.cents += Number(r.cost_eur_cents)
+    agg.calls += 1
+    byFeatureMap.set(key, agg)
+  }
+  const byFeature = [...byFeatureMap.entries()]
+    .map(([feature, v]) => ({ feature, totalEur: v.cents / 100, calls: v.calls }))
+    .sort((a, b) => b.totalEur - a.totalEur)
+
+  return { totalEur: totalCents / 100, last30dEur: last30Cents / 100, calls: all.length, byFeature }
 }

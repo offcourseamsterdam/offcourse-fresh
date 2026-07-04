@@ -38,6 +38,12 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   SLACK_WEBHOOK_URL: z.string().optional(),
   CATERING_EMAIL_RECIPIENT: z.string().optional(),
+  // Maintenance agent: technician/handyman email + the Slack channel it reads.
+  MAINTENANCE_EMAIL_RECIPIENT: z.string().optional(),
+  SLACK_MAINTENANCE_CHANNEL_ID: z.string().optional(),
+  // Storage agent: supplier fallback email + the secret that signs the QR token.
+  STOCK_EMAIL_RECIPIENT: z.string().optional(),
+  STOCK_TOKEN_SECRET: z.string().optional(),
 
   ANTHROPIC_API_KEY: z.string().optional(),
   GOOGLE_AI_API_KEY: z.string().optional(),

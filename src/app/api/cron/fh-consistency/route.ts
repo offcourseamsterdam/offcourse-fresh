@@ -4,8 +4,18 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { FHNotFoundError } from '@/lib/fareharbor/types'
 import { postSlackText } from '@/lib/slack/send-notification'
+import { alertCronFailure } from '@/lib/cron/alert'
 import { buildFHBookingNote } from '@/lib/catering/build-fh-note'
 import type { ExtrasLineItem } from '@/lib/catering/filter'
+
+/**
+ * The date to check/display a booking against. Website + webhook rows persist the
+ * real departure in start_time and leave booking_date null, so fall back to the
+ * date portion of start_time. (This is the same fallback generate-shifts uses.)
+ */
+export function consistencyDisplayDate(b: { booking_date: string | null; start_time: string | null }): string {
+  return b.booking_date ?? b.start_time?.slice(0, 10) ?? '?'
+}
 
 /**
  * GET /api/cron/fh-consistency
@@ -25,17 +35,24 @@ export async function GET(request: NextRequest) {
   const supabase = createAdminClient()
   const fh = getFareHarborClient()
 
+  const todayDate = new Date().toISOString().slice(0, 10)
+  const todayStartIso = new Date(`${todayDate}T00:00:00Z`).toISOString()
+
   const { data: bookings, error } = await supabase
     .from('bookings')
     .select('id, booking_uuid, customer_name, booking_date, start_time, customer_type_name, booking_source, guest_note, extras_selected')
     .in('status', ['confirmed', 'booked'])
-    .not('booking_date', 'is', null)
     .not('booking_uuid', 'is', null)
-    .gte('booking_date', new Date().toISOString().slice(0, 10))
-    .order('booking_date', { ascending: true })
+    // Upcoming = booking_date today-or-later, OR (no booking_date but start_time is
+    // today-or-later). The second arm catches website/webhook rows that leave
+    // booking_date null and keep the real departure in start_time — previously these
+    // were silently skipped, so the orphan/cancelled checks never looked at them.
+    .or(`booking_date.gte.${todayDate},and(booking_date.is.null,start_time.gte.${todayStartIso})`)
+    .order('start_time', { ascending: true })
 
   if (error) {
-    await postSlackText(`🚨 *FH Consistency Check FAILED* — could not query Supabase: ${error.message}`)
+    // The cron meant to catch orphans must not itself fail silently.
+    await alertCronFailure('fh-consistency', error, 'could not query upcoming bookings')
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   }
 
@@ -79,7 +96,7 @@ export async function GET(request: NextRequest) {
   }
 
   if (issues.length === 0) {
-    const dates = [...new Set(bookings.map(b => b.booking_date))].sort()
+    const dates = [...new Set(bookings.map(consistencyDisplayDate))].sort()
     await postSlackText(
       `✅ *FH Consistency Check* — all ${bookings.length} upcoming booking${bookings.length === 1 ? '' : 's'} confirmed in FareHarbor with correct notes. ` +
       `Dates checked: ${dates.join(', ')}.`
@@ -106,7 +123,7 @@ function formatBookingLine(booking: {
   booking_source: string | null
   booking_uuid: string | null
 }): string {
-  const date = booking.booking_date ?? '?'
+  const date = consistencyDisplayDate(booking)
   const time = booking.start_time ? booking.start_time.slice(11, 16) + ' UTC' : ''
   const type = booking.customer_type_name ?? booking.booking_source ?? '?'
   const uuid = booking.booking_uuid?.slice(0, 8) ?? '?'

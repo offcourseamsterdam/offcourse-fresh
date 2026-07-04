@@ -52,6 +52,27 @@ describe('computeNetRevenueCents', () => {
     expect(computeNetRevenueCents({})).toBe(0)
     expect(computeNetRevenueCents({ server_base_amount_cents: 'abc' })).toBe(0)
   })
+
+  it('falls back to the 9% split when base VAT metadata is missing', () => {
+    // 16500 incl. 9% → extractVat = 1362 → net 15138 (must match the row write)
+    expect(computeNetRevenueCents({ server_base_amount_cents: '16500' })).toBe(15138)
+  })
+
+  it('falls back to the 21% split when extras VAT metadata is missing', () => {
+    // base net 15138 + extras (2000 incl. 21% → VAT 347 → net 1653) = 16791
+    expect(
+      computeNetRevenueCents({ server_base_amount_cents: '16500', extras_amount_cents: '2000' }),
+    ).toBe(16791)
+  })
+
+  it('does not over-report: gross with missing VAT meta equals net with VAT meta', () => {
+    const withMeta = computeNetRevenueCents({
+      server_base_amount_cents: '16500',
+      base_vat_amount_cents: '1362',
+    })
+    const withoutMeta = computeNetRevenueCents({ server_base_amount_cents: '16500' })
+    expect(withoutMeta).toBe(withMeta)
+  })
 })
 
 // ── centsToMajor ────────────────────────────────────────────────────────────

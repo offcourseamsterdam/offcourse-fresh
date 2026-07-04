@@ -1,6 +1,15 @@
 // Pure helpers for Google Ads Offline Conversion Import. No I/O — fully unit-tested.
 
+import { extractVat } from '@/lib/extras/calculate'
+
 type Meta = Record<string, string | undefined>
+
+// The same split the booking write paths fall back to when VAT metadata is
+// absent (book/route.ts, recover-from-pi.ts). Keeping them identical means the
+// conversion value reported to Google can never disagree with the VAT stored
+// on the booking row.
+const BASE_VAT_RATE_PERCENT = 9
+const EXTRAS_VAT_RATE_PERCENT = 21
 
 function num(v: string | undefined): number {
   const n = Number(v)
@@ -21,9 +30,13 @@ function num(v: string | undefined): number {
  */
 export function computeNetRevenueCents(meta: Meta): number {
   const base = num(meta.server_base_amount_cents)
-  const baseVat = num(meta.base_vat_amount_cents)
   const extras = num(meta.extras_amount_cents)
-  const extrasVat = num(meta.extras_vat_amount_cents)
+  // Fall back to the 9% / 21% split when the VAT metadata is missing (older or
+  // partial PaymentIntents). Without this, missing VAT counts as zero and we'd
+  // report the GROSS amount to Google — over-stating the conversion value and
+  // mis-training Smart Bidding. extractVat(0, …) is 0, so empty input stays 0.
+  const baseVat = num(meta.base_vat_amount_cents) || extractVat(base, BASE_VAT_RATE_PERCENT)
+  const extrasVat = num(meta.extras_vat_amount_cents) || extractVat(extras, EXTRAS_VAT_RATE_PERCENT)
   const discount = num(meta.discount_amount_cents)
   const net = base - baseVat + (extras - extrasVat) - discount
   return Math.max(0, Math.round(net))
