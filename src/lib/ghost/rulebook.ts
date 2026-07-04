@@ -162,9 +162,10 @@ export const RULEBOOK: RulebookEntry[] = [
     agentKey: 'operations',
     title: 'Guest move request (SMS + email)',
     hardRules: [
-      { rule: 'SEQUENTIAL: at most one open ask per day, and at most one new draft per cron run — guests are never raced against each other.', enforcedIn: 'src/lib/ghost/guest-move-drafter.ts' },
-      { rule: 'Private cruises: never asked. Bookings with catering/drinks aboard: never asked (supplier order already placed). Multi-party departures: never asked.', enforcedIn: 'src/lib/ghost/guest-move-drafter.ts (selectMoveCandidate)' },
-      { rule: `Only gaps ≥ ${MIN_GAP_MINUTES} min AND ≥ €${(MIN_GAP_SAVING_CENTS / 100).toFixed(0)} paid waiting get an ask; horizon ${OPTIMIZE_HORIZON_DAYS} days, only days with a second booking.`, enforcedIn: 'src/lib/ghost/rulebook.ts (thresholds) + guest-move-drafter.ts' },
+      { rule: 'SEQUENTIAL: at most one open ask per day, and at most one new draft per triggering run — guests are never raced against each other.', enforcedIn: 'src/lib/ghost/guest-move-drafter.ts' },
+      { rule: 'Private cruises CAN be asked to move (Beer 2026-07-04, same threshold as shared) — but only a TIME/boat change, NEVER merged onto another party\'s departure. Bookings with catering/drinks aboard: never asked (supplier order already placed). Multi-party departures: never asked.', enforcedIn: 'src/lib/ghost/guest-move-drafter.ts (selectMoveCandidate) + src/lib/ops/profile.ts (allowMerge)' },
+      { rule: `Only gaps ≥ ${MIN_GAP_MINUTES} min AND ≥ €${(MIN_GAP_SAVING_CENTS / 100).toFixed(0)} paid waiting get an ask, same bar for private and shared; nightly horizon ${OPTIMIZE_HORIZON_DAYS} days, only days with a second booking.`, enforcedIn: 'src/lib/ghost/rulebook.ts (thresholds) + guest-move-drafter.ts' },
+      { rule: 'Every new confirmed booking also checks its OWN date immediately (Beer 2026-07-04) — not just the nightly scan — so an opportunity is never left for the next cron.', enforcedIn: 'src/lib/ghost/guest-move-drafter.ts (draftGuestMoveForNewBooking) + webhooks/stripe + admin/booking-flow/book' },
       { rule: 'Sending is a human click (SMS + email with a personal HMAC link). A guest YES never rebooks anything — Slack pings the team to rebook via admin.', enforcedIn: 'proposals/[id]/route.ts + api/move/respond' },
       { rule: `Unanswered asks expire after ${GUEST_MOVE_EXPIRY_HOURS}h.`, enforcedIn: 'src/lib/ghost/guest-move-drafter.ts (expiry sweep)' },
     ],

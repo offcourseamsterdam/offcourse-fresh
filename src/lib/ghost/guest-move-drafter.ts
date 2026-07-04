@@ -29,11 +29,14 @@ import { amsterdamToday, formatAmsterdamTime } from '@/lib/utils'
  * HARD RULES, all enforced here in code (never in the prompt):
  *   - sequential: at most ONE open move request per day, ever. Guests are
  *     never raced against each other (PRD: "Beslissingen moeten sequentieel").
- *   - private cruises are protected — never asked to move.
+ *   - private cruises CAN be asked to move (Beer 2026-07-04, same threshold
+ *     as shared) — but only a TIME/boat change, never merged onto another
+ *     party's departure (deriveOperationalProfile.allowMerge stays false for
+ *     private; this drafter only ever moves one booking's time anyway).
  *   - bookings WITH catering/drinks are never asked (Beer 2026-07-04: the
  *     supplier order is already placed; those guests are left alone).
- *   - shared departures carrying MORE than one booking are skipped — moving
- *     them means asking several parties at once, which breaks sequentiality.
+ *   - departures carrying MORE than one booking are skipped — moving them
+ *     means asking several parties at once, which breaks sequentiality.
  *   - only gaps worth ≥ €20 AND ≥ 45 min get an ask (don't pester guests
  *     for pennies).
  *   - the send itself is a human click (autonomy: propose, ceiling ask), and
@@ -116,7 +119,12 @@ export function selectMoveCandidate(
     for (const { shift, newStart } of options) {
       const booking = resolveSingleBooking(shift, bookingsById, bookingsByAvailPk)
       if (!booking) continue // no booking, or a multi-booking departure (never race guests)
-      if (deriveOperationalProfile(booking.category).kind === 'protected') continue // private: never asked
+      // Private cruises CAN be time-moved (Beer 2026-07-04, same threshold as
+      // shared) — allowMerge is the only flag this drafter never touches, and
+      // it never merges anyone (it moves ONE booking's time, always onto an
+      // empty slot). Kept as an explicit check so a future merge-style
+      // candidate here would still respect the profile.
+      if (!deriveOperationalProfile(booking.category).allowTimeChange) continue
       if (hasCatering(booking.extrasSelected)) continue // drinks/catering aboard: leave them alone
       if (!booking.customerEmail && !booking.customerPhone) continue // nobody to ask
 

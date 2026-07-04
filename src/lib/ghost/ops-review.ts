@@ -20,10 +20,11 @@ import { amsterdamToday, formatAmsterdamTime } from '@/lib/utils'
  *   - Claude JUDGES the facts and writes the explainable recommendation —
  *     which gap is worth closing, what to tell the planner, what to leave be.
  *
- * Hard rules live here, not in the prompt: private cruises are 'protected'
- * (deriveOperationalProfile) and are never merge candidates; savings cents
- * are precomputed per gap so every € the Ghost cites traces back to a number
- * in this file. Shadow-only: status 'propose' on the autonomy ladder.
+ * Hard rules live here, not in the prompt: private cruises never merge onto
+ * another boat's schedule (deriveOperationalProfile.allowMerge — they CAN
+ * still be time/boat moved, just never combined with another party); savings
+ * cents are precomputed per gap so every € the Ghost cites traces back to a
+ * number in this file. Shadow-only: status 'propose' on the autonomy ladder.
  */
 
 // ── Deterministic facts ──────────────────────────────────────────────────────
@@ -80,7 +81,8 @@ export interface DayFacts {
   distinctCaptains: number
   /** Captains marked available tomorrow but not on any shift. */
   spareCaptains: string[]
-  protectedShiftIds: string[]
+  /** Shifts whose profile forbids merging (private cruises) — excluded from mergeCandidates. */
+  nonMergeableShiftIds: string[]
 }
 
 function minutesBetween(aIso: string, bIso: string): number {
@@ -128,14 +130,17 @@ export function computeDayFacts(
     }
   }
 
-  // Merge candidates: a FLEXIBLE (shared) shift that would also fit on another
-  // in-use boat — no time overlap there, guests within capacity. Private
-  // cruises are protected and never appear here (hard rule, not a prompt rule).
+  // Merge candidates: a shift whose profile allows merging onto another
+  // in-use boat's schedule — no time overlap there, guests within capacity.
+  // Private cruises never merge (Beer 2026-07-04: they can be time/boat
+  // moved, but never combined onto a shared departure — that breaks the
+  // exclusivity the guest paid for) — allowMerge, not the broader 'kind',
+  // is the actual hard rule here (a prompt-only rule would just be a request).
   const mergeCandidates: MergeCandidate[] = []
-  const protectedShiftIds: string[] = []
+  const nonMergeableShiftIds: string[] = []
   for (const s of shifts) {
-    if (deriveOperationalProfile(s.category).kind === 'protected') {
-      protectedShiftIds.push(s.id)
+    if (!deriveOperationalProfile(s.category).allowMerge) {
+      nonMergeableShiftIds.push(s.id)
       continue
     }
     for (const [otherBoat, otherShifts] of byBoat) {
@@ -178,7 +183,7 @@ export function computeDayFacts(
     maintenanceConflicts,
     distinctCaptains: staffedIds.size,
     spareCaptains,
-    protectedShiftIds,
+    nonMergeableShiftIds,
   }
 }
 
@@ -204,7 +209,7 @@ export function renderFacts(facts: DayFacts, shifts: OpsReviewShift[]): string {
     ? facts.mergeCandidates
         .map(m => `- shift ${m.shiftId} (${m.cruise ?? '?'}, ${m.guests ?? '?'} guests) could move ${m.fromBoat} → ${m.toBoat}: ${m.note}`)
         .join('\n')
-    : '- none (every cross-boat move is blocked by overlap, capacity, or a protected private cruise)'
+    : '- none (every cross-boat move is blocked by overlap, capacity, or the private no-merge rule)'
 
   const maintLines = facts.maintenanceConflicts.length
     ? facts.maintenanceConflicts.map(c => `- ${c.boat} has an OPEN BLOCKING maintenance task: "${c.task}"`).join('\n')

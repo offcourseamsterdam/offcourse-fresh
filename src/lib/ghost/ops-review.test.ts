@@ -120,7 +120,7 @@ describe('computeDayFacts — merge candidates & the private-cruise hard rule', 
     expect(candidate!.toBoat).toBe('Curaçao')
   })
 
-  it('a PRIVATE cruise is never a merge candidate, even when it would fit (hard rule in code)', () => {
+  it('a PRIVATE cruise is never a merge candidate, even when it would fit (hard rule in code — it can still be time/boat moved, just never combined with another party)', () => {
     const facts = computeDayFacts(
       DATE,
       [
@@ -137,7 +137,7 @@ describe('computeDayFacts — merge candidates & the private-cruise hard rule', 
       [],
     )
     expect(facts.mergeCandidates.find(m => m.shiftId === 'a')).toBeUndefined()
-    expect(facts.protectedShiftIds).toContain('a')
+    expect(facts.nonMergeableShiftIds).toContain('a')
   })
 
   it('no candidate when the target boat overlaps in time or lacks capacity', () => {

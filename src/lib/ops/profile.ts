@@ -6,10 +6,14 @@
  *
  * Shared cruises are the flexible half of the fleet (PRD "Shared vs Private
  * Cruises"): the Ghost may combine sailings, propose a different time,
- * different boat. Private cruises protect the premium experience — the
- * engine may only touch them when the operational gain is large enough to
- * justify asking, and it must still ask (never move a private booking
- * without a human approving the guest-facing message first).
+ * different boat.
+ *
+ * Private cruises stay exclusive — a private booking is NEVER merged onto a
+ * shared departure, that would break the thing the guest paid for — but they
+ * are NOT off-limits for a time or boat change (Beer 2026-07-04: private
+ * cruises can definitely be moved, same threshold as shared). The engine
+ * still only ever ASKS: no booking moves without a human approving the
+ * guest-facing message first, on either kind.
  */
 export interface OperationalProfile {
   kind: 'flexible' | 'protected'
@@ -27,12 +31,12 @@ const FLEXIBLE: OperationalProfile = {
 
 const PROTECTED: OperationalProfile = {
   kind: 'protected',
-  allowTimeChange: false,
+  allowTimeChange: true,
   allowMerge: false,
-  allowBoatSwap: false,
+  allowBoatSwap: true,
 }
 
-/** `category` is 'shared' or 'private' today; anything else defaults to protected (safest). */
+/** `category` is 'shared' or 'private' today; anything else defaults to protected (safest — no merge). */
 export function deriveOperationalProfile(category: string | null | undefined): OperationalProfile {
   return category === 'shared' ? FLEXIBLE : PROTECTED
 }

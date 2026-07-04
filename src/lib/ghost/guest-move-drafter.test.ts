@@ -5,8 +5,10 @@ import type { OpsReviewShift } from './ops-review'
 /**
  * The guest-outreach hard rules live in selectMoveCandidate, in code — these
  * tests pin them so a refactor can never quietly start texting the wrong
- * guests: private cruises, catering bookings (Beer 2026-07-04), multi-party
- * departures, and contactless bookings are all untouchable.
+ * guests: catering bookings (Beer 2026-07-04), multi-party departures, and
+ * contactless bookings are untouchable. Private cruises are NOT untouchable —
+ * they can be time/boat moved at the same threshold as shared (Beer
+ * 2026-07-04), just never merged onto another party's departure.
  */
 
 type ShiftWithBooking = OpsReviewShift & { bookingId: string | null; availabilityPk: number | null }
@@ -70,8 +72,17 @@ describe('selectMoveCandidate — the happy path', () => {
     expect(c!.estSavingCents).toBe(4500)
   })
 
-  it('falls back to pushing the EARLIER sailing later when the later one is untouchable', () => {
+  it('a PRIVATE booking on the later sailing IS a valid candidate — same threshold as shared', () => {
     const { shifts, byId, byPk } = gappyDay({ category: 'private' }) // later = private
+    const c = selectMoveCandidate(shifts, byId, byPk)
+
+    expect(c).toBeTruthy()
+    expect(c!.shiftId).toBe('sh2')
+    expect(c!.bookingId).toBe('b2')
+  })
+
+  it('falls back to pushing the EARLIER sailing later when the later one is untouchable (no contact info)', () => {
+    const { shifts, byId, byPk } = gappyDay({ customerEmail: null, customerPhone: null })
     const c = selectMoveCandidate(shifts, byId, byPk)
 
     expect(c).toBeTruthy()
@@ -82,10 +93,12 @@ describe('selectMoveCandidate — the happy path', () => {
 })
 
 describe('selectMoveCandidate — the hard rules', () => {
-  it('never asks a PRIVATE booking (both sides private → no candidate)', () => {
+  it('a PRIVATE booking is a valid candidate on both sides of the gap (Beer 2026-07-04)', () => {
     const { shifts, byId, byPk } = gappyDay({ category: 'private' })
     byId.set('b1', booking({ id: 'b1', category: 'private' }))
-    expect(selectMoveCandidate(shifts, byId, byPk)).toBeNull()
+    const c = selectMoveCandidate(shifts, byId, byPk)
+    expect(c).toBeTruthy()
+    expect(c!.booking.category).toBe('private')
   })
 
   it('never asks a booking with catering/drinks aboard (Beer: supplier order already placed)', () => {
@@ -109,8 +122,8 @@ describe('selectMoveCandidate — the hard rules', () => {
     const c = selectMoveCandidate(shifts, byId, byPk)
     expect(c?.shiftId).toBe('sh1')
 
-    // …and when sh1 is also untouchable, nothing is proposed at all
-    byId.set('b1', booking({ id: 'b1', category: 'private' }))
+    // …and when sh1 is also untouchable (no contact info), nothing is proposed at all
+    byId.set('b1', booking({ id: 'b1', customerEmail: null, customerPhone: null }))
     expect(selectMoveCandidate(shifts, byId, byPk)).toBeNull()
   })
 

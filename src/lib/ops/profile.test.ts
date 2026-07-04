@@ -12,13 +12,13 @@ describe('deriveOperationalProfile', () => {
     })
   })
 
-  it('private cruises are protected: nothing may be changed automatically', () => {
+  it('private cruises are protected from merging but CAN be time/boat moved (Beer 2026-07-04)', () => {
     const profile = deriveOperationalProfile('private')
     expect(profile).toEqual({
       kind: 'protected',
-      allowTimeChange: false,
+      allowTimeChange: true,
       allowMerge: false,
-      allowBoatSwap: false,
+      allowBoatSwap: true,
     })
   })
 
