@@ -5,7 +5,11 @@ import { hasCatering, type ExtrasLineItem } from '@/lib/catering/filter'
 import { deriveOperationalProfile } from '@/lib/ops/profile'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { syncShiftsForRange } from '@/lib/scheduling/sync-shifts'
+import { fetchSearchResults } from '@/lib/search/fetch-search-results'
+import { getFareHarborClient } from '@/lib/fareharbor/client'
+import type { AvailabilitySlot } from '@/types'
 import { computeDayFacts, type OpsReviewShift } from './ops-review'
+import { PLACEHOLDER_CONTACT, toVerdict, type DryRunVerdict } from './dry-run'
 import { extractJson } from './ops-drafters'
 import {
   MIN_GAP_MINUTES,
@@ -62,6 +66,7 @@ export interface MoveBooking {
   customerEmail: string | null
   customerPhone: string | null
   extrasSelected: ExtrasLineItem[] | null
+  listingId: string | null
   listingTitle: string | null
   guestCount: number | null
   totalCents: number | null
@@ -154,6 +159,158 @@ export function selectMoveCandidate(
   return null
 }
 
+// ── Dry-run: snap the geometric ideal to a REAL FareHarbor slot ──────────────
+
+export interface SnapInput {
+  /** The booking's current departure (ISO). */
+  currentStartAt: string
+  /** The geometric ideal from the gap math (ISO) — may not exist as an FH slot. */
+  idealStartAt: string
+  durationMinutes: number
+  boatKey: 'diana' | 'curacao'
+  category: string | null
+  guests: number
+  hourlyRateCents: number | null
+}
+
+export interface SnappedSlot {
+  availPk: number
+  customerTypeRatePk: number
+  startAt: string
+  optionName: string
+  /** How many idle minutes this move actually recovers (≤ the full gap). */
+  recoveredMinutes: number
+  estSavingCents: number
+  /** true when the real slot differs from the geometric ideal. */
+  snapped: boolean
+}
+
+/**
+ * Pure: pick the real availability slot closest to the geometric ideal that
+ * still shrinks the gap enough to be worth asking. The gap math proposes
+ * times derived from shift geometry (butting sailings together); FareHarbor
+ * only offers its own slot grid — verified live 2026-07-04: display times
+ * come back as "3pm", so all matching here is on startAt ISO, never on
+ * display strings.
+ *
+ * Window: strictly between the current departure and the ideal (inclusive of
+ * the ideal) — any slot in that window reduces the gap; anything outside it
+ * would make things worse or move the guest for nothing.
+ */
+export function pickSnapSlot(slots: AvailabilitySlot[], input: SnapInput): SnappedSlot | null {
+  const current = new Date(input.currentStartAt).getTime()
+  const ideal = new Date(input.idealStartAt).getTime()
+  if (current === ideal) return null
+  const [windowMin, windowMax] = ideal < current ? [ideal, current - 1] : [current + 1, ideal]
+
+  const candidates = slots
+    .map(slot => {
+      const t = new Date(slot.startAt).getTime()
+      if (t < windowMin || t > windowMax) return null
+
+      // Same boat + same duration — the ask promises "same boat, same cruise".
+      let cts = slot.customerTypes.filter(
+        ct => ct.boatId === input.boatKey && ct.durationMinutes === input.durationMinutes,
+      )
+      // Party fit only for shared (private types list min/max party as 1/1 —
+      // you book the boat, not seats; a party filter would wrongly exclude it).
+      if (input.category !== 'private') {
+        cts = cts.filter(ct => input.guests >= ct.minimumParty && input.guests <= ct.maximumParty)
+      }
+      if (!cts.length) return null
+      const ct = [...cts].sort((a, b) => a.priceCents - b.priceCents)[0]
+
+      const recoveredMinutes = Math.round(Math.abs(current - t) / 60_000)
+      return { slot, ct, recoveredMinutes, distance: Math.abs(t - ideal) }
+    })
+    .filter((c): c is NonNullable<typeof c> => c !== null)
+    // Closest to the ideal wins; recovery size breaks ties.
+    .sort((a, b) => a.distance - b.distance || b.recoveredMinutes - a.recoveredMinutes)
+
+  for (const c of candidates) {
+    const estSavingCents =
+      input.hourlyRateCents != null ? Math.round((c.recoveredMinutes / 60) * input.hourlyRateCents) : 0
+    // Same thresholds as the gap itself — a snapped move must still be worth
+    // bothering a guest about.
+    if (c.recoveredMinutes < MIN_GAP_MINUTES || estSavingCents < MIN_GAP_SAVING_CENTS) continue
+    return {
+      availPk: c.slot.pk,
+      customerTypeRatePk: c.ct.pk,
+      startAt: new Date(c.slot.startAt).toISOString(),
+      optionName: c.ct.name,
+      recoveredMinutes: c.recoveredMinutes,
+      estSavingCents,
+      snapped: new Date(c.slot.startAt).getTime() !== ideal,
+    }
+  }
+  return null
+}
+
+/** Boat display name → the boat key used in availability customer types. */
+export function boatKeyFromName(name: string | null | undefined): 'diana' | 'curacao' | null {
+  const lower = (name ?? '').toLowerCase()
+  if (lower.includes('diana')) return 'diana'
+  if (lower.includes('cura')) return 'curacao'
+  return null
+}
+
+export interface ValidatedMove {
+  snap: SnappedSlot
+  verdict: DryRunVerdict
+}
+
+/**
+ * The dry-run: resolve the candidate against live availability (through the
+ * public 3-layer filters), snap to the nearest real slot that still pays,
+ * and confirm with FareHarbor's own non-mutating validate — for the WHOLE
+ * party (shared sends one customer per guest; private books the boat once).
+ * Verified live: FH validates a target slot while the guest's original
+ * booking still holds its own slot (non-overlapping windows). Returns null
+ * when no real slot is worth asking about — no ask goes out on a guess.
+ */
+export async function validateMoveSlot(
+  targetDate: string,
+  candidate: MoveCandidate,
+  listingSlug: string,
+): Promise<ValidatedMove | null> {
+  const boatKey = boatKeyFromName(candidate.boat)
+  if (!boatKey) return null // never validate a guessed boat
+
+  const durationMinutes = Math.round(
+    (new Date(candidate.currentEndAt).getTime() - new Date(candidate.currentStartAt).getTime()) / 60_000,
+  )
+  const guests = candidate.booking.guestCount ?? 2
+
+  const results = await fetchSearchResults(targetDate, guests)
+  const listing = results.find(r => r.listing.slug === listingSlug)
+  if (!listing) return null
+
+  const snap = pickSnapSlot(listing.availableSlots, {
+    currentStartAt: candidate.currentStartAt,
+    idealStartAt: candidate.proposedStartAt,
+    durationMinutes,
+    boatKey,
+    category: candidate.booking.category,
+    guests,
+    hourlyRateCents: candidate.estSavingCents > 0 && candidate.gapMinutes > 0
+      ? Math.round((candidate.estSavingCents * 60) / candidate.gapMinutes)
+      : null,
+  })
+  if (!snap) return null
+
+  const fh = getFareHarborClient()
+  const customerCount = candidate.booking.category === 'private' ? 1 : guests
+  const validation = await fh.validateBooking(snap.availPk, {
+    contact: PLACEHOLDER_CONTACT,
+    customers: Array.from({ length: customerCount }, () => ({ customer_type_rate: snap.customerTypeRatePk })),
+    note: 'Ghost dry-run capability check — not a real booking',
+  })
+  const verdict = toVerdict(validation, snap.availPk, new Date().toISOString())
+  if (!verdict.is_bookable) return null
+
+  return { snap, verdict }
+}
+
 /** A shift qualifies only when it maps to exactly ONE booking. */
 function resolveSingleBooking(
   shift: ShiftWithBooking,
@@ -175,7 +332,7 @@ type AdminClient = ReturnType<typeof createAdminClient>
 const SHIFT_SELECT =
   'id, date, start_at, end_at, status, staff_id, booking_id, fareharbor_availability_pk, staff(name, hourly_rate_cents), boats(name, max_capacity)'
 const BOOKING_SELECT =
-  'id, booking_date, category, customer_name, customer_email, customer_phone, extras_selected, listing_title, guest_count, receipt_total, base_amount_cents, extras_amount_cents, fareharbor_availability_pk'
+  'id, booking_date, category, customer_name, customer_email, customer_phone, extras_selected, listing_id, listing_title, guest_count, receipt_total, base_amount_cents, extras_amount_cents, fareharbor_availability_pk'
 
 type RawShiftRow = {
   id: string
@@ -195,6 +352,7 @@ type RawBookingRow = {
   customer_email: string | null
   customer_phone: string | null
   extras_selected: unknown
+  listing_id: string | null
   listing_title: string | null
   guest_count: number | null
   receipt_total: number | null
@@ -211,6 +369,7 @@ function toMoveBooking(b: RawBookingRow): MoveBooking {
     customerEmail: b.customer_email,
     customerPhone: b.customer_phone,
     extrasSelected: (b.extras_selected as ExtrasLineItem[] | null) ?? null,
+    listingId: b.listing_id,
     listingTitle: b.listing_title,
     guestCount: b.guest_count,
     totalCents: b.receipt_total ?? (b.base_amount_cents ?? 0) + (b.extras_amount_cents ?? 0),
@@ -274,6 +433,44 @@ async function openMoveRequestExists(supabase: AdminClient, targetDate: string):
 }
 
 /**
+ * The dry-run gate between "the math found a candidate" and "Claude drafts
+ * the ask": look up the booking's listing, snap the geometric ideal to a
+ * real FareHarbor slot, and confirm it with FH's non-mutating validate.
+ * Returns the candidate with its times/savings corrected to the REAL slot,
+ * plus the verdict for the payload — or null, in which case no ask exists.
+ */
+async function dryRunCandidate(
+  supabase: AdminClient,
+  targetDate: string,
+  candidate: MoveCandidate,
+): Promise<{ candidate: MoveCandidate; validated: ValidatedMove; listingSlug: string; snappedFromIso: string | null } | null> {
+  if (!candidate.booking.listingId) return null
+  const { data: listing } = await supabase
+    .from('cruise_listings')
+    .select('slug')
+    .eq('id', candidate.booking.listingId)
+    .single()
+  if (!listing?.slug) return null
+
+  const validated = await validateMoveSlot(targetDate, candidate, listing.slug)
+  if (!validated) return null
+
+  const durationMs = new Date(candidate.currentEndAt).getTime() - new Date(candidate.currentStartAt).getTime()
+  const snappedFromIso = validated.snap.snapped ? candidate.proposedStartAt : null
+  return {
+    candidate: {
+      ...candidate,
+      proposedStartAt: validated.snap.startAt,
+      proposedEndAt: shifted(validated.snap.startAt, durationMs),
+      estSavingCents: validated.snap.estSavingCents,
+    },
+    validated,
+    listingSlug: listing.slug,
+    snappedFromIso,
+  }
+}
+
+/**
  * Claude drafts the SMS + email, then the shadow proposal is written and
  * logged. Shared by the nightly scan and the new-booking trigger — the only
  * difference between them is HOW a candidate + reasoning suffix were found,
@@ -283,7 +480,14 @@ async function craftAndInsertMoveProposal(
   supabase: AdminClient,
   targetDate: string,
   candidate: MoveCandidate,
-  opts: { reasoningSuffix: string; source: string },
+  opts: {
+    reasoningSuffix: string
+    source: string
+    listingSlug: string
+    verdict: DryRunVerdict
+    customerTypeRatePk: number
+    snappedFromIso: string | null
+  },
 ): Promise<'drafted' | 'skipped'> {
   const currentTime = formatAmsterdamTime(candidate.currentStartAt)
   const proposedTime = formatAmsterdamTime(candidate.proposedStartAt)
@@ -339,6 +543,13 @@ Return JSON only:
           sms_text: smsText,
           email_subject: emailSubject,
           email_body: emailBody,
+          // Dry-run trail: the FH-confirmed slot behind the ask, and what the
+          // send action re-validates right before dispatch (same party shape).
+          listing_slug: opts.listingSlug,
+          customer_type_rate_pk: opts.customerTypeRatePk,
+          fh_customer_count: candidate.booking.category === 'private' ? 1 : (candidate.booking.guestCount ?? 2),
+          verdict: opts.verdict,
+          ...(opts.snappedFromIso ? { snapped_from: opts.snappedFromIso } : {}),
         }),
       ),
       reasoning: `Closing the ${candidate.gapMinutes} min gap on ${candidate.boat} (${targetDate}) saves ≈ €${(candidate.estSavingCents / 100).toFixed(2)} in paid waiting — ${opts.reasoningSuffix}. No catering aboard, single-party departure — safe to ask. Sequential: this is the only open ask for ${targetDate}.`,
@@ -422,9 +633,17 @@ export async function draftGuestMoveRequest(): Promise<'drafted' | 'skipped'> {
     }
     if (!picked) return 'skipped'
 
-    return await craftAndInsertMoveProposal(supabase, picked.date, picked.candidate, {
-      reasoningSuffix: `the best opportunity in the next ${OPTIMIZE_HORIZON_DAYS} days`,
+    // Dry-run gate: no ask exists until FareHarbor confirmed the target slot.
+    const dryRun = await dryRunCandidate(supabase, picked.date, picked.candidate)
+    if (!dryRun) return 'skipped'
+
+    return await craftAndInsertMoveProposal(supabase, picked.date, dryRun.candidate, {
+      reasoningSuffix: `the best opportunity in the next ${OPTIMIZE_HORIZON_DAYS} days; FareHarbor confirmed the ${formatAmsterdamTime(dryRun.candidate.proposedStartAt)} slot`,
       source: 'ghost/guest-move-drafter:nightly',
+      listingSlug: dryRun.listingSlug,
+      verdict: dryRun.validated.verdict,
+      customerTypeRatePk: dryRun.validated.snap.customerTypeRatePk,
+      snappedFromIso: dryRun.snappedFromIso,
     })
   } catch (err) {
     console.error('[ghost/guest_move] failed:', err instanceof Error ? err.message : err)
@@ -471,13 +690,53 @@ export async function draftGuestMoveForNewBooking(bookingDate: string): Promise<
     const candidate = candidateFromDayRows(rawShifts, dayBookings)
     if (!candidate) return 'skipped'
 
-    return await craftAndInsertMoveProposal(supabase, bookingDate, candidate, {
-      reasoningSuffix: 'a new booking just revealed this opportunity',
+    // Dry-run gate: no ask exists until FareHarbor confirmed the target slot.
+    const dryRun = await dryRunCandidate(supabase, bookingDate, candidate)
+    if (!dryRun) return 'skipped'
+
+    return await craftAndInsertMoveProposal(supabase, bookingDate, dryRun.candidate, {
+      reasoningSuffix: `a new booking just revealed this opportunity; FareHarbor confirmed the ${formatAmsterdamTime(dryRun.candidate.proposedStartAt)} slot`,
       source: 'ghost/guest-move-drafter:new-booking',
+      listingSlug: dryRun.listingSlug,
+      verdict: dryRun.validated.verdict,
+      customerTypeRatePk: dryRun.validated.snap.customerTypeRatePk,
+      snappedFromIso: dryRun.snappedFromIso,
     })
   } catch (err) {
     console.error('[ghost/guest_move] new-booking check failed:', err instanceof Error ? err.message : err)
     return 'skipped'
+  }
+}
+
+/**
+ * Send-time re-validation (the execution-chokepoint rule: re-validate
+ * immediately before acting). The stored pks were confirmed at draft time,
+ * but the human may click hours later — another booking could have taken the
+ * slot since. One non-mutating FH validate on the stored pks; the caller
+ * blocks the send when it comes back not-bookable.
+ */
+export async function revalidateStoredMove(payload: {
+  verdict?: { checked_avail_pk?: number | null }
+  customer_type_rate_pk?: number
+  /** Party shape used (and FH-accepted) at draft time: 1 for private, guests for shared. */
+  fh_customer_count?: number
+}): Promise<DryRunVerdict | null> {
+  try {
+    const availPk = payload.verdict?.checked_avail_pk
+    const ratePk = payload.customer_type_rate_pk
+    if (!availPk || !ratePk) return null // pre-dry-run proposal: nothing stored to re-check
+
+    const fh = getFareHarborClient()
+    const count = Math.max(1, payload.fh_customer_count ?? 1)
+    const validation = await fh.validateBooking(availPk, {
+      contact: PLACEHOLDER_CONTACT,
+      customers: Array.from({ length: count }, () => ({ customer_type_rate: ratePk })),
+      note: 'Ghost dry-run capability check — not a real booking',
+    })
+    return toVerdict(validation, availPk, new Date().toISOString())
+  } catch (err) {
+    console.error('[ghost/guest_move] re-validate failed:', err instanceof Error ? err.message : err)
+    return null
   }
 }
 

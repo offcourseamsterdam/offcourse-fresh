@@ -64,6 +64,22 @@ never reasons over a stale roster.
    weeks out is friendlier and likelier to succeed than the evening before.
    The cron's shift sync covers the same window.
 
+   **Dry-run (autonomy climb to `dry_run`, 2026-07-04):** the gap math
+   proposes times derived from shift geometry, but FareHarbor only offers its
+   own slot grid — so before any ask is drafted, the ideal time is **snapped
+   to a real FH availability** (same boat, same duration, window between the
+   current departure and the ideal; matching on `startAt` ISO — display times
+   come back as "3pm", verified live) and confirmed with FH's non-mutating
+   validate **for the whole party**. Verified live that FH validates a target
+   slot while the guest's original booking still holds its own slot. The
+   snapped slot's REAL recovered saving replaces the geometric estimate; if
+   no slot in the window clears the same €/minute thresholds, no ask exists
+   (zero Claude spend). The send button re-validates the stored slot
+   immediately before dispatch (execution-chokepoint rule) — a slot taken in
+   the meantime expires the request with a clear 409 instead of texting the
+   guest a promise we can't keep. The card shows the verdict: "FareHarbor
+   confirmed 13:30 is bookable · checked 21:04".
+
    **Event-driven trigger (Beer 2026-07-04 — "every time a new booking comes
    in"):** `draftGuestMoveForNewBooking(date)` fires fire-and-forget
    (`after()`) right after a booking is confirmed — the Stripe webhook (both

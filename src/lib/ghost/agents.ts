@@ -60,7 +60,7 @@ export const AUTONOMY_LEVEL: Record<string, AutonomyLevel> = {
   maintenance_task: 'propose',
   stock_reorder: 'propose',
   ops_review: 'propose', // shadow-only until its outcome history earns a climb
-  guest_move_request: 'propose', // draft only; the send button is the 'ask' rung
+  guest_move_request: 'dry_run', // every ask is FH-validated before draft AND re-validated before send
 }
 
 export function autonomyForKind(kind: string): AutonomyLevel {

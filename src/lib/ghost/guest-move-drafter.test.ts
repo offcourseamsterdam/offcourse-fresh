@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { selectMoveCandidate, MIN_GAP_MINUTES, type MoveBooking } from './guest-move-drafter'
+import { selectMoveCandidate, pickSnapSlot, MIN_GAP_MINUTES, type MoveBooking } from './guest-move-drafter'
 import type { OpsReviewShift } from './ops-review'
 
 /**
@@ -39,6 +39,7 @@ function booking(overrides: Partial<MoveBooking> & { id: string }): MoveBooking 
     customerEmail: 'lisa@example.com',
     customerPhone: '+31600000000',
     extrasSelected: null,
+    listingId: 'listing-1',
     listingTitle: 'Canal Cruise',
     guestCount: 4,
     totalCents: 12000,
@@ -151,5 +152,85 @@ describe('selectMoveCandidate — the hard rules', () => {
       shift({ id: 'sh2', bookingId: 'b2', startAt: '2026-07-05T13:30:00Z', endAt: '2026-07-05T15:00:00Z' }),
     ]
     expect(selectMoveCandidate(shifts, byId, byPk)).toBeNull()
+  })
+})
+
+describe('pickSnapSlot — snapping the geometric ideal to a real FH slot', () => {
+  const ct = (over: Record<string, unknown> = {}) => ({
+    pk: 555,
+    boatId: 'diana' as const,
+    durationMinutes: 90,
+    minimumParty: 1,
+    maximumParty: 12,
+    priceCents: 3500,
+    name: 'Adult (13+)',
+    totalCapacity: 12,
+    customerTypePk: 1,
+    ...over,
+  })
+  const slot = (pk: number, startAt: string, cts = [ct()]) =>
+    ({ pk, startAt, startTime: 'x', endAt: startAt, headline: '', capacity: 12, customerTypes: cts }) as never
+
+  // Booking currently at 13:30; the gap math wants it at 12:00 (earlier move).
+  const input = {
+    currentStartAt: '2026-07-05T13:30:00Z',
+    idealStartAt: '2026-07-05T12:00:00Z',
+    durationMinutes: 90,
+    boatKey: 'diana' as const,
+    category: 'shared',
+    guests: 4,
+    hourlyRateCents: 3000,
+  }
+
+  it('snaps to the slot closest to the ideal within the window, recomputing the real saving', () => {
+    const snap = pickSnapSlot(
+      [slot(1, '2026-07-05T12:15:00Z'), slot(2, '2026-07-05T12:45:00Z')],
+      input,
+    )
+    expect(snap).toBeTruthy()
+    expect(snap!.availPk).toBe(1) // 12:15 is closest to the 12:00 ideal
+    expect(snap!.recoveredMinutes).toBe(75) // 13:30 → 12:15
+    expect(snap!.estSavingCents).toBe(3750) // 75 min at €30/h
+    expect(snap!.snapped).toBe(true)
+  })
+
+  it('an exact match on the ideal is not "snapped"', () => {
+    const snap = pickSnapSlot([slot(1, '2026-07-05T12:00:00Z')], input)
+    expect(snap!.snapped).toBe(false)
+  })
+
+  it('ignores slots outside the window — earlier than the ideal or at/after the current time', () => {
+    expect(pickSnapSlot([slot(1, '2026-07-05T11:00:00Z')], input)).toBeNull() // before ideal: worse than needed
+    expect(pickSnapSlot([slot(1, '2026-07-05T13:30:00Z')], input)).toBeNull() // = current: moves nothing
+    expect(pickSnapSlot([slot(1, '2026-07-05T14:30:00Z')], input)).toBeNull() // wrong direction
+  })
+
+  it('rejects a snap that no longer clears the ask thresholds (recovers too little)', () => {
+    // 13:00 recovers only 30 min < MIN_GAP_MINUTES — not worth bothering a guest.
+    expect(pickSnapSlot([slot(1, '2026-07-05T13:00:00Z')], input)).toBeNull()
+  })
+
+  it('filters on boat and duration — the ask promises "same boat, same cruise"', () => {
+    expect(pickSnapSlot([slot(1, '2026-07-05T12:00:00Z', [ct({ boatId: 'curacao' })])], input)).toBeNull()
+    expect(pickSnapSlot([slot(1, '2026-07-05T12:00:00Z', [ct({ durationMinutes: 120 })])], input)).toBeNull()
+  })
+
+  it('shared: party must fit; private: min/max 1/1 types are NOT party-filtered (you book the boat)', () => {
+    const tiny = [slot(1, '2026-07-05T12:00:00Z', [ct({ maximumParty: 2 })])]
+    expect(pickSnapSlot(tiny, input)).toBeNull() // 4 guests don't fit a max-2 type
+
+    const privateBoat = [slot(1, '2026-07-05T12:00:00Z', [ct({ minimumParty: 1, maximumParty: 1 })])]
+    expect(pickSnapSlot(privateBoat, { ...input, category: 'private' })).toBeTruthy()
+  })
+
+  it('handles the later-move direction (pushing the earlier sailing later)', () => {
+    const laterInput = {
+      ...input,
+      currentStartAt: '2026-07-05T10:00:00Z',
+      idealStartAt: '2026-07-05T11:30:00Z',
+    }
+    const snap = pickSnapSlot([slot(1, '2026-07-05T11:15:00Z')], laterInput)
+    expect(snap).toBeTruthy()
+    expect(snap!.recoveredMinutes).toBe(75)
   })
 })

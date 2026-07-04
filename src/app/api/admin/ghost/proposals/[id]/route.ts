@@ -12,6 +12,7 @@ import { moveResponseUrl } from '@/lib/ops/move-token'
 import { postSlackText } from '@/lib/slack/send-notification'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { autonomyForKind, levelRank } from '@/lib/ghost/agents'
+import { revalidateStoredMove } from '@/lib/ghost/guest-move-drafter'
 import { notifyShiftAssigned } from '@/lib/scheduling/notify-assignment'
 import type { BookingProposalInput, AltSlot } from '@/lib/ghost/dry-run'
 
@@ -402,12 +403,34 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         sms_text?: string
         email_subject?: string
         email_body?: string
+        verdict?: { checked_avail_pk?: number | null }
+        customer_type_rate_pk?: number
+        fh_customer_count?: number
       }
       if (!payload.sms_text || !payload.email_subject || !payload.email_body) {
         return apiError('This proposal has no drafted message to send.', 422)
       }
       if (!payload.guest_email && !payload.guest_phone) {
         return apiError('No guest contact details on this booking.', 422)
+      }
+
+      // Execution-chokepoint rule: re-validate the promised slot IMMEDIATELY
+      // before contacting the guest. The draft-time verdict may be hours old —
+      // if the slot has been taken since, the ask would promise a time we
+      // can't deliver. A failed re-check expires the proposal (the nightly
+      // run drafts a fresh one if the opportunity still exists).
+      if (payload.verdict?.checked_avail_pk) {
+        const fresh = await revalidateStoredMove(payload)
+        if (!fresh || !fresh.is_bookable) {
+          await supabase
+            .from('agent_proposals')
+            .update({
+              status: 'expired',
+              payload: JSON.parse(JSON.stringify({ ...(p.payload as Record<string, unknown>), verdict: fresh ?? payload.verdict })),
+            })
+            .eq('id', id)
+          return apiError('The proposed slot is no longer available in FareHarbor — request expired; a fresh one will be drafted if the opportunity still exists.', 409)
+        }
       }
 
       // Personal, unguessable response link (HMAC of the proposal id).

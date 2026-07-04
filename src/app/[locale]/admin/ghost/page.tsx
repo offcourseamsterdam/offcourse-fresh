@@ -128,6 +128,8 @@ interface GhostProposal {
     sms_text?: string
     // catering_upsell (shares guest_name/cruise_title/recipient/email_* fields)
     guest_count?: number | null
+    /** guest_move_request dry-run: the geometric ideal the FH slot was snapped from */
+    snapped_from?: string
     // ops_review
     recommendations?: OpsRecommendation[]
     facts?: {
@@ -1197,6 +1199,22 @@ function ProposalCard({ proposal: p, onChanged }: { proposal: GhostProposal; onC
               {p.payload.incentive && <p className="text-xs text-violet-600 mt-0.5">🍷 offer: {p.payload.incentive}</p>}
             </div>
 
+            {/* Dry-run verdict — the FH-confirmed slot behind the ask */}
+            {p.payload.verdict && (
+              p.payload.verdict.is_bookable ? (
+                <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-1.5 inline-flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  FareHarbor confirmed {p.payload.proposed_start_at ? formatAmsterdamTime(p.payload.proposed_start_at) : 'the slot'} is bookable
+                  {p.payload.snapped_from ? ` (snapped from ${formatAmsterdamTime(p.payload.snapped_from)})` : ''}
+                  {` · checked ${formatAmsterdamTime(p.payload.verdict.ran_at)}`}
+                </p>
+              ) : (
+                <p className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-1.5">
+                  ✗ Slot no longer bookable in FareHarbor ({p.payload.verdict.error ?? p.payload.verdict.code ?? 'unknown'}) — sending is blocked.
+                </p>
+              )
+            )}
+
             {p.payload.sms_text && (
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-500 mb-1">
@@ -1242,9 +1260,9 @@ function ProposalCard({ proposal: p, onChanged }: { proposal: GhostProposal; onC
               </p>
             ) : p.status === 'expired' ? (
               <p className="text-xs text-zinc-500 bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 inline-block">
-                Expired without an answer — original time kept.
+                Expired — original time kept.
               </p>
-            ) : (
+            ) : p.payload.verdict && !p.payload.verdict.is_bookable ? null : (
               <button
                 onClick={() => {
                   if (!confirmSend) { setConfirmSend(true); return }
