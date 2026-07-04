@@ -44,7 +44,7 @@ export const AUTONOMY_CEILING: Record<string, AutonomyLevel> = {
   catering_order: 'ask',
   schedule_day: 'ask',
   maintenance_task: 'ask',
-  stock_order: 'ask',
+  stock_reorder: 'ask',
 }
 
 /** The kind's CURRENT operating level (must be ≤ its ceiling). */
@@ -54,7 +54,7 @@ export const AUTONOMY_LEVEL: Record<string, AutonomyLevel> = {
   catering_order: 'propose',
   schedule_day: 'propose',
   maintenance_task: 'propose',
-  stock_order: 'propose',
+  stock_reorder: 'propose',
 }
 
 export function autonomyForKind(kind: string): AutonomyLevel {
@@ -121,19 +121,19 @@ export const GHOST_AGENTS: GhostAgent[] = [
     key: 'maintenance',
     name: 'Maintenance agent',
     description:
-      'Will watch boat issues and engine-hour service intervals, proposing maintenance tasks and availability blocks. Needs the maintenance board (vision doc §9) first.',
-    status: 'planned',
+      'Reads the "Maintenance and Ideas" Slack channel, triages each post by priority (essential / cosmetic / wishlist), describes attached photos, and drafts a quote-request email to the technician for one-click human approval.',
+    status: 'active',
     kinds: ['maintenance_task'],
-    trigger: 'issue reports + engine-hour thresholds (planned)',
+    trigger: 'every post in the Maintenance & Ideas Slack channel',
   },
   {
     key: 'storage',
     name: 'Storage agent',
     description:
-      'Will watch stock counts vs upcoming bookings and propose supplier orders before anything runs out. Needs the stock tables (vision doc §3) first.',
-    status: 'planned',
-    kinds: ['stock_order'],
-    trigger: 'QR stock counts + weekly forecast (planned)',
+      'Watches stock counts (staff scan a QR in the storage room and tap +/-) and, when an item drops to its reorder level, drafts a supplier reorder email per supplier for one-click human approval.',
+    status: 'active',
+    kinds: ['stock_reorder'],
+    trigger: 'stock count submitted (QR form or admin grid)',
   },
 ]
 

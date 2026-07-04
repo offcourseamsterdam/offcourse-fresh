@@ -42,6 +42,21 @@ export interface InboxBooking {
   receipt_total_display: string | null
 }
 
+/** A nearby option the Ghost validated when the asked slot wasn't bookable. */
+export interface InboxAlternative {
+  date: string
+  time: string
+  option: string
+  boat_id: 'diana' | 'curacao'
+  kind: 'same_day_earlier' | 'same_day_later' | 'other_boat' | 'other_day'
+  listing_slug: string
+  listing_title: string
+  guests: number
+  price_eur: number | null
+  /** false = ranked-but-unvalidated estimate → show "est." */
+  price_is_quote: boolean
+}
+
 /** A Ghost proposal surfaced for this conversation (reply draft or booking). */
 export interface InboxGhostProposal {
   id: string
@@ -63,11 +78,9 @@ export interface InboxGhostProposal {
       option?: string
       price_eur?: number
     }
-    verdict?: { is_bookable: boolean; error: string | null; receipt_total_eur: number | null }
+    verdict?: { is_bookable: boolean; error: string | null; receipt_total_eur: number | null; alternatives?: InboxAlternative[] }
   }
   outcome: {
-    booking_id?: string
-    booked_by?: string
     human_reply?: string
     comparison?: { verdict: 'match' | 'minor' | 'different'; summary: string }
   } | null

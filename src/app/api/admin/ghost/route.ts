@@ -33,10 +33,14 @@ export async function GET(req: NextRequest) {
       proposalsQuery,
       supabase.rpc('ghost_stats'),
       getAiSpendSummary(),
+      // Newest-first, capped — this is the Ghost's long-term memory and grows
+      // forever; an unbounded select on the 15s dashboard poll is the same
+      // egress shape we fixed in the inbox. The UI paginates anyway.
       supabase
         .from('ghost_knowledge')
         .select('id, question, answer, proposal_id, pinned, created_at')
-        .order('created_at', { ascending: false }),
+        .order('created_at', { ascending: false })
+        .limit(200),
       // Open questions span ALL proposals, not just this page.
       supabase
         .from('agent_proposals')

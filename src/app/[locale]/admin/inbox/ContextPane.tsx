@@ -15,6 +15,14 @@ const SIM_BADGE: Record<string, { text: string; cls: string }> = {
 
 const STATUS_OPTIONS = ['open', 'pending', 'resolved'] as const
 
+/** Friendly labels for an alternative's relation to the asked-for slot. */
+const ALT_KIND_LABEL: Record<string, string> = {
+  same_day_earlier: 'same boat · earlier',
+  same_day_later: 'same boat · later',
+  other_boat: 'other boat',
+  other_day: 'another day',
+}
+
 interface Props {
   detail: InboxConversationDetail
   onChanged: () => void
@@ -226,25 +234,59 @@ function LearningTrail({ history }: { history: InboxGhostProposal[] }) {
   )
 }
 
-/** The money action: approve a validated booking_proposal → create it for real. */
+/** The two-step "this creates a REAL booking" confirm, shared by the primary + each alternative. */
+function ConfirmCreate({ onYes, onCancel, busy }: { onYes: () => void; onCancel: () => void; busy: boolean }) {
+  return (
+    <div className="mt-1.5">
+      <p className="text-[11px] text-zinc-500 mb-1.5">
+        This creates a <span className="font-semibold">real FareHarbor booking</span> (recorded as complimentary — no
+        payment taken) and sends the customer a confirmation email. Continue?
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onYes}
+          disabled={busy}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50"
+        >
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CalendarPlus className="w-3.5 h-3.5" />}
+          Yes, create it
+        </button>
+        <button onClick={onCancel} disabled={busy} className="text-xs text-zinc-500 hover:text-zinc-700">
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The money action: approve a validated booking_proposal → create it for real.
+ * When the proposed slot isn't bookable, the agent's validated alternatives show
+ * as one-click "Use this" options (each re-resolved + re-validated on the server).
+ */
 function BookingApproval({ proposal, onChanged }: { proposal: InboxGhostProposal; onChanged: () => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [confirming, setConfirming] = useState(false)
+  // null = idle; 'primary' = confirming the proposed slot; number = confirming that alternative.
+  const [confirming, setConfirming] = useState<'primary' | number | null>(null)
   const b = proposal.payload.booking
   const verdict = proposal.payload.verdict
   const executed = proposal.status === 'executed'
+  const alternatives = verdict?.alternatives ?? []
   if (!b) return null
 
-  async function createBooking() {
+  async function book(altIndex?: number) {
     setBusy(true)
     setError(null)
     try {
-      await adminMutate(`/api/admin/ghost/proposals/${proposal.id}`, 'POST', { action: 'book' })
+      await adminMutate(`/api/admin/ghost/proposals/${proposal.id}`, 'POST', {
+        action: 'book',
+        ...(altIndex != null ? { alternative_index: altIndex } : {}),
+      })
       onChanged()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create the booking')
-      setConfirming(false)
+      setConfirming(null)
     } finally {
       setBusy(false)
     }
@@ -265,34 +307,46 @@ function BookingApproval({ proposal, onChanged }: { proposal: InboxGhostProposal
           <Check className="w-3.5 h-3.5" /> Booked
         </p>
       ) : verdict && !verdict.is_bookable ? (
-        <p className="mt-1.5 text-xs text-amber-700">Not bookable right now — {verdict.error ?? 'unavailable'}.</p>
-      ) : confirming ? (
-        <div className="mt-1.5">
-          <p className="text-[11px] text-zinc-500 mb-1.5">
-            This creates a <span className="font-semibold">real FareHarbor booking</span> (recorded as
-            complimentary — no payment taken) and sends the customer a confirmation email. Continue?
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={createBooking}
-              disabled={busy}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50"
-            >
-              {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CalendarPlus className="w-3.5 h-3.5" />}
-              Yes, create it
-            </button>
-            <button onClick={() => setConfirming(false)} disabled={busy} className="text-xs text-zinc-500 hover:text-zinc-700">
-              Cancel
-            </button>
-          </div>
-        </div>
+        <p className="mt-1.5 text-xs text-amber-700">That slot is taken — {verdict.error ?? 'unavailable'}.</p>
+      ) : confirming === 'primary' ? (
+        <ConfirmCreate onYes={() => book()} onCancel={() => setConfirming(null)} busy={busy} />
       ) : (
         <button
-          onClick={() => setConfirming(true)}
+          onClick={() => setConfirming('primary')}
           className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-indigo-700"
         >
           <CalendarPlus className="w-3.5 h-3.5" /> Approve &amp; create booking
         </button>
+      )}
+
+      {/* Validated nearby options — each books through the same money path on click. */}
+      {!executed && alternatives.length > 0 && (
+        <div className="mt-2 pt-2 border-t border-indigo-100">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 mb-1">Other options</p>
+          <div className="space-y-1.5">
+            {alternatives.map((a, i) => (
+              <div key={i} className="rounded-lg bg-white border border-zinc-200 px-2.5 py-1.5 text-[11px]">
+                <span className="inline-block text-[9px] px-1.5 py-0.5 rounded-full bg-zinc-100 text-zinc-600 mb-0.5">
+                  {ALT_KIND_LABEL[a.kind] ?? a.kind}
+                </span>
+                <span className="block text-zinc-700">
+                  {a.date} · {a.time} · {a.option}
+                  {a.price_eur != null ? ` · €${a.price_eur}${a.price_is_quote ? '' : ' est.'}` : ''}
+                </span>
+                {confirming === i ? (
+                  <ConfirmCreate onYes={() => book(i)} onCancel={() => setConfirming(null)} busy={busy} />
+                ) : (
+                  <button
+                    onClick={() => setConfirming(i)}
+                    className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 hover:underline"
+                  >
+                    <CalendarPlus className="w-3 h-3" /> Use this
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
       )}
       {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
     </div>

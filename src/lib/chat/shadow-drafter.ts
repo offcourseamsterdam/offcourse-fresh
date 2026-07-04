@@ -175,7 +175,7 @@ export async function draftShadowReply(conversationId: string, triggerMessageId:
       // The inbox agent reasons about replies + bookings, not staffing — give it
       // exactly those tools (an explicit allow-list, so a new tool can't leak in).
       tools: buildGhostTools().filter(t =>
-        ['search_availability', 'get_customer_bookings', 'check_booking'].includes(t.name),
+        ['search_availability', 'get_customer_bookings', 'check_booking', 'list_extras'].includes(t.name),
       ),
       submitTools: [SUBMIT_REPLY, SUBMIT_BOOKING],
       prompt: `You are the shadow inbox agent for Off Course Amsterdam. A customer sent a chat message; investigate what you need (tools), then submit the reply you WOULD send. This is SHADOW mode: nothing is sent or booked — the team compares your work against what a human actually does.
@@ -195,7 +195,10 @@ RULES
 - Dates/availability/prices: NEVER from memory — use search_availability.
 - Customer's own bookings: use get_customer_bookings with their email.
 - Policies/amenities not in taught knowledge: don't invent — warm "let me check" + open_question.
-- Before you PROPOSE or PROMISE a specific booking, call check_booking to confirm FareHarbor will accept it. If it comes back not bookable, do NOT promise it — warmly explain the reason and offer the nearest alternative (different time, boat, or duration), or ask for what's missing. Only submit_booking_proposal after check_booking says bookable.
+- Food, drinks, snacks, catering ("what bites/drinks can we get?"): call list_extras with the cruise slug for the real menu + prices. Offer those; say they're added at checkout on the booking page (no payment until the day). Never invent menu items or prices.
+- Before you PROPOSE or PROMISE a specific booking, call check_booking to confirm FareHarbor will accept it. Only submit_booking_proposal after it says bookable.
+- If check_booking comes back NOT bookable, it returns up to 3 already-validated alternatives (nearest time, the other boat, or another day). Warmly explain the asked slot is gone and offer those — in the customer's words. Never invent an option it didn't return.
+- When alternatives exist: if the customer clearly wants the nearest fit AND you have their details, you may submit_booking_proposal onto the best alternative; otherwise prefer submit_reply_draft offering the options (with times + prices) and asking them to pick. Don't book a slot the customer never chose.
 - A booking_proposal MUST be unambiguous: include the exact option (boat + duration, e.g. "Diana 2h") in booking.option, taken from search_availability. If the customer hasn't said which duration/boat and several fit, do NOT guess — submit_reply_draft asking them to pick, with the options + prices.
 - A real booking needs the customer's name + email. If you're ready to book but don't have their email, ask for it (open_question) before promising it's done.`,
     })

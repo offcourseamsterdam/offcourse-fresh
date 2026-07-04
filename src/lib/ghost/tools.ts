@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchSearchResults } from '@/lib/search/fetch-search-results'
-import { amsterdamToday } from '@/lib/utils'
+import { amsterdamToday, fmtEuros } from '@/lib/utils'
 import { checkBookingViability } from './dry-run'
 import type { AgentTool } from './agent-runtime'
 
@@ -46,6 +46,46 @@ export function compactAvailability(
         duration_min: ct.durationMinutes,
       })),
     })),
+  }
+}
+
+/** Human-readable price for an extra, from its price_type + cents value. */
+export function extraPriceLabel(priceType: string, priceValue: number): string {
+  switch (priceType) {
+    case 'fixed_cents':
+      return fmtEuros(priceValue)
+    case 'per_person_cents':
+      return `${fmtEuros(priceValue)} per person`
+    case 'per_person_per_hour_cents':
+      return `${fmtEuros(priceValue)} per person per hour`
+    case 'percentage':
+      return `${priceValue}%`
+    default:
+      return '' // informational — no fixed price
+  }
+}
+
+/** Compact the food/drinks menu for the agent: name, price, short description. */
+export function compactExtras(
+  extras: {
+    name: string
+    description?: string | null
+    category: string
+    price_type: string
+    price_value: number
+    min_people?: number | null
+  }[],
+): unknown {
+  if (!extras.length) return { menu: [], note: 'No food or drinks extras available for this cruise.' }
+  return {
+    menu: extras.map(e => ({
+      name: e.name,
+      category: e.category,
+      ...(extraPriceLabel(e.price_type, e.price_value) ? { price: extraPriceLabel(e.price_type, e.price_value) } : {}),
+      ...(e.description ? { about: e.description.slice(0, 120) } : {}),
+      ...(e.min_people ? { for_at_least: e.min_people } : {}),
+    })),
+    note: 'Customers choose these at checkout on the booking page (or pre-order from their confirmation). No payment is taken until the day.',
   }
 }
 
@@ -150,7 +190,7 @@ export function buildGhostTools(): AgentTool[] {
     {
       name: 'check_booking',
       description:
-        'Before you PROPOSE or PROMISE a specific booking, call this to confirm FareHarbor would actually accept it. Pass the exact slug, date, time, guests, and boat+duration option (from search_availability). Returns { bookable: true, price_eur } or { bookable: false, reason } (sold out, party too small/large, slot gone, ambiguous option). Never promise a booking you have not checked here — if it comes back not bookable, explain why and offer an alternative instead.',
+        'Before you PROPOSE or PROMISE a specific booking, call this to confirm FareHarbor would actually accept it. Pass the exact slug, date, time, guests, and boat+duration option (from search_availability). Returns { bookable: true, price_eur }, or when NOT bookable { bookable: false, reason } PLUS up to 3 already-validated `alternatives` (each { date, time, option, price_eur, kind }, kind = same_day_earlier | same_day_later | other_boat | other_day), nearest-and-best first. Never promise a slot you have not checked here. If it comes back not bookable, do NOT invent options: offer these alternatives in your reply, or re-propose onto alternatives[0] when the customer clearly wants the nearest fit.',
       input_schema: {
         type: 'object',
         properties: {
@@ -163,16 +203,80 @@ export function buildGhostTools(): AgentTool[] {
         required: ['listing_slug', 'date', 'time', 'guests'],
       },
       run: async input => {
-        const verdict = await checkBookingViability({
-          listing_slug: String(input.listing_slug ?? ''),
-          date: String(input.date ?? ''),
-          time: String(input.time ?? ''),
-          guests: Number(input.guests ?? 2),
-          option: input.option ? String(input.option) : undefined,
+        const verdict = await checkBookingViability(
+          {
+            listing_slug: String(input.listing_slug ?? ''),
+            date: String(input.date ?? ''),
+            time: String(input.time ?? ''),
+            guests: Number(input.guests ?? 2),
+            option: input.option ? String(input.option) : undefined,
+          },
+          { withAlternatives: true },
+        )
+        if (verdict.is_bookable) return { bookable: true, price_eur: verdict.receipt_total_eur }
+        return {
+          bookable: false,
+          reason: verdict.error ?? verdict.code ?? 'not bookable',
+          // Already validated + ranked; the agent offers these instead of guessing.
+          ...(verdict.alternatives?.length
+            ? {
+                alternatives: verdict.alternatives.map(a => ({
+                  date: a.date,
+                  time: a.time,
+                  option: a.option,
+                  price_eur: a.price_eur,
+                  kind: a.kind,
+                })),
+              }
+            : {}),
+        }
+      },
+    },
+    {
+      name: 'list_extras',
+      description:
+        "List the food & drinks a cruise offers — bites boxes, drinks packages, platters — with real prices. Call when a customer asks what snacks/food/drinks/catering are available or what they can add. Returns a menu. Tell them these are chosen at checkout on the booking page (no payment until the day); never invent items or prices.",
+      input_schema: {
+        type: 'object',
+        properties: {
+          listing_slug: { type: 'string', description: 'The cruise slug from search_availability' },
+        },
+        required: ['listing_slug'],
+      },
+      run: async input => {
+        const slug = String(input.listing_slug ?? '').trim()
+        if (!slug) throw new Error('listing_slug is required')
+        const supabase = createAdminClient()
+
+        const { data: listing } = await supabase
+          .from('cruise_listings')
+          .select('id, category')
+          .eq('slug', slug)
+          .maybeSingle()
+        if (!listing) return { menu: [], note: `No cruise found for '${slug}'.` }
+
+        // Food + drinks only ("the menu"), mirroring the public extras upsell filter.
+        const { data: extras } = await supabase
+          .from('extras')
+          .select('id, name, description, category, price_type, price_value, min_people, applicable_categories, scope')
+          .eq('is_active', true)
+          .in('category', ['food', 'drinks'])
+          .order('sort_order', { ascending: true })
+
+        const { data: listingExtraIds } = await supabase
+          .from('listing_extras')
+          .select('extra_id')
+          .eq('listing_id', listing.id)
+          .eq('is_enabled', true)
+        const perListing = new Set((listingExtraIds ?? []).map(r => r.extra_id))
+
+        const available = (extras ?? []).filter(e => {
+          if (e.scope === 'per_listing') return perListing.has(e.id)
+          // global: no applicable_categories = all; otherwise must match this listing.
+          const cats = e.applicable_categories as string[] | null
+          return !cats || cats.includes(listing.category ?? '') || cats.includes('private')
         })
-        return verdict.is_bookable
-          ? { bookable: true, price_eur: verdict.receipt_total_eur }
-          : { bookable: false, reason: verdict.error ?? verdict.code ?? 'not bookable' }
+        return compactExtras(available)
       },
     },
   ]

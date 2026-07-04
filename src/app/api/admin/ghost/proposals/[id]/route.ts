@@ -6,7 +6,9 @@ import { draftShadowReply } from '@/lib/chat/shadow-drafter'
 import { analyzeDifference } from '@/lib/ghost/compare'
 import { translateToEnglish } from '@/lib/chat/translate'
 import { prepareInboxBookingBody } from '@/lib/ghost/book-from-proposal'
-import type { BookingProposalInput } from '@/lib/ghost/dry-run'
+import { sendMaintenanceEmail } from '@/lib/maintenance/send-email'
+import { postSlackText } from '@/lib/slack/send-notification'
+import type { BookingProposalInput, AltSlot } from '@/lib/ghost/dry-run'
 
 /**
  * POST /api/admin/ghost/proposals/[id]  { action }
@@ -21,14 +23,17 @@ import type { BookingProposalInput } from '@/lib/ghost/dry-run'
  *              create a REAL booking through the existing money-path endpoint.
  *              This is the only action that touches the outside world, and it
  *              only ever fires on an explicit human click.
- * Everything except `book` is read-only toward customers.
+ *   - send:    the human approves a maintenance_task → send the drafted
+ *              technician quote-request email (Resend). Atomic claim + release,
+ *              same shape as `book`; fires only on an explicit human click.
+ * Everything except `book` and `send` is read-only toward the outside world.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const denied = await requireAdmin()
   if (denied) return denied
   try {
     const { id } = await params
-    const body = (await req.json().catch(() => ({}))) as { action?: string; reviewed?: boolean }
+    const body = (await req.json().catch(() => ({}))) as { action?: string; reviewed?: boolean; alternative_index?: number }
     const supabase = createAdminClient()
 
     if (body.action === 'review') {
@@ -96,7 +101,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const proposalBooking = (p.payload as { booking?: BookingProposalInput } | null)?.booking ?? {}
       const contact = (p.conversation as { contact?: { name?: string | null; email?: string | null; phone_e164?: string | null } } | null)?.contact ?? {}
 
-      const prep = await prepareInboxBookingBody(proposalBooking, contact)
+      // If the human picked one of the Ghost's validated alternatives, book THAT
+      // instead. We re-derive the booking input from the stored alternative — its
+      // pks are hints only; prepareInboxBookingBody + the money path re-resolve and
+      // re-validate live, so a client can never inject an arbitrary slot here.
+      let bookingInput: BookingProposalInput = proposalBooking
+      if (typeof body.alternative_index === 'number') {
+        const alts = (p.payload as { verdict?: { alternatives?: AltSlot[] } } | null)?.verdict?.alternatives ?? []
+        const alt = alts[body.alternative_index]
+        if (!alt) return apiError('That alternative is no longer available — re-check the proposal.', 422)
+        bookingInput = { listing_slug: alt.listing_slug, date: alt.date, time: alt.time, guests: alt.guests, option: alt.option }
+      }
+
+      const prep = await prepareInboxBookingBody(bookingInput, contact)
       if (!prep.ok) return apiError(prep.error, 422)
 
       // ATOMIC CLAIM before any real booking: flip 'shadow'→'booking' only if it's
@@ -138,6 +155,94 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       } catch (bookErr) {
         await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
         throw bookErr
+      }
+    }
+
+    if (body.action === 'send') {
+      const { data: p } = await supabase
+        .from('agent_proposals')
+        .select('id, kind, status, payload')
+        .eq('id', id)
+        .single()
+      // Both maintenance_task and stock_reorder are "draft email → approve → send".
+      if (!p || (p.kind !== 'maintenance_task' && p.kind !== 'stock_reorder')) {
+        return apiError('Not a sendable email proposal', 400)
+      }
+      if (p.status === 'executed') return apiError('This email was already sent.', 409)
+
+      const payload = (p.payload ?? {}) as {
+        email_subject?: string
+        email_body?: string
+        recipient?: string
+        maintenance_task_id?: string
+        item_ids?: string[]
+      }
+      const isStock = p.kind === 'stock_reorder'
+      const recipient =
+        payload.recipient ||
+        (isStock ? process.env.STOCK_EMAIL_RECIPIENT : process.env.MAINTENANCE_EMAIL_RECIPIENT)
+      const subject = payload.email_subject
+      const emailBody = payload.email_body
+      if (!recipient) {
+        const envVar = isStock ? 'STOCK_EMAIL_RECIPIENT' : 'MAINTENANCE_EMAIL_RECIPIENT'
+        return apiError(`No recipient email configured — set ${envVar} or the item's supplier email.`, 400)
+      }
+      if (!subject || !emailBody) return apiError('This proposal has no drafted email to send.', 422)
+
+      // ATOMIC CLAIM before sending: flip 'shadow'→'sending' only if still
+      // 'shadow'. A second click gets zero rows and aborts — no double-send.
+      const { data: claimed } = await supabase
+        .from('agent_proposals')
+        .update({ status: 'sending' })
+        .eq('id', id)
+        .eq('status', 'shadow')
+        .select('id')
+      if (!claimed?.length) return apiError('This email is already being sent (or was sent).', 409)
+
+      try {
+        const dispatched = await sendMaintenanceEmail({ recipient, subject, body: emailBody })
+        if (!dispatched) {
+          // No email service configured → nothing actually went out. Release the
+          // claim and report it; never mark executed (that would fake success
+          // AND permanently block retry via the 'already executed' guard).
+          await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
+          return apiError('Email not sent — the email service (RESEND_API_KEY) is not configured.', 503)
+        }
+        await supabase
+          .from('agent_proposals')
+          .update({
+            status: 'executed',
+            outcome: JSON.parse(JSON.stringify({ sent_at: new Date().toISOString(), recipient, dispatched })),
+          })
+          .eq('id', id)
+        if (payload.maintenance_task_id) {
+          await supabase
+            .from('maintenance_tasks')
+            .update({ technician_emailed_at: new Date().toISOString() })
+            .eq('id', payload.maintenance_task_id)
+        }
+        // Stock reorder: stamp the ordered items so the board shows "ordered".
+        if (isStock && payload.item_ids?.length) {
+          await supabase
+            .from('stock_items')
+            .update({ last_reordered_at: new Date().toISOString() })
+            .in('id', payload.item_ids)
+        }
+        // Best-effort confirmation — a Slack hiccup must never undo a sent email.
+        try {
+          const label = isStock ? '📦 *Stock reorder email sent*' : '🔧 *Maintenance email sent*'
+          await postSlackText(`${label} to ${recipient}\n*${subject}*`, {
+            type: isStock ? 'stock-reorder-sent' : 'maintenance-email-sent',
+            triggeredBy: 'admin',
+          })
+        } catch {
+          /* swallow */
+        }
+        return apiOk({ dispatched, recipient })
+      } catch (sendErr) {
+        // Release the claim so the human can retry after fixing the cause.
+        await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
+        throw sendErr
       }
     }
 

@@ -30,7 +30,7 @@ async function proposalExists(supabase: AdminClient, kind: string, targetDate: s
   return (data?.length ?? 0) > 0
 }
 
-function extractJson(raw: string): Record<string, unknown> | null {
+export function extractJson(raw: string): Record<string, unknown> | null {
   const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
   try {
     return JSON.parse(cleaned) as Record<string, unknown>

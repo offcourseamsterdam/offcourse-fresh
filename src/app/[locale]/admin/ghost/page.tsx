@@ -15,6 +15,7 @@ import {
   Loader2,
   Package,
   RefreshCw,
+  Send,
   Sparkles,
   UtensilsCrossed,
   Wrench,
@@ -87,6 +88,20 @@ interface GhostProposal {
     booking?: BookingAction
     steps?: AgentStepLog[]
     verdict?: DryRunVerdict
+    // maintenance_task
+    priority?: 'essential' | 'cosmetic' | 'wishlist'
+    title?: string
+    summary?: string
+    photo_descriptions?: string[]
+    email_subject?: string
+    email_body?: string
+    recipient?: string | null
+    maintenance_task_id?: string
+    // stock_reorder
+    urgency?: 'urgent' | 'routine'
+    supplier_name?: string | null
+    items?: { name: string; quantity: number; unit?: string; pack_size?: number | null; pack_unit?: string | null }[]
+    item_ids?: string[]
   }
   reasoning: string | null
   status: string
@@ -96,6 +111,8 @@ interface GhostProposal {
     replied_by?: string
     replied_at?: string
     comparison?: { verdict: SimilarityLabel; summary: string }
+    sent_at?: string
+    recipient?: string
   } | null
   reviewed_at: string | null
   created_at: string
@@ -110,7 +127,12 @@ interface GhostProposal {
 interface GhostData {
   proposals: GhostProposal[]
   hasMore: boolean
-  spend: { totalEur: number; last30dEur: number; calls: number }
+  spend: {
+    totalEur: number
+    last30dEur: number
+    calls: number
+    byFeature: { feature: string; totalEur: number; calls: number }[]
+  }
   stats: {
     total: number
     reviewed: number
@@ -130,6 +152,24 @@ const PAGE_SIZE = 25
 
 const CONVO_AGENTS = ['inbox', 'booking']
 
+// Friendly names for the ai_usage feature tags, so the spend breakdown reads in
+// plain English. Unknown tags fall back to a humanised version of the raw tag.
+const FEATURE_LABEL: Record<string, string> = {
+  ghost_agent_inbox: 'Inbox replies',
+  ghost_reply_draft: 'Inbox replies',
+  ghost_compare: 'Reply comparison',
+  chat_translate: 'Message translation',
+  ghost_catering_order: 'Catering drafts',
+  ghost_schedule_day: 'Scheduling drafts',
+  ghost_maintenance_task: 'Maintenance drafts',
+  ghost_maintenance_photo: 'Maintenance photos',
+  ghost_stock_reorder: 'Stock reorders',
+}
+
+function featureLabel(feature: string): string {
+  return FEATURE_LABEL[feature] ?? feature.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())
+}
+
 export default function GhostPage() {
   const router = useRouter()
   const params = useParams()
@@ -145,7 +185,7 @@ export default function GhostPage() {
 
   // Conversation drafts (reply_draft, booking_proposal) live in the inbox now —
   // this page is the cross-conversation ops dashboard: ops proposals + stats.
-  const OPS_KINDS = ['schedule_day', 'catering_order']
+  const OPS_KINDS = ['schedule_day', 'catering_order', 'maintenance_task', 'stock_reorder']
   const allProposals = (data?.proposals ?? []).filter(p => OPS_KINDS.includes(p.kind))
   const proposals = agentFilter
     ? allProposals.filter(p => agentForKind(p.kind)?.key === agentFilter)
@@ -194,6 +234,37 @@ export default function GhostPage() {
           <StatCard label="Corrected by you" value={data.stats.corrected} sub={`${data.stats.awaitingComparison} awaiting your reply`} accent="violet" />
           <StatCard label="Open questions" value={data.stats.openQuestions} sub="answer them below" accent={data.stats.openQuestions > 0 ? 'amber' : undefined} />
           <StatCard label="Things taught" value={data.stats.knowledgeEntries} sub="in every future draft" accent="emerald" />
+        </div>
+      )}
+
+      {/* Spend by agent — which AI surface actually costs money (all-time) */}
+      {data && data.spend.byFeature.length > 0 && (
+        <div className="rounded-xl border border-zinc-200 bg-white p-4 mb-5">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 mb-3 inline-flex items-center gap-1">
+            <Euro className="w-3 h-3" /> Spend by agent (all-time)
+          </p>
+          <div className="space-y-2">
+            {data.spend.byFeature.map(f => {
+              const max = data.spend.byFeature[0].totalEur || 1
+              const pct = Math.max(2, Math.round((f.totalEur / max) * 100))
+              return (
+                <div key={f.feature} className="flex items-center gap-3 text-xs">
+                  <span className="w-36 shrink-0 truncate text-zinc-600" title={f.feature}>
+                    {featureLabel(f.feature)}
+                  </span>
+                  <div className="flex-1 h-2 rounded-full bg-zinc-100 overflow-hidden">
+                    <div className="h-full rounded-full bg-violet-400" style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="w-16 shrink-0 text-right font-medium text-zinc-900 tabular-nums">
+                    €{f.totalEur.toFixed(2)}
+                  </span>
+                  <span className="w-16 shrink-0 text-right text-zinc-400 tabular-nums">
+                    {f.calls} {f.calls === 1 ? 'call' : 'calls'}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 
@@ -417,6 +488,20 @@ const KIND_META: Record<string, { label: string; Icon: typeof Ghost }> = {
   booking_proposal: { label: 'Booking', Icon: CalendarPlus },
   schedule_day: { label: 'Schedule', Icon: CalendarClock },
   catering_order: { label: 'Catering', Icon: UtensilsCrossed },
+  maintenance_task: { label: 'Maintenance', Icon: Wrench },
+  stock_reorder: { label: 'Stock reorder', Icon: Package },
+}
+
+/** Classification chip colours for maintenance proposals. */
+const MAINT_BADGE: Record<string, string> = {
+  essential: 'bg-red-100 text-red-700',
+  cosmetic: 'bg-amber-100 text-amber-700',
+  wishlist: 'bg-sky-100 text-sky-700',
+}
+const MAINT_LABEL: Record<string, string> = {
+  essential: 'Essential',
+  cosmetic: 'Cosmetic',
+  wishlist: 'Wish-list',
 }
 
 const AUTONOMY_LABEL: Record<string, string> = {
@@ -541,9 +626,10 @@ function ProposalCard({ proposal: p, onChanged }: { proposal: GhostProposal; onC
   const agent = agentForKind(p.kind)
   const conversational = p.kind === 'reply_draft' || p.kind === 'booking_proposal'
   const reviewed = !!p.reviewed_at
-  const [busy, setBusy] = useState<'review' | 'redraft' | 'compare' | null>(null)
+  const [busy, setBusy] = useState<'review' | 'redraft' | 'compare' | 'send' | null>(null)
+  const [confirmSend, setConfirmSend] = useState(false)
 
-  async function act(action: 'review' | 'redraft' | 'compare', extra: Record<string, unknown> = {}) {
+  async function act(action: 'review' | 'redraft' | 'compare' | 'send', extra: Record<string, unknown> = {}) {
     setBusy(action)
     try {
       await adminMutate(`/api/admin/ghost/proposals/${p.id}`, 'POST', { action, ...extra })
@@ -739,6 +825,144 @@ function ProposalCard({ proposal: p, onChanged }: { proposal: GhostProposal; onC
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Maintenance — priority, photo read-outs, the drafted technician email */}
+        {p.kind === 'maintenance_task' && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              {p.payload.priority && (
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wide ${MAINT_BADGE[p.payload.priority] ?? 'bg-zinc-100 text-zinc-600'}`}>
+                  {MAINT_LABEL[p.payload.priority] ?? p.payload.priority}
+                </span>
+              )}
+              <span className="text-sm font-medium text-zinc-800">{p.payload.title ?? '—'}</span>
+            </div>
+
+            {p.payload.summary && <p className="text-sm text-zinc-600">{p.payload.summary}</p>}
+
+            {(p.payload.photo_descriptions?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 mb-1">
+                  What the photos show
+                </p>
+                <ul className="space-y-1">
+                  {p.payload.photo_descriptions!.map((d, i) => (
+                    <li key={i} className="text-xs text-zinc-600 bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-1.5">
+                      📷 {d}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {p.payload.email_body && (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-500 mb-1">
+                  Ghost would email the technician
+                </p>
+                <div className="rounded-lg bg-violet-50 border border-violet-100 px-3 py-2 text-sm text-violet-900">
+                  {p.payload.email_subject && (
+                    <p className="font-semibold mb-1">{p.payload.email_subject}</p>
+                  )}
+                  <p className="whitespace-pre-wrap">{p.payload.email_body}</p>
+                </div>
+                <p className="text-[11px] text-zinc-400 mt-1">
+                  To: {p.payload.recipient ?? 'set MAINTENANCE_EMAIL_RECIPIENT'} · sending stays human-approved (one click below).
+                </p>
+              </div>
+            )}
+
+            {/* Approve & send — the only outward action, two-step confirm */}
+            {p.status === 'executed' ? (
+              <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 inline-flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Email sent
+                {p.outcome?.sent_at ? ` · ${formatAmsterdamTime(p.outcome.sent_at)}` : ''}
+              </p>
+            ) : p.payload.email_body ? (
+              <button
+                onClick={() => {
+                  if (!confirmSend) { setConfirmSend(true); return }
+                  act('send')
+                }}
+                disabled={busy === 'send'}
+                className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors disabled:opacity-50 ${
+                  confirmSend ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-zinc-900 text-white hover:bg-zinc-800'
+                }`}
+              >
+                {busy === 'send' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                {confirmSend ? 'Confirm — send email' : 'Approve & send email'}
+              </button>
+            ) : null}
+          </div>
+        )}
+
+        {/* Stock reorder — items low, the drafted supplier email, one-click send */}
+        {p.kind === 'stock_reorder' && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              {p.payload.urgency && (
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wide ${
+                  p.payload.urgency === 'urgent' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                }`}>
+                  {p.payload.urgency === 'urgent' ? 'Out of stock' : 'Running low'}
+                </span>
+              )}
+              <span className="text-sm font-medium text-zinc-800">
+                {p.payload.supplier_name ? `Reorder from ${p.payload.supplier_name}` : 'Stock reorder'}
+              </span>
+            </div>
+
+            {(p.payload.items?.length ?? 0) > 0 && (
+              <ul className="space-y-1">
+                {p.payload.items!.map((it, i) => (
+                  <li key={i} className="text-xs text-zinc-600 bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-1.5">
+                    {it.quantity ? `${it.quantity}× ` : ''}{it.name}{it.unit ? ` ${it.unit}` : ''}
+                    {it.pack_size && it.pack_unit ? ` · ${it.pack_size} ${it.pack_unit} each` : ''}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {p.payload.email_body && (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-500 mb-1">
+                  Ghost would email the supplier
+                </p>
+                <div className="rounded-lg bg-violet-50 border border-violet-100 px-3 py-2 text-sm text-violet-900">
+                  {p.payload.email_subject && (
+                    <p className="font-semibold mb-1">{p.payload.email_subject}</p>
+                  )}
+                  <p className="whitespace-pre-wrap">{p.payload.email_body}</p>
+                </div>
+                <p className="text-[11px] text-zinc-400 mt-1">
+                  To: {p.payload.recipient ?? 'set STOCK_EMAIL_RECIPIENT'} · sending stays human-approved (one click below).
+                </p>
+              </div>
+            )}
+
+            {/* Approve & send — same two-step confirm as maintenance */}
+            {p.status === 'executed' ? (
+              <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 inline-flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Email sent
+                {p.outcome?.sent_at ? ` · ${formatAmsterdamTime(p.outcome.sent_at)}` : ''}
+              </p>
+            ) : p.payload.email_body ? (
+              <button
+                onClick={() => {
+                  if (!confirmSend) { setConfirmSend(true); return }
+                  act('send')
+                }}
+                disabled={busy === 'send'}
+                className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors disabled:opacity-50 ${
+                  confirmSend ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-zinc-900 text-white hover:bg-zinc-800'
+                }`}
+              >
+                {busy === 'send' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                {confirmSend ? 'Confirm — send email' : 'Approve & send email'}
+              </button>
+            ) : null}
           </div>
         )}
 

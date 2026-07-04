@@ -3,6 +3,7 @@ import type { GoogleGenerativeAI } from '@google/generative-ai'
 import { OFF_COURSE_SYSTEM_PROMPT, LOCALES, type Locale } from './context'
 import { flattenKeywords } from './seo-keywords'
 import { CLAUDE_MODEL, GEMINI_MODEL, getClaude, getGemini } from './clients'
+import { fetchImageAsBase64 } from './describe-image'
 import { buildSeoFilename } from '../images/seo-filename'
 
 export type QualityIssue = 'blurry' | 'too_dark' | 'too_bright' | 'low_resolution' | 'bad_composition' | 'watermarked'
@@ -56,7 +57,7 @@ export async function generateImageMetadata(
   opts: GenerateOptions = {},
 ): Promise<ImageMetadata> {
   const fetchImpl = opts.fetchImpl ?? fetch
-  const { base64, mimeType } = await fetchImageAsBase64(imageUrl, fetchImpl)
+  const { base64, mimeType } = await fetchImageAsBase64(imageUrl, undefined, fetchImpl)
   return generateImageMetadataFromBase64(base64, mimeType, opts)
 }
 
@@ -105,19 +106,6 @@ async function generateImageMetadataFromBase64(
     seo_filename: buildSeoFilename(visionResult.primary_keywords),
     quality_issues: visionResult.quality_issues,
   }
-}
-
-async function fetchImageAsBase64(
-  url: string,
-  fetchImpl: typeof fetch,
-): Promise<{ base64: string; mimeType: string }> {
-  const res = await fetchImpl(url)
-  if (!res.ok) {
-    throw new Error(`Failed to fetch image: ${res.status} ${res.statusText}`)
-  }
-  const mimeType = res.headers.get('content-type') ?? 'image/jpeg'
-  const buf = Buffer.from(await res.arrayBuffer())
-  return { base64: buf.toString('base64'), mimeType }
 }
 
 async function describeWithGemini(args: {

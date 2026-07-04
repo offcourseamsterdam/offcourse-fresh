@@ -8,7 +8,7 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }))
 vi.mock('@/lib/search/fetch-search-results', () => ({ fetchSearchResults: vi.fn() }))
 vi.mock('@/lib/fareharbor/client', () => ({ getFareHarborClient: vi.fn() }))
 
-import { resolveBookingSlot, toVerdict, abstainVerdict, parseOption, dryRunBookingProposal, checkBookingViability, PLACEHOLDER_CONTACT } from './dry-run'
+import { resolveBookingSlot, toVerdict, abstainVerdict, parseOption, dryRunBookingProposal, checkBookingViability, rankAlternatives, parseTimeToMinutes, PLACEHOLDER_CONTACT } from './dry-run'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchSearchResults } from '@/lib/search/fetch-search-results'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
@@ -332,5 +332,193 @@ describe('checkBookingViability', () => {
     vi.mocked(getFareHarborClient).mockReturnValue(fh.client as never)
     await checkBookingViability(BOOKING)
     expect(fh.validateBooking.mock.calls[0][1].contact).toEqual(PLACEHOLDER_CONTACT)
+  })
+})
+
+// ── parseTimeToMinutes ───────────────────────────────────────────────────────
+
+describe('parseTimeToMinutes', () => {
+  it('parses am/pm and 24h formats', () => {
+    expect(parseTimeToMinutes('5pm')).toBe(1020)
+    expect(parseTimeToMinutes('9am')).toBe(540)
+    expect(parseTimeToMinutes('12pm')).toBe(720)
+    expect(parseTimeToMinutes('12am')).toBe(0)
+    expect(parseTimeToMinutes('2:30pm')).toBe(870)
+    expect(parseTimeToMinutes('14:00')).toBe(840)
+  })
+  it('returns null for unparseable input', () => {
+    expect(parseTimeToMinutes('soon')).toBeNull()
+  })
+})
+
+// ── rankAlternatives (Phase 1: pure ranking, no I/O) ─────────────────────────
+
+function rankCt(over: Partial<SearchResult['availableSlots'][0]['customerTypes'][0]> = {}) {
+  return { pk: 11, totalCapacity: 1, customerTypePk: 1, name: 'Diana - 2 Hours', boatId: 'diana' as const, minimumParty: 1, maximumParty: 8, priceCents: 40000, durationMinutes: 120, ...over }
+}
+function rankSlot(pk: number, startTime: string, customerTypes: ReturnType<typeof rankCt>[], date = '2026-06-20') {
+  return { pk, startTime, startAt: `${date}T12:00:00Z`, endAt: `${date}T14:00:00Z`, headline: startTime, capacity: 1, customerTypes }
+}
+function rankResults(slots: ReturnType<typeof rankSlot>[], date = '2026-06-20'): SearchResult[] {
+  return [{ listing: { id: 'L1', slug: 'private-hidden-gems-cruise', title: 'Private Cruise', category: 'private' } as SearchResult['listing'], availableSlots: slots, date, guests: 4 }]
+}
+
+const RANK_INPUT = { listing_slug: 'private-hidden-gems-cruise', date: '2026-06-20', time: '5pm', guests: 4, option: 'Diana - 2 Hours' }
+const REQ_MIN = parseTimeToMinutes('5pm') // 1020
+
+describe('rankAlternatives', () => {
+  it('ranks same-boat times before the other boat (nearest+later first) and skips other durations', () => {
+    const ranked = rankAlternatives(
+      rankResults([
+        rankSlot(101, '6pm', [rankCt({ pk: 1101 })]), // same boat, +1h → same_day_later
+        rankSlot(102, '3pm', [rankCt({ pk: 1102 })]), // same boat, −2h → same_day_earlier
+        rankSlot(103, '5pm', [rankCt({ pk: 1103, boatId: 'curacao', name: 'Curaçao - 2 Hours', priceCents: 33000 })]), // other_boat
+        rankSlot(104, '5pm', [rankCt({ pk: 1104, name: 'Diana - 1.5 Hours', durationMinutes: 90 })]), // different duration → dropped
+      ]),
+      RANK_INPUT,
+      REQ_MIN,
+    )
+    expect(ranked.map(a => ({ time: a.time, kind: a.kind, boat: a.boat_id }))).toEqual([
+      { time: '6pm', kind: 'same_day_later', boat: 'diana' },
+      { time: '3pm', kind: 'same_day_earlier', boat: 'diana' },
+      { time: '5pm', kind: 'other_boat', boat: 'curacao' },
+    ])
+  })
+
+  it('carries resolution pks + an unvalidated price estimate', () => {
+    const ranked = rankAlternatives(rankResults([rankSlot(101, '6pm', [rankCt({ pk: 1101 })])]), RANK_INPUT, REQ_MIN)
+    expect(ranked[0]).toMatchObject({ price_eur: 400, price_is_quote: false, avail_pk: 101, customer_type_rate_pk: 1101 })
+  })
+
+  it('de-dupes identical (date, time, boat, duration) candidates', () => {
+    const ranked = rankAlternatives(
+      rankResults([rankSlot(201, '6pm', [rankCt({ pk: 2101 })]), rankSlot(202, '6pm', [rankCt({ pk: 2102 })])]),
+      RANK_INPUT,
+      REQ_MIN,
+    )
+    expect(ranked).toHaveLength(1)
+  })
+
+  it('labels a different date as other_day and only keeps the same product', () => {
+    const ranked = rankAlternatives(
+      rankResults(
+        [
+          rankSlot(301, '5pm', [rankCt({ pk: 3101 })], '2026-06-21'), // Diana 2h other day → kept
+          rankSlot(302, '5pm', [rankCt({ pk: 3102, boatId: 'curacao', name: 'Curaçao - 2 Hours' })], '2026-06-21'), // other boat other day → dropped
+        ],
+        '2026-06-21',
+      ),
+      RANK_INPUT,
+      REQ_MIN,
+    )
+    expect(ranked).toHaveLength(1)
+    expect(ranked[0]).toMatchObject({ kind: 'other_day', date: '2026-06-21', boat_id: 'diana' })
+  })
+
+  it('returns [] when the listing is not in the results', () => {
+    expect(rankAlternatives(rankResults([rankSlot(1, '6pm', [rankCt()])]), { ...RANK_INPUT, listing_slug: 'nope' }, REQ_MIN)).toEqual([])
+  })
+})
+
+// ── checkBookingViability with alternatives (Phase 2: the finder) ─────────────
+
+/** A FareHarbor stub whose validate verdict depends on which availPk is asked. */
+function fhByPk(map: Record<number, FHValidationResult>, fallback: FHValidationResult = { is_bookable: false }) {
+  const validateBooking = vi.fn(async (availPk: number) => map[availPk] ?? fallback)
+  return { client: { validateBooking }, validateBooking }
+}
+
+const ALT_INPUT = { listing_slug: 'private-hidden-gems-cruise', date: '2026-06-20', time: '5pm', guests: 4, option: 'Diana - 2 Hours' }
+
+describe('checkBookingViability — alternatives finder', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('skip-first: a bookable slot gets NO alternatives and only one validate call', async () => {
+    vi.mocked(fetchSearchResults).mockResolvedValue(rankResults([rankSlot(100, '5pm', [rankCt({ pk: 1100 })])]) as never)
+    const fh = fhByPk({ 100: { is_bookable: true, receipt_total: 40000 } })
+    vi.mocked(getFareHarborClient).mockReturnValue(fh.client as never)
+
+    const v = await checkBookingViability(ALT_INPUT, { withAlternatives: true })
+    expect(v.is_bookable).toBe(true)
+    expect(v.alternatives).toBeUndefined()
+    expect(fh.validateBooking).toHaveBeenCalledTimes(1) // no extra work on the happy path
+  })
+
+  it('without withAlternatives, a not-bookable slot still gets no alternatives (one validate)', async () => {
+    vi.mocked(fetchSearchResults).mockResolvedValue(
+      rankResults([rankSlot(100, '5pm', [rankCt({ pk: 1100 })]), rankSlot(101, '6pm', [rankCt({ pk: 1101 })])]) as never,
+    )
+    const fh = fhByPk({ 100: { is_bookable: false, error: 'sold out' }, 101: { is_bookable: true, receipt_total: 40000 } })
+    vi.mocked(getFareHarborClient).mockReturnValue(fh.client as never)
+
+    const v = await checkBookingViability(ALT_INPUT) // opts omitted
+    expect(v.is_bookable).toBe(false)
+    expect(v.alternatives).toBeUndefined()
+    expect(fh.validateBooking).toHaveBeenCalledTimes(1)
+  })
+
+  it('caps same-day validate ATTEMPTS and returns validated, priced alternatives', async () => {
+    vi.mocked(fetchSearchResults).mockImplementation(async (date: string) =>
+      (date === '2026-06-20'
+        ? rankResults([
+            rankSlot(100, '5pm', [rankCt({ pk: 1100 })]), // asked slot — resolves, validate says no
+            rankSlot(101, '6pm', [rankCt({ pk: 1101 })]),
+            rankSlot(103, '7pm', [rankCt({ pk: 1103 })]),
+            rankSlot(102, '3pm', [rankCt({ pk: 1102 })]),
+          ])
+        : []) as never,
+    )
+    const fh = fhByPk({
+      100: { is_bookable: false, error: 'sold out' },
+      101: { is_bookable: true, receipt_total: 40000 },
+      103: { is_bookable: true, receipt_total: 40000 },
+      102: { is_bookable: true, receipt_total: 40000 },
+    })
+    vi.mocked(getFareHarborClient).mockReturnValue(fh.client as never)
+
+    const v = await checkBookingViability(ALT_INPUT, { withAlternatives: true })
+    expect(v.is_bookable).toBe(false)
+    // top-2 ranked same-day get validated (cap=2): 6pm then 7pm; 3pm never tried
+    expect(v.alternatives?.map(a => a.time)).toEqual(['6pm', '7pm'])
+    expect(v.alternatives?.every(a => a.price_is_quote && a.price_eur === 400)).toBe(true)
+    // 1 primary + 2 same-day attempts; other-day fetches return nothing → no extra validates
+    expect(fh.validateBooking).toHaveBeenCalledTimes(3)
+  })
+
+  it('fail-closed: a candidate FareHarbor rejects is dropped (not surfaced)', async () => {
+    vi.mocked(fetchSearchResults).mockImplementation(async (date: string) =>
+      (date === '2026-06-20'
+        ? rankResults([
+            rankSlot(100, '5pm', [rankCt({ pk: 1100 })]),
+            rankSlot(101, '6pm', [rankCt({ pk: 1101 })]), // nearest, but FareHarbor says no
+            rankSlot(102, '3pm', [rankCt({ pk: 1102 })]), // further, but bookable
+          ])
+        : []) as never,
+    )
+    const fh = fhByPk({
+      100: { is_bookable: false, error: 'sold out' },
+      101: { is_bookable: false, error: 'just went' },
+      102: { is_bookable: true, receipt_total: 40000 },
+    })
+    vi.mocked(getFareHarborClient).mockReturnValue(fh.client as never)
+
+    const v = await checkBookingViability(ALT_INPUT, { withAlternatives: true })
+    expect(v.alternatives?.map(a => a.time)).toEqual(['3pm']) // 6pm dropped, 3pm kept
+  })
+
+  it('probes other days only when same-day yields nothing', async () => {
+    vi.mocked(fetchSearchResults).mockImplementation(async (date: string) => {
+      if (date === '2026-06-20') return rankResults([rankSlot(100, '5pm', [rankCt({ pk: 1100 })])]) as never // only the asked (sold-out) slot
+      if (date === '2026-06-21') return rankResults([rankSlot(200, '5pm', [rankCt({ pk: 2100 })], '2026-06-21')], '2026-06-21') as never
+      return [] as never
+    })
+    const fh = fhByPk({ 100: { is_bookable: false, error: 'sold out' }, 200: { is_bookable: true, receipt_total: 41000 } })
+    vi.mocked(getFareHarborClient).mockReturnValue(fh.client as never)
+
+    const v = await checkBookingViability(ALT_INPUT, { withAlternatives: true })
+    expect(v.alternatives).toHaveLength(1)
+    expect(v.alternatives?.[0]).toMatchObject({ kind: 'other_day', date: '2026-06-21', price_eur: 410, price_is_quote: true })
   })
 })

@@ -47,6 +47,20 @@ any FareHarbor logic.
 - **Atomic idempotency.** The `shadow`→`booking` claim (conditional UPDATE)
   closes the double-click / concurrent double-booking window; the claim is
   released back to `shadow` if the booking fails so it can be retried.
+  (Migration `076_agent_proposals_booking_status.sql` adds `'booking'` to the
+  `agent_proposals` status CHECK — without it the claim violates the constraint
+  and the approve click 500s before reaching FareHarbor.)
+
+## Tests
+
+- `src/app/api/admin/ghost/proposals/[id]/route.test.ts` — the `book` action
+  orchestration: happy path (claim → money-path reuse with cookie forwarded →
+  mark executed), the guards that must never fire a real booking (already
+  executed, wrong kind, prep failure, **lost atomic claim**), and
+  claim-release-on-failure (FareHarbor rejects / fetch throws → back to `shadow`).
+- `src/lib/ghost/ops-drafters.test.ts` — `draftCateringOrders` and
+  `draftTomorrowSchedule`: dedupe-skip (no token spend), no-work-skip, happy-path
+  shadow insert shape, malformed-output skip, and error-swallowing (cron-safe).
 
 ## Known limitations (deliberate, deferred)
 
@@ -76,6 +90,61 @@ demoted to an ops dashboard):
   or send something else) is captured automatically on send (the messages
   route attaches your reply to the draft's `outcome`) and now visible in the
   inbox, not just on the dev page.
+
+## Availability-aware booking proposals (alternatives)
+
+When the proposed slot isn't bookable, the co-pilot no longer dead-ends at "sold
+out" — it surfaces up to 3 ranked, **already-validated** nearby options (nearest
+earlier/later on the same boat, the other boat, or the same product another day),
+and the agent offers them in its reply. Each option is one click to book through
+the same money path.
+
+- **Where the smarts live** — `checkBookingViability(input, { withAlternatives })`
+  in `src/lib/ghost/dry-run.ts`. Skip-first: alternatives are built ONLY when the
+  asked slot won't book, so the happy path does zero extra work. Same-day
+  candidates come from the availability already fetched (no extra FareHarbor GETs);
+  the finder validates at most `ALT_VALIDATE_MAX` of them and probes at most
+  `ALT_MAX_DAYS` other days, one validate each — a hard FareHarbor-cost ceiling.
+  `rankAlternatives()` is a pure, unit-tested ranker (same boat first, nearest
+  time, later-preferred; then other boat; then other day).
+- **The agent self-corrects in one pass** — `check_booking` (`tools.ts`) returns
+  the validated `alternatives` inside the same tool result, so the agent's reply
+  can't drift from what's actually bookable. RULES tell it to offer the options
+  (or re-propose onto the best one) and never invent a slot.
+- **Stored, not actioned** — alternatives live in `payload.verdict.alternatives`
+  (status stays `shadow`). The narrowed inbox query (`payload->verdict`) already
+  carries them; no schema change.
+- **Booking one** — the card's per-option "Use this" POSTs
+  `{ action: 'book', alternative_index }`. The route re-derives the booking from
+  the **stored** alternative (its pks are hints only) and runs the same atomic
+  claim + `/booking-flow/book` money path, which re-resolves and re-validates
+  live. An out-of-range index is refused before any claim.
+
+Safety is unchanged: still validate-only, still exact-match-or-abstain, still no
+autonomous booking (every option needs the two-step human confirm). Tests:
+`rankAlternatives` + the finder in `dry-run.test.ts`; the `alternative_index`
+book path in `proposals/[id]/route.test.ts`.
+
+## Catering / snacks in chat (the `list_extras` tool)
+
+The conversation agent can now answer "what snacks/drinks can we get?" with the
+**real** menu instead of guessing. `list_extras` (`src/lib/ghost/tools.ts`) is a
+read-only tool: given a cruise slug it resolves the listing, pulls active
+food + drinks `extras`, applies the same per-listing/global scope filter as the
+public extras upsell page, and returns a compact priced menu (`extraPriceLabel`
++ `compactExtras`, priced with `fmtEuros` so €10.80 isn't rounded to €11). It's
+added to the inbox agent's allow-list, and a RULES line tells the agent to use it
+for catering questions, offer the real items, and point customers to the booking
+page / checkout to select (no payment until the day) — never invent menu items.
+
+**Ghost-rule decision:** this is a read-only *lookup* tool, not a new proposal
+kind. The agent describing the menu is safe; **ordering** catering stays the
+existing `catering_order` shadow drafter (supplier-facing, human-approved) — a
+money/supplier action that never auto-executes. Letting a customer pick in chat
+and the agent draft an extras order for approval is a future extension (same
+shadow→approve pattern as booking alternatives). Tests: `extraPriceLabel` +
+`compactExtras` in `src/lib/ghost/tools.test.ts`; the DB query path verified
+against live data.
 
 ## How to extend
 
