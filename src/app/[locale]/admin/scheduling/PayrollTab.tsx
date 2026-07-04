@@ -18,9 +18,14 @@ interface PayrollEntry extends PayrollTimeEntry {
   source: string
   note: string | null
 }
+interface PayrollBonus {
+  staff_id: string
+  amount_cents: number
+}
 interface PayrollPayload {
   entries: PayrollEntry[]
   staff: { id: string; name: string; role: string }[]
+  bonuses: PayrollBonus[]
   from: string
   to: string
 }
@@ -56,18 +61,29 @@ export function PayrollTab() {
     () => (data ? aggregatePayroll(data.entries, data.staff) : []),
     [data],
   )
+
+  // Aggregate review bonuses per staff for the selected period.
+  const bonusByStaff = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const b of data?.bonuses ?? []) {
+      map.set(b.staff_id, (map.get(b.staff_id) ?? 0) + b.amount_cents)
+    }
+    return map
+  }, [data])
+
   const totals = useMemo(
     () =>
       lines.reduce(
         (acc, l) => ({
           minutes: acc.minutes + l.totalMinutes,
           pay: acc.pay + l.totalPayCents,
+          bonus: acc.bonus + (bonusByStaff.get(l.staffId) ?? 0),
           open: acc.open + l.openCount,
           flagged: acc.flagged + l.flaggedCount,
         }),
-        { minutes: 0, pay: 0, open: 0, flagged: 0 },
+        { minutes: 0, pay: 0, bonus: 0, open: 0, flagged: 0 },
       ),
-    [lines],
+    [lines, bonusByStaff],
   )
 
   const flaggedEntries = useMemo(
@@ -116,37 +132,52 @@ export function PayrollTab() {
               <th className="px-4 py-3 text-right">Shifts</th>
               <th className="px-4 py-3 text-right">Hours</th>
               <th className="px-4 py-3 text-right">Pay</th>
+              <th className="px-4 py-3 text-right">Bonus</th>
+              <th className="px-4 py-3 text-right">Total</th>
               <th className="px-4 py-3 text-right">Review</th>
             </tr>
           </thead>
           <tbody>
             {lines.length === 0 && !isLoading && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-zinc-400">
+                <td colSpan={8} className="px-4 py-8 text-center text-zinc-400">
                   No hours logged this month.
                 </td>
               </tr>
             )}
-            {lines.map(l => (
-              <tr key={l.staffId} className="border-b border-zinc-50 hover:bg-zinc-50">
-                <td className="px-4 py-3 font-medium text-zinc-900">{l.name}</td>
-                <td className="px-4 py-3 text-zinc-500 capitalize">{l.role}</td>
-                <td className="px-4 py-3 text-right text-zinc-700">{l.entryCount}</td>
-                <td className="px-4 py-3 text-right text-zinc-700">{formatMinutes(l.totalMinutes)}</td>
-                <td className="px-4 py-3 text-right font-medium text-zinc-900">{fmtEuros(l.totalPayCents)}</td>
-                <td className="px-4 py-3 text-right">
-                  {l.openCount > 0 && (
-                    <span className="inline-block text-xs text-amber-700">{l.openCount} open</span>
-                  )}
-                  {l.flaggedCount > 0 && (
-                    <span className="inline-block text-xs text-red-600 ml-2">{l.flaggedCount} flagged</span>
-                  )}
-                  {l.openCount === 0 && l.flaggedCount === 0 && (
-                    <span className="text-xs text-zinc-300">—</span>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {lines.map(l => {
+              const bonus = bonusByStaff.get(l.staffId) ?? 0
+              return (
+                <tr key={l.staffId} className="border-b border-zinc-50 hover:bg-zinc-50">
+                  <td className="px-4 py-3 font-medium text-zinc-900">{l.name}</td>
+                  <td className="px-4 py-3 text-zinc-500 capitalize">{l.role}</td>
+                  <td className="px-4 py-3 text-right text-zinc-700">{l.entryCount}</td>
+                  <td className="px-4 py-3 text-right text-zinc-700">{formatMinutes(l.totalMinutes)}</td>
+                  <td className="px-4 py-3 text-right font-medium text-zinc-900">{fmtEuros(l.totalPayCents)}</td>
+                  <td className="px-4 py-3 text-right">
+                    {bonus > 0 ? (
+                      <span className="text-xs font-medium text-amber-700">+{fmtEuros(bonus)}</span>
+                    ) : (
+                      <span className="text-xs text-zinc-300">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right font-semibold text-zinc-900">
+                    {fmtEuros(l.totalPayCents + bonus)}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {l.openCount > 0 && (
+                      <span className="inline-block text-xs text-amber-700">{l.openCount} open</span>
+                    )}
+                    {l.flaggedCount > 0 && (
+                      <span className="inline-block text-xs text-red-600 ml-2">{l.flaggedCount} flagged</span>
+                    )}
+                    {l.openCount === 0 && l.flaggedCount === 0 && (
+                      <span className="text-xs text-zinc-300">—</span>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
           {lines.length > 0 && (
             <tfoot>
@@ -154,6 +185,10 @@ export function PayrollTab() {
                 <td className="px-4 py-3" colSpan={3}>Total</td>
                 <td className="px-4 py-3 text-right">{formatMinutes(totals.minutes)}</td>
                 <td className="px-4 py-3 text-right">{fmtEuros(totals.pay)}</td>
+                <td className="px-4 py-3 text-right text-amber-700">
+                  {totals.bonus > 0 ? `+${fmtEuros(totals.bonus)}` : '—'}
+                </td>
+                <td className="px-4 py-3 text-right">{fmtEuros(totals.pay + totals.bonus)}</td>
                 <td className="px-4 py-3" />
               </tr>
             </tfoot>

@@ -13,7 +13,7 @@ export async function fetchPayrollRange(
   from: string,
   to: string,
 ) {
-  const [entriesRes, staffRes] = await Promise.all([
+  const [entriesRes, staffRes, bonusesRes] = await Promise.all([
     supabase
       .from('time_entries')
       .select('id, staff_id, clock_in_at, clock_out_at, hourly_rate_cents, flag, source, note, shift_id')
@@ -21,9 +21,18 @@ export async function fetchPayrollRange(
       .lte('clock_in_at', `${to}T23:59:59.999Z`)
       .order('clock_in_at', { ascending: true }),
     supabase.from('staff').select('id, name, role').order('name', { ascending: true }),
+    supabase
+      .from('review_bonuses')
+      .select('staff_id, amount_cents')
+      .gte('awarded_at', `${from}T00:00:00.000Z`)
+      .lte('awarded_at', `${to}T23:59:59.999Z`),
   ])
   if (entriesRes.error) throw new Error(entriesRes.error.message)
   if (staffRes.error) throw new Error(staffRes.error.message)
 
-  return { entries: entriesRes.data ?? [], staff: staffRes.data ?? [] }
+  return {
+    entries: entriesRes.data ?? [],
+    staff: staffRes.data ?? [],
+    bonuses: bonusesRes.data ?? [],
+  }
 }

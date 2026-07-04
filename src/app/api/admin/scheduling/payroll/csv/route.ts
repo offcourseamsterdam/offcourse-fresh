@@ -23,8 +23,8 @@ export async function GET(request: NextRequest) {
     }
 
     const supabase = createAdminClient()
-    const { entries, staff } = await fetchPayrollRange(supabase, from, to)
-    const csv = buildPayrollCsv(entries, staff)
+    const { entries, staff, bonuses } = await fetchPayrollRange(supabase, from, to)
+    const csv = buildPayrollCsv(entries, staff, bonuses)
 
     return new NextResponse(csv, {
       status: 200,

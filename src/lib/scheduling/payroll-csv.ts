@@ -18,6 +18,12 @@ export interface CsvTimeEntry {
   note: string | null
 }
 
+/** A review bonus earned in the period (one row per mention; €5 each). */
+export interface CsvBonus {
+  staff_id: string
+  amount_cents: number
+}
+
 /** RFC-4180 field escaping: quote when the value has comma, quote, or newline. */
 function csvField(value: string): string {
   if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`
@@ -36,7 +42,11 @@ const HEADERS = [
   'Hours', 'Rate (EUR)', 'Pay (EUR)', 'Source', 'Flag', 'Note',
 ]
 
-export function buildPayrollCsv(entries: CsvTimeEntry[], staff: PayrollStaff[]): string {
+export function buildPayrollCsv(
+  entries: CsvTimeEntry[],
+  staff: PayrollStaff[],
+  bonuses: CsvBonus[] = [],
+): string {
   const byId = new Map(staff.map(s => [s.id, s]))
   const rows: string[] = [HEADERS.join(',')]
 
@@ -58,6 +68,42 @@ export function buildPayrollCsv(entries: CsvTimeEntry[], staff: PayrollStaff[]):
       e.source,
       e.flag ?? '',
       e.note ?? '',
+    ]
+    rows.push(row.map(v => csvField(String(v))).join(','))
+  }
+
+  // Review bonuses — one summary row per staff member who earned any in the
+  // period. Without these the Pay column under-totals the on-screen payroll
+  // (which folds bonuses into each staffer's Total), so a bookkeeper paying off
+  // the CSV would silently underpay by exactly the bonus amount.
+  const bonusByStaff = new Map<string, { total: number; count: number }>()
+  for (const b of bonuses) {
+    const agg = bonusByStaff.get(b.staff_id) ?? { total: 0, count: 0 }
+    agg.total += b.amount_cents
+    agg.count += 1
+    bonusByStaff.set(b.staff_id, agg)
+  }
+
+  const bonusLines = [...bonusByStaff.entries()]
+    .map(([staffId, agg]) => {
+      const s = byId.get(staffId)
+      return { name: s?.name ?? 'Unknown', role: s?.role ?? '', ...agg }
+    })
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  for (const bl of bonusLines) {
+    const row = [
+      bl.name,
+      bl.role,
+      '',                              // Date
+      '',                              // Clock in
+      '',                              // Clock out
+      '',                              // Hours
+      '',                              // Rate
+      euros(bl.total),                 // Pay (the bonus total)
+      'review_bonus',                  // Source
+      '',                              // Flag
+      `${bl.count} review mention${bl.count === 1 ? '' : 's'}`, // Note
     ]
     rows.push(row.map(v => csvField(String(v))).join(','))
   }

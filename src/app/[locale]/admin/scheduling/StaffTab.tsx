@@ -7,6 +7,7 @@ import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { fmtEuros } from '@/lib/utils'
 import { StaffFormModal, type StaffRow, type CaptainProfile } from './StaffFormModal'
+import { StaffDetailPanel } from './StaffDetailPanel'
 
 export function StaffTab() {
   const { data, isLoading, error, refresh } = useAdminFetch<{
@@ -18,6 +19,7 @@ export function StaffTab() {
 
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<StaffRow | null>(null)
+  const [viewing, setViewing] = useState<StaffRow | null>(null)
 
   function openCreate() {
     setEditing(null)
@@ -26,7 +28,12 @@ export function StaffTab() {
 
   function openEdit(s: StaffRow) {
     setEditing(s)
+    setViewing(null)
     setShowForm(true)
+  }
+
+  function openDetail(s: StaffRow) {
+    setViewing(s)
   }
 
   return (
@@ -72,7 +79,11 @@ export function StaffTab() {
             </thead>
             <tbody>
               {staff.map(s => (
-                <tr key={s.id} className="border-b border-zinc-50 last:border-0 hover:bg-zinc-50/50">
+                <tr
+                  key={s.id}
+                  className="border-b border-zinc-50 last:border-0 hover:bg-zinc-50/50 cursor-pointer"
+                  onClick={() => openDetail(s)}
+                >
                   <td className="px-4 py-3">
                     <span className="font-medium text-zinc-900">{s.name}</span>
                     {s.user_id && (
@@ -99,7 +110,7 @@ export function StaffTab() {
                       {s.is_active ? 'active' : 'inactive'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                     <button
                       onClick={() => openEdit(s)}
                       className="p-2.5 rounded hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 transition-colors"
@@ -121,6 +132,14 @@ export function StaffTab() {
           captainProfiles={captainProfiles}
           onClose={() => setShowForm(false)}
           onSaved={() => { setShowForm(false); refresh() }}
+        />
+      )}
+
+      {viewing && !showForm && (
+        <StaffDetailPanel
+          staff={viewing}
+          onClose={() => setViewing(null)}
+          onEdit={() => openEdit(viewing)}
         />
       )}
     </div>
