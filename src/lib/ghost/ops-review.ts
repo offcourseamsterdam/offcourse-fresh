@@ -1,5 +1,6 @@
 import { runAgenticLoop } from './agent-runtime'
 import { buildGhostTools } from './tools'
+import { OPS_REVIEW_SYSTEM, OPS_REVIEW_INSTRUCTIONS } from './rulebook'
 import { CLAUDE_DRAFTER_MODEL } from '@/lib/ai/clients'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { deriveOperationalProfile } from '@/lib/ops/profile'
@@ -387,28 +388,14 @@ export async function draftOpsReview(): Promise<'drafted' | 'skipped'> {
 
     const result = await runAgenticLoop({
       feature: 'ghost_ops_review',
-      system:
-        'You are the shadow operations optimizer for Off Course Amsterdam, an electric canal boat company with two boats (Diana, 8 guests; Curaçao, 12 guests). You review tomorrow\'s operational plan and recommend the most profitable changes. You are precise, numeric, and honest: an already-optimal day is a good outcome, not a failure.',
+      system: OPS_REVIEW_SYSTEM,
       tools: buildGhostTools().filter(t => ['get_schedule', 'search_availability'].includes(t.name)),
       submitTools: [SUBMIT_OPS_REVIEW],
       prompt: `Review tomorrow's (${tomorrow}) operational plan. This is a SHADOW review — nothing executes; the planner reads your recommendations on the Ghost page.
 
 ${factsBlock}
 
-HARD RULES (enforced by the system, repeated so you reason within them)
-- One captain sails one boat per shift — never propose splitting a captain across boats.
-- PRIVATE cruises are protected: they are never merge candidates (already excluded from MERGE CANDIDATES above). If touching one is unavoidable, say so with requires_guest_contact: true and guest_impact honestly set — a human decides.
-- Prefer the least invasive option: an internal shuffle (no guest notices) beats anything requiring guest contact.
-- Every € you cite must come from the FACTS above — never invent numbers. est_saving_cents derives from the printed idle costs / avoided second-boat staffing.
-- If the plan is already good, submit exactly one recommendation of type 'none' explaining why (cite the numbers that show it's tight).
-
-WHAT TO LOOK FOR, in order of value
-1. maintenance_conflict — a boat scheduled to sail with an open blocking task is a cancelled cruise waiting to happen.
-2. staffing_level — open shifts without a captain (revenue at risk), or more captains scheduled than boats need.
-3. consolidate_boat — a merge candidate that would take a whole boat off the water (one captain fewer).
-4. consolidate_gap — a long paid gap that a time shift (shared cruises only) could close.
-
-You may call get_schedule for surrounding days (context on captain workloads) or search_availability if you need to know whether a slot change even has room. Then submit_ops_review.`,
+${OPS_REVIEW_INSTRUCTIONS}`,
     })
     if (!result) return 'skipped'
 

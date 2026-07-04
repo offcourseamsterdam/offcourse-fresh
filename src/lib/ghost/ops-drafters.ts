@@ -5,6 +5,17 @@ import { filterCateringItems, hasCatering, isDrinksOnlyBooking, type ExtrasLineI
 import { extrasPageUrl } from '@/lib/booking/extras-token'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { amsterdamToday, formatAmsterdamTime } from '@/lib/utils'
+import { recentScheduleLessons } from './evaluate'
+import {
+  SCHEDULE_DAY_PROMPT,
+  SCHEDULE_DAY_JSON,
+  CATERING_ORDER_PROMPT,
+  CATERING_ORDER_JSON,
+  CATERING_UPSELL_PROMPT,
+  CATERING_UPSELL_JSON,
+  CATERING_LOOKAHEAD_DAYS,
+  UPSELL_LEAD_DAYS,
+} from './rulebook'
 
 /**
  * Ghost ops drafters — shadow proposals for the operations section
@@ -108,22 +119,17 @@ export async function draftTomorrowSchedule(): Promise<'drafted' | 'skipped'> {
       messages: [
         {
           role: 'user',
-          content: `You are the shadow scheduling assistant for Off Course Amsterdam (electric canal boats). Propose a captain for each OPEN shift tomorrow (${tomorrow}). This is a SHADOW proposal — it is logged for comparison against what the human scheduler actually does; nothing is assigned.
+          content: `${SCHEDULE_DAY_PROMPT}
 
-RULES
-- Never propose someone whose availability is 'unavailable'.
-- Treat 'prefer_not' as a last resort and say so in the reason.
-- One person cannot be on two overlapping shifts.
-- Prefer spreading work fairly (look at shifts last 7 days).
+TARGET DATE: ${tomorrow}
 
-STAFF
+${await recentScheduleLessons(supabase)}STAFF
 ${staffLines}
 
-TOMORROW'S SHIFTS (assign the 'open' ones; already-assigned ones are context for overlap checks)
+THE DATE'S SHIFTS (assign the 'open' ones; already-assigned ones are context for overlap checks)
 ${shiftLines}
 
-Return JSON only:
-{"assignments": [{"shift_id": "<id>", "staff_id": "<id>", "staff_name": "<name>", "reason": "<short why>"}], "summary": "<1-2 sentences in English on the overall reasoning, including anything you could not solve>"}`,
+${SCHEDULE_DAY_JSON}`,
         },
       ],
     })
@@ -146,8 +152,7 @@ Return JSON only:
 }
 
 // ── catering_order — what to order for upcoming cruises ─────────────────────
-
-const CATERING_LOOKAHEAD_DAYS = 3
+// (lookahead lives in rulebook.ts, shown on /admin/ghost/rulebook)
 
 export async function draftCateringOrders(): Promise<'drafted' | 'skipped'> {
   try {
@@ -183,15 +188,12 @@ export async function draftCateringOrders(): Promise<'drafted' | 'skipped'> {
       messages: [
         {
           role: 'user',
-          content: `You are the shadow catering assistant for Off Course Amsterdam. Below are the cruises in the next ${CATERING_LOOKAHEAD_DAYS} days that include catering (food/drinks extras, ordered from supplier Pure Boats by email). This is a SHADOW proposal — logged for comparison, nothing is sent.
+          content: `${CATERING_ORDER_PROMPT}
 
-Draft the consolidated supplier order: per day, the combined items and quantities, and flag any booking whose supplier email is still NOT SENT (those are the urgent ones).
-
-BOOKINGS
+BOOKINGS (next ${CATERING_LOOKAHEAD_DAYS} days)
 ${lines}
 
-Return JSON only:
-{"orders": [{"date": "YYYY-MM-DD", "items": [{"name": "<item>", "quantity": <n>}], "urgent_unsent": <count>}], "summary": "<1-2 sentences in English: what to order, what is urgent>"}`,
+${CATERING_ORDER_JSON}`,
         },
       ],
     })
@@ -222,9 +224,8 @@ Return JSON only:
  * existing pre-order page link; a human clicks Approve & send on /admin/ghost.
  * Disjoint from the automated extras-upsell cron, which only mails bookings
  * with ZERO catering — and both stamp extras_upsell_sent_at, so a guest can
- * only ever get one upsell email.
+ * only ever get one upsell email. (Lead days live in rulebook.ts.)
  */
-const UPSELL_LEAD_DAYS = 2
 
 export async function draftCateringUpsells(): Promise<'drafted' | 'skipped'> {
   try {
@@ -280,21 +281,18 @@ export async function draftCateringUpsells(): Promise<'drafted' | 'skipped'> {
         messages: [
           {
             role: 'user',
-            content: `You write for Off Course Amsterdam ("your friend with a boat" — warm, casual, dry humour, never salesy or corporate). Draft a short upsell email. This is a SHADOW draft: a human approves before sending.
+            content: `${CATERING_UPSELL_PROMPT}
 
 THE GUEST
 - ${b.customer_name ?? 'Guest'} · ${b.listing_title ?? 'cruise'} on ${b.booking_date}${b.start_time ? ` at ${formatAmsterdamTime(b.start_time)}` : ''} · ${b.guest_count ?? '?'} people
 - They booked the unlimited drinks package — drinks are sorted, but nothing to eat aboard yet.
 
-THE OFFER — real menu, real prices (never invent items or amounts):
+THE OFFER — real menu, real prices:
 ${menuLines}
 
 They pre-order on their personal page (no payment until the day): ${orderUrl}
 
-Keep it 4-6 sentences: drinks sorted ✓, something to nibble makes it better, the menu highlights, the link. Easy to ignore — one nudge, no pressure. English.
-
-Return JSON only:
-{"email_subject": "<subject>", "email_body": "<plain-text email including the link>"}`,
+${CATERING_UPSELL_JSON}`,
           },
         ],
       })

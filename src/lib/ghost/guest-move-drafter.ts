@@ -6,6 +6,13 @@ import { deriveOperationalProfile } from '@/lib/ops/profile'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { computeDayFacts, type OpsReviewShift } from './ops-review'
 import { extractJson } from './ops-drafters'
+import {
+  MIN_GAP_MINUTES,
+  MIN_GAP_SAVING_CENTS,
+  OPTIMIZE_HORIZON_DAYS,
+  GUEST_MOVE_EXPIRY_HOURS,
+  GUEST_MOVE_PROMPT,
+} from './rulebook'
 import { amsterdamToday, formatAmsterdamTime } from '@/lib/utils'
 
 /**
@@ -33,8 +40,9 @@ import { amsterdamToday, formatAmsterdamTime } from '@/lib/utils'
  *     a guest "yes" still leaves the actual FareHarbor rebook to a human.
  */
 
-export const MIN_GAP_MINUTES = 45
-export const MIN_GAP_SAVING_CENTS = 2000 // €20
+// Thresholds live in the rulebook (single source, shown on /admin/ghost/rulebook);
+// re-exported here so existing imports/tests keep working.
+export { MIN_GAP_MINUTES, MIN_GAP_SAVING_CENTS, OPTIMIZE_HORIZON_DAYS } from './rulebook'
 
 export interface MoveBooking {
   id: string
@@ -160,14 +168,6 @@ async function openMoveRequestExists(supabase: AdminClient, targetDate: string):
   return (data?.length ?? 0) > 0
 }
 
-/**
- * How far ahead the optimizer scans. The moment a SECOND booking lands on a
- * future day (Beer 2026-07-04), that day gets gap analysis — asking a guest
- * two weeks out is friendlier and far more likely to succeed than asking the
- * evening before.
- */
-export const OPTIMIZE_HORIZON_DAYS = 14
-
 export async function draftGuestMoveRequest(): Promise<'drafted' | 'skipped'> {
   try {
     const supabase = createAdminClient()
@@ -283,15 +283,11 @@ export async function draftGuestMoveRequest(): Promise<'drafted' | 'skipped'> {
       messages: [
         {
           role: 'user',
-          content: `You write for Off Course Amsterdam ("your friend with a boat" — warm, casual, dry humour, never corporate). Draft a time-change request to a guest. This is a SHADOW draft: a human approves before anything is sent.
+          content: `${GUEST_MOVE_PROMPT}
 
 THE ASK
 - Guest: ${candidate.booking.customerName ?? 'guest'} · ${candidate.booking.guestCount ?? '?'} people · ${candidate.booking.listingTitle ?? 'cruise'} on ${targetDate}
 - Current departure: ${currentTime} · proposed: ${proposedTime} (same boat: ${candidate.boat}, same duration, same price: €${totalEur})
-- Sweetener to offer: a bottle of wine on the house.
-- The message must include the literal placeholder {{link}} exactly once in the SMS and once in the email body — it becomes their personal response button/URL.
-- Make clear: totally fine to say no, their original time stays if they prefer. One tap to answer.
-- English. SMS max ~300 characters.
 
 Return JSON only:
 {"sms_text": "<SMS incl {{link}}>", "email_subject": "<subject>", "email_body": "<plain-text email incl {{link}}, with a one-line summary of their booking (date, time ${currentTime} → ${proposedTime}, party size, price unchanged €${totalEur})>"}`,
@@ -367,7 +363,7 @@ Return JSON only:
 export async function expireStaleGuestMoves(): Promise<number> {
   try {
     const supabase = createAdminClient()
-    const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
+    const cutoff = new Date(Date.now() - GUEST_MOVE_EXPIRY_HOURS * 60 * 60 * 1000).toISOString()
     const { data } = await supabase
       .from('agent_proposals')
       .select('id, outcome')

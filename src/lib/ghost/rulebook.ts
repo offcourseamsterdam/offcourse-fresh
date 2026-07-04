@@ -1,0 +1,232 @@
+/**
+ * THE RULEBOOK — single source of truth for what the Ghost is told and what
+ * the code enforces around it. Rendered verbatim on /admin/ghost/rulebook.
+ *
+ * Two kinds of rules live here:
+ *   - PROMPTS: the exact instruction text sent to Claude. Drafters IMPORT
+ *     these strings (they don't keep their own copy), so the admin page can
+ *     never drift from what the AI actually reads.
+ *   - HARD RULES: constraints enforced in TypeScript, not in prompts. Prompts
+ *     repeat some of them so the model reasons within them, but the code is
+ *     what makes them unbreakable. Each entry names the file that enforces it.
+ *
+ * Thresholds (the tunable dials) also live here, so the page always shows the
+ * live values.
+ */
+
+// ── Tunable thresholds (imported by the drafters) ────────────────────────────
+
+/** Guest-move: gaps below this are never worth bothering a guest. */
+export const MIN_GAP_MINUTES = 45
+/** Guest-move: paid-waiting cost floor (cents) before an ask is drafted. */
+export const MIN_GAP_SAVING_CENTS = 2000 // €20
+/** Guest-move: how far ahead the optimizer scans for multi-booking days. */
+export const OPTIMIZE_HORIZON_DAYS = 14
+/** Guest-move: unanswered asks expire after this many hours. */
+export const GUEST_MOVE_EXPIRY_HOURS = 48
+/** Catering order: how many days of upcoming catering the daily draft covers. */
+export const CATERING_LOOKAHEAD_DAYS = 3
+/** Snackbox upsell: days before the cruise the offer is drafted. */
+export const UPSELL_LEAD_DAYS = 2
+
+// ── Shared prompt blocks (imported by the drafters) ─────────────────────────
+
+export const SCHEDULE_DAY_PROMPT = `You are the shadow scheduling assistant for Off Course Amsterdam (electric canal boats). Propose a captain for each OPEN shift on the target date below. This is a SHADOW proposal — it is logged for comparison against what the human scheduler actually does; nothing is assigned until a human approves.
+
+RULES
+- Never propose someone whose availability is 'unavailable'.
+- Treat 'prefer_not' as a last resort and say so in the reason.
+- One person cannot be on two overlapping shifts.
+- Prefer spreading work fairly (look at shifts last 7 days).`
+
+export const SCHEDULE_DAY_JSON = `Return JSON only:
+{"assignments": [{"shift_id": "<id>", "staff_id": "<id>", "staff_name": "<name>", "reason": "<short why>"}], "summary": "<1-2 sentences in English on the overall reasoning, including anything you could not solve>"}`
+
+export const CATERING_ORDER_PROMPT = `You are the shadow catering assistant for Off Course Amsterdam. Below are the upcoming cruises that include catering (food/drinks extras, ordered from supplier Pure Boats by email). This is a SHADOW proposal — logged for comparison, nothing is sent.
+
+Draft the consolidated supplier order: per day, the combined items and quantities, and flag any booking whose supplier email is still NOT SENT (those are the urgent ones).`
+
+export const CATERING_ORDER_JSON = `Return JSON only:
+{"orders": [{"date": "YYYY-MM-DD", "items": [{"name": "<item>", "quantity": <n>}], "urgent_unsent": <count>}], "summary": "<1-2 sentences in English: what to order, what is urgent>"}`
+
+export const CATERING_UPSELL_PROMPT = `You write for Off Course Amsterdam ("your friend with a boat" — warm, casual, dry humour, never salesy or corporate). Draft a short upsell email. This is a SHADOW draft: a human approves before sending.
+
+Keep it 4-6 sentences: drinks sorted ✓, something to nibble makes it better, the menu highlights, the link. Easy to ignore — one nudge, no pressure. English. Never invent menu items or amounts — only use the real menu provided.`
+
+export const CATERING_UPSELL_JSON = `Return JSON only:
+{"email_subject": "<subject>", "email_body": "<plain-text email including the link>"}`
+
+export const OPS_REVIEW_SYSTEM = `You are the shadow operations optimizer for Off Course Amsterdam, an electric canal boat company with two boats (Diana, 8 guests; Curaçao, 12 guests). You review the day's operational plan and recommend the most profitable changes. You are precise, numeric, and honest: an already-optimal day is a good outcome, not a failure.`
+
+export const OPS_REVIEW_INSTRUCTIONS = `HARD RULES (enforced by the system, repeated so you reason within them)
+- One captain sails one boat per shift — never propose splitting a captain across boats.
+- PRIVATE cruises are protected: they are never merge candidates (already excluded from MERGE CANDIDATES above). If touching one is unavoidable, say so with requires_guest_contact: true and guest_impact honestly set — a human decides.
+- Prefer the least invasive option: an internal shuffle (no guest notices) beats anything requiring guest contact.
+- Every € you cite must come from the FACTS above — never invent numbers. est_saving_cents derives from the printed idle costs / avoided second-boat staffing.
+- If the plan is already good, submit exactly one recommendation of type 'none' explaining why (cite the numbers that show it's tight).
+
+WHAT TO LOOK FOR, in order of value
+1. maintenance_conflict — a boat scheduled to sail with an open blocking task is a cancelled cruise waiting to happen.
+2. staffing_level — open shifts without a captain (revenue at risk), or more captains scheduled than boats need.
+3. consolidate_boat — a merge candidate that would take a whole boat off the water (one captain fewer).
+4. consolidate_gap — a long paid gap that a time shift (shared cruises only) could close.
+
+You may call get_schedule for surrounding days (context on captain workloads) or search_availability if you need to know whether a slot change even has room. Then submit_ops_review.`
+
+export const GUEST_MOVE_PROMPT = `You write for Off Course Amsterdam ("your friend with a boat" — warm, casual, dry humour, never corporate). Draft a time-change request to a guest. This is a SHADOW draft: a human approves before anything is sent.
+
+- Sweetener to offer: a bottle of wine on the house.
+- The message must include the literal placeholder {{link}} exactly once in the SMS and once in the email body — it becomes their personal response button/URL.
+- Make clear: totally fine to say no, their original time stays if they prefer. One tap to answer.
+- English. SMS max ~300 characters.`
+
+// ── The rulebook entries (rendered on /admin/ghost/rulebook) ─────────────────
+
+export interface HardRule {
+  rule: string
+  /** The file that enforces it — rules live in code, not in prompts. */
+  enforcedIn: string
+}
+
+export interface RulebookEntry {
+  kind: string
+  agentKey: string
+  title: string
+  /** What the code guarantees, regardless of what the model wants. */
+  hardRules: HardRule[]
+  /** The exact instruction text sent to Claude (shared constants above). */
+  prompt: string
+  /** True when the drafter imports the exact string above (zero drift). */
+  promptShared: boolean
+  /** Runtime data appended to the prompt on each run. */
+  dataInjected: string[]
+}
+
+export const RULEBOOK: RulebookEntry[] = [
+  {
+    kind: 'schedule_day',
+    agentKey: 'scheduling',
+    title: 'Captain schedule for tomorrow',
+    hardRules: [
+      { rule: 'Draft only — approving assigns captains via one human click; nothing assigns itself.', enforcedIn: 'src/lib/ghost/agents.ts (autonomy: ask)' },
+      { rule: 'Apply only touches shifts that are still OPEN — a manual assignment made after the draft always wins.', enforcedIn: 'src/app/api/admin/ghost/proposals/[id]/route.ts' },
+      { rule: 'One proposal per target date; re-running the cron never doubles up.', enforcedIn: 'src/lib/ghost/ops-drafters.ts (dedupe)' },
+      { rule: 'After the date passes unapproved, the draft is scored against what the human actually did (the learning signal).', enforcedIn: 'src/lib/ghost/evaluate.ts' },
+    ],
+    prompt: `${SCHEDULE_DAY_PROMPT}\n\n${SCHEDULE_DAY_JSON}`,
+    promptShared: true,
+    dataInjected: ['target date', 'staff list + availability + 7-day workload', "the date's shifts (boat, time, cruise, status)", 'last 5 evaluated drafts vs what the human actually assigned'],
+  },
+  {
+    kind: 'catering_order',
+    agentKey: 'catering',
+    title: 'Consolidated supplier order',
+    hardRules: [
+      { rule: `Covers the next ${CATERING_LOOKAHEAD_DAYS} days; skips (zero cost) when no upcoming booking has catering.`, enforcedIn: 'src/lib/ghost/ops-drafters.ts' },
+      { rule: 'Shadow only — the supplier email itself goes via the existing catering notify flow, not this proposal.', enforcedIn: 'src/lib/ghost/agents.ts (autonomy: propose)' },
+    ],
+    prompt: `${CATERING_ORDER_PROMPT}\n\n${CATERING_ORDER_JSON}`,
+    promptShared: true,
+    dataInjected: ['upcoming bookings with catering items + sent/unsent supplier email status'],
+  },
+  {
+    kind: 'catering_upsell',
+    agentKey: 'catering',
+    title: 'Snackbox offer for drinks-only bookings',
+    hardRules: [
+      { rule: 'Audience: catering is EXACTLY the unlimited-drinks package — no food, nothing else. Guests with zero catering belong to the automated extras-upsell cron; the two can never overlap.', enforcedIn: 'src/lib/catering/filter.ts (isDrinksOnlyBooking)' },
+      { rule: 'Menu items + prices come from the extras table and are printed into the prompt — the model cannot invent an offer.', enforcedIn: 'src/lib/ghost/ops-drafters.ts' },
+      { rule: 'Sending is a human click, and stamps extras_upsell_sent_at — one upsell email per booking, ever, across ALL upsell paths.', enforcedIn: 'src/app/api/admin/ghost/proposals/[id]/route.ts' },
+      { rule: `Drafted ${UPSELL_LEAD_DAYS} days before the cruise; one proposal per booking.`, enforcedIn: 'src/lib/ghost/ops-drafters.ts' },
+    ],
+    prompt: `${CATERING_UPSELL_PROMPT}\n\n${CATERING_UPSELL_JSON}`,
+    promptShared: true,
+    dataInjected: ['guest + booking summary', 'real food menu (max 3 items, names + prices)', 'their personal pre-order page URL'],
+  },
+  {
+    kind: 'ops_review',
+    agentKey: 'operations',
+    title: 'Nightly operations review',
+    hardRules: [
+      { rule: 'All numbers are computed in TypeScript before the model sees them (gaps, idle €, merge candidates, staffing) — every € in a recommendation traces to a computed fact.', enforcedIn: 'src/lib/ghost/ops-review.ts (computeDayFacts)' },
+      { rule: 'Private cruises never appear as merge candidates — filtered out before the model looks.', enforcedIn: 'src/lib/ops/profile.ts + computeDayFacts' },
+      { rule: 'Read-only tool loop (max 6 turns); the only write is the shadow proposal itself.', enforcedIn: 'src/lib/ghost/agent-runtime.ts' },
+      { rule: 'Malformed recommendations are dropped, never repaired or guessed at.', enforcedIn: 'src/lib/ghost/ops-review.ts (validateRecommendations)' },
+    ],
+    prompt: `SYSTEM\n${OPS_REVIEW_SYSTEM}\n\nTASK (after the computed FACTS block)\n${OPS_REVIEW_INSTRUCTIONS}`,
+    promptShared: true,
+    dataInjected: ['computed FACTS block: shifts, gaps + idle €, merge candidates, maintenance conflicts, staffing'],
+  },
+  {
+    kind: 'guest_move_request',
+    agentKey: 'operations',
+    title: 'Guest move request (SMS + email)',
+    hardRules: [
+      { rule: 'SEQUENTIAL: at most one open ask per day, and at most one new draft per cron run — guests are never raced against each other.', enforcedIn: 'src/lib/ghost/guest-move-drafter.ts' },
+      { rule: 'Private cruises: never asked. Bookings with catering/drinks aboard: never asked (supplier order already placed). Multi-party departures: never asked.', enforcedIn: 'src/lib/ghost/guest-move-drafter.ts (selectMoveCandidate)' },
+      { rule: `Only gaps ≥ ${MIN_GAP_MINUTES} min AND ≥ €${(MIN_GAP_SAVING_CENTS / 100).toFixed(0)} paid waiting get an ask; horizon ${OPTIMIZE_HORIZON_DAYS} days, only days with a second booking.`, enforcedIn: 'src/lib/ghost/rulebook.ts (thresholds) + guest-move-drafter.ts' },
+      { rule: 'Sending is a human click (SMS + email with a personal HMAC link). A guest YES never rebooks anything — Slack pings the team to rebook via admin.', enforcedIn: 'proposals/[id]/route.ts + api/move/respond' },
+      { rule: `Unanswered asks expire after ${GUEST_MOVE_EXPIRY_HOURS}h.`, enforcedIn: 'src/lib/ghost/guest-move-drafter.ts (expiry sweep)' },
+    ],
+    prompt: GUEST_MOVE_PROMPT,
+    promptShared: true,
+    dataInjected: ['guest + booking summary', 'current → proposed departure time, boat, unchanged price', 'JSON contract with the exact times'],
+  },
+  {
+    kind: 'maintenance_task',
+    agentKey: 'maintenance',
+    title: 'Maintenance triage + technician email',
+    hardRules: [
+      { rule: 'Priority must be exactly essential/cosmetic/wishlist or the draft is dropped.', enforcedIn: 'src/lib/ghost/maintenance-drafter.ts' },
+      { rule: 'The technician email only goes out on a human click (two-step confirm).', enforcedIn: 'proposals/[id]/route.ts (send)' },
+    ],
+    prompt:
+      'MIRROR (source of truth in src/lib/ghost/maintenance-drafter.ts):\n\nYou are the shadow maintenance assistant for Off Course Amsterdam (electric canal boats: {{boat names}}). Someone posted this in the "Maintenance and Ideas" channel. This is a SHADOW proposal — nothing is sent; a human reviews it.\n\n1. Assign a PRIORITY — essential (must-fix: safety / boat can\'t run) · cosmetic (nice-to-fix) · wishlist (future idea).\n2. Write a clear short title + 1-3 sentence summary (incorporate photo descriptions).\n3. Draft a friendly, concise email to our technician asking for an estimate/offerte. Sign off as "Off Course Amsterdam" — no corporate fluff.',
+    promptShared: false,
+    dataInjected: ['the Slack message + reporter', 'Gemini photo descriptions', 'boat names'],
+  },
+  {
+    kind: 'stock_reorder',
+    agentKey: 'storage',
+    title: 'Supplier reorder email',
+    hardRules: [
+      { rule: 'Only items at/under their reorder threshold, grouped per supplier.', enforcedIn: 'src/lib/ghost/stock-drafter.ts' },
+      { rule: 'Sending is a human click and stamps last_reordered_at on the items.', enforcedIn: 'proposals/[id]/route.ts (send)' },
+    ],
+    prompt:
+      'MIRROR (source of truth in src/lib/ghost/stock-drafter.ts):\n\nYou are the shadow storage assistant for Off Course Amsterdam (electric canal boats). The stock items below are at or under their reorder level and need restocking from {{supplier}}. This is a SHADOW proposal — nothing is sent; a human reviews it.\n\nDraft a short, friendly reorder email IN DUTCH: greet the supplier, list the reorder quantities, keep it human and to the point, sign off as "Off Course Amsterdam".',
+    promptShared: false,
+    dataInjected: ['low items with counts + reorder quantities', 'supplier name/email'],
+  },
+  {
+    kind: 'reply_draft',
+    agentKey: 'inbox',
+    title: 'Inbox reply draft',
+    hardRules: [
+      { rule: 'Read-only tools (availability, bookings, menu, viability check); the only write is the shadow draft.', enforcedIn: 'src/lib/ghost/agent-runtime.ts + tools.ts' },
+      { rule: 'Availability/prices NEVER from memory — the search_availability tool is the only source of truth.', enforcedIn: 'src/lib/chat/shadow-drafter.ts (prompt) + tools.ts' },
+      { rule: 'Taught knowledge (ghost_knowledge, pinned first) + your last 5 real replies are injected into every draft — the learning loop.', enforcedIn: 'src/lib/chat/shadow-drafter.ts' },
+    ],
+    prompt:
+      'MIRROR (source of truth in src/lib/chat/shadow-drafter.ts):\n\nYou are the shadow inbox agent for Off Course Amsterdam. A customer sent a chat message; investigate what you need (tools), then submit the reply you WOULD send. Reply in the customer\'s language, chat-length, brand voice. Dates/availability/prices: never from memory — use search_availability. Before promising a specific booking, call check_booking; only propose alternatives it returned. A booking proposal must be unambiguous (exact boat + duration) and needs the customer\'s name + email.',
+    promptShared: false,
+    dataInjected: ['taught knowledge + pinned facts', 'your last 5 real replies vs drafts', 'customer profile + conversation transcript'],
+  },
+  {
+    kind: 'booking_proposal',
+    agentKey: 'booking',
+    title: 'Booking proposal (dry-run only)',
+    hardRules: [
+      { rule: 'IRREVERSIBLE kind: ceiling pinned to dry_run forever — the Ghost may VALIDATE against FareHarbor but can never create, refund or pay out. A CI test fails if anyone bumps this.', enforcedIn: 'src/lib/ghost/agents.ts + agent-runtime.test.ts' },
+      { rule: 'The one-click "book" action re-resolves and re-validates the slot live through the normal money path — the proposal itself is never trusted.', enforcedIn: 'proposals/[id]/route.ts (book) + src/lib/ghost/book-from-proposal.ts' },
+    ],
+    prompt: 'Emitted by the inbox agent via its terminal submit_booking_proposal tool — see the Inbox reply draft entry; there is no separate prompt.',
+    promptShared: false,
+    dataInjected: ['validated slot (listing, date, time, option, party size) from check_booking'],
+  },
+]
+
+/** Entries for one agent, in registry order. */
+export function rulebookForAgent(agentKey: string): RulebookEntry[] {
+  return RULEBOOK.filter(e => e.agentKey === agentKey)
+}
