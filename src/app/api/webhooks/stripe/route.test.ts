@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { NextRequest } from 'next/server'
+import { extractVat } from '@/lib/extras/calculate'
 
 /**
  * Tests the Stripe webhook's most consequential invariants:
@@ -27,6 +28,8 @@ const h = vi.hoisted(() => ({
   notifyCateringOrder: vi.fn().mockResolvedValue(undefined),
   postSlackText: vi.fn().mockResolvedValue(undefined),
   getExtrasFromQuote: vi.fn().mockResolvedValue([]),
+  capturedInsert: null as Record<string, unknown> | null,
+  insertResult: { error: null } as { error: null | { code?: string; message: string } },
 }))
 
 vi.mock('@/lib/stripe/server', () => ({
@@ -37,7 +40,8 @@ vi.mock('@/lib/supabase/admin', () => ({
     from: () => ({
       select: () => ({ eq: () => ({ maybeSingle: h.maybeSingle }) }),
       update: () => ({ eq: () => Promise.resolve({ error: null }) }),
-      insert: () => Promise.resolve({ error: null }),
+      insert: (row: Record<string, unknown>) => { h.capturedInsert = row; return Promise.resolve(h.insertResult) },
+      delete: () => ({ eq: () => ({ eq: () => Promise.resolve({ error: null }) }) }),
     }),
   }),
 }))
@@ -70,6 +74,8 @@ describe('stripe webhook — payment_intent.succeeded', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubEnv('STRIPE_WEBHOOK_SECRET', 'whsec_test')
+    h.capturedInsert = null
+    h.insertResult = { error: null }
   })
 
   it('fires the conversion before the idempotency early-return and does not double-book', async () => {
@@ -98,6 +104,84 @@ describe('stripe webhook — payment_intent.succeeded', () => {
 
     expect(res.status).toBe(400)
     expect(h.reportBookingConversion).not.toHaveBeenCalled()
+    expect(h.fhCreateBooking).not.toHaveBeenCalled()
+  })
+
+  // ── VAT fallback (the `0 || extractVat` trap) ───────────────────────────────
+  // PI metadata VAT fields are read as `Number(meta.x) || extractVat(...)`. Since
+  // 0 is falsy, a metadata VAT of '0' is OVERRIDDEN by the server recompute, while
+  // a real value passes through. These pin that behaviour so a future change to the
+  // fallback is a conscious decision, not a silent regression.
+
+  const succeededMeta = {
+    avail_pk: '111',
+    customer_type_rate_pk: '222',
+    guest_count: '2',
+    category: 'private',
+    listing_id: 'listing_1',
+    listing_title: 'Hidden Gems Private Boat Tour',
+    date: '2026-07-01',
+    start_at: '2026-07-01T18:00:00+02:00',
+    end_at: '2026-07-01T19:30:00+02:00',
+    guest_name: 'Test Guest',
+    guest_email: 'guest@example.com',
+    guest_phone: '+31600000000',
+    server_base_amount_cents: '15000',
+  }
+
+  function setupCreatePath() {
+    h.maybeSingle.mockResolvedValue({ data: null })          // no existing booking
+    h.fhValidateBooking.mockResolvedValue({ is_bookable: true })
+    h.fhCreateBooking.mockResolvedValue({ uuid: 'fh-new-uuid' })
+  }
+
+  it('recomputes VAT when metadata base_vat is "0" (0 is falsy → fallback fires)', async () => {
+    setupCreatePath()
+    h.constructEvent.mockReturnValue({
+      type: 'payment_intent.succeeded',
+      data: { object: { id: 'pi_vat_zero', amount: 16500, metadata: { ...succeededMeta, base_vat_amount_cents: '0' } } },
+    })
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.fhCreateBooking).toHaveBeenCalledTimes(1)
+    // '0' is falsy → recompute 9% of the base, NOT a stored 0.
+    expect(h.capturedInsert!.base_vat_amount_cents).toBe(extractVat(15000, 9))
+    expect(h.capturedInsert!.base_vat_amount_cents).not.toBe(0)
+    // Claim is inserted in pending_payment with a null uuid (finalize promotes it).
+    expect(h.capturedInsert!.status).toBe('pending_payment')
+    expect(h.capturedInsert!.booking_uuid).toBeNull()
+  })
+
+  it('uses a real metadata base_vat value as-is (no recompute)', async () => {
+    setupCreatePath()
+    h.constructEvent.mockReturnValue({
+      type: 'payment_intent.succeeded',
+      data: { object: { id: 'pi_vat_real', amount: 16500, metadata: { ...succeededMeta, base_vat_amount_cents: '1239' } } },
+    })
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.capturedInsert!.base_vat_amount_cents).toBe(1239)
+  })
+
+  it('claims before creating: a lost claim (duplicate PI) never calls FareHarbor', async () => {
+    h.maybeSingle.mockResolvedValue({ data: null })          // passes the existence pre-check
+    h.fhValidateBooking.mockResolvedValue({ is_bookable: true })
+    h.fhCreateBooking.mockResolvedValue({ uuid: 'fh-x' })
+    // The claim insert loses the unique-constraint race.
+    h.insertResult = { error: { code: '23505', message: 'duplicate key value' } }
+
+    h.constructEvent.mockReturnValue({
+      type: 'payment_intent.succeeded',
+      data: { object: { id: 'pi_lost', amount: 16500, metadata: succeededMeta } },
+    })
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
     expect(h.fhCreateBooking).not.toHaveBeenCalled()
   })
 })

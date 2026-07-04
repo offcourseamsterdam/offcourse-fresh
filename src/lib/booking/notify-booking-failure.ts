@@ -15,12 +15,14 @@ import { formatAmsterdamTime } from '@/lib/utils'
 export type BookingFailureStage =
   | 'fareharbor_validate'   // FH says not bookable
   | 'fareharbor_create'     // FH 4xx/5xx during createBooking
+  | 'db_claim'              // could not insert the pending-payment claim row (pre-FareHarbor)
   | 'supabase_save'         // Stripe + FH succeeded but DB insert failed
   | 'webhook_recovery'      // payment_intent.succeeded safety-net could not recover
 
 const STAGE_LABEL: Record<BookingFailureStage, string> = {
   fareharbor_validate: 'FareHarbor validation',
   fareharbor_create:   'FareHarbor createBooking',
+  db_claim:            'Database claim (pre-FareHarbor)',
   supabase_save:       'Supabase save',
   webhook_recovery:    'Webhook recovery',
 }

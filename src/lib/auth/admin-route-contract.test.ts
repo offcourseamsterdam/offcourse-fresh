@@ -82,11 +82,16 @@ describe('admin route auth contract', () => {
     // 88 = 64 + 5 /api/admin/google-ads/** routes + /api/admin/tracking/ai-referrals + 2 /api/admin/boats/** routes
     //    + 3 /api/admin/homepage-styles/** routes (list, [section] PATCH, [section]/background POST)
     //    + 7 /api/admin/scheduling/** routes (staff, staff/[id], sync, shifts, shifts/[id], payroll, payroll/csv)
+    //    + 1 /api/admin/scheduling/staff/[id]/bonuses (review bonuses per captain)
     //    + 4 /api/admin/inbox/** routes (conversations, conversations/[id], …/messages, open-count)
     //    + 1 /api/admin/inbox/conversations/[id]/messages/[msgId]/translate
     //    + 4 /api/admin/ghost/** (proposals read-only, knowledge POST/PATCH, dry-run POST, proposals/[id] actions)
+    //    + 1 /api/admin/maintenance (GET board + PATCH status)
+    //    + 1 /api/admin/notifications (GET catalog+log, PATCH toggle)
+    //    + 1 /api/admin/stock (GET catalog+QR, POST/PATCH/DELETE items)
+    //    + 2 /api/admin/reviews/conflicts (GET pending) + /api/admin/reviews/conflicts/[id] (POST resolve)
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`91`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`97`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {
