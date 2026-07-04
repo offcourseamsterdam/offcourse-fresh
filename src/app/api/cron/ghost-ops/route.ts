@@ -3,6 +3,7 @@ import { requireCronSecret } from '@/lib/auth/require-cron-secret'
 import { draftCateringOrders, draftCateringUpsells, draftTomorrowSchedule } from '@/lib/ghost/ops-drafters'
 import { draftOpsReview } from '@/lib/ghost/ops-review'
 import { draftGuestMoveRequest, expireStaleGuestMoves, OPTIMIZE_HORIZON_DAYS } from '@/lib/ghost/guest-move-drafter'
+import { evaluateExpiredProposals } from '@/lib/ghost/evaluate'
 import { syncShiftsForRange } from '@/lib/scheduling/sync-shifts'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { amsterdamToday } from '@/lib/utils'
@@ -31,6 +32,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       console.error('[ghost-ops] shift sync failed:', sync.error)
     }
 
+    // Learn first: score yesterday's unapproved drafts against reality, so
+    // today's schedule draft can already read the fresh lessons.
+    const evaluated = await evaluateExpiredProposals()
+
     const [schedule, catering, cateringUpsell, opsReview, expiredMoves] = await Promise.all([
       draftTomorrowSchedule(),
       draftCateringOrders(),
@@ -45,6 +50,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json({
       sync: 'error' in sync ? { error: sync.error } : sync,
+      evaluated,
       schedule,
       catering,
       cateringUpsell,

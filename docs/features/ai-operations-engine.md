@@ -72,6 +72,32 @@ never reasons over a stale roster.
    everything goes to Beer's DM (`SLACK_DEV_DM_CHANNEL`, default D08PRAXD13R)
    with a `[dev]` prefix via the bot token. Pinned by tests.
 
+### AI Operations dashboard + the learning loop (Beer 2026-07-04)
+
+7. **The Rulebook** (`/admin/ghost/rulebook`, `src/lib/ghost/rulebook.ts`): the
+   page that shows exactly what each agent is told (the prompt) and what the
+   code enforces around it (hard rules, each naming its enforcing file), plus
+   every tunable threshold. Prompts marked **live** are the literal strings the
+   drafters import — the page cannot drift from what the AI reads. Thresholds
+   (gap minimums, horizon, upsell lead days, expiry hours) now LIVE in
+   rulebook.ts and are imported by the drafters.
+8. **Approve & execute — schedule** (`apply_schedule` action): `schedule_day`
+   climbed to `ask` (owner-approved 2026-07-04). One click assigns the proposed
+   captains — but only to shifts that are STILL open (a manual assignment made
+   after the draft always wins), notifies the captains, emits `shift_assigned`
+   events, and the runtime guard refuses if the kind ever drops below `ask`.
+9. **Learning on expiry** (`src/lib/ghost/evaluate.ts`): when a proposal's
+   target date passes unapproved, the sweep (first step of the ghost-ops cron)
+   scores it against reality — schedule drafts get a per-shift agreement score
+   (proposed vs actually-assigned captain), ops reviews get a resolved/not
+   check, unsent upsells are recorded. Everything ends status `expired` with
+   the lesson in `outcome`. Recent schedule lessons are injected into the next
+   draft's prompt ("here's how the human really assigns — imitate"), and the
+   dashboard shows the running agreement percentage. This is retrieval-based
+   learning, same pattern as the inbox agent's reply corrections.
+10. **Needs-your-decision strip** on `/admin/ghost` (now titled AI Operations):
+    actionable shadow proposals surface at the top with their target dates.
+
 ## Key files
 
 | File | Role |

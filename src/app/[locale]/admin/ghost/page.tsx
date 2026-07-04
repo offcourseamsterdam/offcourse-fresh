@@ -152,6 +152,14 @@ interface GhostProposal {
     channels?: string[]
     guest_response?: string
     responded_at?: string
+    // schedule_day apply + evaluation
+    applied_at?: string
+    applied?: { shift_id: string; staff_name?: string }[]
+    agreement?: {
+      matched: number
+      total: number
+      details: { shift_id: string; proposed_name?: string | null; actual_name?: string | null; matched: boolean }[]
+    }
   } | null
   reviewed_at: string | null
   created_at: string
@@ -233,6 +241,28 @@ export default function GhostPage() {
     ? allProposals.filter(p => agentForKind(p.kind)?.key === agentFilter)
     : allProposals
 
+  // Actionable = still shadow AND carries a one-click action (send / assign).
+  const ACTIONABLE_KINDS = ['schedule_day', 'catering_upsell', 'maintenance_task', 'stock_reorder', 'guest_move_request']
+  const needsDecision = allProposals.filter(
+    p =>
+      p.status === 'shadow' &&
+      ACTIONABLE_KINDS.includes(p.kind) &&
+      (p.kind === 'schedule_day' ? (p.payload.assignments?.length ?? 0) > 0 : !!p.payload.email_body || !!p.payload.sms_text),
+  )
+
+  // Ghost ↔ you agreement over the loaded schedule evaluations (the learning score).
+  const agreementTotals = allProposals.reduce(
+    (acc, p) => {
+      const a = p.outcome?.agreement
+      if (p.kind === 'schedule_day' && a?.total) {
+        acc.matched += a.matched
+        acc.total += a.total
+      }
+      return acc
+    },
+    { matched: 0, total: 0 },
+  )
+
   function agentCount(agentKey: string): number {
     const agent = GHOST_AGENTS.find(a => a.key === agentKey)
     if (!agent || !data) return 0
@@ -244,12 +274,18 @@ export default function GhostPage() {
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-900 inline-flex items-center gap-2">
-            <Ghost className="w-6 h-6 text-violet-500" /> Ghost AI
+            <Ghost className="w-6 h-6 text-violet-500" /> AI Operations
           </h1>
           <p className="text-sm text-zinc-500 mt-1 max-w-xl">
-            Ops dashboard — spend, what it&apos;s learned, and the ops agents (catering, scheduling).
-            Conversation drafts now live in the <strong>inbox</strong>, next to each customer.
+            Every Ghost proposal, what needs your decision, and what it learned afterwards.
+            Conversation drafts live in the <strong>inbox</strong>, next to each customer.
           </p>
+          <a
+            href={`/${locale}/admin/ghost/rulebook`}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-violet-600 hover:text-violet-800 mt-2"
+          >
+            <BookOpen className="w-3.5 h-3.5" /> The Rulebook — what the AI reads before it acts
+          </a>
         </div>
 
         {data && (
@@ -368,6 +404,32 @@ export default function GhostPage() {
         <div className="flex items-center gap-2 text-sm text-zinc-400 py-8">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading the Ghost&apos;s notebook…
         </div>
+      )}
+
+      {/* Needs your decision — actionable proposals waiting for a click */}
+      {data && needsDecision.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 mb-4">
+          <p className="text-sm font-semibold text-amber-800">
+            ⚡ {needsDecision.length} proposal{needsDecision.length === 1 ? '' : 's'} need{needsDecision.length === 1 ? 's' : ''} your decision
+          </p>
+          <p className="text-xs text-amber-700 mt-0.5">
+            {needsDecision
+              .map(p => `${KIND_META[p.kind]?.label ?? p.kind}${p.payload.target_date ? ` (${p.payload.target_date})` : ''}`)
+              .join(' · ')}
+            {' — cards below; unapproved proposals are scored against reality after their date passes.'}
+          </p>
+        </div>
+      )}
+
+      {/* Ghost ↔ you agreement — the learning score from expired drafts */}
+      {data && agreementTotals.total > 0 && (
+        <p className="text-xs text-zinc-500 mb-4">
+          🎯 Recent schedule agreement: the Ghost matched your actual captain choice in{' '}
+          <span className="font-semibold text-zinc-700">
+            {agreementTotals.matched}/{agreementTotals.total}
+          </span>{' '}
+          shifts ({Math.round((agreementTotals.matched / agreementTotals.total) * 100)}%) — mismatches are fed back into future drafts.
+        </p>
       )}
 
       {/* Proposal list header — filters */}
@@ -688,10 +750,10 @@ function ProposalCard({ proposal: p, onChanged }: { proposal: GhostProposal; onC
   const agent = agentForKind(p.kind)
   const conversational = p.kind === 'reply_draft' || p.kind === 'booking_proposal'
   const reviewed = !!p.reviewed_at
-  const [busy, setBusy] = useState<'review' | 'redraft' | 'compare' | 'send' | 'send_move' | null>(null)
+  const [busy, setBusy] = useState<'review' | 'redraft' | 'compare' | 'send' | 'send_move' | 'apply_schedule' | null>(null)
   const [confirmSend, setConfirmSend] = useState(false)
 
-  async function act(action: 'review' | 'redraft' | 'compare' | 'send' | 'send_move', extra: Record<string, unknown> = {}) {
+  async function act(action: 'review' | 'redraft' | 'compare' | 'send' | 'send_move' | 'apply_schedule', extra: Record<string, unknown> = {}) {
     setBusy(action)
     try {
       await adminMutate(`/api/admin/ghost/proposals/${p.id}`, 'POST', { action, ...extra })
@@ -846,23 +908,63 @@ function ProposalCard({ proposal: p, onChanged }: { proposal: GhostProposal; onC
           </>
         )}
 
-        {/* Schedule — proposed assignments */}
+        {/* Schedule — proposed assignments, one-click apply */}
         {p.kind === 'schedule_day' && (
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-500 mb-1">
-              Ghost would assign
-            </p>
-            <div className="space-y-1.5">
-              {(p.payload.assignments ?? []).map((a, i) => (
-                <div key={i} className="rounded-lg bg-violet-50 border border-violet-100 px-3 py-2 text-sm">
-                  <span className="font-semibold text-violet-900">{a.staff_name}</span>
-                  <span className="text-violet-700"> — {a.reason}</span>
-                </div>
-              ))}
-              {!(p.payload.assignments ?? []).length && (
-                <p className="text-sm text-zinc-400">No assignments proposed.</p>
-              )}
+          <div className="space-y-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-500 mb-1">
+                Ghost would assign
+              </p>
+              <div className="space-y-1.5">
+                {(p.payload.assignments ?? []).map((a, i) => (
+                  <div key={i} className="rounded-lg bg-violet-50 border border-violet-100 px-3 py-2 text-sm">
+                    <span className="font-semibold text-violet-900">{a.staff_name}</span>
+                    <span className="text-violet-700"> — {a.reason}</span>
+                  </div>
+                ))}
+                {!(p.payload.assignments ?? []).length && (
+                  <p className="text-sm text-zinc-400">No assignments proposed.</p>
+                )}
+              </div>
             </div>
+
+            {/* Reality afterwards — the learning signal from the evaluation sweep */}
+            {p.outcome?.agreement && (
+              <div className="rounded-lg bg-zinc-50 border border-zinc-200 px-3 py-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 mb-1">
+                  What actually happened ({p.outcome.agreement.matched}/{p.outcome.agreement.total} matched)
+                </p>
+                <ul className="space-y-0.5">
+                  {p.outcome.agreement.details.map((d, i) => (
+                    <li key={i} className={`text-xs ${d.matched ? 'text-emerald-700' : 'text-amber-700'}`}>
+                      {d.matched ? '✓' : '✗'} Ghost: {d.proposed_name ?? '—'} · you: {d.actual_name ?? 'nobody'}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {p.status === 'executed' ? (
+              <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 inline-flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Applied
+                {p.outcome?.applied ? ` · ${p.outcome.applied.length} assigned` : ''}
+                {p.outcome?.applied_at ? ` · ${formatAmsterdamTime(p.outcome.applied_at)}` : ''}
+              </p>
+            ) : p.status === 'expired' ? null : (p.payload.assignments ?? []).length > 0 ? (
+              <button
+                onClick={() => {
+                  if (!confirmSend) { setConfirmSend(true); return }
+                  act('apply_schedule')
+                }}
+                disabled={busy === 'apply_schedule'}
+                className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors disabled:opacity-50 ${
+                  confirmSend ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-zinc-900 text-white hover:bg-zinc-800'
+                }`}
+              >
+                {busy === 'apply_schedule' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                {confirmSend ? 'Confirm — assign these captains' : 'Approve & assign captains'}
+              </button>
+            ) : null}
           </div>
         )}
 
