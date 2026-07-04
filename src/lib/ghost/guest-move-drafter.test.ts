@@ -89,7 +89,7 @@ describe('selectMoveCandidate — the hard rules', () => {
   })
 
   it('never asks a booking with catering/drinks aboard (Beer: supplier order already placed)', () => {
-    const catering = [{ id: 'x', name: 'Unlimited Drinks Package', category: 'drinks', quantity: 4 }]
+    const catering = [{ name: 'Unlimited Drinks Package', amount_cents: 4320, category: 'drinks', quantity: 4 }]
     const { shifts, byId, byPk } = gappyDay({ extrasSelected: catering as MoveBooking['extrasSelected'] })
     byId.set('b1', booking({ id: 'b1', extrasSelected: catering as MoveBooking['extrasSelected'] }))
     expect(selectMoveCandidate(shifts, byId, byPk)).toBeNull()

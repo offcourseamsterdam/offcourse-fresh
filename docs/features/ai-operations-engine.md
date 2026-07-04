@@ -42,13 +42,35 @@ never reasons over a stale roster.
    training data the PRD calls for.
 
    Hard rules, all in `selectMoveCandidate()` (code, never prompts):
-   - **sequential** — at most one open ask per day, ever;
+   - **sequential** — at most one open ask per day, ever, and at most ONE new
+     draft per cron run;
    - **private cruises**: never asked;
    - **bookings with catering/drinks aboard: never asked** (Beer 2026-07-04 —
      the supplier order is already placed);
    - **multi-booking departures**: never asked (would race several parties);
    - a guest **yes never rebooks by itself** — Slack pings the team to perform
      the FareHarbor rebook via admin. Unanswered asks expire after 48h (cron).
+
+   **Horizon (Beer 2026-07-04):** the drafter scans the next
+   `OPTIMIZE_HORIZON_DAYS` (14) days, only days where a SECOND booking exists,
+   and drafts the single most valuable ask across the window — asking two
+   weeks out is friendlier and likelier to succeed than the evening before.
+   The cron's shift sync covers the same window.
+
+5. **Snackbox upsell** (`catering_upsell` kind, catering agent). Guests whose
+   catering is EXACTLY the unlimited-drinks package (`isDrinksOnlyBooking()` in
+   `src/lib/catering/filter.ts`) get a drafted bites-box offer 2 days before
+   their cruise — grounded in real menu items + prices from the `extras` table,
+   linking to their existing pre-order page (extras token). Human-approved send
+   via the same approve-button flow; sending stamps `extras_upsell_sent_at`, the
+   same column the automated extras-upsell cron checks, so a guest can only
+   ever receive one upsell email. The two audiences are disjoint by definition
+   (cron = zero catering; Ghost = drinks-only).
+
+6. **Dev Slack redirect** (`src/lib/slack/send-notification.ts`): on localhost
+   (NODE_ENV=development) `postSlackText` NEVER touches the team webhook —
+   everything goes to Beer's DM (`SLACK_DEV_DM_CHANNEL`, default D08PRAXD13R)
+   with a `[dev]` prefix via the bot token. Pinned by tests.
 
 ## Key files
 

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireCronSecret } from '@/lib/auth/require-cron-secret'
-import { draftCateringOrders, draftTomorrowSchedule } from '@/lib/ghost/ops-drafters'
+import { draftCateringOrders, draftCateringUpsells, draftTomorrowSchedule } from '@/lib/ghost/ops-drafters'
 import { draftOpsReview } from '@/lib/ghost/ops-review'
-import { draftGuestMoveRequest, expireStaleGuestMoves } from '@/lib/ghost/guest-move-drafter'
+import { draftGuestMoveRequest, expireStaleGuestMoves, OPTIMIZE_HORIZON_DAYS } from '@/lib/ghost/guest-move-drafter'
 import { syncShiftsForRange } from '@/lib/scheduling/sync-shifts'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { amsterdamToday } from '@/lib/utils'
@@ -11,10 +11,10 @@ import { alertCronFailure } from '@/lib/cron/alert'
 /**
  * Ghost ops cron — daily at 15:00 UTC (17:00 Amsterdam in summer).
  *
- * Step 1: sync bookings → shifts for today + tomorrow (idempotent, the same
- * generator the admin Sync button runs) so the drafters below never reason
- * over a stale roster — a booking that landed an hour ago already has its
- * shift by the time the optimizer looks.
+ * Step 1: sync bookings → shifts for today through the optimization horizon
+ * (idempotent, the same generator the admin Sync button runs) so the drafters
+ * below never reason over a stale roster — a booking that landed an hour ago
+ * already has its shift by the time the optimizer looks, also two weeks out.
  *
  * Step 2: shadow-draft tomorrow's captain schedule, the upcoming catering
  * order, and the operations review. All status 'shadow': logged on
@@ -25,15 +25,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (denied) return denied
 
   try {
-    const sync = await syncShiftsForRange(createAdminClient(), amsterdamToday(), amsterdamToday(1))
+    const sync = await syncShiftsForRange(createAdminClient(), amsterdamToday(), amsterdamToday(OPTIMIZE_HORIZON_DAYS))
     if ('error' in sync) {
       // Drafters still run — a sync failure degrades freshness, not correctness.
       console.error('[ghost-ops] shift sync failed:', sync.error)
     }
 
-    const [schedule, catering, opsReview, expiredMoves] = await Promise.all([
+    const [schedule, catering, cateringUpsell, opsReview, expiredMoves] = await Promise.all([
       draftTomorrowSchedule(),
       draftCateringOrders(),
+      draftCateringUpsells(),
       draftOpsReview(),
       expireStaleGuestMoves(),
     ])
@@ -46,6 +47,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       sync: 'error' in sync ? { error: sync.error } : sync,
       schedule,
       catering,
+      cateringUpsell,
       opsReview,
       guestMove,
       expiredMoves,

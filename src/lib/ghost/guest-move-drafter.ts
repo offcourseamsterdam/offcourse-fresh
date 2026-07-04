@@ -160,73 +160,118 @@ async function openMoveRequestExists(supabase: AdminClient, targetDate: string):
   return (data?.length ?? 0) > 0
 }
 
+/**
+ * How far ahead the optimizer scans. The moment a SECOND booking lands on a
+ * future day (Beer 2026-07-04), that day gets gap analysis — asking a guest
+ * two weeks out is friendlier and far more likely to succeed than asking the
+ * evening before.
+ */
+export const OPTIMIZE_HORIZON_DAYS = 14
+
 export async function draftGuestMoveRequest(): Promise<'drafted' | 'skipped'> {
   try {
     const supabase = createAdminClient()
-    const tomorrow = amsterdamToday(1)
+    const from = amsterdamToday(1)
+    const to = amsterdamToday(OPTIMIZE_HORIZON_DAYS)
 
-    if (await openMoveRequestExists(supabase, tomorrow)) return 'skipped'
-
+    // One query pair for the whole window, then per-day analysis.
     const [shiftsRes, bookingsRes] = await Promise.all([
       supabase
         .from('shifts')
-        .select('id, start_at, end_at, status, staff_id, booking_id, fareharbor_availability_pk, staff(name, hourly_rate_cents), boats(name, max_capacity)')
-        .eq('date', tomorrow)
+        .select('id, date, start_at, end_at, status, staff_id, booking_id, fareharbor_availability_pk, staff(name, hourly_rate_cents), boats(name, max_capacity)')
+        .gte('date', from)
+        .lte('date', to)
         .in('status', ['open', 'assigned', 'confirmed'])
         .order('start_at'),
       supabase
         .from('bookings')
-        .select('id, category, customer_name, customer_email, customer_phone, extras_selected, listing_title, guest_count, receipt_total, base_amount_cents, extras_amount_cents, fareharbor_availability_pk')
-        .eq('booking_date', tomorrow)
+        .select('id, booking_date, category, customer_name, customer_email, customer_phone, extras_selected, listing_title, guest_count, receipt_total, base_amount_cents, extras_amount_cents, fareharbor_availability_pk')
+        .gte('booking_date', from)
+        .lte('booking_date', to)
         .in('status', ['confirmed', 'booked']),
     ])
 
-    const bookings: MoveBooking[] = (bookingsRes.data ?? []).map(b => ({
-      id: b.id,
-      category: b.category,
-      customerName: b.customer_name,
-      customerEmail: b.customer_email,
-      customerPhone: b.customer_phone,
-      extrasSelected: (b.extras_selected as ExtrasLineItem[] | null) ?? null,
-      listingTitle: b.listing_title,
-      guestCount: b.guest_count,
-      totalCents: b.receipt_total ?? (b.base_amount_cents ?? 0) + (b.extras_amount_cents ?? 0),
-      fareharborAvailabilityPk: b.fareharbor_availability_pk,
-    }))
-    const bookingsById = new Map(bookings.map(b => [b.id, b]))
-    const bookingsByAvailPk = new Map<number, MoveBooking[]>()
-    for (const b of bookings) {
-      if (b.fareharborAvailabilityPk == null) continue
-      const list = bookingsByAvailPk.get(b.fareharborAvailabilityPk) ?? []
-      list.push(b)
-      bookingsByAvailPk.set(b.fareharborAvailabilityPk, list)
+    const bookingsByDate = new Map<string, MoveBooking[]>()
+    for (const b of bookingsRes.data ?? []) {
+      if (!b.booking_date) continue
+      const list = bookingsByDate.get(b.booking_date) ?? []
+      list.push({
+        id: b.id,
+        category: b.category,
+        customerName: b.customer_name,
+        customerEmail: b.customer_email,
+        customerPhone: b.customer_phone,
+        extrasSelected: (b.extras_selected as ExtrasLineItem[] | null) ?? null,
+        listingTitle: b.listing_title,
+        guestCount: b.guest_count,
+        totalCents: b.receipt_total ?? (b.base_amount_cents ?? 0) + (b.extras_amount_cents ?? 0),
+        fareharborAvailabilityPk: b.fareharbor_availability_pk,
+      })
+      bookingsByDate.set(b.booking_date, list)
     }
 
-    const shifts: ShiftWithBooking[] = (shiftsRes.data ?? []).map(s => {
-      const staff = s.staff as { name?: string; hourly_rate_cents?: number } | null
-      const boat = s.boats as { name?: string; max_capacity?: number | null } | null
-      const booking = s.booking_id ? bookingsById.get(s.booking_id) : null
-      return {
-        id: s.id,
-        boat: boat?.name ?? '?',
-        boatCapacity: boat?.max_capacity ?? null,
-        startAt: s.start_at,
-        endAt: s.end_at,
-        status: s.status,
-        staffId: s.staff_id,
-        staffName: staff?.name ?? null,
-        hourlyRateCents: staff?.hourly_rate_cents ?? null,
-        category: booking?.category ?? null,
-        guestCount: booking?.guestCount ?? null,
-        listingTitle: booking?.listingTitle ?? null,
-        bookingId: s.booking_id,
-        availabilityPk: s.fareharbor_availability_pk,
-      }
-    })
-    if (!shifts.length) return 'skipped'
+    const rawShiftsByDate = new Map<string, NonNullable<typeof shiftsRes.data>>()
+    for (const s of shiftsRes.data ?? []) {
+      const list = rawShiftsByDate.get(s.date) ?? []
+      list.push(s)
+      rawShiftsByDate.set(s.date, list)
+    }
 
-    const candidate = selectMoveCandidate(shifts, bookingsById, bookingsByAvailPk)
-    if (!candidate) return 'skipped' // an optimal (or unaskable) day is a good outcome
+    // Candidates per day — only days where a second sailing exists (one shift
+    // has no gap to close). Best saving across the whole window wins.
+    const candidates: Array<{ date: string; candidate: MoveCandidate }> = []
+    for (const [date, rawShifts] of rawShiftsByDate) {
+      if (rawShifts.length < 2) continue
+
+      const dayBookings = bookingsByDate.get(date) ?? []
+      const bookingsById = new Map(dayBookings.map(b => [b.id, b]))
+      const bookingsByAvailPk = new Map<number, MoveBooking[]>()
+      for (const b of dayBookings) {
+        if (b.fareharborAvailabilityPk == null) continue
+        const list = bookingsByAvailPk.get(b.fareharborAvailabilityPk) ?? []
+        list.push(b)
+        bookingsByAvailPk.set(b.fareharborAvailabilityPk, list)
+      }
+
+      const shifts: ShiftWithBooking[] = rawShifts.map(s => {
+        const staff = s.staff as { name?: string; hourly_rate_cents?: number } | null
+        const boat = s.boats as { name?: string; max_capacity?: number | null } | null
+        const booking = s.booking_id ? bookingsById.get(s.booking_id) : null
+        return {
+          id: s.id,
+          boat: boat?.name ?? '?',
+          boatCapacity: boat?.max_capacity ?? null,
+          startAt: s.start_at,
+          endAt: s.end_at,
+          status: s.status,
+          staffId: s.staff_id,
+          staffName: staff?.name ?? null,
+          hourlyRateCents: staff?.hourly_rate_cents ?? null,
+          category: booking?.category ?? null,
+          guestCount: booking?.guestCount ?? null,
+          listingTitle: booking?.listingTitle ?? null,
+          bookingId: s.booking_id,
+          availabilityPk: s.fareharbor_availability_pk,
+        }
+      })
+
+      const candidate = selectMoveCandidate(shifts, bookingsById, bookingsByAvailPk)
+      if (candidate) candidates.push({ date, candidate })
+    }
+    if (!candidates.length) return 'skipped' // optimal (or unaskable) days are a good outcome
+    candidates.sort((a, b) => b.candidate.estSavingCents - a.candidate.estSavingCents)
+
+    // Most valuable ask whose day is still free (sequential invariant), max
+    // ONE draft per cron run — outreach trickles, it never floods.
+    let picked: { date: string; candidate: MoveCandidate } | null = null
+    for (const c of candidates) {
+      if (!(await openMoveRequestExists(supabase, c.date))) {
+        picked = c
+        break
+      }
+    }
+    if (!picked) return 'skipped'
+    const { date: targetDate, candidate } = picked
 
     const currentTime = formatAmsterdamTime(candidate.currentStartAt)
     const proposedTime = formatAmsterdamTime(candidate.proposedStartAt)
@@ -241,7 +286,7 @@ export async function draftGuestMoveRequest(): Promise<'drafted' | 'skipped'> {
           content: `You write for Off Course Amsterdam ("your friend with a boat" — warm, casual, dry humour, never corporate). Draft a time-change request to a guest. This is a SHADOW draft: a human approves before anything is sent.
 
 THE ASK
-- Guest: ${candidate.booking.customerName ?? 'guest'} · ${candidate.booking.guestCount ?? '?'} people · ${candidate.booking.listingTitle ?? 'cruise'} on ${tomorrow}
+- Guest: ${candidate.booking.customerName ?? 'guest'} · ${candidate.booking.guestCount ?? '?'} people · ${candidate.booking.listingTitle ?? 'cruise'} on ${targetDate}
 - Current departure: ${currentTime} · proposed: ${proposedTime} (same boat: ${candidate.boat}, same duration, same price: €${totalEur})
 - Sweetener to offer: a bottle of wine on the house.
 - The message must include the literal placeholder {{link}} exactly once in the SMS and once in the email body — it becomes their personal response button/URL.
@@ -267,7 +312,7 @@ Return JSON only:
         kind: 'guest_move_request',
         payload: JSON.parse(
           JSON.stringify({
-            target_date: tomorrow,
+            target_date: targetDate,
             booking_id: candidate.bookingId,
             shift_id: candidate.shiftId,
             guest_name: candidate.booking.customerName,
@@ -288,7 +333,7 @@ Return JSON only:
             email_body: emailBody,
           }),
         ),
-        reasoning: `Closing the ${candidate.gapMinutes} min gap on ${candidate.boat} saves ≈ €${(candidate.estSavingCents / 100).toFixed(2)} in paid waiting. Shared cruise, no catering aboard, single-party departure — safe to ask. Sequential: this is the only open ask for ${tomorrow}.`,
+        reasoning: `Closing the ${candidate.gapMinutes} min gap on ${candidate.boat} (${targetDate}) saves ≈ €${(candidate.estSavingCents / 100).toFixed(2)} in paid waiting — the best opportunity in the next ${OPTIMIZE_HORIZON_DAYS} days. Shared cruise, no catering aboard, single-party departure — safe to ask. Sequential: this is the only open ask for ${targetDate}.`,
         status: 'shadow',
         model: CLAUDE_DRAFTER_MODEL,
       })
@@ -303,7 +348,7 @@ Return JSON only:
       bookingId: candidate.bookingId,
       shiftId: candidate.shiftId,
       source: 'ghost/guest-move-drafter',
-      payload: { target_date: tomorrow, est_saving_cents: candidate.estSavingCents, gap_minutes: candidate.gapMinutes },
+      payload: { target_date: targetDate, est_saving_cents: candidate.estSavingCents, gap_minutes: candidate.gapMinutes },
     })
 
     return 'drafted'
@@ -315,9 +360,9 @@ Return JSON only:
 
 /**
  * Expiry sweep (runs in the daily ghost-ops cron): a sent request the guest
- * hasn't answered within 48h goes to 'expired' — the ask is stale by then
- * (the cruise is usually tomorrow) and expiring it unblocks the sequential
- * slot for a new ask. Job-queue-grade follow-ups are a later phase.
+ * hasn't answered within 48h goes to 'expired' — expiring it unblocks the
+ * day's sequential slot, so a fresh (possibly better) ask can be drafted on a
+ * later run. Job-queue-grade follow-ups are a later phase.
  */
 export async function expireStaleGuestMoves(): Promise<number> {
   try {
