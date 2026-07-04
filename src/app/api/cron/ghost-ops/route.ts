@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireCronSecret } from '@/lib/auth/require-cron-secret'
 import { draftCateringOrders, draftTomorrowSchedule } from '@/lib/ghost/ops-drafters'
 import { draftOpsReview } from '@/lib/ghost/ops-review'
+import { draftGuestMoveRequest, expireStaleGuestMoves } from '@/lib/ghost/guest-move-drafter'
 import { syncShiftsForRange } from '@/lib/scheduling/sync-shifts'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { amsterdamToday } from '@/lib/utils'
@@ -30,17 +31,24 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       console.error('[ghost-ops] shift sync failed:', sync.error)
     }
 
-    const [schedule, catering, opsReview] = await Promise.all([
+    const [schedule, catering, opsReview, expiredMoves] = await Promise.all([
       draftTomorrowSchedule(),
       draftCateringOrders(),
       draftOpsReview(),
+      expireStaleGuestMoves(),
     ])
+
+    // After the ops review: draft at most ONE guest-move ask for tomorrow
+    // (sequential outreach — see guest-move-drafter.ts hard rules).
+    const guestMove = await draftGuestMoveRequest()
 
     return NextResponse.json({
       sync: 'error' in sync ? { error: sync.error } : sync,
       schedule,
       catering,
       opsReview,
+      guestMove,
+      expiredMoves,
     })
   } catch (err) {
     // The drafters swallow their own per-item errors, but anything thrown at the

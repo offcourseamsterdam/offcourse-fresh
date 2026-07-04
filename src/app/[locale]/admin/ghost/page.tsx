@@ -113,6 +113,19 @@ interface GhostProposal {
     supplier_name?: string | null
     items?: { name: string; quantity: number; unit?: string; pack_size?: number | null; pack_unit?: string | null }[]
     item_ids?: string[]
+    // guest_move_request
+    guest_name?: string | null
+    guest_email?: string | null
+    guest_phone?: string | null
+    cruise_title?: string | null
+    boat?: string
+    current_start_at?: string
+    proposed_start_at?: string
+    gap_minutes?: number
+    est_saving_cents?: number
+    total_cents?: number | null
+    incentive?: string
+    sms_text?: string
     // ops_review
     recommendations?: OpsRecommendation[]
     facts?: {
@@ -134,6 +147,9 @@ interface GhostProposal {
     comparison?: { verdict: SimilarityLabel; summary: string }
     sent_at?: string
     recipient?: string
+    channels?: string[]
+    guest_response?: string
+    responded_at?: string
   } | null
   reviewed_at: string | null
   created_at: string
@@ -186,6 +202,7 @@ const FEATURE_LABEL: Record<string, string> = {
   ghost_maintenance_photo: 'Maintenance photos',
   ghost_stock_reorder: 'Stock reorders',
   ghost_ops_review: 'Operations reviews',
+  ghost_guest_move: 'Guest move requests',
 }
 
 function featureLabel(feature: string): string {
@@ -207,7 +224,7 @@ export default function GhostPage() {
 
   // Conversation drafts (reply_draft, booking_proposal) live in the inbox now —
   // this page is the cross-conversation ops dashboard: ops proposals + stats.
-  const OPS_KINDS = ['schedule_day', 'catering_order', 'maintenance_task', 'stock_reorder', 'ops_review']
+  const OPS_KINDS = ['schedule_day', 'catering_order', 'maintenance_task', 'stock_reorder', 'ops_review', 'guest_move_request']
   const allProposals = (data?.proposals ?? []).filter(p => OPS_KINDS.includes(p.kind))
   const proposals = agentFilter
     ? allProposals.filter(p => agentForKind(p.kind)?.key === agentFilter)
@@ -514,6 +531,7 @@ const KIND_META: Record<string, { label: string; Icon: typeof Ghost }> = {
   maintenance_task: { label: 'Maintenance', Icon: Wrench },
   stock_reorder: { label: 'Stock reorder', Icon: Package },
   ops_review: { label: 'Ops review', Icon: Ship },
+  guest_move_request: { label: 'Guest move', Icon: Send },
 }
 
 /** Chip colours + labels per ops-review recommendation type. */
@@ -666,10 +684,10 @@ function ProposalCard({ proposal: p, onChanged }: { proposal: GhostProposal; onC
   const agent = agentForKind(p.kind)
   const conversational = p.kind === 'reply_draft' || p.kind === 'booking_proposal'
   const reviewed = !!p.reviewed_at
-  const [busy, setBusy] = useState<'review' | 'redraft' | 'compare' | 'send' | null>(null)
+  const [busy, setBusy] = useState<'review' | 'redraft' | 'compare' | 'send' | 'send_move' | null>(null)
   const [confirmSend, setConfirmSend] = useState(false)
 
-  async function act(action: 'review' | 'redraft' | 'compare' | 'send', extra: Record<string, unknown> = {}) {
+  async function act(action: 'review' | 'redraft' | 'compare' | 'send' | 'send_move', extra: Record<string, unknown> = {}) {
     setBusy(action)
     try {
       await adminMutate(`/api/admin/ghost/proposals/${p.id}`, 'POST', { action, ...extra })
@@ -1049,6 +1067,92 @@ function ProposalCard({ proposal: p, onChanged }: { proposal: GhostProposal; onC
                 <p className="text-sm text-zinc-400">No recommendations.</p>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Guest move request — the ask, the drafted messages, the answer */}
+        {p.kind === 'guest_move_request' && (
+          <div className="space-y-3">
+            <div className="rounded-lg bg-violet-50 border border-violet-100 px-3 py-2 text-sm">
+              <p className="font-semibold text-violet-900">
+                {p.payload.guest_name ?? 'Guest'} · {p.payload.cruise_title ?? 'cruise'} · {p.payload.target_date}
+              </p>
+              <p className="text-violet-700 mt-0.5">
+                {p.payload.current_start_at ? formatAmsterdamTime(p.payload.current_start_at) : '?'}
+                {' → '}
+                <span className="font-semibold">{p.payload.proposed_start_at ? formatAmsterdamTime(p.payload.proposed_start_at) : '?'}</span>
+                {p.payload.boat ? ` · same boat (${p.payload.boat})` : ''}
+                {typeof p.payload.est_saving_cents === 'number' && (
+                  <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">
+                    saves €{(p.payload.est_saving_cents / 100).toFixed(0)}
+                  </span>
+                )}
+              </p>
+              {p.payload.incentive && <p className="text-xs text-violet-600 mt-0.5">🍷 offer: {p.payload.incentive}</p>}
+            </div>
+
+            {p.payload.sms_text && (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-500 mb-1">
+                  SMS ({p.payload.guest_phone ?? 'no phone on booking'})
+                </p>
+                <p className="rounded-lg bg-zinc-50 border border-zinc-200 px-3 py-2 text-xs text-zinc-700 whitespace-pre-wrap">
+                  {p.payload.sms_text}
+                </p>
+              </div>
+            )}
+            {p.payload.email_body && (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-500 mb-1">
+                  Email ({p.payload.guest_email ?? 'no email on booking'})
+                </p>
+                <div className="rounded-lg bg-zinc-50 border border-zinc-200 px-3 py-2 text-xs text-zinc-700">
+                  {p.payload.email_subject && <p className="font-semibold mb-1">{p.payload.email_subject}</p>}
+                  <p className="whitespace-pre-wrap">{p.payload.email_body}</p>
+                </div>
+                <p className="text-[11px] text-zinc-400 mt-1">
+                  {'{{link}}'} becomes the guest&apos;s personal response page (Yes / Let me check / Keep my time).
+                </p>
+              </div>
+            )}
+
+            {/* Answer status, or the send button */}
+            {p.outcome?.guest_response ? (
+              <p className={`text-xs rounded-lg px-3 py-2 inline-flex items-center gap-1.5 border ${
+                p.outcome.guest_response === 'accept'
+                  ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
+                  : p.outcome.guest_response === 'decline'
+                    ? 'text-zinc-600 bg-zinc-50 border-zinc-200'
+                    : 'text-amber-700 bg-amber-50 border-amber-100'
+              }`}>
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Guest answered: {p.outcome.guest_response === 'accept' ? 'Yes, that\'s fine — rebook in FareHarbor now' : p.outcome.guest_response === 'decline' ? 'keeps the original time' : 'is checking'}
+                {p.outcome.responded_at ? ` · ${formatAmsterdamTime(p.outcome.responded_at)}` : ''}
+              </p>
+            ) : p.status === 'approved' ? (
+              <p className="text-xs text-sky-700 bg-sky-50 border border-sky-100 rounded-lg px-3 py-2 inline-flex items-center gap-1.5">
+                <Send className="w-3.5 h-3.5" /> Sent via {(p.outcome?.channels ?? []).join(' + ') || '—'}
+                {p.outcome?.sent_at ? ` · ${formatAmsterdamTime(p.outcome.sent_at)}` : ''} · awaiting the guest
+              </p>
+            ) : p.status === 'expired' ? (
+              <p className="text-xs text-zinc-500 bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 inline-block">
+                Expired without an answer — original time kept.
+              </p>
+            ) : (
+              <button
+                onClick={() => {
+                  if (!confirmSend) { setConfirmSend(true); return }
+                  act('send_move')
+                }}
+                disabled={busy === 'send_move'}
+                className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors disabled:opacity-50 ${
+                  confirmSend ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-zinc-900 text-white hover:bg-zinc-800'
+                }`}
+              >
+                {busy === 'send_move' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                {confirmSend ? 'Confirm — text & email the guest' : 'Approve & contact guest'}
+              </button>
+            )}
           </div>
         )}
 

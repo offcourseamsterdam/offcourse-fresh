@@ -1,4 +1,4 @@
-# AI Operations Engine — fundament (fase 1)
+# AI Operations Engine — fundament (fase 1) + guest outreach (fase 3a)
 
 ## What was built
 
@@ -28,6 +28,28 @@ The bookings→shifts generator (previously only behind the manual Sync button i
 /admin/scheduling) now also runs at the start of the ghost-ops cron, so the agent
 never reasons over a stale roster.
 
+### Guest outreach (fase 3a — PRD "Smart Guest Suggestions")
+
+4. **Guest move requests** (`guest_move_request` kind). When tomorrow has a paid
+   gap worth ≥ €20 / ≥ 45 min, the Ghost picks ONE booking that could close it
+   and drafts the ask: an SMS + email (brand voice, incentive = a bottle of wine,
+   quote summary, price unchanged) with a `{{link}}` placeholder. A human clicks
+   **Approve & contact guest** on /admin/ghost → email (Resend) + SMS (Twilio,
+   optional) go out with the guest's personal HMAC-tokened response link. The
+   guest taps **Yes, that's fine** / **Let me check** / **Keep my original time**
+   (en/nl page, no login). Every answer lands in `ops_events`
+   (`guest_move_accepted/declined/deferred`) — the acceptance-probability
+   training data the PRD calls for.
+
+   Hard rules, all in `selectMoveCandidate()` (code, never prompts):
+   - **sequential** — at most one open ask per day, ever;
+   - **private cruises**: never asked;
+   - **bookings with catering/drinks aboard: never asked** (Beer 2026-07-04 —
+     the supplier order is already placed);
+   - **multi-booking departures**: never asked (would race several parties);
+   - a guest **yes never rebooks by itself** — Slack pings the team to perform
+     the FareHarbor rebook via admin. Unanswered asks expire after 48h (cron).
+
 ## Key files
 
 | File | Role |
@@ -41,6 +63,12 @@ never reasons over a stale roster.
 | `src/lib/ghost/agents.ts` | `operations` agent registered; `ops_review` at `propose`, ceiling `ask` |
 | `src/app/[locale]/admin/ghost/page.tsx` | Ops-review card: facts strip + per-recommendation badge, €, guest impact, confidence |
 | `scripts/run-ops-review.ts` | Run the agent once for real (sync + draft + print the proposal) |
+| `src/lib/ghost/guest-move-drafter.ts` | `selectMoveCandidate()` (pure, tested — all outreach hard rules) + `draftGuestMoveRequest()` + 48h expiry sweep |
+| `src/lib/ops/move-token.ts` | Per-proposal HMAC token for the guest's personal response link |
+| `src/lib/sms/send-sms.ts` | Twilio SMS via one fetch — `false` when unconfigured, throws on real failure |
+| `src/app/[locale]/(public)/move/[id]/[token]/` | The guest response page (en/nl): offer, quote, three buttons |
+| `src/app/api/move/respond/route.ts` | Records the guest's answer: outcome + ops_events + Slack ping (accept → "rebook now") |
+| `scripts/demo-guest-move.ts` | Insert/cleanup a demo request to eyeball the page + admin card |
 
 Emit points wired into existing transitions: `webhooks/stripe` (booking_confirmed,
 both payment flows), `admin/bookings/[id]/cancel` (booking_cancelled),

@@ -7,6 +7,8 @@ import { analyzeDifference } from '@/lib/ghost/compare'
 import { translateToEnglish } from '@/lib/chat/translate'
 import { prepareInboxBookingBody } from '@/lib/ghost/book-from-proposal'
 import { sendMaintenanceEmail } from '@/lib/maintenance/send-email'
+import { sendSms } from '@/lib/sms/send-sms'
+import { moveResponseUrl } from '@/lib/ops/move-token'
 import { postSlackText } from '@/lib/slack/send-notification'
 import { emitOpsEvent } from '@/lib/ops/events'
 import type { BookingProposalInput, AltSlot } from '@/lib/ghost/dry-run'
@@ -263,6 +265,117 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         return apiOk({ dispatched, recipient })
       } catch (sendErr) {
         // Release the claim so the human can retry after fixing the cause.
+        await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
+        throw sendErr
+      }
+    }
+
+    if (body.action === 'send_move') {
+      const { data: p } = await supabase
+        .from('agent_proposals')
+        .select('id, kind, status, payload')
+        .eq('id', id)
+        .single()
+      if (!p || p.kind !== 'guest_move_request') return apiError('Not a guest move request', 400)
+      if (p.status === 'approved' || p.status === 'executed') return apiError('This request was already sent.', 409)
+
+      const payload = (p.payload ?? {}) as {
+        guest_name?: string | null
+        guest_email?: string | null
+        guest_phone?: string | null
+        sms_text?: string
+        email_subject?: string
+        email_body?: string
+      }
+      if (!payload.sms_text || !payload.email_subject || !payload.email_body) {
+        return apiError('This proposal has no drafted message to send.', 422)
+      }
+      if (!payload.guest_email && !payload.guest_phone) {
+        return apiError('No guest contact details on this booking.', 422)
+      }
+
+      // Personal, unguessable response link (HMAC of the proposal id).
+      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? req.nextUrl.origin
+      const link = moveResponseUrl(baseUrl, id)
+
+      // ATOMIC CLAIM before contacting a guest: 'shadow' → 'sending'. A second
+      // click gets zero rows and aborts — a guest is never texted twice.
+      const { data: claimed } = await supabase
+        .from('agent_proposals')
+        .update({ status: 'sending' })
+        .eq('id', id)
+        .eq('status', 'shadow')
+        .select('id')
+      if (!claimed?.length) return apiError('This request is already being sent (or was sent).', 409)
+
+      try {
+        const channels: string[] = []
+        let emailError: string | null = null
+        let smsError: string | null = null
+
+        if (payload.guest_email) {
+          try {
+            const sent = await sendMaintenanceEmail({
+              recipient: payload.guest_email,
+              subject: payload.email_subject,
+              body: payload.email_body.replaceAll('{{link}}', link),
+            })
+            if (sent) channels.push('email')
+          } catch (err) {
+            emailError = err instanceof Error ? err.message : 'email failed'
+          }
+        }
+        if (payload.guest_phone) {
+          try {
+            const sent = await sendSms(payload.guest_phone, payload.sms_text.replaceAll('{{link}}', link))
+            if (sent) channels.push('sms')
+          } catch (err) {
+            smsError = err instanceof Error ? err.message : 'sms failed'
+          }
+        }
+
+        if (!channels.length) {
+          // Nothing actually reached the guest — release the claim, report why.
+          await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
+          const detail = [emailError, smsError].filter(Boolean).join(' · ')
+          return apiError(
+            detail || 'No channel configured (RESEND_API_KEY / TWILIO_*) — nothing was sent.',
+            503,
+          )
+        }
+
+        // 'approved' = sent, awaiting the guest's answer (the response page
+        // flips it to 'executed'). The 48h expiry sweep watches outcome.sent_at.
+        await supabase
+          .from('agent_proposals')
+          .update({
+            status: 'approved',
+            outcome: JSON.parse(JSON.stringify({
+              sent_at: new Date().toISOString(),
+              channels,
+              ...(emailError ? { email_error: emailError } : {}),
+              ...(smsError ? { sms_error: smsError } : {}),
+            })),
+          })
+          .eq('id', id)
+
+        await emitOpsEvent({
+          eventType: 'guest_move_requested',
+          actorType: 'human',
+          proposalId: id,
+          source: 'admin/ghost/proposals/[id]:send_move',
+          payload: { channels },
+        })
+        try {
+          await postSlackText(
+            `📱 *Guest move request sent* to ${payload.guest_name ?? 'guest'} via ${channels.join(' + ')}\nAwaiting their answer — you'll get a ping here when they respond.`,
+            { type: 'guest-move-sent', triggeredBy: 'admin' },
+          )
+        } catch {
+          /* swallow */
+        }
+        return apiOk({ channels })
+      } catch (sendErr) {
         await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
         throw sendErr
       }

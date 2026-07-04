@@ -23,6 +23,11 @@ export type OpsEventType =
   | 'recommendation_reviewed'
   | 'recommendation_approved'
   | 'recommendation_rejected'
+  | 'guest_move_requested'
+  | 'guest_move_accepted'
+  | 'guest_move_declined'
+  | 'guest_move_deferred'
+  | 'guest_move_expired'
 
 export type OpsActorType = 'human' | 'agent' | 'system'
 

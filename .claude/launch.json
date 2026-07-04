@@ -14,6 +14,13 @@
       "runtimeArgs": ["run", "dev:local"],
       "port": 3001,
       "autoPort": true
+    },
+    {
+      "name": "Exchange Dev Server",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "/Users/beer/Developer/Exchange-released-version", "run", "dev"],
+      "port": 8080,
+      "autoPort": true
     }
   ]
 }
