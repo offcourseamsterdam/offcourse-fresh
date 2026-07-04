@@ -1711,6 +1711,7 @@ export type Database = {
           tripadvisor_total_reviews: number | null
           tripadvisor_url: string | null
           updated_at: string
+          withlocals_experience_short_id: string | null
         }
         Insert: {
           created_at?: string
@@ -1725,6 +1726,7 @@ export type Database = {
           tripadvisor_total_reviews?: number | null
           tripadvisor_url?: string | null
           updated_at?: string
+          withlocals_experience_short_id?: string | null
         }
         Update: {
           created_at?: string
@@ -1739,6 +1741,7 @@ export type Database = {
           tripadvisor_total_reviews?: number | null
           tripadvisor_url?: string | null
           updated_at?: string
+          withlocals_experience_short_id?: string | null
         }
         Relationships: []
       }
@@ -2123,6 +2126,78 @@ export type Database = {
             columns: ["listing_id"]
             isOneToOne: false
             referencedRelation: "cruise_listings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      maintenance_tasks: {
+        Row: {
+          boat_id: string | null
+          created_at: string
+          description: string | null
+          id: string
+          photo_descriptions: string[]
+          photo_urls: string[]
+          priority: string
+          proposal_id: string | null
+          reporter: string | null
+          source: string
+          source_channel: string | null
+          source_slack_event_id: string | null
+          status: string
+          technician_emailed_at: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          boat_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          photo_descriptions?: string[]
+          photo_urls?: string[]
+          priority?: string
+          proposal_id?: string | null
+          reporter?: string | null
+          source?: string
+          source_channel?: string | null
+          source_slack_event_id?: string | null
+          status?: string
+          technician_emailed_at?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          boat_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          photo_descriptions?: string[]
+          photo_urls?: string[]
+          priority?: string
+          proposal_id?: string | null
+          reporter?: string | null
+          source?: string
+          source_channel?: string | null
+          source_slack_event_id?: string | null
+          status?: string
+          technician_emailed_at?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_tasks_boat_id_fkey"
+            columns: ["boat_id"]
+            isOneToOne: false
+            referencedRelation: "boats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_tasks_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "agent_proposals"
             referencedColumns: ["id"]
           },
         ]
@@ -2708,6 +2783,90 @@ export type Database = {
           },
         ]
       }
+      review_bonus_conflicts: {
+        Row: {
+          awarded_staff_id: string | null
+          candidate_staff_ids: string[]
+          created_at: string
+          id: string
+          matched_name: string
+          resolved_at: string | null
+          review_id: string
+        }
+        Insert: {
+          awarded_staff_id?: string | null
+          candidate_staff_ids: string[]
+          created_at?: string
+          id?: string
+          matched_name: string
+          resolved_at?: string | null
+          review_id: string
+        }
+        Update: {
+          awarded_staff_id?: string | null
+          candidate_staff_ids?: string[]
+          created_at?: string
+          id?: string
+          matched_name?: string
+          resolved_at?: string | null
+          review_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "review_bonus_conflicts_awarded_staff_id_fkey"
+            columns: ["awarded_staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "review_bonus_conflicts_review_id_fkey"
+            columns: ["review_id"]
+            isOneToOne: false
+            referencedRelation: "social_proof_reviews"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      review_bonuses: {
+        Row: {
+          amount_cents: number
+          awarded_at: string
+          id: string
+          review_id: string
+          staff_id: string
+        }
+        Insert: {
+          amount_cents?: number
+          awarded_at?: string
+          id?: string
+          review_id: string
+          staff_id: string
+        }
+        Update: {
+          amount_cents?: number
+          awarded_at?: string
+          id?: string
+          review_id?: string
+          staff_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "review_bonuses_review_id_fkey"
+            columns: ["review_id"]
+            isOneToOne: false
+            referencedRelation: "social_proof_reviews"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "review_bonuses_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       shifts: {
         Row: {
           boat_id: string
@@ -2778,6 +2937,60 @@ export type Database = {
           },
         ]
       }
+      slack_message_log: {
+        Row: {
+          channel: string | null
+          direction: string
+          id: string
+          message_preview: string | null
+          notification_type: string | null
+          recipient_type: string | null
+          sent_at: string
+          triggered_by: string | null
+        }
+        Insert: {
+          channel?: string | null
+          direction?: string
+          id?: string
+          message_preview?: string | null
+          notification_type?: string | null
+          recipient_type?: string | null
+          sent_at?: string
+          triggered_by?: string | null
+        }
+        Update: {
+          channel?: string | null
+          direction?: string
+          id?: string
+          message_preview?: string | null
+          notification_type?: string | null
+          recipient_type?: string | null
+          sent_at?: string
+          triggered_by?: string | null
+        }
+        Relationships: []
+      }
+      slack_notification_settings: {
+        Row: {
+          enabled: boolean
+          id: string
+          notes: string | null
+          updated_at: string
+        }
+        Insert: {
+          enabled?: boolean
+          id: string
+          notes?: string | null
+          updated_at?: string
+        }
+        Update: {
+          enabled?: boolean
+          id?: string
+          notes?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       social_proof_reviews: {
         Row: {
           author_photo_url: string | null
@@ -2788,6 +3001,7 @@ export type Database = {
           is_active: boolean
           language: string | null
           original_text: string | null
+          possible_duplicate_of: string | null
           publish_time: string | null
           rating: number
           review_image_url: string | null
@@ -2812,6 +3026,7 @@ export type Database = {
           is_active?: boolean
           language?: string | null
           original_text?: string | null
+          possible_duplicate_of?: string | null
           publish_time?: string | null
           rating?: number
           review_image_url?: string | null
@@ -2836,6 +3051,7 @@ export type Database = {
           is_active?: boolean
           language?: string | null
           original_text?: string | null
+          possible_duplicate_of?: string | null
           publish_time?: string | null
           rating?: number
           review_image_url?: string | null
@@ -2851,7 +3067,15 @@ export type Database = {
           source?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "social_proof_reviews_possible_duplicate_of_fkey"
+            columns: ["possible_duplicate_of"]
+            isOneToOne: false
+            referencedRelation: "social_proof_reviews"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       staff: {
         Row: {
@@ -2973,6 +3197,72 @@ export type Database = {
           key?: string
           label?: string
           order_index?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      stock_items: {
+        Row: {
+          active: boolean
+          category: string
+          counted_via: string | null
+          created_at: string
+          current_count: number
+          id: string
+          last_counted_at: string | null
+          last_reordered_at: string | null
+          location: string | null
+          name: string
+          pack_size: number | null
+          pack_unit: string | null
+          reorder_qty: number
+          reorder_threshold: number
+          sort_order: number
+          supplier_email: string | null
+          supplier_name: string | null
+          unit: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          category?: string
+          counted_via?: string | null
+          created_at?: string
+          current_count?: number
+          id?: string
+          last_counted_at?: string | null
+          last_reordered_at?: string | null
+          location?: string | null
+          name: string
+          pack_size?: number | null
+          pack_unit?: string | null
+          reorder_qty?: number
+          reorder_threshold?: number
+          sort_order?: number
+          supplier_email?: string | null
+          supplier_name?: string | null
+          unit?: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          category?: string
+          counted_via?: string | null
+          created_at?: string
+          current_count?: number
+          id?: string
+          last_counted_at?: string | null
+          last_reordered_at?: string | null
+          location?: string | null
+          name?: string
+          pack_size?: number | null
+          pack_unit?: string | null
+          reorder_qty?: number
+          reorder_threshold?: number
+          sort_order?: number
+          supplier_email?: string | null
+          supplier_name?: string | null
+          unit?: string
           updated_at?: string
         }
         Relationships: []

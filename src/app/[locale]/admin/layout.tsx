@@ -16,6 +16,8 @@ const navSections: NavSection[] = [
       { href: '/admin/inbox',     label: 'Inbox',     icon: 'inbox',     badge: 'inbox-open-count' },
       { href: '/admin/catering',  label: 'Catering',  icon: 'catering',  badge: 'pending-catering-count' },
       { href: '/admin/scheduling', label: 'Scheduling', icon: 'planning' },
+      { href: '/admin/maintenance', label: 'Maintenance', icon: 'maintenance' },
+      { href: '/admin/stock',      label: 'Stock',      icon: 'stock' },
       { href: '/admin/customers', label: 'Customers', icon: 'customers', comingSoon: true },
     ],
   },
@@ -56,6 +58,7 @@ const navSections: NavSection[] = [
     label: 'Dev',
     items: [
       { href: '/admin/ghost',               label: 'Ghost AI',              icon: 'ghost' },
+      { href: '/admin/notifications',       label: 'Notifications',         icon: 'notifications' },
       { href: '/admin/fareharbor',          label: 'FareHarbor API',        icon: 'fareharbor' },
       { href: '/admin/fareharbor-settings', label: 'FH Settings',           icon: 'fareharbor' },
       { href: '/admin/connections',        label: 'Other API Connections', icon: 'connections',  comingSoon: true },

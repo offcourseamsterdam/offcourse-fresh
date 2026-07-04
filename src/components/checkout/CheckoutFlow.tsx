@@ -354,6 +354,8 @@ export function CheckoutFlow({
     const paymentIntent = params.get('payment_intent')
     const redirectStatus = params.get('redirect_status')
     const isIdealReturn = !!(paymentIntent && redirectStatus === 'succeeded')
+    const isIdealProcessing = !!(paymentIntent && redirectStatus === 'processing')
+    const isIdealFailed = !!(paymentIntent && redirectStatus === 'requires_payment_method')
 
     const stored = sessionStorage.getItem(SESSION_BOOKING_KEY)
     if (stored) {
@@ -372,6 +374,13 @@ export function CheckoutFlow({
     const storedContact = sessionStorage.getItem(SESSION_CONTACT_KEY)
     if (storedContact) {
       try { setContact(JSON.parse(storedContact)) } catch { /* ignore */ }
+    }
+
+    // iDEAL redirect returned with a non-success status — show the right message.
+    if (isIdealFailed) {
+      setError('Your bank declined the payment. Please try again with a different payment method.')
+    } else if (isIdealProcessing) {
+      setError('Your payment is still being processed by your bank. You will receive a confirmation email once it completes.')
     }
 
     // Handle iDEAL redirect return

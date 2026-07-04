@@ -32,6 +32,9 @@ import {
   Receipt,
   Inbox,
   Ghost,
+  Wrench,
+  Bell,
+  Boxes,
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react'
@@ -79,6 +82,9 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   finance: Receipt,
   inbox: Inbox,
   ghost: Ghost,
+  maintenance: Wrench,
+  notifications: Bell,
+  stock: Boxes,
 }
 
 const PREFETCH_URLS: Record<string, string> = {

@@ -22,3 +22,8 @@ One file per track or major feature. Written before every PR and kept up to date
 | Customer chat & unified inbox (webchat phase 1) | [customer-chat-inbox.md](customer-chat-inbox.md) | — | done |
 | Ghost shadow AI (proposals, ops drafters, cost meter) | [ghost-shadow-ai.md](ghost-shadow-ai.md) | — | done |
 | Ghost inbox co-pilot (P0: act from the inbox) | [ghost-inbox-copilot.md](ghost-inbox-copilot.md) | — | done |
+| Maintenance agent (Slack → priority → photo → technician email) | [maintenance-agent.md](maintenance-agent.md) | — | done |
+| Storage / Stock agent (QR count → low-stock → supplier reorder email) | [stock-agent.md](stock-agent.md) | — | done |
+| Notification Center (Slack catalog + message log + toggles) | [notification-center.md](notification-center.md) | — | done |
+| Booking double-create guard (PaymentIntent claim) | [booking-double-create-guard.md](booking-double-create-guard.md) | — | done |
+| Observability hardening + money-path tests | [observability-hardening.md](observability-hardening.md) | — | done |
