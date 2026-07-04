@@ -3,14 +3,7 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { syncBodySchema } from '@/lib/scheduling/shift-schema'
-import {
-  generateShiftsFromBookings,
-  type SyncBooking,
-  type SyncShift,
-} from '@/lib/scheduling/generate-shifts'
-
-const BOOKING_COLS =
-  'id, booking_date, start_time, end_time, status, category, customer_type_name, fareharbor_availability_pk'
+import { syncShiftsForRange } from '@/lib/scheduling/sync-shifts'
 
 /**
  * POST /api/admin/scheduling/sync { from, to }
@@ -28,59 +21,10 @@ export async function POST(request: NextRequest) {
     if (!parsed.success) return apiError(parsed.error.issues[0]?.message ?? 'Invalid body', 400)
     const { from, to } = parsed.data
 
-    const supabase = createAdminClient()
+    const result = await syncShiftsForRange(createAdminClient(), from, to)
+    if ('error' in result) return apiError(result.error)
 
-    const [bookingsRes, shiftsRes, boatsRes] = await Promise.all([
-      supabase.from('bookings').select(BOOKING_COLS).gte('booking_date', from).lte('booking_date', to),
-      supabase
-        .from('shifts')
-        .select('id, booking_id, fareharbor_availability_pk, date, start_at, end_at, boat_id, status')
-        .gte('date', from)
-        .lte('date', to),
-      supabase.from('boats').select('id, name'),
-    ])
-    if (bookingsRes.error) return apiError(bookingsRes.error.message)
-    if (shiftsRes.error) return apiError(shiftsRes.error.message)
-    if (boatsRes.error) return apiError(boatsRes.error.message)
-
-    const bookings: SyncBooking[] = bookingsRes.data
-    const shifts: SyncShift[] = shiftsRes.data
-
-    // Source bookings of in-range shifts that the date query missed
-    // (booking moved to another day, or linked via departure pk).
-    const haveIds = new Set(bookings.map(b => b.id))
-    const havePks = new Set(bookings.map(b => b.fareharbor_availability_pk).filter(Boolean))
-    const missingIds = shifts.map(s => s.booking_id).filter((id): id is string => !!id && !haveIds.has(id))
-    const missingPks = shifts
-      .map(s => s.fareharbor_availability_pk)
-      .filter((pk): pk is number => pk != null && !havePks.has(pk))
-
-    if (missingIds.length > 0) {
-      const extra = await supabase.from('bookings').select(BOOKING_COLS).in('id', missingIds)
-      if (extra.error) return apiError(extra.error.message)
-      bookings.push(...extra.data)
-    }
-    if (missingPks.length > 0) {
-      const extra = await supabase
-        .from('bookings')
-        .select(BOOKING_COLS)
-        .in('fareharbor_availability_pk', missingPks)
-      if (extra.error) return apiError(extra.error.message)
-      for (const b of extra.data) if (!haveIds.has(b.id)) bookings.push(b)
-    }
-
-    const { toCreate, toUpdate, skipped } = generateShiftsFromBookings(bookings, shifts, boatsRes.data)
-
-    if (toCreate.length > 0) {
-      const { error } = await supabase.from('shifts').insert(toCreate)
-      if (error) return apiError(error.message)
-    }
-    for (const u of toUpdate) {
-      const { error } = await supabase.from('shifts').update(u.changes).eq('id', u.id)
-      if (error) return apiError(error.message)
-    }
-
-    return apiOk({ created: toCreate.length, updated: toUpdate.length, skipped })
+    return apiOk(result)
   } catch (err) {
     return apiError(err instanceof Error ? err.message : 'Unknown error')
   }

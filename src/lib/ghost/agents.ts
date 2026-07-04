@@ -45,6 +45,7 @@ export const AUTONOMY_CEILING: Record<string, AutonomyLevel> = {
   schedule_day: 'ask',
   maintenance_task: 'ask',
   stock_reorder: 'ask',
+  ops_review: 'ask', // may one day get an Apply button; never auto — it moves boats and people
 }
 
 /** The kind's CURRENT operating level (must be ≤ its ceiling). */
@@ -55,6 +56,7 @@ export const AUTONOMY_LEVEL: Record<string, AutonomyLevel> = {
   schedule_day: 'propose',
   maintenance_task: 'propose',
   stock_reorder: 'propose',
+  ops_review: 'propose', // shadow-only until its outcome history earns a climb
 }
 
 export function autonomyForKind(kind: string): AutonomyLevel {
@@ -134,6 +136,15 @@ export const GHOST_AGENTS: GhostAgent[] = [
     status: 'active',
     kinds: ['stock_reorder'],
     trigger: 'stock count submitted (QR form or admin grid)',
+  },
+  {
+    key: 'operations',
+    name: 'Operations optimizer',
+    description:
+      "Reviews tomorrow's full plan — shifts, gaps, boats, captains, blocking maintenance — and proposes the most profitable improvements with the € reasoning shown: close a paid gap, consolidate onto one boat, fix the staffing level.",
+    status: 'active',
+    kinds: ['ops_review'],
+    trigger: 'daily ops cron (15:00 UTC)',
   },
 ]
 

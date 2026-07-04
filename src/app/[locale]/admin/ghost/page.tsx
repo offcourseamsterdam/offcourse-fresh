@@ -16,6 +16,7 @@ import {
   Package,
   RefreshCw,
   Send,
+  Ship,
   Sparkles,
   UtensilsCrossed,
   Wrench,
@@ -48,6 +49,16 @@ interface CateringOrder {
   date: string
   items: { name: string; quantity: number }[]
   urgent_unsent: number
+}
+
+interface OpsRecommendation {
+  type: 'consolidate_gap' | 'consolidate_boat' | 'staffing_level' | 'maintenance_conflict' | 'none'
+  summary: string
+  why: string
+  est_saving_cents: number
+  guest_impact: 'none' | 'low' | 'high'
+  requires_guest_contact: boolean
+  confidence: number
 }
 
 interface AgentStepLog {
@@ -102,6 +113,16 @@ interface GhostProposal {
     supplier_name?: string | null
     items?: { name: string; quantity: number; unit?: string; pack_size?: number | null; pack_unit?: string | null }[]
     item_ids?: string[]
+    // ops_review
+    recommendations?: OpsRecommendation[]
+    facts?: {
+      boats_in_use?: string[]
+      total_idle_minutes?: number
+      total_est_idle_cost_cents?: number
+      open_shifts?: number
+      merge_candidates?: number
+      maintenance_conflicts?: number
+    }
   }
   reasoning: string | null
   status: string
@@ -164,6 +185,7 @@ const FEATURE_LABEL: Record<string, string> = {
   ghost_maintenance_task: 'Maintenance drafts',
   ghost_maintenance_photo: 'Maintenance photos',
   ghost_stock_reorder: 'Stock reorders',
+  ghost_ops_review: 'Operations reviews',
 }
 
 function featureLabel(feature: string): string {
@@ -185,7 +207,7 @@ export default function GhostPage() {
 
   // Conversation drafts (reply_draft, booking_proposal) live in the inbox now —
   // this page is the cross-conversation ops dashboard: ops proposals + stats.
-  const OPS_KINDS = ['schedule_day', 'catering_order', 'maintenance_task', 'stock_reorder']
+  const OPS_KINDS = ['schedule_day', 'catering_order', 'maintenance_task', 'stock_reorder', 'ops_review']
   const allProposals = (data?.proposals ?? []).filter(p => OPS_KINDS.includes(p.kind))
   const proposals = agentFilter
     ? allProposals.filter(p => agentForKind(p.kind)?.key === agentFilter)
@@ -481,6 +503,7 @@ const AGENT_ICONS: Record<string, typeof Ghost> = {
   scheduling: CalendarClock,
   maintenance: Wrench,
   storage: Package,
+  operations: Ship,
 }
 
 const KIND_META: Record<string, { label: string; Icon: typeof Ghost }> = {
@@ -490,6 +513,23 @@ const KIND_META: Record<string, { label: string; Icon: typeof Ghost }> = {
   catering_order: { label: 'Catering', Icon: UtensilsCrossed },
   maintenance_task: { label: 'Maintenance', Icon: Wrench },
   stock_reorder: { label: 'Stock reorder', Icon: Package },
+  ops_review: { label: 'Ops review', Icon: Ship },
+}
+
+/** Chip colours + labels per ops-review recommendation type. */
+const OPS_REC_BADGE: Record<string, string> = {
+  maintenance_conflict: 'bg-red-100 text-red-700',
+  staffing_level: 'bg-amber-100 text-amber-700',
+  consolidate_boat: 'bg-violet-100 text-violet-700',
+  consolidate_gap: 'bg-sky-100 text-sky-700',
+  none: 'bg-emerald-100 text-emerald-700',
+}
+const OPS_REC_LABEL: Record<string, string> = {
+  maintenance_conflict: 'Maintenance conflict',
+  staffing_level: 'Staffing',
+  consolidate_boat: 'Consolidate boat',
+  consolidate_gap: 'Close gap',
+  none: 'Already optimal',
 }
 
 /** Classification chip colours for maintenance proposals. */
@@ -963,6 +1003,52 @@ function ProposalCard({ proposal: p, onChanged }: { proposal: GhostProposal; onC
                 {confirmSend ? 'Confirm — send email' : 'Approve & send email'}
               </button>
             ) : null}
+          </div>
+        )}
+
+        {/* Operations review — tomorrow's plan, scored and explained */}
+        {p.kind === 'ops_review' && (
+          <div className="space-y-3">
+            {p.payload.facts && (
+              <p className="text-xs text-zinc-500">
+                {p.payload.facts.boats_in_use?.join(' + ') ?? '—'} on the water
+                {typeof p.payload.facts.open_shifts === 'number' && p.payload.facts.open_shifts > 0 && (
+                  <span className="text-amber-600 font-medium"> · {p.payload.facts.open_shifts} shift{p.payload.facts.open_shifts === 1 ? '' : 's'} without captain</span>
+                )}
+                {typeof p.payload.facts.total_idle_minutes === 'number' && p.payload.facts.total_idle_minutes > 0 && (
+                  <> · {p.payload.facts.total_idle_minutes} min idle ≈ €{((p.payload.facts.total_est_idle_cost_cents ?? 0) / 100).toFixed(0)}</>
+                )}
+              </p>
+            )}
+            <div className="space-y-1.5">
+              {(p.payload.recommendations ?? []).map((r, i) => (
+                <div key={i} className="rounded-lg bg-violet-50 border border-violet-100 px-3 py-2 text-sm">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wide ${OPS_REC_BADGE[r.type] ?? 'bg-zinc-100 text-zinc-600'}`}>
+                      {OPS_REC_LABEL[r.type] ?? r.type}
+                    </span>
+                    <span className="font-semibold text-violet-900">{r.summary}</span>
+                    {r.est_saving_cents > 0 && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">
+                        saves €{(r.est_saving_cents / 100).toFixed(0)}
+                      </span>
+                    )}
+                    {r.requires_guest_contact && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">
+                        needs guest contact
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-violet-700 mt-1">{r.why}</p>
+                  <p className="text-[11px] text-zinc-400 mt-0.5">
+                    guest impact: {r.guest_impact} · confidence {Math.round(r.confidence * 100)}%
+                  </p>
+                </div>
+              ))}
+              {!(p.payload.recommendations ?? []).length && (
+                <p className="text-sm text-zinc-400">No recommendations.</p>
+              )}
+            </div>
           </div>
         )}
 

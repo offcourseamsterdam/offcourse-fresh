@@ -94,7 +94,7 @@ describe('agent registry', () => {
     expect(agentForKind('nonexistent')).toBeNull()
   })
 
-  it('has the six agents Beer asked for', () => {
+  it('has the seven agents of the operations fleet', () => {
     expect(GHOST_AGENTS.map(a => a.key)).toEqual([
       'inbox',
       'booking',
@@ -102,6 +102,7 @@ describe('agent registry', () => {
       'scheduling',
       'maintenance',
       'storage',
+      'operations',
     ])
   })
 })

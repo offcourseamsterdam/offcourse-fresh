@@ -27,3 +27,4 @@ One file per track or major feature. Written before every PR and kept up to date
 | Notification Center (Slack catalog + message log + toggles) | [notification-center.md](notification-center.md) | — | done |
 | Booking double-create guard (PaymentIntent claim) | [booking-double-create-guard.md](booking-double-create-guard.md) | — | done |
 | Observability hardening + money-path tests | [observability-hardening.md](observability-hardening.md) | — | done |
+| AI Operations Engine — fase 1 (ops_events log, operational profiles, operations optimizer agent, auto shift-sync) | [ai-operations-engine.md](ai-operations-engine.md) | — | done |
