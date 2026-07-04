@@ -329,6 +329,21 @@ export type Database = {
         }
         Relationships: []
       }
+      booking_claims: {
+        Row: {
+          created_at: string
+          payment_intent_id: string
+        }
+        Insert: {
+          created_at?: string
+          payment_intent_id: string
+        }
+        Update: {
+          created_at?: string
+          payment_intent_id?: string
+        }
+        Relationships: []
+      }
       bookings: {
         Row: {
           base_amount_cents: number | null
@@ -362,6 +377,7 @@ export type Database = {
           guest_count: number | null
           guest_note: string | null
           id: string
+          invoice_number: string | null
           listing_id: string | null
           listing_title: string | null
           partner_id: string | null
@@ -417,6 +433,7 @@ export type Database = {
           guest_count?: number | null
           guest_note?: string | null
           id?: string
+          invoice_number?: string | null
           listing_id?: string | null
           listing_title?: string | null
           partner_id?: string | null
@@ -472,6 +489,7 @@ export type Database = {
           guest_count?: number | null
           guest_note?: string | null
           id?: string
+          invoice_number?: string | null
           listing_id?: string | null
           listing_title?: string | null
           partner_id?: string | null
@@ -2387,6 +2405,51 @@ export type Database = {
           },
         ]
       }
+      ops_events: {
+        Row: {
+          actor_id: string | null
+          actor_type: string
+          booking_id: string | null
+          created_at: string
+          event_type: string
+          id: string
+          occurred_at: string
+          payload: Json
+          proposal_id: string | null
+          shift_id: string | null
+          source: string
+          staff_id: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          actor_type: string
+          booking_id?: string | null
+          created_at?: string
+          event_type: string
+          id?: string
+          occurred_at?: string
+          payload?: Json
+          proposal_id?: string | null
+          shift_id?: string | null
+          source: string
+          staff_id?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          actor_type?: string
+          booking_id?: string | null
+          created_at?: string
+          event_type?: string
+          id?: string
+          occurred_at?: string
+          payload?: Json
+          proposal_id?: string | null
+          shift_id?: string | null
+          source?: string
+          staff_id?: string | null
+        }
+        Relationships: []
+      }
       partner_codes: {
         Row: {
           code: string
@@ -3601,6 +3664,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      allocate_invoice_number: {
+        Args: { p_stripe_pi_id: string }
+        Returns: string
+      }
       get_translatable_columns: { Args: never; Returns: Json }
       ghost_stats: { Args: never; Returns: Json }
       set_section_text_color: {

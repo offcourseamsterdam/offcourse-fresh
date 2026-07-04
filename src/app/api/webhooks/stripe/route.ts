@@ -7,6 +7,7 @@ import { getExtrasFromQuote } from '@/lib/booking/recover-from-pi'
 import { claimBooking, finalizeBooking, releaseClaim } from '@/lib/booking/claim'
 import { sendCriticalAlert } from '@/lib/alerts/critical-alert'
 import { logWebhookEvent } from '@/lib/webhooks/log'
+import { emitOpsEvent } from '@/lib/ops/events'
 import { notifyCateringOrder } from '@/lib/catering/notify'
 import { buildFHBookingNote } from '@/lib/catering/build-fh-note'
 import type { ExtrasLineItem } from '@/lib/catering/filter'
@@ -107,6 +108,14 @@ export async function POST(request: NextRequest) {
         '_Manually flip status to confirmed in Supabase and verify FareHarbor._',
       ].join('\n'))
       // Still send confirmation email — customer paid and needs their booking details
+    } else {
+      await emitOpsEvent({
+        eventType: 'booking_confirmed',
+        actorType: 'system',
+        bookingId: booking.id,
+        source: 'webhooks/stripe:checkout.session.completed',
+        payload: { category: booking.category, guest_count: booking.guest_count, booking_date: booking.booking_date },
+      })
     }
 
     const guestCount = Number(booking.guest_count ?? 1)
@@ -370,6 +379,18 @@ export async function POST(request: NextRequest) {
       console.error('[stripe-webhook] finalize failed for PI', pi.id, fin.error)
       await alertWebhookFailure(pi, `DB finalize failed: ${fin.error}`)
       // Don't return early — still send Slack + email so we know the cruise is booked
+    } else {
+      await emitOpsEvent({
+        eventType: 'booking_confirmed',
+        actorType: 'system',
+        source: 'webhooks/stripe:payment_intent.succeeded',
+        payload: {
+          stripe_payment_intent_id: pi.id,
+          category: meta.category,
+          guest_count: guestCount,
+          booking_date: meta.date,
+        },
+      })
     }
 
     const startTime = formatAmsterdamTime(meta.start_at)

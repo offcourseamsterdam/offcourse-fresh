@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { updateShiftSchema } from '@/lib/scheduling/shift-schema'
 import { notifyShiftAssigned } from '@/lib/scheduling/notify-assignment'
+import { emitOpsEvent } from '@/lib/ops/events'
 
 /**
  * PUT    /api/admin/scheduling/shifts/[id] — assign staff / change status,
@@ -63,7 +64,17 @@ export async function PUT(request: NextRequest, { params }: Params) {
     if (error) return apiError(error.message)
 
     const newlyAssigned = !!body.staff_id && body.staff_id !== existing.staff_id
+    const newlyUnassigned = body.staff_id === null && !!existing.staff_id
     if (newlyAssigned) await notifyShiftAssigned(supabase, id)
+    if (newlyAssigned || newlyUnassigned) {
+      await emitOpsEvent({
+        eventType: newlyAssigned ? 'shift_assigned' : 'shift_unassigned',
+        actorType: 'human',
+        shiftId: id,
+        staffId: newlyAssigned ? body.staff_id : existing.staff_id,
+        source: 'admin/scheduling/shifts/[id]',
+      })
+    }
 
     return apiOk({ shift: data })
   } catch (err) {

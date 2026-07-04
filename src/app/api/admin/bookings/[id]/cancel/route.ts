@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { getStripe } from '@/lib/stripe/server'
 import { FHNotFoundError, FHValidationError } from '@/lib/fareharbor/types'
+import { emitOpsEvent } from '@/lib/ops/events'
 
 export async function POST(
   request: NextRequest,
@@ -49,6 +50,13 @@ export async function POST(
       .eq('id', id)
 
     if (updateError) return apiError(updateError.message)
+
+    await emitOpsEvent({
+      eventType: 'booking_cancelled',
+      actorType: 'human',
+      bookingId: booking.id,
+      source: 'admin/bookings/[id]/cancel',
+    })
 
     // Stripe refund (website bookings only)
     let refundId: string | null = null

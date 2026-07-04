@@ -37,14 +37,20 @@ vi.mock('@/lib/stripe/server', () => ({
 }))
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
-    from: () => ({
+    // `table` distinguishes the assertion-relevant 'bookings' insert (captured)
+    // from side-channel inserts like ops_events (best-effort, ignored here).
+    from: (table: string) => ({
       select: () => ({ eq: () => ({ maybeSingle: h.maybeSingle }) }),
       update: () => ({ eq: () => Promise.resolve({ error: null }) }),
-      insert: (row: Record<string, unknown>) => { h.capturedInsert = row; return Promise.resolve(h.insertResult) },
+      insert: (row: Record<string, unknown>) => {
+        if (table === 'bookings') h.capturedInsert = row
+        return Promise.resolve(h.insertResult)
+      },
       delete: () => ({ eq: () => ({ eq: () => Promise.resolve({ error: null }) }) }),
     }),
   }),
 }))
+vi.mock('@/lib/ops/events', () => ({ emitOpsEvent: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/google-ads/report-conversion', () => ({ reportBookingConversion: h.reportBookingConversion }))
 vi.mock('@/lib/google-ads/report-refund', () => ({ reportRefundAdjustment: h.reportRefundAdjustment }))
 vi.mock('@/lib/fareharbor/client', () => ({

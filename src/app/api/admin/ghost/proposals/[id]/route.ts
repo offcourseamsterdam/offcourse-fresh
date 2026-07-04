@@ -8,6 +8,7 @@ import { translateToEnglish } from '@/lib/chat/translate'
 import { prepareInboxBookingBody } from '@/lib/ghost/book-from-proposal'
 import { sendMaintenanceEmail } from '@/lib/maintenance/send-email'
 import { postSlackText } from '@/lib/slack/send-notification'
+import { emitOpsEvent } from '@/lib/ops/events'
 import type { BookingProposalInput, AltSlot } from '@/lib/ghost/dry-run'
 
 /**
@@ -40,6 +41,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const reviewed_at = body.reviewed === false ? null : new Date().toISOString()
       const { error } = await supabase.from('agent_proposals').update({ reviewed_at }).eq('id', id)
       if (error) return apiError(error.message, 500)
+      if (reviewed_at) {
+        await emitOpsEvent({
+          eventType: 'recommendation_reviewed',
+          actorType: 'human',
+          proposalId: id,
+          source: 'admin/ghost/proposals/[id]:review',
+        })
+      }
       return apiOk({ reviewed_at })
     }
 
@@ -151,6 +160,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           .update({ status: 'executed', outcome: JSON.parse(JSON.stringify({ booked_at: new Date().toISOString(), booking: bookJson.data })) })
           .eq('id', id)
 
+        await emitOpsEvent({
+          eventType: 'recommendation_approved',
+          actorType: 'human',
+          proposalId: id,
+          source: 'admin/ghost/proposals/[id]:book',
+        })
+
         return apiOk({ booking: bookJson.data })
       } catch (bookErr) {
         await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
@@ -238,6 +254,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         } catch {
           /* swallow */
         }
+        await emitOpsEvent({
+          eventType: 'recommendation_approved',
+          actorType: 'human',
+          proposalId: id,
+          source: 'admin/ghost/proposals/[id]:send',
+        })
         return apiOk({ dispatched, recipient })
       } catch (sendErr) {
         // Release the claim so the human can retry after fixing the cause.
