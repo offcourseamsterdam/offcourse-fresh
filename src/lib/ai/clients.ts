@@ -20,5 +20,7 @@ export function getGemini(): GoogleGenerativeAI {
   return geminiClient
 }
 
-export const CLAUDE_MODEL = 'claude-sonnet-4-20250514'
+// Quality text (translations, blog, image metadata). Sonnet 4 retired 2026-06-15;
+// 4.6 is the same tier ($3/$15 per Mtok), cheaper and more capable.
+export const CLAUDE_MODEL = 'claude-sonnet-4-6'
 export const GEMINI_MODEL = 'gemini-2.5-flash'

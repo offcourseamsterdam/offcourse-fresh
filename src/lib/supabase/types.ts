@@ -377,6 +377,7 @@ export type Database = {
           guest_count: number | null
           guest_note: string | null
           id: string
+          invoice_number: string | null
           listing_id: string | null
           listing_title: string | null
           partner_id: string | null
@@ -432,6 +433,7 @@ export type Database = {
           guest_count?: number | null
           guest_note?: string | null
           id?: string
+          invoice_number?: string | null
           listing_id?: string | null
           listing_title?: string | null
           partner_id?: string | null
@@ -487,6 +489,7 @@ export type Database = {
           guest_count?: number | null
           guest_note?: string | null
           id?: string
+          invoice_number?: string | null
           listing_id?: string | null
           listing_title?: string | null
           partner_id?: string | null
@@ -3616,6 +3619,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      allocate_invoice_number: {
+        Args: { p_stripe_pi_id: string }
+        Returns: string
+      }
       get_translatable_columns: { Args: never; Returns: Json }
       ghost_stats: { Args: never; Returns: Json }
       set_section_text_color: {

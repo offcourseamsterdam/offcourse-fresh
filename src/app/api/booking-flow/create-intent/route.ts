@@ -63,7 +63,14 @@ export async function POST(request: NextRequest) {
     return apiOk(result)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
-    console.error('[create-intent route] error', message)
+    const code = (err as { code?: string })?.code
+    console.error('[create-intent route] error', code ?? '', message)
+    // Pre-charge availability failures are expected, customer-facing, and not 500s:
+    // the slot is gone, or FareHarbor was unreachable. Return 400 so the UI shows the
+    // friendly message and the customer can retry — no PaymentIntent was created.
+    if (code === 'FH_NOT_BOOKABLE' || code === 'FH_VALIDATE_UNAVAILABLE') {
+      return apiError(message, 400)
+    }
     return apiError(message)
   }
 }

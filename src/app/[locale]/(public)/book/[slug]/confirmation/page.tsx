@@ -1,7 +1,8 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatAmsterdamTime } from '@/lib/utils'
 import { ConfirmationPending } from '@/components/checkout/ConfirmationPending'
-import { Check, Calendar, Mail, ArrowLeft } from 'lucide-react'
+import { BookingProgressSteps } from '@/components/checkout/BookingProgressSteps'
+import { Check, Calendar, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 
 interface Props {
@@ -39,9 +40,18 @@ export default async function ConfirmationPage({ params, searchParams }: Props) 
     booking = data
   }
 
-  // No booking row yet, but we have a payment reference: the customer most
-  // likely beat the Stripe webhook here (common with iDEAL). The pending
-  // component polls until the booking appears, then refreshes this page.
+  // Gate on CONFIRMED, not mere row-existence. The webhook writes a `paid_pending_fh`
+  // row the instant payment succeeds — BEFORE FareHarbor is booked — so showing
+  // "confirmed" on row-existence would tell the customer their cruise is booked when
+  // it isn't yet. Treat a not-yet-confirmed row as "no row": the poller waits for the
+  // flip to confirmed. (Partner-invoice + full-discount bookings are written confirmed.)
+  if (booking && booking.status !== 'confirmed') {
+    booking = null
+  }
+
+  // No confirmed booking yet, but we have a payment reference: the customer most
+  // likely beat the Stripe webhook here (common with iDEAL/Link, or a parked row).
+  // The pending component polls until the booking confirms, then refreshes this page.
   const isPending = !booking && Boolean(payment_intent)
 
   const isPartnerInvoice = booking?.payment_status === 'partner_invoice_pending'
@@ -155,16 +165,14 @@ export default async function ConfirmationPage({ params, searchParams }: Props) 
                   </div>
                 )}
 
-                {/* Email notice */}
-                <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-xl p-4">
-                  <Mail className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium text-blue-900">Confirmation email sent</p>
-                    <p className="text-xs text-blue-700 mt-0.5">
-                      Check your inbox at {booking.customer_email}
-                    </p>
-                  </div>
-                </div>
+                {/* Staged status — payment received → confirmed → email sent */}
+                <BookingProgressSteps stage="confirmed" email={booking.customer_email} />
+                <p className="-mt-2 text-center text-xs text-zinc-400">
+                  Don&apos;t see the email? Check spam, or reach us at{' '}
+                  <a href="mailto:cruise@offcourseamsterdam.com" className="underline hover:text-zinc-600">
+                    cruise@offcourseamsterdam.com
+                  </a>
+                </p>
 
                 {/* Meeting point */}
                 <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">

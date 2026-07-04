@@ -17,7 +17,8 @@ describe('FareHarborClient request timeout', () => {
     vi.restoreAllMocks()
   })
 
-  it('bounds each request with an AbortSignal and converts a timeout into a typed FareHarborError', async () => {
+  it('retries a GET timeout (reads are safe) then converts it to a typed 408 FareHarborError', async () => {
+    vi.useFakeTimers()
     // Simulate AbortSignal.timeout firing: fetch rejects with a TimeoutError DOMException.
     const fetchMock = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
       Promise.reject(new DOMException('The operation timed out.', 'TimeoutError'))
@@ -25,20 +26,32 @@ describe('FareHarborClient request timeout', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const client = new FareHarborClient()
-    await expect(client.getItems()).rejects.toBeInstanceOf(FareHarborError)
-    await expect(client.getItems()).rejects.toThrow(/timed out/i)
+    const p = client.getItems()
+    p.catch(() => {}) // avoid unhandled-rejection warning while timers advance
+    await vi.runAllTimersAsync() // drive the 1s/2s/4s backoff sleeps
 
-    // The request must hand fetch a signal (the 8s timeout) so it can never hang.
-    const init = fetchMock.mock.calls[0]?.[1]
-    expect(init?.signal).toBeInstanceOf(AbortSignal)
+    await expect(p).rejects.toBeInstanceOf(FareHarborError)
+    await expect(p).rejects.toThrow(/timed out/i)
+    // initial attempt + MAX_RETRIES(3) retries = 4 fetches for a safe GET
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    // The request must hand fetch an AbortSignal so it can never hang.
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal)
+    vi.useRealTimers()
   })
 
-  it('rethrows non-timeout fetch errors unchanged (does not swallow real failures)', async () => {
+  it('rethrows a non-timeout network error unchanged after exhausting retries (does not swallow real failures)', async () => {
+    vi.useFakeTimers()
     const networkError = new TypeError('network failure')
-    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(networkError)))
+    const fetchMock = vi.fn(() => Promise.reject(networkError))
+    vi.stubGlobal('fetch', fetchMock)
 
     const client = new FareHarborClient()
-    // getItem uses a distinct cache key; an error never populates the cache.
-    await expect(client.getItem(424242)).rejects.toBe(networkError)
+    const p = client.getItem(424242) // distinct cache key; an error never caches
+    p.catch(() => {})
+    await vi.runAllTimersAsync()
+
+    await expect(p).rejects.toBe(networkError)
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    vi.useRealTimers()
   })
 })

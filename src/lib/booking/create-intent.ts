@@ -1,5 +1,6 @@
 import { getStripe } from '@/lib/stripe/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { calculateQuote } from '@/lib/booking/calculate-quote'
 import { type ExtrasCalculation } from '@/lib/extras/calculate'
 import { fmtEuros } from '@/lib/utils'
@@ -129,6 +130,43 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
 
   if (recomputed.totalCents < 50) {
     throw new Error('Amount must be at least €0.50')
+  }
+
+  // 3b. Validate availability with FareHarbor BEFORE charging. A slot can sell out
+  //     between quote and pay; catching it here means the customer is never charged
+  //     for an unbookable cruise (the webhook is the sole finalizer and never refunds).
+  const fh = getFareHarborClient()
+  const isPrivate = String(quoteRow.category) === 'private'
+  const validateGuestCount = Number(quoteRow.guest_count ?? 1)
+  const validateCustomers = (!isPrivate && storedRates && storedRates.length > 0)
+    ? storedRates.flatMap(({ pk, count }) =>
+        Array.from({ length: count }, () => ({ customer_type_rate: Number(pk) })))
+    : Array.from({ length: isPrivate ? 1 : validateGuestCount }, () => ({
+        customer_type_rate: Number(quoteRow.customer_type_rate_pk ?? 0),
+      }))
+
+  let validation
+  try {
+    validation = await fh.validateBooking(Number(quoteRow.avail_pk), {
+      contact: {
+        name: contact?.name ?? '',
+        phone: contact?.phone ?? '',
+        email: contact?.email ?? '',
+      },
+      customers: validateCustomers,
+    })
+  } catch (err) {
+    // FareHarbor slow/unreachable at the pre-charge gate → fail CLOSED. Never charge
+    // for a slot we couldn't verify; the customer simply retries (no money moved).
+    console.error('[create-intent] pre-charge validate failed:', err)
+    const e = new Error('We could not confirm availability just now. Please try again in a moment.') as Error & { code?: string }
+    e.code = 'FH_VALIDATE_UNAVAILABLE'
+    throw e
+  }
+  if (!validation.is_bookable) {
+    const e = new Error(validation.error || 'That time slot is no longer available — please pick another time.') as Error & { code?: string }
+    e.code = 'FH_NOT_BOOKABLE'
+    throw e
   }
 
   // 4. Create Stripe PaymentIntent against the recomputed total.

@@ -16,7 +16,9 @@ import type { CustomerDetails, AvailabilitySlot, AvailabilityCustomerType } from
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
 import type { CancellationTier } from '@/lib/cancellation/policy'
 
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
+import { stripePublishableKey, stripeIsTestMode } from '@/lib/stripe/keys'
+
+const stripePromise = loadStripe(stripePublishableKey)
 
 // ── Booking data shape (from sessionStorage) ────────────────────────────────
 
@@ -340,6 +342,9 @@ function PaymentForm({
       <p className="text-[10px] text-zinc-400 text-center">
         By confirming, you agree to our cancellation policy and terms of service.
       </p>
+      <p className="text-[10px] text-zinc-400 text-center">
+        📄 A VAT invoice will be included in your confirmation email.
+      </p>
     </form>
   )
 }
@@ -616,107 +621,25 @@ export function CheckoutFlow({
     }
   }
 
-  // After Stripe payment success, create the FareHarbor booking
+  // After Stripe payment succeeds, hand off to the polling confirmation page.
+  // The Stripe webhook is the SOLE finalizer now — the browser no longer creates the
+  // booking, so there's no /book or /recover race to run. This is identical for card
+  // and iDEAL/Link: the confirmation page polls until the webhook writes + confirms
+  // the booking (or, after a minute, shows a reassuring "your payment is safe" note).
   async function handlePaymentSuccess(paymentIntentId: string) {
-    // Read booking data from sessionStorage FIRST — React state (bookingData) is not
-    // yet populated when this is called from the mount useEffect after an iDEAL redirect.
+    // Resolve the listing slug from sessionStorage (survives a card payment) or React
+    // state, falling back to the prop if both were cleared by the iDEAL bank redirect.
+    let slug = listingSlug
     const stored = sessionStorage.getItem(SESSION_BOOKING_KEY)
-    const data: BookingData | null = stored ? JSON.parse(stored) : bookingData
-    if (!data || !data.selectedSlot) {
-      // sessionStorage was cleared during the iDEAL bank redirect (cross-origin).
-      // Recover server-side from PI metadata + stored pricing quote — no data loss.
-      try {
-        setError(null)
-        const res = await fetch('/api/booking-flow/recover', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ paymentIntentId }),
-        })
-        const result = await res.json()
-        // apiOk nests the payload under `data`. This includes the 'processing'
-        // outcome: payment still settling at the bank — the confirmation page
-        // polls until the webhook completes the booking, so redirect there too.
-        if (result.ok) {
-          const slug = result.data?.listingSlug ?? listingSlug
-          sessionStorage.removeItem(SESSION_BOOKING_KEY)
-          sessionStorage.removeItem(SESSION_CONTACT_KEY)
-          window.location.href = `/book/${slug}/confirmation?payment_intent=${paymentIntentId}`
-          return
-        }
-      } catch {
-        // fall through to the error below
-      }
-      setError('We received your payment but could not complete the booking automatically. A confirmation email is on its way — if it doesn\'t arrive within a few minutes, please contact us at cruise@offcourseamsterdam.com')
-      return
+    if (stored) {
+      try { slug = (JSON.parse(stored) as BookingData).listingSlug ?? listingSlug } catch { /* ignore */ }
+    } else if (bookingData?.listingSlug) {
+      slug = bookingData.listingSlug
     }
-
-    // Recover contact from sessionStorage (survives iDEAL redirect where React state is lost)
-    let contactData = contact
-    if (!contactData) {
-      const storedContact = sessionStorage.getItem(SESSION_CONTACT_KEY)
-      if (storedContact) {
-        try { contactData = JSON.parse(storedContact) } catch { /* ignore */ }
-      }
-    }
-
-    if (!contactData?.name || !contactData?.email) {
-      setError('Contact information was lost. Please go back and try again.')
-      return
-    }
-
-    try {
-      const { customerTypeRates, customerTypeRatePk } = buildCustomerTypeRates(data)
-
-      const extrasTotalCents = data.extrasCalculation
-        ? data.extrasCalculation.line_items.reduce((s, li) => s + li.amount_cents, 0)
-        : 0
-      // Prefer the canonical quote total (matches what Stripe actually charged);
-      // fall back to base + extras + cityTax if the quote isn't in memory
-      // (e.g. iDEAL redirect that re-mounted the component before /quote returned).
-      const totalAmount = quote?.totalCents
-        ?? (data.basePriceCents + extrasTotalCents + (data.cityTaxCents ?? 0))
-
-      const res = await fetch('/api/booking-flow/book', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          availPk: data.selectedSlot.pk,
-          customerTypeRatePk,
-          customerTypeRates,
-          guestCount: data.guests,
-          category: data.category,
-          contact: contactData,
-          note: contactData.specialRequests || undefined,
-          listingId: data.listingId,
-          listingTitle: data.listingTitle,
-          date: data.date,
-          startAt: data.selectedSlot.startAt,
-          endAt: data.selectedSlot.endAt,
-          amountCents: totalAmount,
-          stripePaymentIntentId: paymentIntentId,
-          baseAmountCents: data.basePriceCents,
-          selectedExtraIds: data.selectedExtraIds,
-          extrasSelected: data.extrasCalculation?.line_items ?? [],
-          extrasAmountCents: extrasTotalCents,
-          sessionId: getSessionId(),
-          promoCodeId: promoResult?.promoCodeId,
-          discountAmountCents: promoResult?.discountAmountCents ?? 0,
-        }),
-      })
-
-      const bookingResult = await res.json()
-      if (!bookingResult.ok) {
-        setError('Booking could not be completed. Your payment was received — please contact us at info@offcourseamsterdam.com')
-        return
-      }
-
-      trackEvent('booking_completed', { listing: data.listingSlug, payment_intent: paymentIntentId })
-      sessionStorage.removeItem(SESSION_BOOKING_KEY)
-      sessionStorage.removeItem(SESSION_CONTACT_KEY)
-      window.location.href = `/book/${data.listingSlug}/confirmation?payment_intent=${paymentIntentId}`
-    } catch {
-      setError('Something went wrong creating your booking. Your payment was received — please contact us at info@offcourseamsterdam.com')
-    }
+    trackEvent('booking_completed', { listing: slug, payment_intent: paymentIntentId })
+    sessionStorage.removeItem(SESSION_BOOKING_KEY)
+    sessionStorage.removeItem(SESSION_CONTACT_KEY)
+    window.location.href = `/book/${slug}/confirmation?payment_intent=${paymentIntentId}`
   }
 
   // iDEAL return: block the whole checkout UI while the booking is finalised in
@@ -806,6 +729,13 @@ export function CheckoutFlow({
 
       {/* White card container */}
       <div className="bg-white rounded-2xl shadow-lg p-6 sm:p-8">
+        {/* Test-mode banner — visible only when NEXT_PUBLIC_STRIPE_MODE=test */}
+        {stripeIsTestMode && (
+          <div className="mb-6 rounded-lg bg-yellow-50 border border-yellow-200 px-4 py-2.5 text-sm text-yellow-800 font-medium flex items-center gap-2">
+            🧪 <span><strong>Stripe test mode</strong> — use card <code className="font-mono bg-yellow-100 px-1 rounded">4242 4242 4242 4242</code>, any future expiry, any CVC. No real charges.</span>
+          </div>
+        )}
+
         {/* Progress indicator */}
         <CheckoutProgress step={currentStep} hidePayment={isPartnerInvoice || (promoResult?.isFull ?? false)} />
 

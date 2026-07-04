@@ -92,11 +92,16 @@ function setCache(key: string, data: unknown, ttlMs: number = 60_000) {
 const COMPANY = 'offcourse'
 const MAX_RETRIES = 3
 
-// Hard ceiling on a single FareHarbor HTTP call. Without this, a hung connection
-// blocks the booking request indefinitely — and inside the Stripe webhook that risks
-// a webhook timeout → Stripe retry → duplicate booking attempt. 8s leaves headroom
-// under Vercel's function limit while tolerating FareHarbor's normal latency.
-const FH_TIMEOUT_MS = 8000
+// Default ceiling on a single FareHarbor HTTP call (reads + the pre-charge validate).
+// Without this a hung connection blocks the request indefinitely. Kept snappy because
+// these run while a customer waits in the browser.
+const FH_TIMEOUT_MS = 15000
+
+// The post-payment booking CREATE gets a much longer ceiling: the customer has already
+// paid, so patience is safe — and the fallback on giving up is to PARK the booking for a
+// human/cron, never to refund. (An 8s timeout here is what lost Theresa's booking.) Still
+// comfortably under the webhook's maxDuration=60.
+const FH_BOOKING_TIMEOUT_MS = 45000
 const EXTERNAL_API_BASE = 'https://fareharbor.com/api/external/v1'
 
 export class FareHarborClient {
@@ -170,7 +175,10 @@ export class FareHarborClient {
     return res.availability
   }
 
-  /** Validate a booking before creating it (ALWAYS call this first) */
+  /** Validate a booking before creating it. A single snappy attempt: this runs at the
+   *  pre-charge gate (and in /book) while a user waits, so on a slow/unreachable
+   *  FareHarbor we fail fast and the caller fails closed (no charge) — the customer
+   *  just retries. No money is at stake here, so retrying-and-hanging isn't worth it. */
   async validateBooking(
     availPk: number,
     data: FHBookingRequest
@@ -182,17 +190,107 @@ export class FareHarborClient {
     })
   }
 
-  /** Create a booking (only call after successful validation + payment) */
+  /** Create a booking (only call after successful validation + payment).
+   *  Mutating → NOT auto-retried on a transient error (a timeout may have actually
+   *  succeeded); the long timeout + createBookingIdempotent's lookup handle that. */
   async createBooking(
     availPk: number,
     data: FHBookingRequest
   ): Promise<FHBookingResponse> {
     const url = `/companies/${COMPANY}/availabilities/${availPk}/bookings/`
-    const res = await this.request<FHBookingCreateResponse>(url, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    })
+    const res = await this.request<FHBookingCreateResponse>(
+      url,
+      { method: 'POST', body: JSON.stringify(data) },
+      0,
+      undefined,
+      { timeoutMs: FH_BOOKING_TIMEOUT_MS, retryTransient: false },
+    )
     return res.booking
+  }
+
+  /**
+   * Create a booking idempotently — the single safe entry point for the money path.
+   *
+   * Used by the Stripe webhook (one attempt, no `checkExisting`) and the
+   * pending-fh-sweep cron / manual retry (`checkExisting: true`).
+   *
+   * Two double-booking guards:
+   *  - `checkExisting` (sweep/retry): look the booking up FIRST, so a row whose
+   *    earlier attempt actually landed (e.g. create succeeded but the confirmed-flip
+   *    DB write failed) is never booked a second time.
+   *  - post-error lookup (always): a create that throws a *transient* error may have
+   *    committed server-side before the connection dropped — look it up before
+   *    concluding failure. Deterministic rejections (400/403/404) surface immediately.
+   */
+  async createBookingIdempotent(
+    availPk: number,
+    data: FHBookingRequest,
+    date: string,
+    opts?: { checkExisting?: boolean },
+  ): Promise<FHBookingResponse> {
+    if (opts?.checkExisting) {
+      const existing = await this.findExistingBooking(availPk, data, date)
+      if (existing) return existing
+    }
+    try {
+      return await this.createBooking(availPk, data)
+    } catch (err) {
+      const status = err instanceof FareHarborError ? err.statusCode : 0
+      // FareHarbor said a definitive no — do not look up, surface it (the caller parks).
+      if (status === 400 || status === 403 || status === 404) throw err
+      // Transient (timeout / 5xx / network): the booking MAY exist. Re-raise only if it doesn't.
+      const existing = await this.findExistingBooking(availPk, data, date).catch(() => null)
+      if (existing) return existing
+      throw err
+    }
+  }
+
+  /**
+   * Find a booking we (probably) just created, to avoid double-booking on retry.
+   * Prefers an EXACT `voucher_number` match (= the Stripe PI id we stamp on create),
+   * which is unique per payment and cannot false-positive. Falls back to
+   * availability + contact email + party size when FareHarbor doesn't echo the
+   * voucher — accepting that the rare "same email books the same slot twice" case
+   * could match the wrong row (logged so it's visible).
+   */
+  private async findExistingBooking(
+    availPk: number,
+    data: FHBookingRequest,
+    date: string,
+  ): Promise<FHBookingResponse | null> {
+    if (!date) return null
+    let bookings: FHBookingResponse[]
+    try {
+      bookings = await this.getBookings(date, date)
+    } catch {
+      return null
+    }
+
+    const voucher = data.voucher_number
+    if (voucher) {
+      const byVoucher = bookings.find(b => !b.is_cancelled && b.voucher_number === voucher)
+      if (byVoucher) return byVoucher
+    }
+
+    const email = data.contact?.email?.toLowerCase()
+    const partySize = data.customers?.length ?? 0
+    if (email) {
+      const matches = bookings.filter(b =>
+        !b.is_cancelled &&
+        b.availability?.pk === availPk &&
+        b.contact?.email?.toLowerCase() === email &&
+        (b.customers?.length ?? 0) === partySize,
+      )
+      if (matches.length > 0) {
+        if (matches.length > 1) {
+          console.warn(
+            `[fh] findExistingBooking: ${matches.length} email+avail matches for ${email} on avail ${availPk} — using most recent (no voucher echo)`,
+          )
+        }
+        return matches.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))[0]
+      }
+    }
+    return null
   }
 
   /** List bookings for a date range. Uses the external API v1 which exposes this endpoint. */
@@ -252,18 +350,25 @@ export class FareHarborClient {
     path: string,
     init?: RequestInit,
     retryCount = 0,
-    baseUrlOverride?: string
+    baseUrlOverride?: string,
+    opts?: { timeoutMs?: number; retryTransient?: boolean },
   ): Promise<T> {
     await rateLimiter.acquire()
 
     const url = `${baseUrlOverride ?? this.baseUrl}${path}`
+    const timeoutMs = opts?.timeoutMs ?? FH_TIMEOUT_MS
+    // Transient failures (timeout / 5xx / network) are only retried for SAFE calls.
+    // GETs are safe by default; POSTs are not (a create might have committed) unless
+    // the caller opts in (e.g. the non-mutating validate). 429 is always retried —
+    // it means the request was rejected before processing.
+    const retryTransient = opts?.retryTransient ?? ((init?.method ?? 'GET') === 'GET')
+    const backoffMs = Math.pow(2, retryCount) * 1000 // 1s, 2s, 4s
+
     let res: Response
     try {
       res = await fetch(url, {
         ...init,
-        // Default an 8s timeout so a hung FareHarbor connection can never block the
-        // request (or the Stripe webhook) indefinitely. A caller-supplied signal wins.
-        signal: init?.signal ?? AbortSignal.timeout(FH_TIMEOUT_MS),
+        signal: init?.signal ?? AbortSignal.timeout(timeoutMs),
         headers: {
           'X-FareHarbor-API-App': this.appKey,
           'X-FareHarbor-API-User': this.userKey,
@@ -272,11 +377,16 @@ export class FareHarborClient {
         },
       })
     } catch (err) {
-      // AbortSignal.timeout fires a TimeoutError; surface it as a typed FareHarbor
-      // error (408) so callers' try/catch handle it like any other API failure
-      // instead of seeing a raw DOMException — and so it never hangs.
-      if (err instanceof DOMException && err.name === 'TimeoutError') {
-        throw new FareHarborError(`FareHarbor request timed out after ${FH_TIMEOUT_MS}ms: ${path}`, 408, '')
+      const isTimeout = err instanceof DOMException && err.name === 'TimeoutError'
+      const isNetwork = err instanceof TypeError
+      if ((isTimeout || isNetwork) && retryTransient && retryCount < MAX_RETRIES) {
+        await new Promise(resolve => setTimeout(resolve, backoffMs))
+        return this.request<T>(path, init, retryCount + 1, baseUrlOverride, opts)
+      }
+      // Surface a timeout as a typed FareHarbor error (408) so callers' try/catch
+      // handle it like any other API failure instead of a raw DOMException.
+      if (isTimeout) {
+        throw new FareHarborError(`FareHarbor request timed out after ${timeoutMs}ms: ${path}`, 408, '')
       }
       throw err
     }
@@ -289,11 +399,15 @@ export class FareHarborClient {
       return res.json() as Promise<T>
     }
 
-    // Error handling
+    // 429 rate limit — always retryable (rejected before processing).
     if (res.status === 429 && retryCount < MAX_RETRIES) {
-      const waitMs = Math.pow(2, retryCount) * 1000 // 1s, 2s, 4s
-      await new Promise(resolve => setTimeout(resolve, waitMs))
-      return this.request<T>(path, init, retryCount + 1, baseUrlOverride)
+      await new Promise(resolve => setTimeout(resolve, backoffMs))
+      return this.request<T>(path, init, retryCount + 1, baseUrlOverride, opts)
+    }
+    // 5xx — retry only when the call is transient-safe.
+    if (res.status >= 500 && retryTransient && retryCount < MAX_RETRIES) {
+      await new Promise(resolve => setTimeout(resolve, backoffMs))
+      return this.request<T>(path, init, retryCount + 1, baseUrlOverride, opts)
     }
 
     if (res.status === 403) throw new FHAuthError()

@@ -2,9 +2,8 @@ import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import type { FHBookingResponse } from '@/lib/fareharbor/types'
-import { resolveCustomerTypeName } from '@/lib/fareharbor/customer-type-name'
+import { resolveCustomerTypeName, describeCustomerTypes } from '@/lib/fareharbor/customer-type-name'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { claimPaymentIntent, releaseClaim } from '@/lib/booking/booking-claims'
 import { getStripe } from '@/lib/stripe/server'
 import type { BookingSource } from '@/lib/constants'
 import { requireAdmin } from '@/lib/auth/require-admin'
@@ -16,12 +15,8 @@ import { notifyBookingFailure } from '@/lib/booking/notify-booking-failure'
 import { extractVat } from '@/lib/extras/calculate'
 import { formatAmsterdamTime } from '@/lib/utils'
 import { postSlackText } from '@/lib/slack/send-notification'
+import { CITY_TAX_CENTS_PER_GUEST } from '@/lib/booking/constants'
 import type { Json } from '@/lib/supabase/types'
-
-// ── Constants ──────────────────────────────────────────────────────────────
-
-/** Amsterdam city tax per guest (€2.60). Charged on every booking; 0% VAT (municipal levy). */
-const CITY_TAX_CENTS_PER_GUEST = 260
 
 /** Standard NL cruise VAT rate (9% — tourism / transport). */
 const BASE_VAT_RATE_PERCENT = 9
@@ -79,9 +74,6 @@ export function pickBookingSessionId(
 }
 
 export async function POST(request: NextRequest) {
-  // Tracks a payment-intent claim we hold, so the finally block can release it on
-  // any exit (success, dedup, FareHarbor failure, or a thrown error).
-  let claimedPi: string | null = null
   try {
     const body = await request.json()
     const {
@@ -155,28 +147,23 @@ export async function POST(request: NextRequest) {
     // Idempotency: if a booking already exists for this payment intent, return it (website only)
     if (stripePaymentIntentId) {
       const supabase = createAdminClient()
-      const { data: existing } = await supabase
+      const { data: existing, error: existingErr } = await supabase
         .from('bookings')
-        .select('id, fareharbor_booking_uuid')
+        .select('id, booking_uuid')
         .eq('stripe_payment_intent_id', stripePaymentIntentId)
         .maybeSingle()
+      if (existingErr) {
+        console.error('[book] idempotency SELECT error:', existingErr)
+      }
       if (existing) {
         return apiOk({ booking: existing, deduplicated: true })
       }
-
-      // Website checkout races the Stripe webhook + /recover for iDEAL payments.
-      // Claim the PI before touching FareHarbor so only one path ever creates a
-      // booking. Internal/partner/stripe_recovery sources are single-path (admin
-      // initiated) and skip the claim. The finally block releases claimedPi.
-      if (!isInternal) {
-        const claim = await claimPaymentIntent(supabase, stripePaymentIntentId)
-        if (claim === 'duplicate' || claim === 'in_flight') {
-          // Another path is creating (or created) this booking; the confirmation
-          // page polls until the row appears. Don't create a second FH booking.
-          return apiOk({ deduplicated: true })
-        }
-        if (claim === 'won') claimedPi = stripePaymentIntentId
-      }
+      // The public website no longer reaches /book — the Stripe webhook is the sole
+      // finalizer there. The remaining /book callers are admin-initiated (internal,
+      // partner-invoice, stripe_recovery) and single-path, so no claim mutex is
+      // needed. The bookings UNIQUE(stripe_payment_intent_id) constraint + the
+      // findRaceWinner re-check + the 23505-cancel branch below remain the backstop
+      // against any rare race (e.g. an admin card payment that the webhook also sees).
     }
 
     const fh = getFareHarborClient()
@@ -242,6 +229,18 @@ export async function POST(request: NextRequest) {
       // Step 1: Validate — FareHarbor always returns 200; is_bookable tells us if it's valid
       const validation = await fh.validateBooking(Number(availPk), bookingData)
       if (!validation.is_bookable) {
+        // Re-check before alerting: the webhook may have created this booking while /book
+        // was claiming + validating. FH then rejects /book's validate because the slot
+        // is already consumed — a self-collision, not a real failure. The winning
+        // path may not have COMMITTED its bookings row yet, so poll briefly (a few
+        // short retries) rather than a single SELECT before concluding it's a real failure.
+        if (stripePaymentIntentId) {
+          const raceWinner = await findRaceWinner(String(stripePaymentIntentId))
+          if (raceWinner) {
+            console.log('[book] FH validate failed but booking exists (webhook won race) — deduplicating', stripePaymentIntentId)
+            return apiOk({ booking: raceWinner, deduplicated: true })
+          }
+        }
         // Fire-and-forget alert. Especially critical when stripePaymentIntentId is set
         // (customer already charged) — but also useful for ops visibility on internal failures.
         await notifyBookingFailure({
@@ -280,12 +279,24 @@ export async function POST(request: NextRequest) {
     // points at a fresh "/confirmation" session, so it must NOT win. Retrieve the
     // PI and prefer its session; never block a paid booking on this lookup.
     let piSessionId: string | null = null
+    // The VAT invoice must reflect what was actually CHARGED, not numbers the
+    // browser posted. The PI metadata carries the server-computed base + discount
+    // (set in create-intent); prefer those so a tampered request body can never
+    // mint an invoice with an arbitrary amount. Falls back to body values only
+    // when the PI lookup fails.
+    let invoiceBaseCents: number = Number(baseAmountCents ?? 0)
+    let invoiceDiscountCents: number = Number(body.discountAmountCents ?? 0)
     if (!isInternal && stripePaymentIntentId) {
       try {
         const pi = await getStripe().paymentIntents.retrieve(String(stripePaymentIntentId))
         piSessionId = pi.metadata?.session_id ?? null
+        const serverBase = Number(pi.metadata?.server_base_amount_cents ?? 0)
+        if (serverBase > 0) invoiceBaseCents = serverBase
+        if (pi.metadata?.discount_amount_cents != null) {
+          invoiceDiscountCents = Number(pi.metadata.discount_amount_cents)
+        }
       } catch (err) {
-        console.error('[book] could not read session_id from PaymentIntent metadata:', err)
+        console.error('[book] could not read metadata from PaymentIntent:', err)
       }
     }
     const sessionId = pickBookingSessionId(piSessionId, body.sessionId as string | null)
@@ -326,6 +337,16 @@ export async function POST(request: NextRequest) {
       // Still return success to customer — they got what they paid for.
     }
 
+    // Resolve the selected customer type(s) for the Slack alert — e.g. "Diana - 2 Hours",
+    // or "2× Adult · 1× Child" for a mixed shared booking. Best-effort; piggybacks on
+    // the availability detail already cached by the booking save.
+    const customerTypesLabel = await describeCustomerTypes(Number(availPk), {
+      customerTypeRatePk: customerTypeRatePk ? Number(customerTypeRatePk) : null,
+      customerTypeRates: Array.isArray(customerTypeRates)
+        ? (customerTypeRates as Array<{ pk: number; count: number }>)
+        : null,
+    })
+
     // Step 3b: Non-critical notifications — run concurrently, fail quietly
     await Promise.allSettled([
       notifyCateringOrder({
@@ -342,6 +363,7 @@ export async function POST(request: NextRequest) {
         endAt: endAt ?? null,
         guestCount: Number(guestCount),
         category: String(category ?? ''),
+        customerTypesLabel,
         contact,
         amountCents: Number(baseAmountCents ?? 0) + Number(extrasAmountCents ?? 0),
         fhBookingUuid: booking?.uuid,
@@ -376,6 +398,9 @@ export async function POST(request: NextRequest) {
         fhBookingUuid: booking?.uuid,
         category: category ? String(category) : null,
         fareharborCustomerTypeRatePk: customerTypeRatePk ? Number(customerTypeRatePk) : null,
+        stripePaymentIntentId: isInternal ? null : (stripePaymentIntentId ?? null),
+        baseAmountCents: invoiceBaseCents || null,
+        discountAmountCents: invoiceDiscountCents,
       }),
     ])
 
@@ -394,11 +419,6 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return apiError(message)
-  } finally {
-    // Release our PI claim on every exit. No-op when we didn't win one
-    // (duplicate/in_flight returns leave claimedPi null so we never delete
-    // another path's claim).
-    if (claimedPi) await releaseClaim(createAdminClient(), claimedPi)
   }
 }
 
@@ -436,6 +456,32 @@ interface BookingPayload {
   gclid: string | null
   promoCodeId: string | null
   discountAmountCents: number
+}
+
+/**
+ * Look for a bookings row already created for this PI by a racing path (webhook
+ * or /recover). Polls a few times with a short delay because the winner may have
+ * created the FareHarbor booking (consuming the slot, so our validate fails) but
+ * not yet COMMITTED its Supabase row — a single SELECT would miss it and we'd
+ * fire a false "paid but no booking" alert. Returns the row, or null if none
+ * appears within the window.
+ */
+async function findRaceWinner(
+  stripePaymentIntentId: string,
+): Promise<{ id: string; booking_uuid: string | null } | null> {
+  const supabase = createAdminClient()
+  const ATTEMPTS = 3
+  const DELAY_MS = 600
+  for (let i = 0; i < ATTEMPTS; i++) {
+    const { data } = await supabase
+      .from('bookings')
+      .select('id, booking_uuid')
+      .eq('stripe_payment_intent_id', stripePaymentIntentId)
+      .maybeSingle()
+    if (data) return data as { id: string; booking_uuid: string | null }
+    if (i < ATTEMPTS - 1) await new Promise(r => setTimeout(r, DELAY_MS))
+  }
+  return null
 }
 
 /**
@@ -956,6 +1002,8 @@ interface SlackPayload {
   endAt: string | null
   guestCount: number
   category: string
+  /** Selected FareHarbor customer type(s), e.g. "Diana - 2 Hours" or "2× Adult · 1× Child". */
+  customerTypesLabel?: string | null
   contact: { name: string; email: string; phone: string }
   amountCents: number
   fhBookingUuid?: string
@@ -994,6 +1042,9 @@ async function sendSlackNotification(p: SlackPayload) {
     `*${p.listingTitle}*`,
     `📅 ${p.date} · ${startTime} – ${endTime}`,
     `👥 ${p.guestCount} guest${p.guestCount !== 1 ? 's' : ''} · ${p.category}`,
+    p.customerTypesLabel
+      ? `⛵ ${p.customerTypesLabel.includes('×') ? 'Types' : 'Type'}: ${p.customerTypesLabel}`
+      : '',
     isPartnerInvoice
       ? `💰 Ticket: ${fmtAmountEur(pi!.baseAmountCents)} · To invoice: ${fmtAmountEur(invoiceable)} · Partner cut: ${fmtAmountEur(pi!.commissionAmountCents)} (${pi!.commissionPercent}%)`
       : isInternal

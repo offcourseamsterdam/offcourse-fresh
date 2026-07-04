@@ -21,6 +21,7 @@ import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { calculateExtras, type ExtrasCalculation, type Extra } from '@/lib/extras/calculate'
 import { isChildLabel } from '@/lib/booking/adult-count'
+import { CITY_TAX_CENTS_PER_GUEST as CITY_TAX_PER_GUEST_CENTS } from '@/lib/booking/constants'
 import { DEFAULT_DURATION_MINUTES } from '@/lib/constants'
 
 export interface QuoteInput {
@@ -60,7 +61,6 @@ export interface QuoteResult {
   customerTypeName: string | null     // FH customer-type label, e.g. "Diana - 2 Hours"
 }
 
-const CITY_TAX_PER_GUEST_CENTS = 260
 const STRIPE_MIN_CENTS = 50
 
 /**

@@ -23,9 +23,12 @@ export async function GET(request: NextRequest) {
   const supabase = createAdminClient()
   const { data } = await supabase
     .from('bookings')
-    .select('id')
+    .select('status')
     .eq('stripe_payment_intent_id', paymentIntent)
     .maybeSingle()
 
-  return apiOk({ found: Boolean(data) })
+  // 'found' means the booking is fully CONFIRMED (FareHarbor booked), not merely that
+  // a row exists. The webhook writes a `paid_pending_fh` row before FareHarbor is
+  // booked, so the poller must keep waiting until that row flips to 'confirmed'.
+  return apiOk({ found: data?.status === 'confirmed' })
 }

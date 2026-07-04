@@ -21,5 +21,8 @@ One file per track or major feature. Written before every PR and kept up to date
 | Headless WordPress blog (WP SEO AI) | [wordpress-blog.md](wordpress-blog.md) | — | done |
 | Payment flow hardening (iDEAL recovery, auto-refund, polling confirmation) | [payment-flow-hardening.md](payment-flow-hardening.md) | D | done |
 | Booking claim mutex (one payment → one FareHarbor booking) | [booking-claim-mutex.md](booking-claim-mutex.md) | D | done |
+| Synchronous-card self-collision fix (sync card/wallet false "PAID BUT NO BOOKING") | [sync-card-self-collision-fix.md](sync-card-self-collision-fix.md) | D | done |
+| VAT invoice PDF (auto-attached to confirmation email) | [vat-invoice-pdf.md](vat-invoice-pdf.md) | D | done |
+| Attribution & source tracking (cookies → PI → booking → Google Ads) | [attribution-source-tracking.md](attribution-source-tracking.md) | — | done |
 | Withlocals reviews sync (weekly import, dedup, admin tab, frontend) | [withlocals-reviews.md](withlocals-reviews.md) | — | done |
 | Shared-cruise multi-ticket pricing + adults-only extras | [shared-cruise-pricing.md](shared-cruise-pricing.md) | D | done |

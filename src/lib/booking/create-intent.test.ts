@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
   updateArgs: [] as Array<Record<string, unknown>>,
   piCreate: vi.fn(),
   calculateQuote: vi.fn(),
+  fhValidate: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase/admin', () => ({
@@ -42,6 +43,9 @@ vi.mock('@/lib/stripe/server', () => ({
   getStripe: () => ({ paymentIntents: { create: h.piCreate } }),
 }))
 vi.mock('@/lib/booking/calculate-quote', () => ({ calculateQuote: h.calculateQuote }))
+vi.mock('@/lib/fareharbor/client', () => ({
+  getFareHarborClient: () => ({ validateBooking: h.fhValidate }),
+}))
 
 import { createPaymentIntent } from './create-intent'
 
@@ -98,6 +102,21 @@ describe('createPaymentIntent — atomic quote claim', () => {
     h.updateArgs.length = 0
     h.calculateQuote.mockResolvedValue(makeRecomputed())
     h.piCreate.mockResolvedValue({ id: 'pi_new', client_secret: 'pi_new_secret', amount: 16500 })
+    // Validate-before-charge: default to bookable so the happy paths proceed.
+    h.fhValidate.mockResolvedValue({ is_bookable: true })
+  })
+
+  it('validates with FareHarbor BEFORE charging — never creates a PI for a gone slot', async () => {
+    h.results.push(
+      { data: makeQuoteRow(), error: null },   // claim succeeds
+      { data: null, error: null },             // release update
+    )
+    h.fhValidate.mockResolvedValue({ is_bookable: false, error: 'Sold out' })
+
+    await expect(createPaymentIntent(INPUT)).rejects.toThrow(/Sold out|no longer available/)
+    expect(h.piCreate).not.toHaveBeenCalled()
+    // The claim is released so the customer can re-quote and retry
+    expect(h.updateArgs[1]).toMatchObject({ consumed_at: null })
   })
 
   it('rejects the loser of a double-tap race with "already been used"', async () => {

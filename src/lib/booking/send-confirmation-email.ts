@@ -1,6 +1,9 @@
 import { Resend } from 'resend'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { escapeHtml as esc } from '@/lib/utils'
+import { generateInvoicePdf, makeInvoiceNumber } from '@/lib/booking/generate-invoice-pdf'
+import { allocateInvoiceNumber } from '@/lib/booking/allocate-invoice-number'
+import { postSlackText } from '@/lib/slack/send-notification'
 
 let _resend: Resend | null = null
 function getResend(): Resend {
@@ -91,9 +94,27 @@ export interface ConfirmationEmailInput {
    *  the end-time for private cruises, where FareHarbor returns
    *  `end_at == start_at` (the real duration lives on the rate). */
   fareharborCustomerTypeRatePk?: number | null
+  /** When present, a VAT invoice PDF is generated and attached to the email.
+   *  baseAmountCents: cruise price inclusive of 9% Dutch VAT, BEFORE discount.
+   *  City tax is derived from guestCount × €2.60 unless cityTaxCents is given;
+   *  extras from extrasSelected; discount rendered as a reconciling line so the
+   *  invoice TOTAL DUE always equals what the customer was charged. */
+  stripePaymentIntentId?: string | null
+  baseAmountCents?: number | null
+  /** Promo/discount applied (inclusive of its VAT). */
+  discountAmountCents?: number | null
+  /** Amsterdam city tax actually charged. Falls back to guestCount × €2.60. */
+  cityTaxCents?: number | null
 }
 
 export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<void> {
+  // Local/test escape hatch: when set, never send a real confirmation email. Used
+  // while exercising the booking flow against the unlisted test cruises so test
+  // bookings don't email anyone. Production leaves this unset.
+  if (process.env.SUPPRESS_CONFIRMATION_EMAILS === 'true') {
+    console.log('[email] SUPPRESS_CONFIRMATION_EMAILS=true — skipping confirmation email for', p.contact.email)
+    return
+  }
   if (!process.env.RESEND_API_KEY) return
 
   const resend = getResend()
@@ -151,6 +172,57 @@ export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<
         </tr>`).join('')
     : ''
 
+  // ── VAT invoice PDF ───────────────────────────────────────────────────────
+  // Generate the invoice BEFORE building the HTML so the "invoice attached" note
+  // can be conditioned on whether the PDF actually exists — never promise an
+  // attachment we didn't produce (payment-link / £0 / generation-failure paths).
+  let invoicePdfBytes: Uint8Array | null = null
+  if (p.baseAmountCents) {
+    try {
+      const invoiceDate = new Date().toLocaleDateString('en-GB', {
+        day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Amsterdam',
+      })
+      // Allocate a sequential invoice number (Dutch VAT compliance).
+      // Falls back to the stable-but-non-sequential makeInvoiceNumber when the
+      // DB is unreachable or the booking row isn't committed yet.
+      const invoiceNumber = p.stripePaymentIntentId
+        ? ((await allocateInvoiceNumber(p.stripePaymentIntentId)) ?? makeInvoiceNumber(p.fhBookingUuid, p.stripePaymentIntentId))
+        : makeInvoiceNumber(p.fhBookingUuid, p.stripePaymentIntentId)
+      invoicePdfBytes = await generateInvoicePdf({
+        invoiceNumber,
+        invoiceDate,
+        customerName:  p.contact.name,
+        customerEmail: p.contact.email,
+        listingTitle:  p.listingTitle,
+        bookingDate:   p.date,
+        guestCount:    p.guestCount,
+        baseAmountCents: p.baseAmountCents,
+        extrasSelected:  p.extrasSelected,
+        cityTaxCents:    p.cityTaxCents ?? null,
+        discountAmountCents: p.discountAmountCents ?? null,
+        fhBookingUuid:   p.fhBookingUuid ?? null,
+        stripePaymentIntentId: p.stripePaymentIntentId ?? null,
+      })
+    } catch (err) {
+      console.error('[sendConfirmationEmail] invoice PDF generation failed (email still sent):', err)
+      // A missing VAT invoice on a paid booking is a compliance gap, and the
+      // customer is never told (the note below is suppressed). Alert ops so the
+      // invoice can be issued manually.
+      await postSlackText(
+        `🧾 *Invoice PDF generation failed* for ${p.contact.email}` +
+          (p.fhBookingUuid ? ` (FH \`${p.fhBookingUuid}\`)` : '') +
+          (p.stripePaymentIntentId ? ` · PI \`${p.stripePaymentIntentId}\`` : '') +
+          `\n_The confirmation email was sent WITHOUT an invoice — issue one manually._`,
+      ).catch(() => { /* best-effort */ })
+    }
+  }
+  const invoiceNote = invoicePdfBytes
+    ? `<!-- VAT invoice note -->
+            <p style="margin:0 0 20px;font-size:12px;color:#6b7280;line-height:1.6;">
+              📄 A <strong>VAT invoice</strong> (Rederij Zoomers &amp; Schenk, VAT no. NL867981374B01) is attached to this email.
+            </p>`
+    : ''
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -172,7 +244,7 @@ export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<
         <tr>
           <td bgcolor="#1e1b4b" style="background-color:#1e1b4b;padding:36px 32px 0;border-radius:20px 20px 0 0;text-align:center;">
             <a href="https://offcourseamsterdam.com" style="display:inline-block;">
-              <img src="${site}/logos/offcourse-vertical.png" alt="Off Course Amsterdam" width="80" style="display:block;margin:0 auto;width:80px;height:auto;" />
+              <img src="${site}/logos/offcourse-vertical-pink.png" alt="Off Course Amsterdam" width="80" style="display:block;margin:0 auto;width:80px;height:auto;" />
             </a>
           </td>
         </tr>
@@ -246,6 +318,8 @@ export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<
               </tr>
             </table>
 
+            ${invoiceNote}
+
             <!-- Sign-off -->
             <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.6;">
               Questions? Reply to this email or reach us at <a href="mailto:cruise@offcourseamsterdam.com" style="color:#1e1b4b;font-weight:600;">cruise@offcourseamsterdam.com</a>
@@ -282,6 +356,12 @@ export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<
       to: [p.contact.email],
       subject: `you're booked 🎉 — ${p.listingTitle}`,
       html,
+      ...(invoicePdfBytes ? {
+        attachments: [{
+          filename: `invoice-off-course-${p.fhBookingUuid ?? 'booking'}.pdf`,
+          content: Buffer.from(invoicePdfBytes),
+        }],
+      } : {}),
     })
   } catch (err) {
     console.error('[sendConfirmationEmail] error:', err)
@@ -361,7 +441,7 @@ export async function sendRescheduleEmail(p: RescheduleEmailInput): Promise<void
         <tr>
           <td bgcolor="#1e1b4b" style="background-color:#1e1b4b;padding:36px 32px 0;border-radius:20px 20px 0 0;text-align:center;">
             <a href="https://offcourseamsterdam.com" style="display:inline-block;">
-              <img src="${site}/logos/offcourse-vertical.png" alt="Off Course Amsterdam" width="80" style="display:block;margin:0 auto;width:80px;height:auto;" />
+              <img src="${site}/logos/offcourse-vertical-pink.png" alt="Off Course Amsterdam" width="80" style="display:block;margin:0 auto;width:80px;height:auto;" />
             </a>
           </td>
         </tr>

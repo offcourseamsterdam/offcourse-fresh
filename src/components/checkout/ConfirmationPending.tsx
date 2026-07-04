@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2 } from 'lucide-react'
+import { Mail } from 'lucide-react'
+import { BookingProgressSteps } from './BookingProgressSteps'
 
 /**
  * Shown on the confirmation page when the booking row isn't in the database
@@ -45,28 +46,36 @@ export function ConfirmationPending({ paymentIntent }: { paymentIntent: string }
 
   if (timedOut) {
     return (
-      <div className="text-center py-4">
-        <p className="text-zinc-600 mb-2">
-          Your payment was received, but the booking details are taking longer than usual.
-        </p>
-        <p className="text-sm text-zinc-500">
-          Don&apos;t worry — your confirmation email is on its way. If it doesn&apos;t arrive
-          within 15 minutes, reach out to us at{' '}
-          <a href="mailto:cruise@offcourseamsterdam.com" className="text-[var(--color-primary)] hover:underline">
-            cruise@offcourseamsterdam.com
-          </a>
-        </p>
+      <div className="space-y-4">
+        <BookingProgressSteps stage="pending" />
+        <div className="flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50 p-4">
+          <Mail className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-500" />
+          <div>
+            <p className="text-sm font-medium text-blue-900">
+              Your payment is safe — no need to pay again
+            </p>
+            <p className="mt-0.5 text-xs text-blue-700">
+              The booking is taking a little longer than usual to finalise. As soon as it&apos;s
+              confirmed we&apos;ll email you the details — and if anything is wrong with the
+              payment, we&apos;ll email you about that too. Nothing more to do on your side.
+              Still nothing after 15 minutes? Reach us at{' '}
+              <a href="mailto:cruise@offcourseamsterdam.com" className="underline hover:text-blue-900">
+                cruise@offcourseamsterdam.com
+              </a>
+              .
+            </p>
+          </div>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="text-center py-6">
-      <Loader2 className="w-7 h-7 animate-spin text-[var(--color-primary)] mx-auto mb-4" />
-      <p className="text-zinc-700 font-medium mb-1">Confirming your booking…</p>
-      <p className="text-sm text-zinc-500">
-        Your payment was received. We&apos;re finalising the details with the bank — this
-        can take up to a minute. Please don&apos;t close this page.
+    <div className="space-y-4">
+      <BookingProgressSteps stage="pending" />
+      <p className="text-center text-xs text-zinc-500">
+        Your payment went through — you&apos;re all paid. We&apos;re just reserving your boat now.
+        Please keep this page open; it updates automatically.
       </p>
     </div>
   )

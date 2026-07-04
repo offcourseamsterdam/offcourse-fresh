@@ -9,8 +9,10 @@ import { PaymentForm } from './PaymentForm'
 import type { Listing, Slot, Rate, Contact, PendingBooking } from './types'
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
 
+import { stripePublishableKey } from '@/lib/stripe/keys'
+
 // Load Stripe once at module level (not inside the component)
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
+const stripePromise = loadStripe(stripePublishableKey)
 
 interface PaymentStepProps {
   clientSecret: string

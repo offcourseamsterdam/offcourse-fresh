@@ -2,18 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { NextRequest } from 'next/server'
 
 /**
- * POST-level tests for the booking finalize handler, focused on the claim mutex
- * + alert rework added to fix the iDEAL double-booking:
- *   - a website booking claims the PI before calling FareHarbor;
- *   - a lost claim (duplicate / in_flight) returns deduplicated WITHOUT calling FareHarbor;
+ * POST-level tests for the booking finalize handler. The public website no longer
+ * reaches /book (the Stripe webhook is the sole finalizer there) and the claim mutex
+ * is gone; what remains for /book's surviving callers (admin / internal / recovery):
+ *   - the happy path validates + books + saves;
+ *   - an existing row for the PI returns deduplicated WITHOUT calling FareHarbor;
  *   - a 23505 on save cancels our FareHarbor booking and stays silent (handled race);
- *   - a genuine (non-23505) save failure fires the reworded CRITICAL alert;
- *   - internal/recovery bookings never attempt a claim.
+ *   - a genuine (non-23505) save failure fires the CRITICAL repair alert.
  */
 
 const h = vi.hoisted(() => ({
-  claimPaymentIntent: vi.fn(),
-  releaseClaim: vi.fn().mockResolvedValue(undefined),
   fhValidate: vi.fn().mockResolvedValue({ is_bookable: true }),
   fhCreate: vi.fn().mockResolvedValue({ uuid: 'fh-new' }),
   fhCancel: vi.fn().mockResolvedValue(undefined),
@@ -21,6 +19,7 @@ const h = vi.hoisted(() => ({
   insert: vi.fn().mockResolvedValue({ error: null }),
   piRetrieve: vi.fn().mockResolvedValue({ metadata: {} }),
   resolveCustomerTypeName: vi.fn().mockResolvedValue(null),
+  describeCustomerTypes: vi.fn().mockResolvedValue(null),
   sendConfirmationEmail: vi.fn().mockResolvedValue(undefined),
   notifyCateringOrder: vi.fn().mockResolvedValue(undefined),
   notifyBookingFailure: vi.fn().mockResolvedValue(undefined),
@@ -28,10 +27,6 @@ const h = vi.hoisted(() => ({
   requireAdmin: vi.fn().mockResolvedValue(null),
 }))
 
-vi.mock('@/lib/booking/booking-claims', () => ({
-  claimPaymentIntent: h.claimPaymentIntent,
-  releaseClaim: h.releaseClaim,
-}))
 vi.mock('@/lib/fareharbor/client', () => ({
   getFareHarborClient: () => ({
     validateBooking: h.fhValidate,
@@ -39,7 +34,10 @@ vi.mock('@/lib/fareharbor/client', () => ({
     cancelBooking: h.fhCancel,
   }),
 }))
-vi.mock('@/lib/fareharbor/customer-type-name', () => ({ resolveCustomerTypeName: h.resolveCustomerTypeName }))
+vi.mock('@/lib/fareharbor/customer-type-name', () => ({
+  resolveCustomerTypeName: h.resolveCustomerTypeName,
+  describeCustomerTypes: h.describeCustomerTypes,
+}))
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from: () => ({
@@ -83,44 +81,34 @@ const WEBSITE_BODY = {
   bookingSource: 'website',
 }
 
-describe('POST /book — claim mutex', () => {
+describe('POST /book — finalize (no claim mutex)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubEnv('SLACK_WEBHOOK_URL', 'https://hooks.slack.test/x')
-    h.claimPaymentIntent.mockResolvedValue('won')
     h.maybeSingle.mockResolvedValue({ data: null })
     h.insert.mockResolvedValue({ error: null })
     h.fhValidate.mockResolvedValue({ is_bookable: true })
     h.fhCreate.mockResolvedValue({ uuid: 'fh-new' })
   })
 
-  it('claims the PI before FareHarbor and books on the happy path', async () => {
+  it('validates + books + saves on the happy path', async () => {
     const res = await POST(mockReq(WEBSITE_BODY))
 
     expect(res.status).toBe(200)
-    expect(h.claimPaymentIntent).toHaveBeenCalledWith(expect.anything(), 'pi_book_1')
+    expect(h.fhValidate).toHaveBeenCalledTimes(1)
     expect(h.fhCreate).toHaveBeenCalledTimes(1)
-    expect(h.releaseClaim).toHaveBeenCalledWith(expect.anything(), 'pi_book_1')
+    expect(h.insert).toHaveBeenCalledTimes(1)
   })
 
-  it('returns deduplicated WITHOUT calling FareHarbor when the claim is a duplicate', async () => {
-    h.claimPaymentIntent.mockResolvedValue('duplicate')
+  it('returns deduplicated WITHOUT calling FareHarbor when a row already exists for the PI', async () => {
+    // Idempotency SELECT finds an existing booking for this payment intent.
+    h.maybeSingle.mockResolvedValue({ data: { id: 'b1', booking_uuid: 'fh-existing' } })
 
     const res = await POST(mockReq(WEBSITE_BODY))
     const json = await res.json()
 
     expect(json.data.deduplicated).toBe(true)
     expect(h.fhValidate).not.toHaveBeenCalled()
-    expect(h.fhCreate).not.toHaveBeenCalled()
-  })
-
-  it('returns deduplicated WITHOUT calling FareHarbor when the claim is in_flight', async () => {
-    h.claimPaymentIntent.mockResolvedValue('in_flight')
-
-    const res = await POST(mockReq(WEBSITE_BODY))
-    const json = await res.json()
-
-    expect(json.data.deduplicated).toBe(true)
     expect(h.fhCreate).not.toHaveBeenCalled()
   })
 
@@ -135,10 +123,9 @@ describe('POST /book — claim mutex', () => {
     expect(h.fhCancel).toHaveBeenCalledWith('fh-dupe')
     // A cleanly-handled race must NOT page anyone.
     expect(h.postSlackText).not.toHaveBeenCalled()
-    expect(h.releaseClaim).toHaveBeenCalledWith(expect.anything(), 'pi_book_1')
   })
 
-  it('fires the reworded CRITICAL alert on a genuine (non-23505) save failure', async () => {
+  it('fires the CRITICAL repair alert on a genuine (non-23505) save failure', async () => {
     h.fhCreate.mockResolvedValue({ uuid: 'fh-real' })
     h.insert.mockResolvedValue({ error: { code: '08006', message: 'connection failure' } })
 
@@ -153,14 +140,14 @@ describe('POST /book — claim mutex', () => {
     )
   })
 
-  it('does NOT attempt a claim for internal/stripe_recovery bookings (even with a PI)', async () => {
+  it('books an admin stripe_recovery booking (surviving non-website caller)', async () => {
     const res = await POST(mockReq({
       ...WEBSITE_BODY,
       bookingSource: 'stripe_recovery',
-      stripePaymentIntentId: 'pi_recovery_1',
+      recoveryStripePaymentIntentId: 'pi_recovery_1',
     }))
 
     expect(res.status).toBe(200)
-    expect(h.claimPaymentIntent).not.toHaveBeenCalled()
+    expect(h.fhCreate).toHaveBeenCalledTimes(1)
   })
 })

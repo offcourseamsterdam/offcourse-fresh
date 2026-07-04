@@ -44,7 +44,7 @@ export async function GET(request: Request) {
           promo_codes ( code ),
           partners ( name )
         `)
-        .in('status', ['confirmed', 'booked', 'pending_payment'])
+        .in('status', ['confirmed', 'booked', 'pending_payment', 'paid_pending_fh'])
         // Exclude skeleton rows created by FareHarbor's own booking.created webhook —
         // those rows have no booking_date and duplicate our own full booking record.
         // Every real booking (website, admin, stripe_recovery) always has booking_date set.
