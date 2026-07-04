@@ -73,6 +73,11 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'offcourseamsterdam.com',
       },
+      {
+        protocol: 'https',
+        // WithLocals review author photos (weekly reviews sync)
+        hostname: 'withlocals-com-res.cloudinary.com',
+      },
       // WordPress (WP SEO AI) media host — added only when WORDPRESS_URL is set.
       ...(wpImageHost ? [{ protocol: 'https' as const, hostname: wpImageHost }] : []),
     ],
