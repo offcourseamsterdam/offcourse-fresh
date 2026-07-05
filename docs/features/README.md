@@ -26,3 +26,4 @@ One file per track or major feature. Written before every PR and kept up to date
 | Attribution & source tracking (cookies → PI → booking → Google Ads) | [attribution-source-tracking.md](attribution-source-tracking.md) | — | done |
 | Withlocals reviews sync (weekly import, dedup, admin tab, frontend) | [withlocals-reviews.md](withlocals-reviews.md) | — | done |
 | Shared-cruise multi-ticket pricing + adults-only extras | [shared-cruise-pricing.md](shared-cruise-pricing.md) | D | done |
+| Admin booking quoteId fix + FareHarbor webhook duplicate-row fix | [admin-booking-quoteid-and-webhook-dedup-fix.md](admin-booking-quoteid-and-webhook-dedup-fix.md) | — | done |

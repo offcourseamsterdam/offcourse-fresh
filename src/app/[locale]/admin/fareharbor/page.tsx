@@ -205,43 +205,60 @@ export default function BookingFlowPage() {
       return
     }
 
-    // Website booking: create Stripe PaymentIntent
+    // Website booking: create_intent requires a server-issued quoteId (same
+    // contract as the public checkout) — fetch that quote first, then charge it.
     setCreatingIntent(true)
     setIntentError(null)
 
-    const baseAmountCents = isSharedListing ? sharedBaseAmountCents : ratePrice(activeRate)
-    if (!baseAmountCents) {
-      setIntentError('Price not available for this option')
-      setCreatingIntent(false)
-      return
-    }
+    const durationMinutes = Math.round(
+      (new Date(selectedSlot.end_at).getTime() - new Date(selectedSlot.start_at).getTime()) / 60_000
+    )
+    const extraQuantities = Object.fromEntries(
+      calculation.line_items.map(li => [li.extra_id, li.quantity])
+    )
 
     try {
-      const res = await fetch('/api/admin/booking-flow/create-intent', {
+      const quoteRes = await fetch('/api/booking-flow/quote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          baseAmountCents,
           listingId: selectedListing.id,
-          listingTitle: selectedListing.title,
           availPk: selectedSlot.pk,
           customerTypeRatePk: activeRate.pk,
           customerTypeRates,
           guestCount: effectiveGuestCount,
           category: selectedListing.category,
+          durationMinutes,
+          selectedExtraIds,
+          extraQuantities,
+        }),
+      })
+      const quoteJson = await quoteRes.json()
+      if (!quoteJson.ok) {
+        setIntentError(quoteJson.error ?? 'Could not generate price quote')
+        return
+      }
+
+      const res = await fetch('/api/admin/booking-flow/create-intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quoteId: quoteJson.data.quoteId,
+          listingTitle: selectedListing.title,
           date,
+          startAt: selectedSlot.start_at,
+          endAt: selectedSlot.end_at,
           contact: {
             name: contact.name,
             email: contact.email,
             phone: contact.phone,
           },
-          selectedExtraIds,
         }),
       })
       const json = await res.json()
       if (json.ok) {
-        setClientSecret(json.clientSecret)
-        setGrandTotalCents(json.calculation?.grand_total_cents ?? null)
+        setClientSecret(json.data.clientSecret)
+        setGrandTotalCents(json.data.chargedCents ?? null)
         setStep(5)
       } else {
         setIntentError(json.error ?? 'Failed to initialise payment')
