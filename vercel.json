@@ -38,7 +38,7 @@
     },
     {
       "path": "/api/cron/pending-fh-sweep",
-      "schedule": "0 * * * *"
+      "schedule": "0 4 * * *"
     },
     {
       "path": "/api/cron/withlocals-reviews",
