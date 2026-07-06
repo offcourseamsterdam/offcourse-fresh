@@ -54,7 +54,10 @@ export async function GET(_req: NextRequest) {
       const model = b.campaigns?.settlement_model
       if (model === 'reseller') return 'partner_invoice'
       if (model === 'affiliate') return 'affiliate'
-      return b.booking_source === 'partner_invoice' ? 'partner_invoice' : 'affiliate'
+      // invoice_later (admin picks a partner directly, no campaign) is the same
+      // "partner owes us" direction as the QR-code partner_invoice flow.
+      return (b.booking_source === 'partner_invoice' || b.booking_source === 'invoice_later')
+        ? 'partner_invoice' : 'affiliate'
     }
 
     // Bucket bookings: partnerId → quarter → { partnerOwesUs, weOwe, count }

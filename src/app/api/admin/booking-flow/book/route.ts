@@ -15,6 +15,7 @@ import { hasCatering } from '@/lib/catering/filter'
 import { isWithinCateringAutoSendWindow } from '@/lib/catering/auto-send-cutoff'
 import { sendCateringOrderEmailForBooking } from '@/lib/catering/send-catering-email'
 import { notifyBookingFailure } from '@/lib/booking/notify-booking-failure'
+import { commissionFromInvoiceAmount } from '@/lib/booking/invoice-suggestion'
 import { extractVat } from '@/lib/extras/calculate'
 import { formatAmsterdamTime } from '@/lib/utils'
 import { postSlackText } from '@/lib/slack/send-notification'
@@ -89,6 +90,10 @@ export async function POST(request: NextRequest) {
       depositAmountCents,
       partnerCode,
       promoCodeId,
+      // "Invoice later" only — admin picks an existing partner directly and
+      // confirms (or overrides) the suggested amount to invoice them.
+      partnerId: invoicePartnerId,
+      invoiceAmountCents,
       // When a shared booking has multiple ticket types (adult + child), this
       // array carries the per-type breakdown so FH records the correct ticket types.
       customerTypeRates,
@@ -139,11 +144,25 @@ export async function POST(request: NextRequest) {
     }
     const partnerInvoiceContext = partnerInvoiceResult.context
 
+    // ── Invoice-later branch ────────────────────────────────────────────────
+    // Admin picked an existing partner directly — no code, no campaign required.
+    const invoiceLaterResult = await resolveInvoiceLaterContext({
+      isInvoiceLater: bookingSource === 'invoice_later',
+      partnerId: (invoicePartnerId as string | null) ?? null,
+      baseAmountCents: Number(baseAmountCents ?? 0),
+      invoiceAmountCents: invoiceAmountCents != null ? Number(invoiceAmountCents) : null,
+    })
+    if (!invoiceLaterResult.ok) {
+      return apiError(invoiceLaterResult.error, invoiceLaterResult.status)
+    }
+    const invoiceLaterContext = invoiceLaterResult.context
+
     // ── Campaign attribution & commission ──────────────────────────────────
-    // Resolves to one of three sources, in this precedence (last wins):
+    // Resolves to one of four sources, in this precedence (last wins):
     //   1. Cookie (oc_attr) — passive attribution from a tracked visit (website only)
     //   2. Promo code with campaign_id — explicit code-scoped attribution
-    //   3. Partner-invoice context — always wins when present
+    //   3. Partner-invoice context — the Webikeamsterdam QR flow
+    //   4. Invoice-later context — admin picked the partner directly (highest priority)
     //
     // Cookie attribution is intentionally skipped for non-website sources (GetYourGuide,
     // WithLocals, stripe_recovery, etc.) — those bookings are entered by an admin whose
@@ -153,6 +172,7 @@ export async function POST(request: NextRequest) {
       attrCookie: bookingSource === 'website' ? (request.cookies.get('oc_attr')?.value ?? null) : null,
       promoCodeId: promoCodeId ?? null,
       partnerInvoiceContext,
+      invoiceLaterContext,
       baseAmountCents: Number(baseAmountCents ?? 0),
     })
 
@@ -405,6 +425,13 @@ export async function POST(request: NextRequest) {
                 Number(baseAmountCents ?? 0),
               ) ?? 0,
               commissionPercent: partnerInvoiceContext.commissionPercent,
+            }
+          : null,
+        invoiceLater: invoiceLaterContext
+          ? {
+              partnerName: invoiceLaterContext.partnerName,
+              invoiceAmountCents: invoiceLaterContext.invoiceAmountCents,
+              commissionAmountCents: invoiceLaterContext.commissionAmountCents,
             }
           : null,
       }),
@@ -704,6 +731,58 @@ async function resolvePartnerInvoiceContext(params: {
   }
 }
 
+/** The resolved "invoice later" context — null when the booking isn't invoice_later. */
+interface InvoiceLaterContext {
+  partnerId: string
+  partnerName: string
+  commissionAmountCents: number
+  invoiceAmountCents: number
+}
+
+type InvoiceLaterResolution =
+  | { ok: true; context: InvoiceLaterContext | null }
+  | { ok: false; error: string; status: number }
+
+/**
+ * Resolve the "invoice later" context — an admin picking an existing partner
+ * directly (no code, unlike the Webikeamsterdam QR flow). No campaign lookup
+ * happens here: the admin already saw a suggested amount from
+ * /api/admin/booking-flow/invoice-suggestion (or typed their own) before
+ * submitting, so `invoiceAmountCents` is authoritative here, not re-derived.
+ *
+ * For non-invoice_later bookings, immediately returns `{ ok: true, context: null }`.
+ */
+async function resolveInvoiceLaterContext(params: {
+  isInvoiceLater: boolean
+  partnerId: string | null
+  baseAmountCents: number
+  invoiceAmountCents: number | null
+}): Promise<InvoiceLaterResolution> {
+  if (!params.isInvoiceLater) return { ok: true, context: null }
+  if (!params.partnerId) {
+    return { ok: false, error: 'partnerId is required for invoice_later bookings', status: 400 }
+  }
+
+  const supabase = createAdminClient()
+  const { data: partner } = await supabase
+    .from('partners')
+    .select('id, name')
+    .eq('id', params.partnerId)
+    .maybeSingle()
+  if (!partner) return { ok: false, error: 'Partner not found', status: 404 }
+
+  const invoiceAmountCents = params.invoiceAmountCents ?? params.baseAmountCents
+  return {
+    ok: true,
+    context: {
+      partnerId: params.partnerId,
+      partnerName: partner.name ?? 'Partner',
+      commissionAmountCents: commissionFromInvoiceAmount(params.baseAmountCents, invoiceAmountCents),
+      invoiceAmountCents,
+    },
+  }
+}
+
 /**
  * Compute the commission amount (in cents) for a campaign given a base price.
  *
@@ -753,6 +832,7 @@ async function resolveAttribution(params: {
   attrCookie: string | null
   promoCodeId: string | null
   partnerInvoiceContext: PartnerInvoiceContext | null
+  invoiceLaterContext: InvoiceLaterContext | null
   baseAmountCents: number
 }): Promise<{ campaignId: string | null; partnerId: string | null; commissionAmountCents: number | null }> {
   let campaignId: string | null = null
@@ -807,7 +887,7 @@ async function resolveAttribution(params: {
     }
   }
 
-  // Layer 3: partner-invoice context (highest priority)
+  // Layer 3: partner-invoice context (Webikeamsterdam QR checkout)
   if (params.partnerInvoiceContext) {
     campaignId = params.partnerInvoiceContext.campaignId
     partnerId = params.partnerInvoiceContext.partnerId
@@ -819,6 +899,16 @@ async function resolveAttribution(params: {
       },
       params.baseAmountCents,
     )
+  }
+
+  // Layer 4: "Invoice later" — admin picked the partner directly (highest
+  // priority; mutually exclusive with layer 3, since a booking is either the
+  // public QR flow or this admin flow, never both). No campaign lookup here —
+  // the admin already confirmed the final commission via the invoice-suggestion
+  // endpoint (or typed their own), so this is authoritative, not re-derived.
+  if (params.invoiceLaterContext) {
+    partnerId = params.invoiceLaterContext.partnerId
+    commissionAmountCents = params.invoiceLaterContext.commissionAmountCents
   }
 
   return { campaignId, partnerId, commissionAmountCents }
@@ -880,11 +970,13 @@ async function saveToSupabase(p: BookingPayload): Promise<{ ok: true; id: string
       guest_note: p.note || null,
       status: 'confirmed',
       // payment_status:
-      //   - partner_invoice: 'partner_invoice_pending' (awaiting partner payout)
+      //   - partner_invoice / invoice_later: 'partner_invoice_pending' (awaiting
+      //     partner payout — same real-world state whether the customer typed a
+      //     QR code or an admin picked the partner directly)
       //   - stripe_recovery: 'paid' (real money came in, just manually recorded)
       //   - other internal:  'comp' (no money exchanged)
       //   - website:         'paid'
-      payment_status: p.bookingSource === 'partner_invoice'
+      payment_status: (p.bookingSource === 'partner_invoice' || p.bookingSource === 'invoice_later')
         ? 'partner_invoice_pending'
         : isStripeRecovery
           ? 'paid'
@@ -1044,6 +1136,11 @@ interface SlackPayload {
     commissionAmountCents: number
     commissionPercent: number
   } | null
+  invoiceLater?: {
+    partnerName: string
+    invoiceAmountCents: number
+    commissionAmountCents: number
+  } | null
 }
 
 async function sendSlackNotification(p: SlackPayload) {
@@ -1055,16 +1152,20 @@ async function sendSlackNotification(p: SlackPayload) {
 
   const isInternal = p.bookingSource && p.bookingSource !== 'website'
   const isPartnerInvoice = p.bookingSource === 'partner_invoice' && p.partnerInvoice
+  const isInvoiceLater = p.bookingSource === 'invoice_later' && p.invoiceLater
   const pi = p.partnerInvoice
+  const il = p.invoiceLater
 
   const invoiceable = pi ? pi.baseAmountCents - pi.commissionAmountCents : 0
 
   const text = [
     isPartnerInvoice
       ? `*New partner-invoice booking!* 🤝 (${pi!.partnerName})`
-      : isInternal
-        ? `*New internal booking!* 📋 (${p.bookingSource})`
-        : `*New booking confirmed!* 🎉`,
+      : isInvoiceLater
+        ? `*New "invoice later" booking!* 💼 (${il!.partnerName})`
+        : isInternal
+          ? `*New internal booking!* 📋 (${p.bookingSource})`
+          : `*New booking confirmed!* 🎉`,
     `*${p.listingTitle}*`,
     `📅 ${p.date} · ${startTime} – ${endTime}`,
     `👥 ${p.guestCount} guest${p.guestCount !== 1 ? 's' : ''} · ${p.category}`,
@@ -1073,9 +1174,11 @@ async function sendSlackNotification(p: SlackPayload) {
       : '',
     isPartnerInvoice
       ? `💰 Ticket: ${fmtAmountEur(pi!.baseAmountCents)} · To invoice: ${fmtAmountEur(invoiceable)} · Partner cut: ${fmtAmountEur(pi!.commissionAmountCents)} (${pi!.commissionPercent}%)`
-      : isInternal
-        ? (p.depositAmountCents != null ? `💰 Deposit: ${fmtAmountEur(p.depositAmountCents)}` : '')
-        : `💰 ${fmtAmountEur(p.amountCents)}`,
+      : isInvoiceLater
+        ? `💰 To invoice: ${fmtAmountEur(il!.invoiceAmountCents)} · Partner cut: ${fmtAmountEur(il!.commissionAmountCents)}`
+        : isInternal
+          ? (p.depositAmountCents != null ? `💰 Deposit: ${fmtAmountEur(p.depositAmountCents)}` : '')
+          : `💰 ${fmtAmountEur(p.amountCents)}`,
     p.extrasSelected.length > 0
       ? `📦 Extras: ${(p.extrasSelected as Array<{name: string; amount_cents: number}>).map(e => `${e.name} €${(e.amount_cents / 100).toFixed(2)}`).join(' · ')}`
       : '',

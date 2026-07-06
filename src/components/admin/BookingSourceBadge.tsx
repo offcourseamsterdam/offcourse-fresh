@@ -9,6 +9,7 @@ const COLOR_MAP: Record<string, string> = {
   getyourguide: 'bg-orange-100 text-orange-700',
   tripadvisor: 'bg-green-100 text-green-700',
   stripe_recovery: 'bg-amber-100 text-amber-700',
+  invoice_later: 'bg-indigo-100 text-indigo-700',
 }
 
 interface Props {

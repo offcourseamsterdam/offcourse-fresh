@@ -112,7 +112,10 @@ export default async function PartnerPortalPage({ params }: Props) {
   for (const b of allBookings) {
     if (!b.booking_date) continue
     const quarter = quarterFromDate(b.booking_date)
-    const type: 'partner_invoice' | 'affiliate' = b.booking_source === 'partner_invoice' ? 'partner_invoice' : 'affiliate'
+    // invoice_later (admin picks the partner directly, no code) is the same
+    // "partner owes us" direction as the QR-code partner_invoice flow.
+    const type: 'partner_invoice' | 'affiliate' =
+      (b.booking_source === 'partner_invoice' || b.booking_source === 'invoice_later') ? 'partner_invoice' : 'affiliate'
     const key = `${quarter}::${type}`
     const bucket = buckets[key] ?? { quarter, type, count: 0, base: 0, commission: 0 }
     bucket.count += 1

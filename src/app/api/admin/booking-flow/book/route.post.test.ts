@@ -230,3 +230,88 @@ describe('POST /book — partner_invoice auth gate (Webikeamsterdam regression)'
     expect(res.status).toBe(401)
   })
 })
+
+describe('POST /book — invoice_later (admin picks a partner directly)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubEnv('SLACK_WEBHOOK_URL', 'https://hooks.slack.test/x')
+    h.insert.mockResolvedValue({ error: null, data: { id: 'booking-row-id' } })
+    h.fhValidate.mockResolvedValue({ is_bookable: true })
+    h.fhCreate.mockResolvedValue({ uuid: 'fh-new' })
+    h.requireAdmin.mockResolvedValue(null) // authenticated admin session
+  })
+
+  it('requires admin auth (no code-based bypass exists for this source)', async () => {
+    await POST(mockReq({
+      ...WEBSITE_BODY,
+      bookingSource: 'invoice_later',
+      partnerId: 'partner-1',
+      invoiceAmountCents: 8500,
+    }))
+
+    expect(h.requireAdmin).toHaveBeenCalledTimes(1)
+  })
+
+  it('400s when partnerId is missing', async () => {
+    const res = await POST(mockReq({ ...WEBSITE_BODY, bookingSource: 'invoice_later', invoiceAmountCents: 8500 }))
+    const json = await res.json()
+
+    expect(res.status).toBe(400)
+    expect(json.error).toMatch(/partnerId is required/)
+    expect(h.insert).not.toHaveBeenCalled()
+  })
+
+  it('404s when the partner does not exist', async () => {
+    h.maybeSingle.mockResolvedValue({ data: null })
+
+    const res = await POST(mockReq({
+      ...WEBSITE_BODY,
+      bookingSource: 'invoice_later',
+      partnerId: 'ghost-partner',
+      invoiceAmountCents: 8500,
+    }))
+    const json = await res.json()
+
+    expect(res.status).toBe(404)
+    expect(json.error).toMatch(/Partner not found/)
+    expect(h.insert).not.toHaveBeenCalled()
+  })
+
+  it('stores partner_id, derives commission from the admin-confirmed invoice amount, and sets payment_status', async () => {
+    h.maybeSingle.mockResolvedValue({ data: { id: 'partner-1', name: 'Webikeamsterdam' } })
+
+    const res = await POST(mockReq({
+      ...WEBSITE_BODY,
+      stripePaymentIntentId: undefined, // invoice_later has no Stripe payment — skip the idempotency lookup
+      bookingSource: 'invoice_later',
+      partnerId: 'partner-1',
+      baseAmountCents: 10000,
+      invoiceAmountCents: 8500, // admin edited down from a 100% suggestion, or a campaign gave 85%
+    }))
+
+    expect(res.status).toBe(200)
+    expect(h.insert).toHaveBeenCalledTimes(1)
+    expect(h.insert.mock.calls[0][0]).toMatchObject({
+      partner_id: 'partner-1',
+      commission_amount_cents: 1500, // 10000 - 8500
+      payment_status: 'partner_invoice_pending',
+      booking_source: 'invoice_later',
+    })
+  })
+
+  it('defaults the invoice amount to the full base amount when not provided', async () => {
+    h.maybeSingle.mockResolvedValue({ data: { id: 'partner-1', name: 'Webikeamsterdam' } })
+
+    await POST(mockReq({
+      ...WEBSITE_BODY,
+      stripePaymentIntentId: undefined, // invoice_later has no Stripe payment — skip the idempotency lookup
+      bookingSource: 'invoice_later',
+      partnerId: 'partner-1',
+      baseAmountCents: 10000,
+    }))
+
+    expect(h.insert.mock.calls[0][0]).toMatchObject({
+      commission_amount_cents: 0, // full amount invoiced — nothing withheld
+    })
+  })
+})
