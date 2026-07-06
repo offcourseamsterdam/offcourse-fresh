@@ -3,18 +3,9 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { filterCateringItems, type ExtrasLineItem } from '@/lib/catering/filter'
-import { buildCateringEmailText, buildCateringEmailSubject } from '@/lib/catering/email-template'
-import { postSlackText } from '@/lib/slack/send-notification'
+import { buildCateringEmailText } from '@/lib/catering/email-template'
 import { buildFHBookingNote } from '@/lib/catering/build-fh-note'
-import { getFareHarborClient } from '@/lib/fareharbor/client'
-import { formatAmsterdamTime } from '@/lib/utils'
-import { Resend } from 'resend'
-
-let _resend: Resend | null = null
-function getResend(): Resend {
-  if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY ?? '')
-  return _resend
-}
+import { sendCateringOrderEmailForBooking } from '@/lib/catering/send-catering-email'
 
 async function fetchBookingForCatering(id: string) {
   const supabase = createAdminClient()
@@ -73,81 +64,9 @@ export async function POST(
   if (denied) return denied
   try {
     const { id } = await params
-    const { booking, error: fetchErr } = await fetchBookingForCatering(id)
-    if (fetchErr || !booking) return apiError('Booking not found', 404)
-
-    const isResend = !!booking.catering_email_sent_at
-
-    const cateringItems = filterCateringItems(booking.extras_selected as never)
-    if (cateringItems.length === 0) return apiError('No catering items on this booking', 400)
-
-    const cruiseName = booking.listing_title ?? booking.tour_item_name ?? 'Cruise'
-    const text = buildCateringEmailText({
-      cruiseName,
-      dateStr: booking.booking_date,
-      timeStr: booking.start_time,
-      guestCount: booking.guest_count,
-      items: cateringItems,
-    })
-
-    const recipient = process.env.CATERING_EMAIL_RECIPIENT ?? 'info@offcourseamsterdam.com'
-    const subject = buildCateringEmailSubject(cruiseName, booking.booking_date, booking.start_time)
-
-    if (process.env.RESEND_API_KEY) {
-      const resend = getResend()
-      await resend.emails.send({
-        from: 'Off Course Amsterdam <cruise@offcourseamsterdam.com>',
-        to: [recipient],
-        subject: isResend ? `[UPDATED] ${subject}` : subject,
-        text,
-      })
-    }
-
-    // Slack confirmation
-    const itemSummary = cateringItems
-      .map(i => {
-        const qty = i.quantity ?? 1
-        if (i.is_per_person_pick && qty > 0) {
-          return `• ${i.name} (for ${qty} ${qty === 1 ? 'person' : 'people'})`
-        }
-        return `• ${i.name}${qty > 1 ? ` ×${qty}` : ''}`
-      })
-      .join('\n')
-    const dateLabel = booking.booking_date
-      ? new Date(booking.booking_date + 'T12:00:00').toLocaleDateString('en-NL', {
-          weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-        })
-      : '—'
-    const timeLabel = formatAmsterdamTime(booking.start_time)
-    const slackPrefix = isResend ? '🔄 *Catering order resent to supplier*' : '🍽️ *Catering order sent to supplier*'
-    await postSlackText(
-      `${slackPrefix}\n*${cruiseName}* — ${dateLabel} at ${timeLabel}\n${booking.guest_count ? `${booking.guest_count} guests\n` : ''}${itemSummary}`
-    )
-
-    // Update FareHarbor booking note with catering details (best-effort)
-    if (booking.booking_uuid) {
-      try {
-        const allExtras = (booking.extras_selected ?? []) as unknown as ExtrasLineItem[]
-        const note = buildFHBookingNote(booking.guest_note, allExtras)
-        if (note) {
-          const fh = getFareHarborClient()
-          await fh.updateBookingNote(booking.booking_uuid, note)
-        }
-      } catch (err) {
-        console.error('[catering-email] FH note update failed:', err)
-      }
-    }
-
-    // Always update the sent timestamp so we know when the last send was
-    const supabase = createAdminClient()
-    const { error: updateErr } = await supabase
-      .from('bookings')
-      .update({ catering_email_sent_at: new Date().toISOString() })
-      .eq('id', id)
-
-    if (updateErr) return apiError(updateErr.message)
-
-    return apiOk({ sent: true, resent: isResend, recipient })
+    const result = await sendCateringOrderEmailForBooking(id)
+    if (!result.ok) return apiError(result.reason, result.reason === 'Booking not found' ? 404 : 400)
+    return apiOk({ sent: true, resent: result.resent, recipient: result.recipient })
   } catch (err) {
     return apiError(err instanceof Error ? err.message : 'Unknown error')
   }
