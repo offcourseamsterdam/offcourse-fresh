@@ -7,7 +7,7 @@ import { buildFhBookingPlan } from '@/lib/booking/finalize-booking'
 import { getExtrasFromQuote } from '@/lib/booking/pi-metadata'
 import { sendConfirmationEmail } from '@/lib/booking/send-confirmation-email'
 import { notifyCateringOrder } from '@/lib/catering/notify'
-import { hasCatering, type ExtrasLineItem } from '@/lib/catering/filter'
+import { hasFood, type ExtrasLineItem } from '@/lib/catering/filter'
 import { isWithinCateringAutoSendWindow } from '@/lib/catering/auto-send-cutoff'
 import { sendCateringOrderEmailForBooking } from '@/lib/catering/send-catering-email'
 import { postSlackText, postSlackCritical } from '@/lib/slack/send-notification'
@@ -156,7 +156,7 @@ export async function GET(request: NextRequest) {
     // Catering already inside the 7-day auto-send window gets its supplier email
     // sent instantly here too — same rule as the webhook/admin paths.
     const shouldAutoSendCateringNow =
-      hasCatering(extras) && isWithinCateringAutoSendWindow(claimed.booking_date ?? null)
+      hasFood(extras) && isWithinCateringAutoSendWindow(claimed.booking_date ?? null)
     await Promise.allSettled([
       postSlackText([
         `*Parked booking completed by sweep!* 🎉 _(${paymentMethodLabel})_`,

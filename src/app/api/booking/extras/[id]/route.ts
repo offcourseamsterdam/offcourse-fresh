@@ -4,7 +4,7 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { isValidExtrasToken } from '@/lib/booking/extras-token'
 import { buildFHBookingNote } from '@/lib/catering/build-fh-note'
 import { buildCateringEmailText, buildCateringEmailSubject } from '@/lib/catering/email-template'
-import { filterCateringItems, type ExtrasLineItem } from '@/lib/catering/filter'
+import { filterFoodItems, type ExtrasLineItem } from '@/lib/catering/filter'
 import { calculateExtras } from '@/lib/extras/calculate'
 import type { Extra } from '@/lib/extras/calculate'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
@@ -177,7 +177,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const newExtrasAmountCents = (booking.extras_amount_cents ?? 0) + calc.extras_amount_cents
   const newExtrasVatCents = (booking.extras_vat_amount_cents ?? 0) + calc.extras_vat_amount_cents
   const newTotalVatCents = (booking.total_vat_amount_cents ?? 0) + calc.extras_vat_amount_cents
-  const cateringItems = filterCateringItems(mergedExtras)
+  // Food only — this supplier doesn't handle drinks (those are stocked on the boat).
+  const cateringItems = filterFoodItems(mergedExtras)
   const hasCatering = cateringItems.length > 0
 
   // Save extras + stamp catering timestamp atomically

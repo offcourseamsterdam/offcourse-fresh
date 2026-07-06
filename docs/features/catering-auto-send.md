@@ -2,7 +2,7 @@
 
 ## What was built
 
-Before this change, the catering-order email to the supplier (Pure Boats) was **entirely manual** — a booking with food/drinks extras only got a Slack "review needed" ping at booking time; a human had to open the admin catering dashboard and click "Send" to actually notify the supplier. Now that email sends itself automatically:
+Before this change, the catering-order email to the supplier (Pure Boats — **food only, they don't handle drinks**) was **entirely manual** — a booking with food extras only got a Slack "review needed" ping at booking time; a human had to open the admin catering dashboard and click "Send" to actually notify the supplier. Now that email sends itself automatically:
 
 - **Booked within 7 days of departure** (last-minute) — sent **instantly**, the moment the booking is created (same instant as the confirmation email and Slack notification).
 - **Booked more than 7 days out** — held back, then sent automatically by a daily cron the moment the cruise crosses the 7-day-out mark.
@@ -29,7 +29,7 @@ The manual "Send" button in the admin catering dashboard still works — it's no
 
 **Eligibility keyed on `catering_email_sent_at IS NULL`**, the same column the admin dashboard already used to show "pending" catering orders. No new tracking column was needed — this feature converts what was previously a manually-cleared "pending" queue into one that clears itself, whether that's instantly or via the cron.
 
-**Eligibility uses `hasCatering()` (food + drinks)**, matching the exact predicate the send function itself requires (`filterCateringItems`), not the food-only filter the admin dashboard's "Food Orders" view uses for a different purpose.
+**Eligibility uses `hasFood()`, and the email itself uses `filterFoodItems()` — food only, never drinks.** The supplier doesn't handle drinks (those are stocked on the boat), so a drinks-only booking is never emailed, and a food+drinks booking's email lists only the food. This was originally built using `hasCatering()`/`filterCateringItems()` (food + drinks) by mistake — fixed after a real supplier email went out mentioning drinks. `sendCateringOrderEmailForBooking` and every eligibility check (the cron, the three instant-send call sites, the admin preview, and the customer-facing post-booking upsell purchase route which sends independently) were all updated together, since they'd all inherited the same wrong filter. Regression-tested in `send-catering-email.test.ts`.
 
 **The payment-link booking path was left untouched.** It never had any catering notification (not even the Slack ping) before this change — that's a pre-existing gap, not something introduced here. The daily cron still covers it as a fallback once such a booking reaches `confirmed`/`booked` status.
 
@@ -39,7 +39,7 @@ The manual "Send" button in the admin catering dashboard still works — it's no
 
 ```
 Booking created (Stripe webhook / admin wizard / pending-fh-sweep recovery)
-  → has food/drinks AND departure ≤ 7 days away?
+  → has FOOD (not drinks-only) AND departure ≤ 7 days away?
         → yes: sendCateringOrderEmailForBooking(id) fires instantly,
                alongside the confirmation email + Slack ping
         → no:  nothing sent yet — stays queued (catering_email_sent_at IS NULL)
@@ -49,7 +49,7 @@ Daily cron (08:30 UTC) — catches long-lead bookings + any failed instant-send
   → SELECT bookings WHERE status IN (confirmed, booked)
                        AND booking_date <= cutoff
                        AND catering_email_sent_at IS NULL
-  → filter to bookings with food/drinks in extras_selected
+  → filter to bookings with FOOD in extras_selected (hasFood — drinks-only excluded)
   → for each: sendCateringOrderEmailForBooking(id)
 
 sendCateringOrderEmailForBooking(id) — shared by both paths + the manual admin button

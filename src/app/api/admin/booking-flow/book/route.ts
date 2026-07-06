@@ -11,7 +11,7 @@ import { normalizePartnerCode } from '@/lib/partner-codes/generate'
 import { validatePartnerCode, reasonMessage } from '@/lib/partner-codes/validate'
 import { sendConfirmationEmail } from '@/lib/booking/send-confirmation-email'
 import { notifyCateringOrder } from '@/lib/catering/notify'
-import { hasCatering } from '@/lib/catering/filter'
+import { hasFood } from '@/lib/catering/filter'
 import { isWithinCateringAutoSendWindow } from '@/lib/catering/auto-send-cutoff'
 import { sendCateringOrderEmailForBooking } from '@/lib/catering/send-catering-email'
 import { notifyBookingFailure } from '@/lib/booking/notify-booking-failure'
@@ -387,7 +387,7 @@ export async function POST(request: NextRequest) {
     const savedBookingId = saveResult.ok ? saveResult.id : null
     const shouldAutoSendCateringNow =
       savedBookingId !== null &&
-      hasCatering((extrasSelected ?? []) as never) &&
+      hasFood((extrasSelected ?? []) as never) &&
       isWithinCateringAutoSendWindow(String(date ?? ''))
 
     // Step 3b: Non-critical notifications — run concurrently, fail quietly

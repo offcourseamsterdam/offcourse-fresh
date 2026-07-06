@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { filterCateringItems, type ExtrasLineItem } from '@/lib/catering/filter'
+import { filterFoodItems, type ExtrasLineItem } from '@/lib/catering/filter'
 import { buildCateringEmailText } from '@/lib/catering/email-template'
 import { buildFHBookingNote } from '@/lib/catering/build-fh-note'
 import { sendCateringOrderEmailForBooking } from '@/lib/catering/send-catering-email'
@@ -34,8 +34,9 @@ export async function GET(
     const { booking, error } = await fetchBookingForCatering(id)
     if (error || !booking) return apiError('Booking not found', 404)
 
-    const cateringItems = filterCateringItems(booking.extras_selected as never)
-    if (cateringItems.length === 0) return apiError('No catering items on this booking', 400)
+    // Food only — this supplier doesn't handle drinks (those are stocked on the boat).
+    const cateringItems = filterFoodItems(booking.extras_selected as never)
+    if (cateringItems.length === 0) return apiError('No food items on this booking', 400)
 
     const text = buildCateringEmailText({
       cruiseName: booking.listing_title ?? booking.tour_item_name ?? 'Cruise',

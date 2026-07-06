@@ -7,7 +7,7 @@ import { sendConfirmationEmail } from '@/lib/booking/send-confirmation-email'
 import { getExtrasFromQuote, parseMetaCents } from '@/lib/booking/pi-metadata'
 import { buildFhBookingPlan } from '@/lib/booking/finalize-booking'
 import { notifyCateringOrder } from '@/lib/catering/notify'
-import { hasCatering, type ExtrasLineItem } from '@/lib/catering/filter'
+import { hasFood, type ExtrasLineItem } from '@/lib/catering/filter'
 import { isWithinCateringAutoSendWindow } from '@/lib/catering/auto-send-cutoff'
 import { sendCateringOrderEmailForBooking } from '@/lib/catering/send-catering-email'
 import { extractVat } from '@/lib/extras/calculate'
@@ -367,7 +367,7 @@ export async function POST(request: NextRequest) {
     const insertedBookingId = insertedBooking?.id ?? null
     const shouldAutoSendCateringNow =
       insertedBookingId !== null &&
-      hasCatering((extrasSelected ?? []) as never) &&
+      hasFood((extrasSelected ?? []) as never) &&
       isWithinCateringAutoSendWindow(meta.date ?? null)
 
     // Slack + email + catering fire concurrently (all best-effort side channels)

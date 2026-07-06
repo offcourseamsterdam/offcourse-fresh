@@ -9,7 +9,7 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { filterCateringItems, type ExtrasLineItem } from './filter'
+import { filterFoodItems, type ExtrasLineItem } from './filter'
 import { buildCateringEmailText, buildCateringEmailSubject } from './email-template'
 import { buildFHBookingNote } from './build-fh-note'
 import { postSlackText } from '@/lib/slack/send-notification'
@@ -41,8 +41,9 @@ export async function sendCateringOrderEmailForBooking(bookingId: string): Promi
 
   if (error || !booking) return { ok: false, reason: 'Booking not found' }
 
-  const cateringItems = filterCateringItems(booking.extras_selected as never)
-  if (cateringItems.length === 0) return { ok: false, reason: 'No catering items on this booking' }
+  // Food only — this supplier doesn't handle drinks (those are stocked on the boat).
+  const cateringItems = filterFoodItems(booking.extras_selected as never)
+  if (cateringItems.length === 0) return { ok: false, reason: 'No food items on this booking' }
 
   const isResend = !!booking.catering_email_sent_at
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireCronSecret } from '@/lib/auth/require-cron-secret'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { hasCatering } from '@/lib/catering/filter'
+import { hasFood } from '@/lib/catering/filter'
 import { cateringAutoSendCutoffDate } from '@/lib/catering/auto-send-cutoff'
 import { sendCateringOrderEmailForBooking } from '@/lib/catering/send-catering-email'
 import { alertCronFailure } from '@/lib/cron/alert'
@@ -40,7 +40,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'DB error' }, { status: 500 })
   }
 
-  const eligible = (candidates ?? []).filter(b => hasCatering(b.extras_selected as never))
+  // Food only — this supplier doesn't handle drinks (those are stocked on the boat).
+  const eligible = (candidates ?? []).filter(b => hasFood(b.extras_selected as never))
 
   let sent = 0
   let failed = 0
