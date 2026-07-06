@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { NextRequest } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
 
 /**
  * POST-level tests for the booking finalize handler. The public website no longer
@@ -182,5 +182,51 @@ describe('POST /book — finalize (no claim mutex)', () => {
 
     expect(res.status).toBe(200)
     expect(h.fhCreate).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('POST /book — partner_invoice auth gate (Webikeamsterdam regression)', () => {
+  // Regression: 023d68f gated ALL non-website bookingSources behind requireAdmin(),
+  // which unintentionally broke the unauthenticated Webikeamsterdam QR checkout —
+  // a real customer with a valid partner code, not an admin session. The code
+  // itself is the authorization for that flow (resolvePartnerInvoiceContext
+  // validates it and rejects anything bogus before a booking is created); admin
+  // auth must stay required for a partner_invoice attempt with no code at all.
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubEnv('SLACK_WEBHOOK_URL', 'https://hooks.slack.test/x')
+    h.maybeSingle.mockResolvedValue({ data: null }) // listing lookup misses — fine, we only assert the auth gate
+    h.insert.mockResolvedValue({ error: null, data: { id: 'booking-row-id' } })
+  })
+
+  it('does NOT require admin auth for partner_invoice with a promoCodeId (public QR checkout)', async () => {
+    await POST(mockReq({ ...WEBSITE_BODY, bookingSource: 'partner_invoice', promoCodeId: 'promo-1' }))
+
+    expect(h.requireAdmin).not.toHaveBeenCalled()
+  })
+
+  it('does NOT require admin auth for partner_invoice with a legacy partnerCode', async () => {
+    await POST(mockReq({ ...WEBSITE_BODY, bookingSource: 'partner_invoice', partnerCode: 'WBKA-2X9F' }))
+
+    expect(h.requireAdmin).not.toHaveBeenCalled()
+  })
+
+  it('still requires admin auth for partner_invoice with NO code at all', async () => {
+    h.requireAdmin.mockResolvedValue(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
+
+    const res = await POST(mockReq({ ...WEBSITE_BODY, bookingSource: 'partner_invoice' }))
+
+    expect(h.requireAdmin).toHaveBeenCalledTimes(1)
+    expect(res.status).toBe(401)
+    expect(h.fhCreate).not.toHaveBeenCalled()
+  })
+
+  it('still requires admin auth for other internal sources regardless of any code fields', async () => {
+    h.requireAdmin.mockResolvedValue(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
+
+    const res = await POST(mockReq({ ...WEBSITE_BODY, bookingSource: 'withlocals', promoCodeId: 'promo-1' }))
+
+    expect(h.requireAdmin).toHaveBeenCalledTimes(1)
+    expect(res.status).toBe(401)
   })
 })

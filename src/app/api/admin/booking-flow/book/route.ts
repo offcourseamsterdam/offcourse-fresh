@@ -110,7 +110,16 @@ export async function POST(request: NextRequest) {
     // consume boat capacity. Gate them behind admin auth so only authenticated admin
     // users can trigger them. Website bookings stay unauthenticated — that's the
     // public customer checkout path.
-    if (isInternal) {
+    //
+    // Exception: partner_invoice WITH a code (promoCodeId/partnerCode) is the
+    // Webikeamsterdam QR-checkout — an unauthenticated customer at a partner desk,
+    // never an admin session. The code itself is the authorization there (validated
+    // below by resolvePartnerInvoiceContext, which rejects anything invalid before
+    // any booking is created) — same trust model as before this admin gate existed.
+    // partner_invoice WITHOUT a code (e.g. an admin picking a partner directly) has
+    // no self-proving credential, so it still requires a real admin session.
+    const isAuthorizedByPartnerCode = isPartnerInvoice && !!(promoCodeId || partnerCode)
+    if (isInternal && !isAuthorizedByPartnerCode) {
       const denied = await requireAdmin()
       if (denied) return denied
     }
