@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cateringAutoSendCutoffDate } from './auto-send-cutoff'
+import { cateringAutoSendCutoffDate, isWithinCateringAutoSendWindow } from './auto-send-cutoff'
 
 describe('cateringAutoSendCutoffDate', () => {
   it('returns the date N days ahead, formatted as YYYY-MM-DD', () => {
@@ -26,5 +26,26 @@ describe('cateringAutoSendCutoffDate', () => {
     // 23:30 UTC on June 30th is already July 1st 01:30 in Amsterdam (CEST, UTC+2)
     const now = new Date('2026-06-30T23:30:00Z')
     expect(cateringAutoSendCutoffDate(7, now)).toBe('2026-07-08')
+  })
+})
+
+describe('isWithinCateringAutoSendWindow', () => {
+  const now = new Date('2026-07-01T10:00:00Z') // cutoff(7) = 2026-07-08
+
+  it('is true for a departure exactly on the cutoff day', () => {
+    expect(isWithinCateringAutoSendWindow('2026-07-08', 7, now)).toBe(true)
+  })
+
+  it('is true for a departure before the cutoff (last-minute booking)', () => {
+    expect(isWithinCateringAutoSendWindow('2026-07-02', 7, now)).toBe(true)
+  })
+
+  it('is false for a departure after the cutoff (long-lead booking)', () => {
+    expect(isWithinCateringAutoSendWindow('2026-07-09', 7, now)).toBe(false)
+  })
+
+  it('is false when there is no booking date', () => {
+    expect(isWithinCateringAutoSendWindow(null, 7, now)).toBe(false)
+    expect(isWithinCateringAutoSendWindow(undefined, 7, now)).toBe(false)
   })
 })

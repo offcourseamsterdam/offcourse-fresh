@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
   describeCustomerTypes: vi.fn().mockResolvedValue(null),
   sendConfirmationEmail: vi.fn().mockResolvedValue(undefined),
   notifyCateringOrder: vi.fn().mockResolvedValue(undefined),
+  sendCateringOrderEmailForBooking: vi.fn().mockResolvedValue({ ok: true, resent: false, recipient: 'x' }),
   notifyBookingFailure: vi.fn().mockResolvedValue(undefined),
   postSlackText: vi.fn().mockResolvedValue(undefined),
   requireAdmin: vi.fn().mockResolvedValue(null),
@@ -42,7 +43,12 @@ vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from: () => ({
       select: () => ({ eq: () => ({ maybeSingle: h.maybeSingle, single: h.maybeSingle }) }),
-      insert: h.insert,
+      // saveToSupabase now chains .insert(...).select('id').single() — h.insert
+      // still receives the payload (existing call/payload assertions keep working)
+      // and its configured resolved value ({ error, data? }) is what .single() returns.
+      insert: (payload: unknown) => ({
+        select: () => ({ single: () => h.insert(payload) }),
+      }),
     }),
   }),
 }))
@@ -50,6 +56,7 @@ vi.mock('@/lib/stripe/server', () => ({ getStripe: () => ({ paymentIntents: { re
 vi.mock('@/lib/auth/require-admin', () => ({ requireAdmin: h.requireAdmin }))
 vi.mock('@/lib/booking/send-confirmation-email', () => ({ sendConfirmationEmail: h.sendConfirmationEmail }))
 vi.mock('@/lib/catering/notify', () => ({ notifyCateringOrder: h.notifyCateringOrder }))
+vi.mock('@/lib/catering/send-catering-email', () => ({ sendCateringOrderEmailForBooking: h.sendCateringOrderEmailForBooking }))
 vi.mock('@/lib/booking/notify-booking-failure', () => ({ notifyBookingFailure: h.notifyBookingFailure }))
 vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText }))
 
@@ -86,9 +93,10 @@ describe('POST /book — finalize (no claim mutex)', () => {
     vi.clearAllMocks()
     vi.stubEnv('SLACK_WEBHOOK_URL', 'https://hooks.slack.test/x')
     h.maybeSingle.mockResolvedValue({ data: null })
-    h.insert.mockResolvedValue({ error: null })
+    h.insert.mockResolvedValue({ error: null, data: { id: 'booking-row-id' } })
     h.fhValidate.mockResolvedValue({ is_bookable: true })
     h.fhCreate.mockResolvedValue({ uuid: 'fh-new' })
+    h.sendCateringOrderEmailForBooking.mockResolvedValue({ ok: true, resent: false, recipient: 'x' })
   })
 
   it('validates + books + saves on the happy path', async () => {
@@ -98,6 +106,31 @@ describe('POST /book — finalize (no claim mutex)', () => {
     expect(h.fhValidate).toHaveBeenCalledTimes(1)
     expect(h.fhCreate).toHaveBeenCalledTimes(1)
     expect(h.insert).toHaveBeenCalledTimes(1)
+    // No extras on this booking — nothing to auto-send to the supplier.
+    expect(h.sendCateringOrderEmailForBooking).not.toHaveBeenCalled()
+  })
+
+  it('instantly auto-sends the catering email when departure is within 7 days', async () => {
+    const res = await POST(mockReq({
+      ...WEBSITE_BODY, // date: '2026-06-22' — in the past, always within window
+      extrasSelected: [{ name: 'Cheese Platter', category: 'food', amount_cents: 2000, extra_id: 'x' }],
+    }))
+
+    expect(res.status).toBe(200)
+    expect(h.sendCateringOrderEmailForBooking).toHaveBeenCalledTimes(1)
+    expect(h.sendCateringOrderEmailForBooking).toHaveBeenCalledWith('booking-row-id')
+  })
+
+  it('does NOT instantly auto-send catering when departure is more than 7 days out', async () => {
+    const res = await POST(mockReq({
+      ...WEBSITE_BODY,
+      date: '2099-01-01',
+      extrasSelected: [{ name: 'Cheese Platter', category: 'food', amount_cents: 2000, extra_id: 'x' }],
+    }))
+
+    expect(res.status).toBe(200)
+    // Held back for the daily cron to pick up once it crosses the 7-day mark.
+    expect(h.sendCateringOrderEmailForBooking).not.toHaveBeenCalled()
   })
 
   it('returns deduplicated WITHOUT calling FareHarbor when a row already exists for the PI', async () => {

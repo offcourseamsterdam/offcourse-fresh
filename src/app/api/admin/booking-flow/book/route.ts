@@ -11,6 +11,9 @@ import { normalizePartnerCode } from '@/lib/partner-codes/generate'
 import { validatePartnerCode, reasonMessage } from '@/lib/partner-codes/validate'
 import { sendConfirmationEmail } from '@/lib/booking/send-confirmation-email'
 import { notifyCateringOrder } from '@/lib/catering/notify'
+import { hasCatering } from '@/lib/catering/filter'
+import { isWithinCateringAutoSendWindow } from '@/lib/catering/auto-send-cutoff'
+import { sendCateringOrderEmailForBooking } from '@/lib/catering/send-catering-email'
 import { notifyBookingFailure } from '@/lib/booking/notify-booking-failure'
 import { extractVat } from '@/lib/extras/calculate'
 import { formatAmsterdamTime } from '@/lib/utils'
@@ -347,6 +350,17 @@ export async function POST(request: NextRequest) {
         : null,
     })
 
+    // Catering already inside the 7-day auto-send window at creation time (e.g. a
+    // last-minute booking) gets its supplier email sent instantly here, instead of
+    // waiting for the daily cron. Bookings further out stay queued — the cron picks
+    // them up the day they cross the 7-day mark. Requires the row to have actually
+    // saved (saveResult.ok) since the send looks the booking up by its id.
+    const savedBookingId = saveResult.ok ? saveResult.id : null
+    const shouldAutoSendCateringNow =
+      savedBookingId !== null &&
+      hasCatering((extrasSelected ?? []) as never) &&
+      isWithinCateringAutoSendWindow(String(date ?? ''))
+
     // Step 3b: Non-critical notifications — run concurrently, fail quietly
     await Promise.allSettled([
       notifyCateringOrder({
@@ -402,6 +416,7 @@ export async function POST(request: NextRequest) {
         baseAmountCents: invoiceBaseCents || null,
         discountAmountCents: invoiceDiscountCents,
       }),
+      ...(shouldAutoSendCateringNow && savedBookingId ? [sendCateringOrderEmailForBooking(savedBookingId)] : []),
     ])
 
     // When FareHarbor was intentionally skipped (minimum party override), return a
@@ -805,7 +820,7 @@ async function resolveAttribution(params: {
  * Caller is responsible for alerting on failure — this is the money-path,
  * we MUST know when it breaks.
  */
-async function saveToSupabase(p: BookingPayload): Promise<{ ok: true } | { ok: false; error: string; code?: string }> {
+async function saveToSupabase(p: BookingPayload): Promise<{ ok: true; id: string } | { ok: false; error: string; code?: string }> {
   try {
     const supabase = createAdminClient()
     const isInternal = p.bookingSource !== 'website'
@@ -822,7 +837,7 @@ async function saveToSupabase(p: BookingPayload): Promise<{ ok: true } | { ok: f
         : (p.stripePaymentIntentId ?? '')
     // Snapshot the customer-type label (best-effort; null never blocks the booking).
     const customerTypeName = await resolveCustomerTypeName(p.availPk, p.customerTypeRatePk)
-    const { error } = await supabase.from('bookings').insert({
+    const { data: inserted, error } = await supabase.from('bookings').insert({
       booking_id: bookingId,
       booking_uuid: p.fhBookingUuid ?? null,
       fareharbor_availability_pk: p.availPk,
@@ -876,6 +891,8 @@ async function saveToSupabase(p: BookingPayload): Promise<{ ok: true } | { ok: f
       promo_code_id: p.promoCodeId,
       discount_amount_cents: p.discountAmountCents,
     })
+      .select('id')
+      .single()
 
     if (error) {
       console.error('[book] saveToSupabase Supabase error:', error)
@@ -887,7 +904,7 @@ async function saveToSupabase(p: BookingPayload): Promise<{ ok: true } | { ok: f
       await applyPromoCodeUsage(supabase, p.promoCodeId)
     }
 
-    return { ok: true }
+    return { ok: true, id: inserted.id }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error'
     console.error('[book] saveToSupabase exception:', err)

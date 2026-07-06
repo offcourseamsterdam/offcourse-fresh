@@ -10,3 +10,18 @@ export function cateringAutoSendCutoffDate(daysAhead: number, now: Date = new Da
   target.setDate(target.getDate() + daysAhead)
   return target.toLocaleDateString('en-CA', { timeZone: 'Europe/Amsterdam' })
 }
+
+/**
+ * True when `bookingDate` (YYYY-MM-DD) is `daysAhead` days from now or sooner —
+ * i.e. this booking is already inside the auto-send window at the moment it's
+ * created, so its catering email should go out instantly instead of waiting
+ * for the daily cron to pick it up once it crosses the threshold.
+ */
+export function isWithinCateringAutoSendWindow(
+  bookingDate: string | null | undefined,
+  daysAhead = 7,
+  now: Date = new Date(),
+): boolean {
+  if (!bookingDate) return false
+  return bookingDate <= cateringAutoSendCutoffDate(daysAhead, now)
+}

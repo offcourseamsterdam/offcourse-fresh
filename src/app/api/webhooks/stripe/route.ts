@@ -7,7 +7,9 @@ import { sendConfirmationEmail } from '@/lib/booking/send-confirmation-email'
 import { getExtrasFromQuote, parseMetaCents } from '@/lib/booking/pi-metadata'
 import { buildFhBookingPlan } from '@/lib/booking/finalize-booking'
 import { notifyCateringOrder } from '@/lib/catering/notify'
-import type { ExtrasLineItem } from '@/lib/catering/filter'
+import { hasCatering, type ExtrasLineItem } from '@/lib/catering/filter'
+import { isWithinCateringAutoSendWindow } from '@/lib/catering/auto-send-cutoff'
+import { sendCateringOrderEmailForBooking } from '@/lib/catering/send-catering-email'
 import { extractVat } from '@/lib/extras/calculate'
 import { reportBookingConversion } from '@/lib/google-ads/report-conversion'
 import { reportRefundAdjustment } from '@/lib/google-ads/report-refund'
@@ -242,7 +244,7 @@ export async function POST(request: NextRequest) {
     const totalVatAmountCents = parseMetaCents(meta.total_vat_amount_cents) ?? (baseVatAmountCents + extrasVatAmountCents)
 
     // 1. Write the row first — the UNIQUE PI constraint is the exactly-once gate.
-    const { error: insertError } = await supabase.from('bookings').insert({
+    const { data: insertedBooking, error: insertError } = await supabase.from('bookings').insert({
       booking_id: pi.id,
       booking_uuid: null,
       fareharbor_availability_pk: Number(meta.avail_pk),
@@ -278,6 +280,8 @@ export async function POST(request: NextRequest) {
       promo_code_id: meta.promo_code_id || null,
       discount_amount_cents: Number(meta.discount_amount_cents ?? 0),
     })
+      .select('id')
+      .single()
 
     if (insertError) {
       // 23505 → a duplicate Stripe delivery already owns this PI. Exit before any
@@ -356,6 +360,16 @@ export async function POST(request: NextRequest) {
       `💳 PI: ${pi.id}`,
     ].filter(Boolean).join('\n')
 
+    // Catering already inside the 7-day auto-send window at booking time (e.g. a
+    // last-minute booking) gets its supplier email sent instantly here, instead of
+    // waiting for the daily cron. Bookings further out stay queued — the cron picks
+    // them up the day they cross the 7-day mark.
+    const insertedBookingId = insertedBooking?.id ?? null
+    const shouldAutoSendCateringNow =
+      insertedBookingId !== null &&
+      hasCatering((extrasSelected ?? []) as never) &&
+      isWithinCateringAutoSendWindow(meta.date ?? null)
+
     // Slack + email + catering fire concurrently (all best-effort side channels)
     await Promise.allSettled([
       postSlackText(slackText),
@@ -388,6 +402,7 @@ export async function POST(request: NextRequest) {
         guestCount,
         extrasSelected,
       }),
+      ...(shouldAutoSendCateringNow && insertedBookingId ? [sendCateringOrderEmailForBooking(insertedBookingId)] : []),
     ])
   }
 
