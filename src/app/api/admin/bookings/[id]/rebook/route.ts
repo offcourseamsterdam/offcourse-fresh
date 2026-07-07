@@ -6,6 +6,7 @@ import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { FHNotFoundError } from '@/lib/fareharbor/types'
 import { sendRescheduleEmail } from '@/lib/booking/send-confirmation-email'
 import { postSlackText } from '@/lib/slack/send-notification'
+import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
 import { formatAmsterdamTime } from '@/lib/utils'
 
 export async function POST(
@@ -110,6 +111,7 @@ export async function POST(
       .eq('id', id)
 
     if (updateError) return apiError(updateError.message)
+    await notifyBookingsChanged()
 
     // Slack — best-effort, never blocks the response
     postSlackText([

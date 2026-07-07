@@ -8,16 +8,12 @@ import { BookingDetailRow } from '@/components/admin/BookingDetailRow'
 import { BookingStatusBadge } from '@/components/admin/BookingStatusBadge'
 import { BookingSourceBadge } from '@/components/admin/BookingSourceBadge'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
+import { useBookingsChangedSignal } from '@/hooks/useBookingsChangedSignal'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { fmtAdminDate, fmtAdminTime, fmtAdminAmountRounded, fmtAdminDateCreated } from '@/lib/admin/format'
 import { dateCreatedThreshold, type DateCreatedFilter } from '@/lib/admin/date-filter'
 import { matchesBookingSearch } from '@/lib/admin/booking-search'
 import type { AdminBooking } from '@/lib/admin/types'
-
-// Background refresh so a booking created while this page is open (e.g. via the
-// Stripe webhook) shows up on its own — previously only a manual "Refresh" click
-// would reveal it, which is why a just-confirmed booking could look "missing".
-const REFRESH_INTERVAL_MS = 60_000
 
 type SourceFilter = 'all' | 'website' | 'internal'
 type SortField = 'booking_date' | 'created_at'
@@ -30,7 +26,11 @@ export default function BookingsPage() {
   const locale = params.locale as string
   const router = useRouter()
   const { data: bookings, isLoading: loading, error, refresh: fetchBookings } =
-    useAdminFetch<AdminBooking[]>('/api/admin/bookings/local', { refreshIntervalMs: REFRESH_INTERVAL_MS })
+    useAdminFetch<AdminBooking[]>('/api/admin/bookings/local')
+  // Event-based, not polling: the server pings this channel the moment a booking
+  // is actually written (webhook, admin action, cron sweep) — see
+  // notify-bookings-changed.ts for every trigger point.
+  useBookingsChangedSignal(fetchBookings)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
   const [dateCreatedFilter, setDateCreatedFilter] = useState<DateCreatedFilter>('all')

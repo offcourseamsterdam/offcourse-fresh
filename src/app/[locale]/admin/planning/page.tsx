@@ -8,14 +8,11 @@ import { BookingDetailRow } from '@/components/admin/BookingDetailRow'
 import { BookingStatusBadge } from '@/components/admin/BookingStatusBadge'
 import { BookingSourceBadge } from '@/components/admin/BookingSourceBadge'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
+import { useBookingsChangedSignal } from '@/hooks/useBookingsChangedSignal'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { fmtAdminTime } from '@/lib/admin/format'
 import { getWeekStart, addDays, weekDateStrings, formatWeekRangeLabel, amsDateString } from '@/lib/admin/week'
 import type { AdminBooking } from '@/lib/admin/types'
-
-// Same background-refresh cadence as the Bookings list — a booking created while
-// this page is open (e.g. via the Stripe webhook) shows up on its own.
-const REFRESH_INTERVAL_MS = 60_000
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -24,7 +21,9 @@ export default function PlanningPage() {
   const locale = params.locale as string
   const router = useRouter()
   const { data: bookings, isLoading: loading, error, refresh: fetchBookings } =
-    useAdminFetch<AdminBooking[]>('/api/admin/bookings/local', { refreshIntervalMs: REFRESH_INTERVAL_MS })
+    useAdminFetch<AdminBooking[]>('/api/admin/bookings/local')
+  // Event-based, not polling — see notify-bookings-changed.ts for every trigger point.
+  useBookingsChangedSignal(fetchBookings)
 
   const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()))
   const [expandedId, setExpandedId] = useState<string | null>(null)

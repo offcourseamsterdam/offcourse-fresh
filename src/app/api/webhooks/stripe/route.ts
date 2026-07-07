@@ -14,6 +14,7 @@ import { extractVat } from '@/lib/extras/calculate'
 import { reportBookingConversion } from '@/lib/google-ads/report-conversion'
 import { reportRefundAdjustment } from '@/lib/google-ads/report-refund'
 import { postSlackText, postSlackCritical } from '@/lib/slack/send-notification'
+import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
 import { resolvePaymentMethodLabel } from '@/lib/stripe/payment-method-label'
 import { stripeWebhookSecret } from '@/lib/stripe/keys'
 import { formatAmsterdamTime } from '@/lib/utils'
@@ -104,6 +105,8 @@ export async function POST(request: NextRequest) {
         '_Manually flip status to confirmed in Supabase and verify FareHarbor._',
       ].join('\n'))
       // Still send confirmation email — customer paid and needs their booking details
+    } else {
+      await notifyBookingsChanged()
     }
 
     const guestCount = Number(booking.guest_count ?? 1)
@@ -179,6 +182,8 @@ export async function POST(request: NextRequest) {
 
     if (updateError) {
       console.error('[stripe-webhook] checkout.session.expired: DB update failed', updateError)
+    } else {
+      await notifyBookingsChanged()
     }
 
     await postSlackText([
@@ -296,6 +301,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true })
     }
 
+    // Row is now visible in the admin Bookings/Planning views (status: paid_pending_fh) —
+    // ping any open page to refetch. Covers both outcomes below (confirmed or parked)
+    // with one call, since the row is already there either way. Awaited (not
+    // fire-and-forget) — an un-awaited promise risks never completing before a
+    // serverless function tears down.
+    await notifyBookingsChanged()
+
     // 2. We own the row — create the FareHarbor booking (idempotent + retry).
     //    The booking body (incl. shared adult/child rate splits + the voucher tag) is
     //    built by the shared core so the webhook and the sweep cron can't drift.
@@ -336,6 +348,10 @@ export async function POST(request: NextRequest) {
       await alertWebhookFailure(stripe, pi, `FareHarbor booked (${fhBookingUuid}) but the confirmed-flip failed: ${updateError.message}`,
         `_The FareHarbor booking EXISTS (\`${fhBookingUuid}\`). Flip the row to confirmed in Supabase — do NOT recreate or refund._`)
       // Don't return — still notify; the cruise IS booked.
+    } else {
+      // Status just changed paid_pending_fh → confirmed — that's visible on the
+      // admin views (status badge), so ping again.
+      await notifyBookingsChanged()
     }
 
     const startTime = formatAmsterdamTime(meta.start_at)
@@ -422,6 +438,7 @@ export async function POST(request: NextRequest) {
         .from('bookings')
         .update({ payment_status: isFullRefund ? 'refunded' : 'partially_refunded' })
         .eq('stripe_payment_intent_id', piId)
+      await notifyBookingsChanged()
 
       // Google Ads: retract (full) or restate (partial) the conversion so
       // reported revenue stays honest. No-op if we never reported this one.

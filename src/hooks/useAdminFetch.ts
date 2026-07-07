@@ -19,21 +19,12 @@ export interface UseAdminFetchResult<T> {
   mutate: (updater?: (prev: T | undefined) => T | undefined, opts?: { revalidate?: boolean }) => void
 }
 
-export interface UseAdminFetchOptions {
-  /** Poll this often (ms) in the background, in addition to the manual refresh
-   *  button. Opt-in — omit for the default "only refetch on demand" behavior.
-   *  Use for views where staff expect to see new data land on its own (e.g. a
-   *  bookings list), not for rarely-changing settings pages. */
-  refreshIntervalMs?: number
-}
-
-export function useAdminFetch<T>(url: string | null, options?: UseAdminFetchOptions): UseAdminFetchResult<T> {
+export function useAdminFetch<T>(url: string | null): UseAdminFetchResult<T> {
   const { data, error, isLoading, isValidating, mutate } = useSWR<T>(url, adminFetcher, {
     keepPreviousData: true,
     dedupingInterval: 30_000,
     revalidateOnFocus: false,
     errorRetryCount: 2,
-    refreshInterval: options?.refreshIntervalMs,
   })
 
   return {

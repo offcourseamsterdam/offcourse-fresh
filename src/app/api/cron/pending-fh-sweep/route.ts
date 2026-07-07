@@ -11,6 +11,7 @@ import { hasFood, type ExtrasLineItem } from '@/lib/catering/filter'
 import { isWithinCateringAutoSendWindow } from '@/lib/catering/auto-send-cutoff'
 import { sendCateringOrderEmailForBooking } from '@/lib/catering/send-catering-email'
 import { postSlackText, postSlackCritical } from '@/lib/slack/send-notification'
+import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
 import { resolvePaymentMethodLabel } from '@/lib/stripe/payment-method-label'
 import { formatAmsterdamTime } from '@/lib/utils'
 
@@ -105,6 +106,7 @@ export async function GET(request: NextRequest) {
           .from('bookings')
           .update({ status: 'cancelled', payment_status: 'refunded', updated_at: nowIso })
           .eq('id', claimed.id)
+        await notifyBookingsChanged()
         await postSlackText(
           `↩️ *Parked booking cancelled — payment was refunded* (no FareHarbor booking created)\nPI: \`${piId}\` · ${claimed.customer_name ?? '?'} · ${claimed.listing_title ?? ''}`,
         )
@@ -149,6 +151,7 @@ export async function GET(request: NextRequest) {
       .from('bookings')
       .update({ status: 'confirmed', booking_uuid: fhBookingUuid ?? null, updated_at: nowIso })
       .eq('id', claimed.id)
+    await notifyBookingsChanged()
 
     // R6 — send the notifications the parked webhook never sent: email AND catering.
     const guestCount = Number(claimed.guest_count ?? 1)

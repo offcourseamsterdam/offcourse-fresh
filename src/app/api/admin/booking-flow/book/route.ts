@@ -19,6 +19,7 @@ import { commissionFromInvoiceAmount } from '@/lib/booking/invoice-suggestion'
 import { extractVat } from '@/lib/extras/calculate'
 import { formatAmsterdamTime } from '@/lib/utils'
 import { postSlackText } from '@/lib/slack/send-notification'
+import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
 import { CITY_TAX_CENTS_PER_GUEST } from '@/lib/booking/constants'
 import type { Json } from '@/lib/supabase/types'
 
@@ -367,6 +368,8 @@ export async function POST(request: NextRequest) {
       // save. Alert ops to REPAIR the row (the alert wording reflects this).
       await alertBookingSaveFailure(bookingPayload, saveResult.error)
       // Still return success to customer — they got what they paid for.
+    } else {
+      await notifyBookingsChanged()
     }
 
     // Resolve the selected customer type(s) for the Slack alert — e.g. "Diana - 2 Hours",
