@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Loader2, RefreshCw, ChevronLeft, ChevronRight, List, Plus, X } from 'lucide-react'
 import { BookingDetailRow } from '@/components/admin/BookingDetailRow'
 import { BookingStatusBadge } from '@/components/admin/BookingStatusBadge'
-import { BookingSourceBadge } from '@/components/admin/BookingSourceBadge'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { useBookingsChangedSignal } from '@/hooks/useBookingsChangedSignal'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
@@ -40,7 +39,7 @@ function DepartureBlock({ group, onSelectBooking }: { group: PlanningGroup; onSe
           {timeRangeLabel(first.start_time, first.end_time)}
         </p>
         <p className="truncate text-zinc-700 text-xs">
-          {first.listing_title ?? first.tour_item_name ?? '—'}
+          {first.category === 'private' ? 'Private' : first.category === 'shared' ? 'Shared' : '—'}
         </p>
         {first.customer_type_name && (
           <p className="truncate text-zinc-400 text-[11px]">{first.customer_type_name}</p>
@@ -72,10 +71,11 @@ function DepartureBlock({ group, onSelectBooking }: { group: PlanningGroup; onSe
               {b.guest_note && (
                 <p className="truncate text-zinc-400 italic">&ldquo;{b.guest_note}&rdquo;</p>
               )}
-              <div className="mt-1 flex items-center gap-1 flex-wrap">
-                <BookingSourceBadge source={b.booking_source} />
-                {showStatus && <BookingStatusBadge status={b.status} />}
-              </div>
+              {showStatus && (
+                <div className="mt-1 flex items-center gap-1 flex-wrap">
+                  <BookingStatusBadge status={b.status} />
+                </div>
+              )}
             </button>
           )
         })}
@@ -106,10 +106,10 @@ function GridLines() {
 /**
  * One time-axis column (a whole day when it isn't split by boat, or one boat
  * sub-column when it is). Fixed height spanning the full 09:00–00:00 window;
- * each departure is positioned by its TOP edge only (real clock time) — a
- * small colored dot + left border mark that true edge, while the block's
- * body renders at its natural content height (never compressed for
- * readability) and can extend past its nominal time slot if it needs to.
+ * each departure is positioned by its real start AND end time — the block's
+ * height is capped at the cruise's actual duration and never grows past its
+ * end line, so the grid stays trustworthy at a glance; overflowing content
+ * is clipped rather than pushing the box into the next time slot.
  * Hovering brings a block to the front, for the rare case of two departures
  * close enough together to visually overlap.
  *
@@ -139,8 +139,12 @@ function TimeGridColumn({ groups, onSelectBooking, boatLabel }: { groups: Planni
           <div
             key={group.key}
             className="absolute left-1.5 right-1 z-10 hover:z-20 transition-shadow"
-            style={{ top: topPx(first.start_time), minHeight: blockMinHeightPx(first.start_time, first.end_time) }}
+            style={{ top: topPx(first.start_time), height: blockMinHeightPx(first.start_time, first.end_time) }}
           >
+            {/* height (not minHeight): the block must stop exactly at the
+                cruise's real end time on the grid — content that doesn't fit
+                is clipped (via overflow-hidden below) rather than pushing the
+                box past its true end line. */}
             <div className={`h-full border-l-2 pl-1 ${accent.border}`}>
               <DepartureBlock group={group} onSelectBooking={onSelectBooking} />
             </div>
