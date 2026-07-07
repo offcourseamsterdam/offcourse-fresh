@@ -1,6 +1,7 @@
 import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { parseDurationMinutesFromCustomerTypeName } from '@/lib/fareharbor/customer-type-duration'
 
 const PAGE_SIZE = 500
 
@@ -81,13 +82,18 @@ export async function GET(request: Request) {
         : null
 
       // Fix end_time for private cruises: FareHarbor returns start == end for private slots.
-      // Recompute from start_time + duration_minutes when that's the case.
+      // Recompute from start_time + duration parsed from the customer type NAME (e.g.
+      // "Diana - 2 Hours") — not the FH rate pk. The rate pk is minted per availability
+      // instance, not a stable catalog key, so a pk-keyed duration_minutes lookup (ctMap,
+      // below) goes stale the moment it's synced. The name is stable and already
+      // snapshotted on the row. See parseDurationMinutesFromCustomerTypeName.
       let endTime = b.end_time
-      if (ctInfo?.duration_minutes && b.start_time) {
+      const durationMinutes = parseDurationMinutesFromCustomerTypeName(b.customer_type_name ?? ctInfo?.name)
+      if (durationMinutes && b.start_time) {
         const startMs = new Date(b.start_time).getTime()
         const endMs   = b.end_time ? new Date(b.end_time).getTime() : startMs
         if (Math.abs(endMs - startMs) < 60_000) { // same time = FH quirk
-          endTime = new Date(startMs + ctInfo.duration_minutes * 60_000).toISOString()
+          endTime = new Date(startMs + durationMinutes * 60_000).toISOString()
         }
       }
 

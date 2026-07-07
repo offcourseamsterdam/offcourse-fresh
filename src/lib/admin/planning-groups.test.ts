@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { groupBookingsForPlanning } from './planning-groups'
+import { groupBookingsForPlanning, extractBoatName, splitGroupsByBoat } from './planning-groups'
 import type { AdminBooking } from './types'
 
 function makeBooking(overrides: Partial<AdminBooking>): AdminBooking {
@@ -99,5 +99,72 @@ describe('groupBookingsForPlanning', () => {
 
   it('returns no groups for an empty list', () => {
     expect(groupBookingsForPlanning([])).toEqual([])
+  })
+})
+
+describe('extractBoatName', () => {
+  it('parses the boat from a private customer type name', () => {
+    expect(extractBoatName('Diana - 2 Hours')).toBe('Diana')
+    expect(extractBoatName('Curaçao - 3 Hours')).toBe('Curaçao')
+  })
+
+  it('matches the ASCII spelling "Curacao" too (no cedilla)', () => {
+    expect(extractBoatName('Curacao - 1.5 Hours')).toBe('Curaçao')
+  })
+
+  it('is case-insensitive', () => {
+    expect(extractBoatName('DIANA - 2 HOURS')).toBe('Diana')
+  })
+
+  it('returns null for a shared customer type (no boat data available)', () => {
+    expect(extractBoatName('Adult (13+)')).toBeNull()
+    expect(extractBoatName('Child (0-12)')).toBeNull()
+  })
+
+  it('returns null for null/undefined input', () => {
+    expect(extractBoatName(null)).toBeNull()
+    expect(extractBoatName(undefined)).toBeNull()
+  })
+})
+
+describe('splitGroupsByBoat', () => {
+  function makeGroup(customerTypeName: string): ReturnType<typeof groupBookingsForPlanning>[number] {
+    const booking = makeBooking({ customer_type_name: customerTypeName })
+    return { key: booking.id, bookings: [booking], totalGuestCount: booking.guest_count ?? 0 }
+  }
+
+  it('splits Diana and Curaçao departures into separate, alphabetically-sorted columns', () => {
+    const diana = makeGroup('Diana - 2 Hours')
+    const curacao = makeGroup('Curaçao - 3 Hours')
+
+    const columns = splitGroupsByBoat([diana, curacao])
+
+    expect(columns.map(c => c.boat)).toEqual(['Curaçao', 'Diana'])
+    expect(columns[0].groups).toEqual([curacao])
+    expect(columns[1].groups).toEqual([diana])
+  })
+
+  it('buckets shared (undetermined-boat) departures under "Other", sorted last', () => {
+    const diana = makeGroup('Diana - 2 Hours')
+    const shared = makeGroup('Adult (13+)')
+
+    const columns = splitGroupsByBoat([shared, diana])
+
+    expect(columns.map(c => c.boat)).toEqual(['Diana', 'Other'])
+  })
+
+  it('returns a single column when every group is on the same boat', () => {
+    const a = makeGroup('Diana - 1.5 Hours')
+    const b = makeGroup('Diana - 2 Hours')
+
+    const columns = splitGroupsByBoat([a, b])
+
+    expect(columns).toHaveLength(1)
+    expect(columns[0].boat).toBe('Diana')
+    expect(columns[0].groups).toHaveLength(2)
+  })
+
+  it('returns an empty array for no groups', () => {
+    expect(splitGroupsByBoat([])).toEqual([])
   })
 })

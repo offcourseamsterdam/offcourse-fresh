@@ -12,11 +12,76 @@ import { useBookingsChangedSignal } from '@/hooks/useBookingsChangedSignal'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { fmtAdminTime } from '@/lib/admin/format'
 import { getWeekStart, addDays, weekDateStrings, formatWeekRangeLabel, amsDateString } from '@/lib/admin/week'
-import { groupBookingsForPlanning, type PlanningGroup } from '@/lib/admin/planning-groups'
+import { groupBookingsForPlanning, splitGroupsByBoat, type PlanningGroup } from '@/lib/admin/planning-groups'
 import { filterCateringItems } from '@/lib/catering/filter'
 import type { AdminBooking } from '@/lib/admin/types'
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+/** "14:00 – 16:30", or just "14:00" when there's no meaningful end time. */
+function timeRangeLabel(startTime: string | null, endTime: string | null): string {
+  const start = fmtAdminTime(startTime)
+  const hasRealEnd = endTime && startTime &&
+    Math.abs(new Date(endTime).getTime() - new Date(startTime).getTime()) > 60_000
+  return hasRealEnd ? `${start} – ${fmtAdminTime(endTime)}` : start
+}
+
+/** One departure — the shared header (time, cruise, boat/duration) plus one
+ *  row per booking (party) on it. Reused both in the plain day list and
+ *  inside a per-boat sub-column. */
+function DepartureBlock({ group, onSelectBooking }: { group: PlanningGroup; onSelectBooking: (id: string) => void }) {
+  const first = group.bookings[0]
+  const isMulti = group.bookings.length > 1
+  return (
+    <div className="rounded-md border border-zinc-200 bg-white overflow-hidden">
+      <div className="px-2.5 pt-2 pb-1.5 border-b border-zinc-100 bg-zinc-50/60">
+        <p className="font-semibold text-zinc-900 text-xs">
+          {timeRangeLabel(first.start_time, first.end_time)}
+        </p>
+        <p className="truncate text-zinc-700 text-xs">
+          {first.listing_title ?? first.tour_item_name ?? '—'}
+        </p>
+        {first.customer_type_name && (
+          <p className="truncate text-zinc-400 text-[11px]">{first.customer_type_name}</p>
+        )}
+        {isMulti && (
+          <p className="text-[11px] font-medium text-indigo-600 mt-0.5">
+            {group.bookings.length} bookings · {group.totalGuestCount} guests total
+          </p>
+        )}
+      </div>
+      <div className="divide-y divide-zinc-100">
+        {group.bookings.map(b => {
+          const cateringItems = filterCateringItems(b.extras_selected ?? [])
+          const showStatus = b.status !== 'confirmed' && b.status !== 'booked'
+          return (
+            <button
+              key={b.id}
+              onClick={() => onSelectBooking(b.id)}
+              className="w-full text-left px-2.5 py-1.5 text-xs hover:bg-zinc-50 transition-colors"
+            >
+              <p className="text-zinc-900 font-medium truncate">
+                {b.customer_name ?? '—'} · {b.guest_count ?? '—'} guest{b.guest_count !== 1 ? 's' : ''}
+              </p>
+              {cateringItems.length > 0 && (
+                <p className="truncate text-zinc-500">
+                  🍽️ {cateringItems.map(i => i.name).join(', ')}
+                </p>
+              )}
+              {b.guest_note && (
+                <p className="truncate text-zinc-400 italic">&ldquo;{b.guest_note}&rdquo;</p>
+              )}
+              <div className="mt-1 flex items-center gap-1 flex-wrap">
+                <BookingSourceBadge source={b.booking_source} />
+                {showStatus && <BookingStatusBadge status={b.status} />}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 export default function PlanningPage() {
   const params = useParams()
@@ -120,17 +185,23 @@ export default function PlanningPage() {
         </div>
       )}
 
-      {/* Week grid — 7 day columns */}
+      {/* Week grid — 7 day columns. Flex, not CSS grid: a day running two boats
+          gets proportionally more width (flexGrow = boat count) instead of
+          squeezing a second boat column into a fixed-width cell where it'd
+          silently overflow off-screen. */}
       {bookings && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3">
+        <div className="flex flex-col lg:flex-row gap-3 items-stretch">
           {days.map((day, i) => {
             const dayGroups = byDay.get(day) ?? []
+            const boatColumns = splitGroupsByBoat(dayGroups)
             const isToday = day === todayStr
             const dateObj = new Date(day + 'T12:00:00')
+            const isSplit = boatColumns.length > 1
             return (
               <div
                 key={day}
-                className={`rounded-lg border overflow-hidden flex flex-col ${
+                style={{ flexGrow: Math.max(1, boatColumns.length), flexBasis: 0 }}
+                className={`rounded-lg border overflow-hidden flex flex-col lg:min-w-[150px] ${
                   isToday ? 'border-indigo-300 bg-indigo-50/30' : 'border-zinc-200 bg-white'
                 }`}
               >
@@ -142,65 +213,31 @@ export default function PlanningPage() {
                     {dateObj.getDate()} {dateObj.toLocaleDateString('en-GB', { month: 'short', timeZone: 'Europe/Amsterdam' })}
                   </p>
                 </div>
-                <div className="p-2 space-y-2 flex-1 min-h-[80px]">
+                <div className="p-2 flex-1 min-h-[80px]">
                   {dayGroups.length === 0 && (
                     <p className="text-xs text-zinc-300 text-center py-4">—</p>
                   )}
-                  {dayGroups.map(group => {
-                    const first = group.bookings[0]
-                    const isMulti = group.bookings.length > 1
-                    return (
-                      <div key={group.key} className="rounded-md border border-zinc-200 bg-white overflow-hidden">
-                        {/* Departure header — same for every booking in the group */}
-                        <div className="px-2.5 pt-2 pb-1.5 border-b border-zinc-100 bg-zinc-50/60">
-                          <p className="font-semibold text-zinc-900 text-xs">
-                            {fmtAdminTime(first.start_time)}
+                  {!isSplit && (
+                    <div className="space-y-2">
+                      {dayGroups.map(group => (
+                        <DepartureBlock key={group.key} group={group} onSelectBooking={setExpandedId} />
+                      ))}
+                    </div>
+                  )}
+                  {isSplit && (
+                    <div className="flex gap-2 h-full">
+                      {boatColumns.map(col => (
+                        <div key={col.boat} className="flex-1 min-w-0 space-y-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 px-0.5 truncate">
+                            {col.boat}
                           </p>
-                          <p className="truncate text-zinc-700 text-xs">
-                            {first.listing_title ?? first.tour_item_name ?? '—'}
-                          </p>
-                          {first.customer_type_name && (
-                            <p className="truncate text-zinc-400 text-[11px]">{first.customer_type_name}</p>
-                          )}
-                          {isMulti && (
-                            <p className="text-[11px] font-medium text-indigo-600 mt-0.5">
-                              {group.bookings.length} bookings · {group.totalGuestCount} guests total
-                            </p>
-                          )}
+                          {col.groups.map(group => (
+                            <DepartureBlock key={group.key} group={group} onSelectBooking={setExpandedId} />
+                          ))}
                         </div>
-                        {/* One row per booking (party) on this departure */}
-                        <div className="divide-y divide-zinc-100">
-                          {group.bookings.map(b => {
-                            const cateringItems = filterCateringItems(b.extras_selected ?? [])
-                            const showStatus = b.status !== 'confirmed' && b.status !== 'booked'
-                            return (
-                              <button
-                                key={b.id}
-                                onClick={() => setExpandedId(b.id)}
-                                className="w-full text-left px-2.5 py-1.5 text-xs hover:bg-zinc-50 transition-colors"
-                              >
-                                <p className="text-zinc-900 font-medium truncate">
-                                  {b.customer_name ?? '—'} · {b.guest_count ?? '—'} guest{b.guest_count !== 1 ? 's' : ''}
-                                </p>
-                                {cateringItems.length > 0 && (
-                                  <p className="truncate text-zinc-500">
-                                    🍽️ {cateringItems.map(i => i.name).join(', ')}
-                                  </p>
-                                )}
-                                {b.guest_note && (
-                                  <p className="truncate text-zinc-400 italic">&ldquo;{b.guest_note}&rdquo;</p>
-                                )}
-                                <div className="mt-1 flex items-center gap-1 flex-wrap">
-                                  <BookingSourceBadge source={b.booking_source} />
-                                  {showStatus && <BookingStatusBadge status={b.status} />}
-                                </div>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )
-                  })}
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )
@@ -226,7 +263,7 @@ export default function PlanningPage() {
                   {selectedBooking.customer_name ?? 'Booking detail'}
                 </h2>
                 <p className="text-xs text-zinc-400">
-                  {selectedBooking.listing_title ?? selectedBooking.tour_item_name} · {fmtAdminTime(selectedBooking.start_time)}
+                  {selectedBooking.listing_title ?? selectedBooking.tour_item_name} · {timeRangeLabel(selectedBooking.start_time, selectedBooking.end_time)}
                 </p>
               </div>
               <button
