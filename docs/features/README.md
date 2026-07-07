@@ -30,3 +30,4 @@ One file per track or major feature. Written before every PR and kept up to date
 | Catering order auto-send (7-day window) | [catering-auto-send.md](catering-auto-send.md) | — | done |
 | Partner-invoice auth gate fix (Webikeamsterdam checkout regression) | [partner-invoice-auth-gate-fix.md](partner-invoice-auth-gate-fix.md) | — | done |
 | "Invoice later" admin booking (pick a partner directly) | [invoice-later-admin-booking.md](invoice-later-admin-booking.md) | — | done |
+| Admin bookings search + Planning week view | [admin-bookings-search-and-planning.md](admin-bookings-search-and-planning.md) | — | done |

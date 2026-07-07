@@ -22,12 +22,16 @@ export function dateCreatedThreshold(filter: DateCreatedFilter, now = new Date()
   const dow = ams.getDay()         // 0 = Sunday
 
   // Build a "midnight Amsterdam" date, then convert to UTC for comparison.
-  // We create the date string in Amsterdam local time and let the browser parse it.
+  // `d` may be out of range (0 or negative — the 'week' case computes `day - daysBack`,
+  // which goes negative whenever "today" is the 1st/2nd of the month on the right
+  // weekday). The multi-arg Date constructor normalizes that correctly (interpreted in
+  // the runtime's local timezone, same as the ISO-string version it replaces); building
+  // an ISO string first would require an already-valid calendar date and would silently
+  // produce an Invalid Date instead — which then makes every comparison against the
+  // threshold evaluate to false, so the "This week" filter would show everything rather
+  // than nothing.
   function amsStartOf(y: number, m: number, d: number): Date {
-    // Construct as a local-time string to avoid UTC shift
-    const localStr = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}T00:00:00`
-    // Parse as Amsterdam time using the Intl trick
-    const ref = new Date(localStr)
+    const ref = new Date(y, m, d, 0, 0, 0)
     const offset = ref.getTime() - new Date(ref.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' })).getTime()
     return new Date(ref.getTime() + offset)
   }

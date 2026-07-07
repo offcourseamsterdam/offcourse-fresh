@@ -3,7 +3,7 @@
 import { useState, Fragment } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Loader2, RefreshCw, ChevronDown, ChevronUp, Plus, ArrowUp, ArrowDown } from 'lucide-react'
+import { Loader2, RefreshCw, ChevronDown, ChevronUp, Plus, ArrowUp, ArrowDown, Search, X, CalendarRange } from 'lucide-react'
 import { BookingDetailRow } from '@/components/admin/BookingDetailRow'
 import { BookingStatusBadge } from '@/components/admin/BookingStatusBadge'
 import { BookingSourceBadge } from '@/components/admin/BookingSourceBadge'
@@ -11,7 +11,13 @@ import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { fmtAdminDate, fmtAdminTime, fmtAdminAmountRounded, fmtAdminDateCreated } from '@/lib/admin/format'
 import { dateCreatedThreshold, type DateCreatedFilter } from '@/lib/admin/date-filter'
+import { matchesBookingSearch } from '@/lib/admin/booking-search'
 import type { AdminBooking } from '@/lib/admin/types'
+
+// Background refresh so a booking created while this page is open (e.g. via the
+// Stripe webhook) shows up on its own — previously only a manual "Refresh" click
+// would reveal it, which is why a just-confirmed booking could look "missing".
+const REFRESH_INTERVAL_MS = 60_000
 
 type SourceFilter = 'all' | 'website' | 'internal'
 type SortField = 'booking_date' | 'created_at'
@@ -24,12 +30,13 @@ export default function BookingsPage() {
   const locale = params.locale as string
   const router = useRouter()
   const { data: bookings, isLoading: loading, error, refresh: fetchBookings } =
-    useAdminFetch<AdminBooking[]>('/api/admin/bookings/local')
+    useAdminFetch<AdminBooking[]>('/api/admin/bookings/local', { refreshIntervalMs: REFRESH_INTERVAL_MS })
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
   const [dateCreatedFilter, setDateCreatedFilter] = useState<DateCreatedFilter>('all')
   const [sortField, setSortField] = useState<SortField>('created_at')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [search, setSearch] = useState('')
 
   function toggleRow(id: string) {
     setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
@@ -50,6 +57,7 @@ export default function BookingsPage() {
     if (sourceFilter === 'website' && b.booking_source && b.booking_source !== 'website') return false
     if (sourceFilter === 'internal' && (!b.booking_source || b.booking_source === 'website')) return false
     if (threshold && b.created_at && new Date(b.created_at) < threshold) return false
+    if (!matchesBookingSearch(b, search)) return false
     return true
   })
 
@@ -91,6 +99,10 @@ export default function BookingsPage() {
           <p className="text-sm text-zinc-500 mt-1">From our booking flow · stored in Supabase</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => router.push(`/${locale}/admin/planning`)}>
+            <CalendarRange className="w-3.5 h-3.5" />
+            Week view
+          </Button>
           <Button variant="outline" size="sm" onClick={fetchBookings} disabled={loading}>
             {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
             Refresh
@@ -114,21 +126,43 @@ export default function BookingsPage() {
               <span><span className="font-semibold text-emerald-700">{confirmed}</span> confirmed</span>
               <span className="font-semibold text-zinc-900">{fmtAdminAmountRounded(totalRevenue)}</span>
             </div>
-            {/* Source filter */}
-            <div className="flex items-center gap-1.5">
-              {(['all', 'website', 'internal'] as SourceFilter[]).map(f => (
-                <button
-                  key={f}
-                  onClick={() => setSourceFilter(f)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                    sourceFilter === f
-                      ? 'bg-zinc-900 text-white'
-                      : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200'
-                  }`}
-                >
-                  {f === 'all' ? 'All' : f === 'website' ? 'Regular' : 'Internal'}
-                </button>
-              ))}
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Search */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search name, email, cruise…"
+                  className="pl-8 pr-7 py-1.5 rounded-lg text-xs bg-zinc-100 border border-transparent focus:bg-white focus:border-zinc-300 focus:outline-none transition-colors w-56"
+                />
+                {search && (
+                  <button
+                    onClick={() => setSearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+                    aria-label="Clear search"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              {/* Source filter */}
+              <div className="flex items-center gap-1.5">
+                {(['all', 'website', 'internal'] as SourceFilter[]).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setSourceFilter(f)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      sourceFilter === f
+                        ? 'bg-zinc-900 text-white'
+                        : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200'
+                    }`}
+                  >
+                    {f === 'all' ? 'All' : f === 'website' ? 'Regular' : 'Internal'}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
