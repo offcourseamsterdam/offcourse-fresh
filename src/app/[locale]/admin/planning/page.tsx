@@ -141,9 +141,6 @@ function TimeGridColumn({ groups, onSelectBooking, boatLabel }: { groups: Planni
             className="absolute left-1.5 right-1 z-10 hover:z-20 transition-shadow"
             style={{ top: topPx(first.start_time), minHeight: blockMinHeightPx(first.start_time, first.end_time) }}
           >
-            {/* Truth-dot: this top edge is exact clock time; the block body below
-                flows at its natural height and may extend past its nominal slot. */}
-            <span className={`absolute -left-1.5 top-2 w-2 h-2 rounded-full ring-2 ring-white ${accent.dot}`} />
             <div className={`h-full border-l-2 pl-1 ${accent.border}`}>
               <DepartureBlock group={group} onSelectBooking={onSelectBooking} />
             </div>
