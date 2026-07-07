@@ -28,25 +28,37 @@ function timeRangeLabel(startTime: string | null, endTime: string | null): strin
 
 /** One departure — the shared header (time, cruise, boat/duration) plus one
  *  row per booking (party) on it. Reused both in the plain day list and
- *  inside a per-boat sub-column. */
-function DepartureBlock({ group, onSelectBooking }: { group: PlanningGroup; onSelectBooking: (id: string) => void }) {
+ *  inside a per-boat sub-column.
+ *
+ *  `compact` (set when a day is split into boat sub-columns, ~100-150px
+ *  wide) drops everything that's redundant with context already visible
+ *  elsewhere — the category and boat/duration line repeat what the column
+ *  header already says — and everything secondary (extras, notes, status)
+ *  that's one click away in the detail panel. What's left (start time,
+ *  accent color, guest name + count) always fits without truncating to a
+ *  single letter. Every booking row stays individually clickable either way. */
+function DepartureBlock({ group, onSelectBooking, compact = false }: { group: PlanningGroup; onSelectBooking: (id: string) => void; compact?: boolean }) {
   const first = group.bookings[0]
   const isMulti = group.bookings.length > 1
   return (
     <div className="rounded-md border border-zinc-200 bg-white h-full overflow-hidden shadow-sm">
-      <div className="px-2.5 pt-2 pb-1.5 border-b border-zinc-100 bg-zinc-50/60">
+      <div className={`px-2.5 border-b border-zinc-100 bg-zinc-50/60 ${compact ? 'py-1' : 'pt-2 pb-1.5'}`}>
         <p className="font-semibold text-zinc-900 text-xs">
-          {timeRangeLabel(first.start_time, first.end_time)}
+          {compact ? fmtAdminTime(first.start_time) : timeRangeLabel(first.start_time, first.end_time)}
         </p>
-        <p className="truncate text-zinc-700 text-xs">
-          {first.category === 'private' ? 'Private' : first.category === 'shared' ? 'Shared' : '—'}
-        </p>
-        {first.customer_type_name && (
-          <p className="truncate text-zinc-400 text-[11px]">{first.customer_type_name}</p>
+        {!compact && (
+          <>
+            <p className="truncate text-zinc-700 text-xs">
+              {first.category === 'private' ? 'Private' : first.category === 'shared' ? 'Shared' : '—'}
+            </p>
+            {first.customer_type_name && (
+              <p className="truncate text-zinc-400 text-[11px]">{first.customer_type_name}</p>
+            )}
+          </>
         )}
         {isMulti && (
           <p className="text-[11px] font-medium text-indigo-600 mt-0.5">
-            {group.bookings.length} bookings · {group.totalGuestCount} guests total
+            {compact ? `${group.bookings.length} bookings` : `${group.bookings.length} bookings · ${group.totalGuestCount} guests total`}
           </p>
         )}
       </div>
@@ -58,20 +70,22 @@ function DepartureBlock({ group, onSelectBooking }: { group: PlanningGroup; onSe
             <button
               key={b.id}
               onClick={() => onSelectBooking(b.id)}
-              className="w-full text-left px-2.5 py-1.5 text-xs hover:bg-zinc-50 transition-colors"
+              className={`w-full text-left px-2.5 text-xs hover:bg-zinc-50 transition-colors ${compact ? 'py-1' : 'py-1.5'}`}
             >
               <p className="text-zinc-900 font-medium truncate">
-                {b.customer_name ?? '—'} · {b.guest_count ?? '—'} guest{b.guest_count !== 1 ? 's' : ''}
+                {compact
+                  ? `${b.customer_name ?? '—'} · ${b.guest_count ?? '—'}`
+                  : `${b.customer_name ?? '—'} · ${b.guest_count ?? '—'} guest${b.guest_count !== 1 ? 's' : ''}`}
               </p>
-              {cateringItems.length > 0 && (
+              {!compact && cateringItems.length > 0 && (
                 <p className="truncate text-zinc-500">
                   🍽️ {cateringItems.map(i => i.name).join(', ')}
                 </p>
               )}
-              {b.guest_note && (
+              {!compact && b.guest_note && (
                 <p className="truncate text-zinc-400 italic">&ldquo;{b.guest_note}&rdquo;</p>
               )}
-              {showStatus && (
+              {!compact && showStatus && (
                 <div className="mt-1 flex items-center gap-1 flex-wrap">
                   <BookingStatusBadge status={b.status} />
                 </div>
@@ -119,7 +133,7 @@ function GridLines() {
  * whether it has a label, or its hours would drift out of sync with the
  * shared hour rail and every other (unlabeled) day column.
  */
-function TimeGridColumn({ groups, onSelectBooking, boatLabel }: { groups: PlanningGroup[]; onSelectBooking: (id: string) => void; boatLabel?: string }) {
+function TimeGridColumn({ groups, onSelectBooking, boatLabel, compact = false }: { groups: PlanningGroup[]; onSelectBooking: (id: string) => void; boatLabel?: string; compact?: boolean }) {
   return (
     <div className="relative" style={{ height: GRID_HEIGHT_PX }}>
       <GridLines />
@@ -146,7 +160,7 @@ function TimeGridColumn({ groups, onSelectBooking, boatLabel }: { groups: Planni
                 is clipped (via overflow-hidden below) rather than pushing the
                 box past its true end line. */}
             <div className={`h-full border-l-2 pl-1 ${accent.border}`}>
-              <DepartureBlock group={group} onSelectBooking={onSelectBooking} />
+              <DepartureBlock group={group} onSelectBooking={onSelectBooking} compact={compact} />
             </div>
           </div>
         )
@@ -321,7 +335,7 @@ export default function PlanningPage() {
                       <div className="flex gap-2 divide-x divide-zinc-100">
                         {boatColumns.map(col => (
                           <div key={col.boat} className="flex-1 min-w-0 pl-2 first:pl-0">
-                            <TimeGridColumn groups={col.groups} onSelectBooking={setExpandedId} boatLabel={col.boat} />
+                            <TimeGridColumn groups={col.groups} onSelectBooking={setExpandedId} boatLabel={col.boat} compact />
                           </div>
                         ))}
                       </div>
