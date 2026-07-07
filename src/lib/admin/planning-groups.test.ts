@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { groupBookingsForPlanning, extractBoatName, splitGroupsByBoat } from './planning-groups'
+import { groupBookingsForPlanning, extractBoatName, splitGroupsByBoat, boatAccentClasses } from './planning-groups'
 import type { AdminBooking } from './types'
 
 function makeBooking(overrides: Partial<AdminBooking>): AdminBooking {
@@ -166,5 +166,23 @@ describe('splitGroupsByBoat', () => {
 
   it('returns an empty array for no groups', () => {
     expect(splitGroupsByBoat([])).toEqual([])
+  })
+})
+
+describe('boatAccentClasses', () => {
+  it('gives Diana and Curaçao distinct, non-neutral accent colors', () => {
+    const diana = boatAccentClasses('Diana')
+    const curacao = boatAccentClasses('Curaçao')
+    expect(diana.dot).not.toBe(curacao.dot)
+    expect(diana.dot).not.toContain('zinc')
+    expect(curacao.dot).not.toContain('zinc')
+  })
+
+  it('gives "Other" a neutral zinc accent', () => {
+    expect(boatAccentClasses('Other').dot).toContain('zinc')
+  })
+
+  it('is consistent for the same boat every time', () => {
+    expect(boatAccentClasses('Diana')).toEqual(boatAccentClasses('Diana'))
   })
 })

@@ -69,6 +69,23 @@ export function extractBoatName(customerTypeName: string | null | undefined): st
   return null
 }
 
+/**
+ * Accent color for a boat's "truth-dot" time-connector and left-border on the
+ * Planning time grid — one consistent color per boat, all week, so a reader
+ * learns "indigo = Diana, pink = Curaçao" at a glance without a legend.
+ * 'Other' (shared cruises — boat undetermined) gets a neutral zinc accent.
+ */
+export function boatAccentClasses(boat: string): { dot: string; border: string } {
+  switch (boat) {
+    case 'Diana':
+      return { dot: 'bg-indigo-500', border: 'border-l-indigo-400' }
+    case 'Curaçao':
+      return { dot: 'bg-pink-500', border: 'border-l-pink-400' }
+    default:
+      return { dot: 'bg-zinc-400', border: 'border-l-zinc-300' }
+  }
+}
+
 export interface BoatColumn {
   /** A known boat name, or 'Other' when it couldn't be determined (shared cruises today). */
   boat: string

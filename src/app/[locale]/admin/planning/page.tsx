@@ -12,7 +12,8 @@ import { useBookingsChangedSignal } from '@/hooks/useBookingsChangedSignal'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { fmtAdminTime } from '@/lib/admin/format'
 import { getWeekStart, addDays, weekDateStrings, formatWeekRangeLabel, amsDateString } from '@/lib/admin/week'
-import { groupBookingsForPlanning, splitGroupsByBoat, type PlanningGroup } from '@/lib/admin/planning-groups'
+import { groupBookingsForPlanning, splitGroupsByBoat, extractBoatName, boatAccentClasses, type PlanningGroup } from '@/lib/admin/planning-groups'
+import { topPx, blockMinHeightPx, hourMarks, GRID_HEIGHT_PX, RAIL_WIDTH_PX } from '@/lib/admin/planning-time-grid'
 import { filterCateringItems } from '@/lib/catering/filter'
 import type { AdminBooking } from '@/lib/admin/types'
 
@@ -33,7 +34,7 @@ function DepartureBlock({ group, onSelectBooking }: { group: PlanningGroup; onSe
   const first = group.bookings[0]
   const isMulti = group.bookings.length > 1
   return (
-    <div className="rounded-md border border-zinc-200 bg-white overflow-hidden">
+    <div className="rounded-md border border-zinc-200 bg-white h-full overflow-hidden shadow-sm">
       <div className="px-2.5 pt-2 pb-1.5 border-b border-zinc-100 bg-zinc-50/60">
         <p className="font-semibold text-zinc-900 text-xs">
           {timeRangeLabel(first.start_time, first.end_time)}
@@ -83,6 +84,76 @@ function DepartureBlock({ group, onSelectBooking }: { group: PlanningGroup; onSe
   )
 }
 
+/**
+ * Hour gridlines for one time-grid column — a background layer of thin
+ * horizontal lines, one per hour from 09:00 to 00:00. Purely decorative
+ * (z-0, no pointer events), sits behind the positioned departure blocks.
+ */
+function GridLines() {
+  return (
+    <>
+      {hourMarks().map(m => (
+        <div
+          key={m.hour}
+          className="absolute left-0 right-0 border-t border-zinc-100"
+          style={{ top: m.topPx }}
+        />
+      ))}
+    </>
+  )
+}
+
+/**
+ * One time-axis column (a whole day when it isn't split by boat, or one boat
+ * sub-column when it is). Fixed height spanning the full 09:00–00:00 window;
+ * each departure is positioned by its TOP edge only (real clock time) — a
+ * small colored dot + left border mark that true edge, while the block's
+ * body renders at its natural content height (never compressed for
+ * readability) and can extend past its nominal time slot if it needs to.
+ * Hovering brings a block to the front, for the rare case of two departures
+ * close enough together to visually overlap.
+ *
+ * `boatLabel` (when a day is split by boat) renders as an absolutely
+ * positioned overlay INSIDE this container rather than a block above it —
+ * every column's grid must start at the exact same offset regardless of
+ * whether it has a label, or its hours would drift out of sync with the
+ * shared hour rail and every other (unlabeled) day column.
+ */
+function TimeGridColumn({ groups, onSelectBooking, boatLabel }: { groups: PlanningGroup[]; onSelectBooking: (id: string) => void; boatLabel?: string }) {
+  return (
+    <div className="relative" style={{ height: GRID_HEIGHT_PX }}>
+      <GridLines />
+      {boatLabel && (
+        <p className="absolute top-0.5 left-1 z-20 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 bg-white/90 px-1 rounded pointer-events-none">
+          {boatLabel}
+        </p>
+      )}
+      {groups.length === 0 && (
+        <p className="absolute inset-0 flex items-center justify-center text-xs text-zinc-300">—</p>
+      )}
+      {groups.map(group => {
+        const first = group.bookings[0]
+        const boat = extractBoatName(first.customer_type_name) ?? 'Other'
+        const accent = boatAccentClasses(boat)
+        return (
+          <div
+            key={group.key}
+            className="absolute left-1.5 right-1 z-10 hover:z-20 transition-shadow"
+            style={{ top: topPx(first.start_time), minHeight: blockMinHeightPx(first.start_time, first.end_time) }}
+          >
+            {/* Truth-dot: this top edge is exact clock time; the block body below
+                flows at its natural height and may extend past its nominal slot. */}
+            <span className={`absolute -left-1.5 top-2 w-2 h-2 rounded-full ring-2 ring-white ${accent.dot}`} />
+            <div className={`h-full border-l-2 pl-1 ${accent.border}`}>
+              <DepartureBlock group={group} onSelectBooking={onSelectBooking} />
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function PlanningPage() {
   const params = useParams()
   const locale = params.locale as string
@@ -102,7 +173,8 @@ export default function PlanningPage() {
   // Group bookings by booking_date, then within each day collapse same-slot
   // bookings (same time + listing + category + customer type) into one block —
   // a shared cruise sold to several separate parties is one departure, not N
-  // unrelated cards. Each day's groups sorted by start_time.
+  // unrelated cards. Each day's groups sorted by start_time (also the sort
+  // order the time-grid positions them in, top to bottom).
   const byDay = useMemo(() => {
     const map = new Map<string, AdminBooking[]>()
     for (const day of days) map.set(day, [])
@@ -185,63 +257,67 @@ export default function PlanningPage() {
         </div>
       )}
 
-      {/* Week grid — 7 day columns. Flex, not CSS grid: a day running two boats
-          gets proportionally more width (flexGrow = boat count) instead of
-          squeezing a second boat column into a fixed-width cell where it'd
-          silently overflow off-screen. */}
+      {/* Week grid — a shared 09:00–00:00 hour rail on the left (one for the
+          whole week, not repeated per day/boat column), then 7 day columns.
+          Flex, not CSS grid: a day running two boats gets proportionally more
+          width (flexGrow = boat count) instead of squeezing a second boat
+          column into a fixed-width cell where it'd silently overflow off-screen. */}
       {bookings && (
-        <div className="flex flex-col lg:flex-row gap-3 items-stretch">
-          {days.map((day, i) => {
-            const dayGroups = byDay.get(day) ?? []
-            const boatColumns = splitGroupsByBoat(dayGroups)
-            const isToday = day === todayStr
-            const dateObj = new Date(day + 'T12:00:00')
-            const isSplit = boatColumns.length > 1
-            return (
+        <div className="flex gap-2">
+          {/* Hour rail */}
+          <div className="w-10 shrink-0 relative" style={{ height: GRID_HEIGHT_PX + 45 /* header row offset */ }}>
+            {hourMarks().map(m => (
               <div
-                key={day}
-                style={{ flexGrow: Math.max(1, boatColumns.length), flexBasis: 0 }}
-                className={`rounded-lg border overflow-hidden flex flex-col lg:min-w-[150px] ${
-                  isToday ? 'border-indigo-300 bg-indigo-50/30' : 'border-zinc-200 bg-white'
-                }`}
+                key={m.hour}
+                className="absolute right-1.5 text-[10px] text-zinc-400 -translate-y-1/2"
+                style={{ top: m.topPx + 45, width: RAIL_WIDTH_PX }}
               >
-                <div className={`px-3 py-2 border-b ${isToday ? 'border-indigo-200 bg-indigo-50' : 'border-zinc-200 bg-zinc-50'}`}>
-                  <p className={`text-xs font-semibold uppercase tracking-wider ${isToday ? 'text-indigo-700' : 'text-zinc-500'}`}>
-                    {DAY_LABELS[i]}
-                  </p>
-                  <p className={`text-sm font-medium ${isToday ? 'text-indigo-900' : 'text-zinc-900'}`}>
-                    {dateObj.getDate()} {dateObj.toLocaleDateString('en-GB', { month: 'short', timeZone: 'Europe/Amsterdam' })}
-                  </p>
-                </div>
-                <div className="p-2 flex-1 min-h-[80px]">
-                  {dayGroups.length === 0 && (
-                    <p className="text-xs text-zinc-300 text-center py-4">—</p>
-                  )}
-                  {!isSplit && (
-                    <div className="space-y-2">
-                      {dayGroups.map(group => (
-                        <DepartureBlock key={group.key} group={group} onSelectBooking={setExpandedId} />
-                      ))}
-                    </div>
-                  )}
-                  {isSplit && (
-                    <div className="flex gap-2 h-full">
-                      {boatColumns.map(col => (
-                        <div key={col.boat} className="flex-1 min-w-0 space-y-2">
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 px-0.5 truncate">
-                            {col.boat}
-                          </p>
-                          {col.groups.map(group => (
-                            <DepartureBlock key={group.key} group={group} onSelectBooking={setExpandedId} />
-                          ))}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                {m.label}
               </div>
-            )
-          })}
+            ))}
+          </div>
+
+          <div className="flex flex-col lg:flex-row gap-3 items-stretch flex-1">
+            {days.map((day, i) => {
+              const dayGroups = byDay.get(day) ?? []
+              const boatColumns = splitGroupsByBoat(dayGroups)
+              const isToday = day === todayStr
+              const dateObj = new Date(day + 'T12:00:00')
+              const isSplit = boatColumns.length > 1
+              return (
+                <div
+                  key={day}
+                  style={{ flexGrow: Math.max(1, boatColumns.length), flexBasis: 0 }}
+                  className={`rounded-lg border flex flex-col lg:min-w-[150px] ${
+                    isToday ? 'border-indigo-300 bg-indigo-50/30' : 'border-zinc-200 bg-white'
+                  }`}
+                >
+                  <div className={`px-3 py-2 border-b rounded-t-lg ${isToday ? 'border-indigo-200 bg-indigo-50' : 'border-zinc-200 bg-zinc-50'}`}>
+                    <p className={`text-xs font-semibold uppercase tracking-wider ${isToday ? 'text-indigo-700' : 'text-zinc-500'}`}>
+                      {DAY_LABELS[i]}
+                    </p>
+                    <p className={`text-sm font-medium ${isToday ? 'text-indigo-900' : 'text-zinc-900'}`}>
+                      {dateObj.getDate()} {dateObj.toLocaleDateString('en-GB', { month: 'short', timeZone: 'Europe/Amsterdam' })}
+                    </p>
+                  </div>
+                  <div className="p-2">
+                    {!isSplit && (
+                      <TimeGridColumn groups={dayGroups} onSelectBooking={setExpandedId} />
+                    )}
+                    {isSplit && (
+                      <div className="flex gap-2 divide-x divide-zinc-100">
+                        {boatColumns.map(col => (
+                          <div key={col.boat} className="flex-1 min-w-0 pl-2 first:pl-0">
+                            <TimeGridColumn groups={col.groups} onSelectBooking={setExpandedId} boatLabel={col.boat} />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 
