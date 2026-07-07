@@ -5,7 +5,7 @@
 Two additions to the admin bookings experience, both prompted by a real incident: a confirmed booking (Artem Khomenko's) wasn't visible in the admin Bookings list right after it came in.
 
 1. **Search box** on the Bookings list (`/admin/bookings`) — filters by guest name, email, phone, cruise/listing title, FareHarbor booking UUID, or Stripe PaymentIntent id. Case-insensitive substring match.
-2. **Planning** (`/admin/planning`) — a new week-calendar view: 7 day columns (Mon–Sun), each showing that day's bookings as time-ordered cards. Prev/next week navigation, a "Today" jump button, and clicking a card opens the same booking-detail view used on the Bookings list, in a modal.
+2. **Planning** (`/admin/planning`) — a new week-calendar view: 7 day columns (Mon–Sun), each showing that day's departures as time-ordered blocks. Each block shows the boat + duration (customer type), and one row per booking on that departure with guest name, guest count, food/drinks extras, guest note, and source — clicking a row opens the same booking-detail view used on the Bookings list, in a modal. Same-slot bookings (same date, time, listing, category, and customer type — e.g. several parties on one shared departure) collapse into a single block instead of one card each. Prev/next week navigation and a "Today" jump button. The "confirmed"/"booked" status badge is hidden since it's the default case for everything shown here; other statuses (e.g. still-processing) still show.
 
 Also fixed: the Bookings list only refetched on a manual "Refresh" click (`revalidateOnFocus: false`, no polling) — a booking created while the page was already open, like Artem's, simply wouldn't appear until someone clicked Refresh. Both the Bookings list and Planning now update live, **event-based**: the moment the server actually writes to `bookings` (a webhook, an admin action, the recovery cron), it pings any open page over Supabase Realtime and the page refetches. No polling interval.
 
@@ -18,6 +18,7 @@ It wasn't a data bug — the row was correctly in Supabase (`confirmed`, `paid`,
 - [`src/lib/admin/booking-search.ts`](../../src/lib/admin/booking-search.ts) — `matchesBookingSearch(booking, query)`, pure predicate, unit tested.
 - [`src/lib/admin/week.ts`](../../src/lib/admin/week.ts) — week-boundary math (`getWeekStart`, `addDays`, `weekDateStrings`, `formatWeekRangeLabel`), all Amsterdam-local. Unit tested, including a precise-instant regression test (see below).
 - [`src/app/[locale]/admin/planning/page.tsx`](../../src/app/[locale]/admin/planning/page.tsx) — the new week view. Reuses `/api/admin/bookings/local` (same data source, same SWR cache key as the Bookings list) and the existing `BookingDetailRow` component for the modal.
+- [`src/lib/admin/planning-groups.ts`](../../src/lib/admin/planning-groups.ts) — `groupBookingsForPlanning(bookings)`, pure, unit tested. Groups by `(booking_date, start_time, listing_id, category, customer_type_name)` — applies uniformly to private and shared; private charters just end up as groups of one since there's no sibling booking on the same slot.
 - [`src/app/[locale]/admin/bookings/page.tsx`](../../src/app/[locale]/admin/bookings/page.tsx) — added the search input and a "Week view" link to Planning.
 - [`src/app/[locale]/admin/layout.tsx`](../../src/app/[locale]/admin/layout.tsx) — Planning nav item's `comingSoon` flag removed; it was a placeholder for exactly this feature.
 - [`src/lib/realtime/bookings-channel.ts`](../../src/lib/realtime/bookings-channel.ts) — the shared channel/event name constants (safe for both server and client).
@@ -43,6 +44,11 @@ Verified end-to-end against the real project before wiring it into application c
 - Any other admin list view that wants live updates can call `useBookingsChangedSignal(refresh)` — no changes needed elsewhere, and no new server-side work if it also reads from `bookings`.
 - If a new code path writes to `bookings` in a way that should be visible on these views, call `await notifyBookingsChanged()` right after the write succeeds — see `notify-bookings-changed.ts`'s call sites for the pattern (only fire on a *successful* write; skip on error/no-op branches like a 23505 dedup).
 - Planning currently reuses the Bookings list's `status IN (confirmed, booked, pending_payment, paid_pending_fh)` filter (inherited from the shared API route) — cancelled bookings never appear on the calendar.
+- The grouping key is `(booking_date, start_time, listing_id, category, customer_type_name)`, matched on the display name rather than the raw FareHarbor rate pk (which isn't in the `AdminBooking` type). If that name is ever changed to be non-unique per product, grouping would need to switch to the raw pk instead.
+
+## Note: dev-server stale bundle during this work
+
+While building the grouped-card redesign, the dev server started throwing `ReferenceError: dayGroups is not defined` at a line number past the end of the actual file — a stale/corrupted webpack HMR bundle, not a real code bug (confirmed via `tsc`, the full test suite, and reading the source directly). Reloading and even navigating to a fresh preview server instance didn't clear it; only `pkill -f "next dev" && rm -rf .next` followed by a real restart did. Mentioned here in case it recurs — the fix is a full process + `.next` restart, not just a browser reload.
 
 ## Dependencies
 

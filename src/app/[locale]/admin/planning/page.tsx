@@ -12,6 +12,8 @@ import { useBookingsChangedSignal } from '@/hooks/useBookingsChangedSignal'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { fmtAdminTime } from '@/lib/admin/format'
 import { getWeekStart, addDays, weekDateStrings, formatWeekRangeLabel, amsDateString } from '@/lib/admin/week'
+import { groupBookingsForPlanning, type PlanningGroup } from '@/lib/admin/planning-groups'
+import { filterCateringItems } from '@/lib/catering/filter'
 import type { AdminBooking } from '@/lib/admin/types'
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -32,7 +34,10 @@ export default function PlanningPage() {
   const todayStr = useMemo(() => amsDateString(new Date()), [])
   const days = useMemo(() => weekDateStrings(weekStart), [weekStart])
 
-  // Group bookings by booking_date, each day's list sorted by start_time.
+  // Group bookings by booking_date, then within each day collapse same-slot
+  // bookings (same time + listing + category + customer type) into one block —
+  // a shared cruise sold to several separate parties is one departure, not N
+  // unrelated cards. Each day's groups sorted by start_time.
   const byDay = useMemo(() => {
     const map = new Map<string, AdminBooking[]>()
     for (const day of days) map.set(day, [])
@@ -41,13 +46,19 @@ export default function PlanningPage() {
       const bucket = map.get(b.booking_date)
       if (bucket) bucket.push(b)
     }
-    for (const bucket of map.values()) {
-      bucket.sort((a, b) => (a.start_time ?? '').localeCompare(b.start_time ?? ''))
+    const grouped = new Map<string, PlanningGroup[]>()
+    for (const [day, dayBookings] of map) {
+      const groups = groupBookingsForPlanning(dayBookings)
+      groups.sort((a, b) => (a.bookings[0].start_time ?? '').localeCompare(b.bookings[0].start_time ?? ''))
+      grouped.set(day, groups)
     }
-    return map
+    return grouped
   }, [bookings, days])
 
-  const weekTotal = days.reduce((sum, d) => sum + (byDay.get(d)?.length ?? 0), 0)
+  const weekTotal = days.reduce(
+    (sum, d) => sum + (byDay.get(d)?.reduce((s, g) => s + g.bookings.length, 0) ?? 0),
+    0,
+  )
 
   return (
     <div className="p-8 max-w-none space-y-6">
@@ -113,7 +124,7 @@ export default function PlanningPage() {
       {bookings && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3">
           {days.map((day, i) => {
-            const dayBookings = byDay.get(day) ?? []
+            const dayGroups = byDay.get(day) ?? []
             const isToday = day === todayStr
             const dateObj = new Date(day + 'T12:00:00')
             return (
@@ -132,30 +143,64 @@ export default function PlanningPage() {
                   </p>
                 </div>
                 <div className="p-2 space-y-2 flex-1 min-h-[80px]">
-                  {dayBookings.length === 0 && (
+                  {dayGroups.length === 0 && (
                     <p className="text-xs text-zinc-300 text-center py-4">—</p>
                   )}
-                  {dayBookings.map(b => (
-                    <button
-                      key={b.id}
-                      onClick={() => setExpandedId(b.id)}
-                      className="w-full text-left rounded-md border border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50 px-2.5 py-2 text-xs transition-colors"
-                    >
-                      <p className="font-semibold text-zinc-900">
-                        {fmtAdminTime(b.start_time)}
-                      </p>
-                      <p className="truncate text-zinc-700">
-                        {b.listing_title ?? b.tour_item_name ?? '—'}
-                      </p>
-                      <p className="truncate text-zinc-400">
-                        {b.customer_name ?? '—'} · {b.guest_count ?? '—'} guest{b.guest_count !== 1 ? 's' : ''}
-                      </p>
-                      <div className="mt-1 flex items-center gap-1 flex-wrap">
-                        <BookingStatusBadge status={b.status} />
-                        <BookingSourceBadge source={b.booking_source} hideIfWebsite />
+                  {dayGroups.map(group => {
+                    const first = group.bookings[0]
+                    const isMulti = group.bookings.length > 1
+                    return (
+                      <div key={group.key} className="rounded-md border border-zinc-200 bg-white overflow-hidden">
+                        {/* Departure header — same for every booking in the group */}
+                        <div className="px-2.5 pt-2 pb-1.5 border-b border-zinc-100 bg-zinc-50/60">
+                          <p className="font-semibold text-zinc-900 text-xs">
+                            {fmtAdminTime(first.start_time)}
+                          </p>
+                          <p className="truncate text-zinc-700 text-xs">
+                            {first.listing_title ?? first.tour_item_name ?? '—'}
+                          </p>
+                          {first.customer_type_name && (
+                            <p className="truncate text-zinc-400 text-[11px]">{first.customer_type_name}</p>
+                          )}
+                          {isMulti && (
+                            <p className="text-[11px] font-medium text-indigo-600 mt-0.5">
+                              {group.bookings.length} bookings · {group.totalGuestCount} guests total
+                            </p>
+                          )}
+                        </div>
+                        {/* One row per booking (party) on this departure */}
+                        <div className="divide-y divide-zinc-100">
+                          {group.bookings.map(b => {
+                            const cateringItems = filterCateringItems(b.extras_selected ?? [])
+                            const showStatus = b.status !== 'confirmed' && b.status !== 'booked'
+                            return (
+                              <button
+                                key={b.id}
+                                onClick={() => setExpandedId(b.id)}
+                                className="w-full text-left px-2.5 py-1.5 text-xs hover:bg-zinc-50 transition-colors"
+                              >
+                                <p className="text-zinc-900 font-medium truncate">
+                                  {b.customer_name ?? '—'} · {b.guest_count ?? '—'} guest{b.guest_count !== 1 ? 's' : ''}
+                                </p>
+                                {cateringItems.length > 0 && (
+                                  <p className="truncate text-zinc-500">
+                                    🍽️ {cateringItems.map(i => i.name).join(', ')}
+                                  </p>
+                                )}
+                                {b.guest_note && (
+                                  <p className="truncate text-zinc-400 italic">&ldquo;{b.guest_note}&rdquo;</p>
+                                )}
+                                <div className="mt-1 flex items-center gap-1 flex-wrap">
+                                  <BookingSourceBadge source={b.booking_source} />
+                                  {showStatus && <BookingStatusBadge status={b.status} />}
+                                </div>
+                              </button>
+                            )
+                          })}
+                        </div>
                       </div>
-                    </button>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             )
