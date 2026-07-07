@@ -37,6 +37,7 @@ function makeBooking(overrides: Partial<AdminBooking>): AdminBooking {
     promo_code: null,
     discount_amount_cents: null,
     partner_name: null,
+    fareharbor_availability_pk: null,
     ...overrides,
   }
 }

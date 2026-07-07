@@ -79,9 +79,10 @@ describe('admin route auth contract', () => {
   it('discovers the expected number of admin route files', () => {
     // Snapshot so any change in route count (addition OR deletion) requires
     // deliberate acknowledgement — update via `npx vitest run --update-snapshots`.
-    // 76 = 75 + /api/admin/booking-flow/invoice-suggestion (Invoice-later suggested amount).
+    // 77 = 76 + /api/admin/planning/shared-capacity (live FareHarbor capacity
+    // lookup for shared-cruise departures on the Planning grid).
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`76`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`77`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {

@@ -38,7 +38,7 @@ export async function GET(request: Request) {
           guest_note, booking_source, deposit_amount_cents,
           extras_selected, base_amount_cents, extras_amount_cents,
           base_vat_amount_cents, extras_vat_amount_cents, total_vat_amount_cents,
-          fareharbor_customer_type_rate_pk, customer_type_name,
+          fareharbor_customer_type_rate_pk, fareharbor_availability_pk, customer_type_name,
           campaign_id, promo_code_id, discount_amount_cents,
           partner_id,
           campaigns ( name ),

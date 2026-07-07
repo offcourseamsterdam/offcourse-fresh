@@ -13,6 +13,7 @@ import { fmtAdminTime } from '@/lib/admin/format'
 import { getWeekStart, addDays, weekDateStrings, formatWeekRangeLabel, amsDateString } from '@/lib/admin/week'
 import { groupBookingsForPlanning, splitGroupsByBoat, extractBoatName, boatAccentClasses, type PlanningGroup } from '@/lib/admin/planning-groups'
 import { topPx, blockMinHeightPx, hourMarks, GRID_HEIGHT_PX, RAIL_WIDTH_PX } from '@/lib/admin/planning-time-grid'
+import type { SharedCapacityResult } from '@/lib/admin/shared-capacity'
 import { filterCateringItems } from '@/lib/catering/filter'
 import type { AdminBooking } from '@/lib/admin/types'
 
@@ -36,8 +37,14 @@ function timeRangeLabel(startTime: string | null, endTime: string | null): strin
  *  header already says — and everything secondary (extras, notes, status)
  *  that's one click away in the detail panel. What's left (start time,
  *  accent color, guest name + count) always fits without truncating to a
- *  single letter. Every booking row stays individually clickable either way. */
-function DepartureBlock({ group, onSelectBooking, compact = false }: { group: PlanningGroup; onSelectBooking: (id: string) => void; compact?: boolean }) {
+ *  single letter. Every booking row stays individually clickable either way.
+ *
+ *  `capacity` (shared cruises only) is a live FareHarbor lookup, not
+ *  anything stored — see the shared-capacity route. `spotsLeft` is hard
+ *  data straight from FareHarbor; `boatGuess` is an inferred hint (capacity
+ *  math, not a real resource ID — FareHarbor doesn't expose one), so it
+ *  renders muted and clearly separate from the real number. */
+function DepartureBlock({ group, onSelectBooking, compact = false, capacity }: { group: PlanningGroup; onSelectBooking: (id: string) => void; compact?: boolean; capacity?: SharedCapacityResult }) {
   const first = group.bookings[0]
   const isMulti = group.bookings.length > 1
   return (
@@ -55,6 +62,12 @@ function DepartureBlock({ group, onSelectBooking, compact = false }: { group: Pl
               <p className="truncate text-zinc-400 text-[11px]">{first.customer_type_name}</p>
             )}
           </>
+        )}
+        {capacity && (
+          <p className="text-[11px] font-medium text-emerald-700">
+            {compact ? `${capacity.spotsLeft} left` : `${capacity.spotsLeft} spots left`}
+            {!compact && capacity.boatGuess && <span className="text-zinc-400 font-normal"> · likely {capacity.boatGuess}</span>}
+          </p>
         )}
         {isMulti && (
           <p className="text-[11px] font-medium text-indigo-600 mt-0.5">
@@ -133,7 +146,7 @@ function GridLines() {
  * whether it has a label, or its hours would drift out of sync with the
  * shared hour rail and every other (unlabeled) day column.
  */
-function TimeGridColumn({ groups, onSelectBooking, boatLabel, compact = false }: { groups: PlanningGroup[]; onSelectBooking: (id: string) => void; boatLabel?: string; compact?: boolean }) {
+function TimeGridColumn({ groups, onSelectBooking, boatLabel, compact = false, sharedCapacity }: { groups: PlanningGroup[]; onSelectBooking: (id: string) => void; boatLabel?: string; compact?: boolean; sharedCapacity?: Record<number, SharedCapacityResult> }) {
   return (
     <div className="relative" style={{ height: GRID_HEIGHT_PX }}>
       <GridLines />
@@ -160,7 +173,12 @@ function TimeGridColumn({ groups, onSelectBooking, boatLabel, compact = false }:
                 is clipped (via overflow-hidden below) rather than pushing the
                 box past its true end line. */}
             <div className={`h-full border-l-2 pl-1 ${accent.border}`}>
-              <DepartureBlock group={group} onSelectBooking={onSelectBooking} compact={compact} />
+              <DepartureBlock
+                group={group}
+                onSelectBooking={onSelectBooking}
+                compact={compact}
+                capacity={first.category === 'shared' && first.fareharbor_availability_pk ? sharedCapacity?.[first.fareharbor_availability_pk] : undefined}
+              />
             </div>
           </div>
         )
@@ -211,6 +229,29 @@ export default function PlanningPage() {
     (sum, d) => sum + (byDay.get(d)?.reduce((s, g) => s + g.bookings.length, 0) ?? 0),
     0,
   )
+
+  // Live FareHarbor capacity for shared-cruise departures — FareHarbor never
+  // stores this on the booking itself, only the availability endpoint has it,
+  // so it's a separate fetch keyed off the FH availability PKs visible this
+  // week. Aggregate guests-already-booked PER PK first (two virtual-product
+  // listings can share one physical FH availability), so the boat guess uses
+  // the slot's true total, not just one listing's slice of it.
+  const sharedSlotsUrl = useMemo(() => {
+    const byPk = new Map<number, number>()
+    for (const groups of byDay.values()) {
+      for (const group of groups) {
+        const first = group.bookings[0]
+        if (first.category !== 'shared' || !first.fareharbor_availability_pk) continue
+        const pk = first.fareharbor_availability_pk
+        byPk.set(pk, (byPk.get(pk) ?? 0) + group.totalGuestCount)
+      }
+    }
+    if (byPk.size === 0) return null
+    const slots = Array.from(byPk.entries()).map(([pk, guests]) => `${pk}:${guests}`).join(',')
+    return `/api/admin/planning/shared-capacity?slots=${encodeURIComponent(slots)}`
+  }, [byDay])
+
+  const { data: sharedCapacity } = useAdminFetch<Record<number, SharedCapacityResult>>(sharedSlotsUrl)
 
   return (
     <div className="p-8 max-w-none space-y-6">
@@ -329,13 +370,13 @@ export default function PlanningPage() {
                   </div>
                   <div className="p-2">
                     {!isSplit && (
-                      <TimeGridColumn groups={dayGroups} onSelectBooking={setExpandedId} />
+                      <TimeGridColumn groups={dayGroups} onSelectBooking={setExpandedId} sharedCapacity={sharedCapacity} />
                     )}
                     {isSplit && (
                       <div className="flex gap-2 divide-x divide-zinc-100">
                         {boatColumns.map(col => (
                           <div key={col.boat} className="flex-1 min-w-0 pl-2 first:pl-0">
-                            <TimeGridColumn groups={col.groups} onSelectBooking={setExpandedId} boatLabel={col.boat} compact />
+                            <TimeGridColumn groups={col.groups} onSelectBooking={setExpandedId} boatLabel={col.boat} compact sharedCapacity={sharedCapacity} />
                           </div>
                         ))}
                       </div>
