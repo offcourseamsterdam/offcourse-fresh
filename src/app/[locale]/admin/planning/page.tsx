@@ -261,17 +261,29 @@ export default function PlanningPage() {
           column into a fixed-width cell where it'd silently overflow off-screen. */}
       {bookings && (
         <div className="flex gap-2">
-          {/* Hour rail */}
-          <div className="w-10 shrink-0 relative" style={{ height: GRID_HEIGHT_PX + 45 /* header row offset */ }}>
-            {hourMarks().map(m => (
-              <div
-                key={m.hour}
-                className="absolute right-1.5 text-[10px] text-zinc-400 -translate-y-1/2"
-                style={{ top: m.topPx + 45, width: RAIL_WIDTH_PX }}
-              >
-                {m.label}
+          {/* Hour rail — mirrors a day column's exact box model (1px border,
+              px-3/py-2 two-line header, p-2 body) with invisible filler instead
+              of a hardcoded header-height offset, so its gridline positions can
+              never drift out of sync with the day columns' own gridlines even if
+              the header's font size, padding, or line count ever changes. */}
+          <div className="w-10 shrink-0 rounded-lg border border-transparent flex flex-col">
+            <div className="px-3 py-2 border-b border-transparent" aria-hidden="true">
+              <p className="text-xs font-semibold uppercase tracking-wider invisible">&nbsp;</p>
+              <p className="text-sm font-medium invisible">&nbsp;</p>
+            </div>
+            <div className="p-2">
+              <div className="relative" style={{ height: GRID_HEIGHT_PX }}>
+                {hourMarks().map(m => (
+                  <div
+                    key={m.hour}
+                    className="absolute right-0 text-[10px] text-zinc-400 -translate-y-1/2"
+                    style={{ top: m.topPx, width: RAIL_WIDTH_PX }}
+                  >
+                    {m.label}
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
 
           <div className="flex flex-col lg:flex-row gap-3 items-stretch flex-1">
