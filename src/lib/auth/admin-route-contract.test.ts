@@ -79,10 +79,10 @@ describe('admin route auth contract', () => {
   it('discovers the expected number of admin route files', () => {
     // Snapshot so any change in route count (addition OR deletion) requires
     // deliberate acknowledgement — update via `npx vitest run --update-snapshots`.
-    // 77 = 76 + /api/admin/planning/shared-capacity (live FareHarbor capacity
-    // lookup for shared-cruise departures on the Planning grid).
+    // 78 = 77 + /api/admin/boats/[id]/sync-capacity (pulls a boat's real max
+    // guest capacity from FareHarbor instead of a manually-typed number).
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`77`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`78`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {

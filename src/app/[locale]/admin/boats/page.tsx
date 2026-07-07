@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { ChevronDown, ChevronUp, Upload, Loader2, Sparkles } from 'lucide-react'
+import { ChevronDown, ChevronUp, Upload, Loader2, Sparkles, RefreshCw } from 'lucide-react'
 import { SafeImage } from '@/components/ui/SafeImage'
 
 type Boat = {
@@ -151,6 +151,8 @@ export default function BoatsAdminPage() {
   const [saving, setSaving] = useState<string | null>(null)
   const [translating, setTranslating] = useState<string | null>(null)
   const [translateError, setTranslateError] = useState<Record<string, string>>({})
+  const [syncingCapacity, setSyncingCapacity] = useState<string | null>(null)
+  const [capacityError, setCapacityError] = useState<Record<string, string>>({})
 
   useEffect(() => { load() }, [])
 
@@ -211,6 +213,25 @@ export default function BoatsAdminPage() {
     }
   }
 
+  async function handleSyncCapacity(boat: Boat) {
+    if (!boat.fareharbor_customer_type_pks?.length) {
+      setCapacityError(prev => ({ ...prev, [boat.id]: 'Set the FareHarbor customer type PKs first' }))
+      return
+    }
+    setSyncingCapacity(boat.id)
+    setCapacityError(prev => ({ ...prev, [boat.id]: '' }))
+    try {
+      const res = await fetch(`/api/admin/boats/${boat.id}/sync-capacity`, { method: 'POST' })
+      const json = await res.json()
+      if (!json.ok) throw new Error(json.error ?? 'Sync failed')
+      setBoats(prev => prev.map(b => b.id === boat.id ? { ...b, max_capacity: json.data.max_capacity } : b))
+    } catch (e) {
+      setCapacityError(prev => ({ ...prev, [boat.id]: e instanceof Error ? e.message : 'Failed' }))
+    } finally {
+      setSyncingCapacity(null)
+    }
+  }
+
   if (loading) return <div className="p-8 text-sm text-zinc-400">Loading boats…</div>
 
   if (boats.length === 0) return (
@@ -268,13 +289,32 @@ export default function BoatsAdminPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider block mb-1">Max capacity</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Max capacity</label>
+                      <button
+                        type="button"
+                        onClick={() => handleSyncCapacity(boat)}
+                        disabled={syncingCapacity === boat.id}
+                        title="Pull the real guest capacity from FareHarbor instead of typing it in"
+                        className="flex items-center gap-1 text-[11px] font-medium text-zinc-500 hover:text-zinc-800 transition-colors disabled:opacity-50"
+                      >
+                        {syncingCapacity === boat.id
+                          ? <Loader2 className="w-3 h-3 animate-spin" />
+                          : <RefreshCw className="w-3 h-3" />
+                        }
+                        Sync from FareHarbor
+                      </button>
+                    </div>
                     <input
+                      key={`${boat.id}-max_capacity-${boat.max_capacity ?? ''}`}
                       type="number"
                       className="w-full text-sm border border-zinc-200 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-zinc-300"
                       defaultValue={boat.max_capacity ?? ''}
                       onBlur={e => updateBoat(boat.id, 'max_capacity', e.target.value ? Number(e.target.value) : null)}
                     />
+                    {capacityError[boat.id] && (
+                      <p className="text-xs text-red-500 mt-1">{capacityError[boat.id]}</p>
+                    )}
                   </div>
                 </div>
 

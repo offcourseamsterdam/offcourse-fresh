@@ -23,6 +23,10 @@ export interface FHCustomerType {
   pk: number
   singular: string
   plural: string
+  /** Free-text hint, e.g. "Up to 8 people" (private boat capacity) or "13+ years"
+   *  (shared age bracket) — the only place a private boat's real guest capacity
+   *  is exposed as data at all; see parseCapacityFromNote. */
+  note?: string
 }
 
 export interface FHCustomerTypeRate {
