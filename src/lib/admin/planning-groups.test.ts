@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { groupBookingsForPlanning, extractBoatName, splitGroupsByBoat, boatAccentClasses } from './planning-groups'
+import { groupBookingsForPlanning, extractBoatName, resolveBoatForGroup, splitGroupsByBoat, boatAccentClasses } from './planning-groups'
 import type { AdminBooking } from './types'
+import type { SharedCapacityResult } from './shared-capacity'
 
 function makeBooking(overrides: Partial<AdminBooking>): AdminBooking {
   return {
@@ -128,11 +129,53 @@ describe('extractBoatName', () => {
   })
 })
 
+describe('resolveBoatForGroup', () => {
+  function makeGroup(overrides: Partial<AdminBooking>): ReturnType<typeof groupBookingsForPlanning>[number] {
+    const booking = makeBooking(overrides)
+    return { key: booking.id, bookings: [booking], totalGuestCount: booking.guest_count ?? 0 }
+  }
+
+  it('prefers the name-based signal for private cruises, ignoring sharedCapacity entirely', () => {
+    const group = makeGroup({ customer_type_name: 'Diana - 2 Hours', category: 'private' })
+    expect(resolveBoatForGroup(group)).toBe('Diana')
+  })
+
+  it('falls back to the live capacity guess for a shared cruise', () => {
+    const group = makeGroup({ customer_type_name: 'Adult (13+)', category: 'shared', fareharbor_availability_pk: 555 })
+    const sharedCapacity: Record<number, SharedCapacityResult> = { 555: { spotsLeft: 8, boatGuess: 'Curaçao' } }
+    expect(resolveBoatForGroup(group, sharedCapacity)).toBe('Curaçao')
+  })
+
+  it('returns null for a shared cruise when capacity data has not loaded yet', () => {
+    const group = makeGroup({ customer_type_name: 'Adult (13+)', category: 'shared', fareharbor_availability_pk: 555 })
+    expect(resolveBoatForGroup(group, undefined)).toBeNull()
+  })
+
+  it('returns null when the capacity guess itself came back null (no clean boat match)', () => {
+    const group = makeGroup({ customer_type_name: 'Adult (13+)', category: 'shared', fareharbor_availability_pk: 555 })
+    const sharedCapacity: Record<number, SharedCapacityResult> = { 555: { spotsLeft: 6, boatGuess: null } }
+    expect(resolveBoatForGroup(group, sharedCapacity)).toBeNull()
+  })
+})
+
 describe('splitGroupsByBoat', () => {
   function makeGroup(customerTypeName: string): ReturnType<typeof groupBookingsForPlanning>[number] {
     const booking = makeBooking({ customer_type_name: customerTypeName })
     return { key: booking.id, bookings: [booking], totalGuestCount: booking.guest_count ?? 0 }
   }
+
+  it('resolves a shared departure into its real boat column once capacity data identifies it', () => {
+    const shared = makeBooking({ customer_type_name: 'Adult (13+)', category: 'shared', fareharbor_availability_pk: 555 })
+    const sharedGroup = { key: shared.id, bookings: [shared], totalGuestCount: shared.guest_count ?? 0 }
+    const curacaoPrivate = makeGroup('Curaçao - 2 Hours')
+    const sharedCapacity: Record<number, SharedCapacityResult> = { 555: { spotsLeft: 8, boatGuess: 'Curaçao' } }
+
+    const columns = splitGroupsByBoat([sharedGroup, curacaoPrivate], sharedCapacity)
+
+    expect(columns).toHaveLength(1)
+    expect(columns[0].boat).toBe('Curaçao')
+    expect(columns[0].groups).toHaveLength(2)
+  })
 
   it('splits Diana and Curaçao departures into separate, alphabetically-sorted columns', () => {
     const diana = makeGroup('Diana - 2 Hours')

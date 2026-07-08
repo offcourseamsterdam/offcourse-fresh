@@ -11,7 +11,7 @@ import { useBookingsChangedSignal } from '@/hooks/useBookingsChangedSignal'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { fmtAdminTime } from '@/lib/admin/format'
 import { getWeekStart, addDays, weekDateStrings, formatWeekRangeLabel, amsDateString } from '@/lib/admin/week'
-import { groupBookingsForPlanning, splitGroupsByBoat, extractBoatName, boatAccentClasses, type PlanningGroup } from '@/lib/admin/planning-groups'
+import { groupBookingsForPlanning, splitGroupsByBoat, resolveBoatForGroup, boatAccentClasses, type PlanningGroup } from '@/lib/admin/planning-groups'
 import { topPx, blockMinHeightPx, hourMarks, GRID_HEIGHT_PX, RAIL_WIDTH_PX } from '@/lib/admin/planning-time-grid'
 import type { SharedCapacityResult } from '@/lib/admin/shared-capacity'
 import { filterCateringItems } from '@/lib/catering/filter'
@@ -160,7 +160,7 @@ function TimeGridColumn({ groups, onSelectBooking, boatLabel, compact = false, s
       )}
       {groups.map(group => {
         const first = group.bookings[0]
-        const boat = extractBoatName(first.customer_type_name) ?? 'Other'
+        const boat = resolveBoatForGroup(group, sharedCapacity) ?? 'Other'
         const accent = boatAccentClasses(boat)
         return (
           <div
@@ -348,7 +348,7 @@ export default function PlanningPage() {
           <div className="flex flex-col lg:flex-row gap-3 items-stretch flex-1">
             {days.map((day, i) => {
               const dayGroups = byDay.get(day) ?? []
-              const boatColumns = splitGroupsByBoat(dayGroups)
+              const boatColumns = splitGroupsByBoat(dayGroups, sharedCapacity)
               const isToday = day === todayStr
               const dateObj = new Date(day + 'T12:00:00')
               const isSplit = boatColumns.length > 1

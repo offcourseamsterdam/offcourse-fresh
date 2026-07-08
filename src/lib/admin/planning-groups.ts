@@ -1,4 +1,5 @@
 import type { AdminBooking } from './types'
+import type { SharedCapacityResult } from './shared-capacity'
 
 export interface PlanningGroup {
   key: string
@@ -70,6 +71,29 @@ export function extractBoatName(customerTypeName: string | null | undefined): st
 }
 
 /**
+ * Boat for a departure group, name-based signal first (private cruises —
+ * always reliable) falling back to the live FareHarbor capacity guess for
+ * shared cruises (see shared-capacity.ts — matches the slot's full capacity
+ * against a known boat's max guest count, e.g. 12 -> Curaçao). Both signals
+ * are genuinely derived from data, not hardcoded — this just prefers the more
+ * certain one when both could apply. Returns null (callers bucket under
+ * "Other") when neither resolves, e.g. before the capacity fetch has loaded,
+ * or when the slot's capacity doesn't cleanly match either boat.
+ */
+export function resolveBoatForGroup(
+  group: PlanningGroup,
+  sharedCapacity?: Record<number, SharedCapacityResult>
+): string | null {
+  const first = group.bookings[0]
+  const nameBoat = extractBoatName(first?.customer_type_name)
+  if (nameBoat) return nameBoat
+  if (first?.category === 'shared' && first.fareharbor_availability_pk && sharedCapacity) {
+    return sharedCapacity[first.fareharbor_availability_pk]?.boatGuess ?? null
+  }
+  return null
+}
+
+/**
  * Accent color for a boat's "truth-dot" time-connector and left-border on the
  * Planning time grid — one consistent color per boat, all week, so a reader
  * learns "indigo = Diana, pink = Curaçao" at a glance without a legend.
@@ -98,11 +122,14 @@ export interface BoatColumn {
  * into one list. Boats are sorted alphabetically; "Other" (undetermined —
  * shared cruises) always sorts last. Callers should skip the side-by-side
  * layout entirely when this returns 1 or fewer columns (nothing to split).
+ *
+ * `sharedCapacity`, once loaded, lets a shared cruise resolve into its real
+ * boat's column instead of sitting in "Other" — see resolveBoatForGroup.
  */
-export function splitGroupsByBoat(groups: PlanningGroup[]): BoatColumn[] {
+export function splitGroupsByBoat(groups: PlanningGroup[], sharedCapacity?: Record<number, SharedCapacityResult>): BoatColumn[] {
   const map = new Map<string, PlanningGroup[]>()
   for (const group of groups) {
-    const boat = extractBoatName(group.bookings[0]?.customer_type_name) ?? 'Other'
+    const boat = resolveBoatForGroup(group, sharedCapacity) ?? 'Other'
     const bucket = map.get(boat)
     if (bucket) {
       bucket.push(group)
