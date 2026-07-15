@@ -34,6 +34,12 @@ interface CreateIntentInput {
   /** Analytics session id (cookie or stable-per-tab anon). Stored in PI metadata
    *  so the webhook can link the booking to its originating visit (device, channel). */
   sessionId?: string | null
+  /** Campaign id from the oc_attr cookie (/t/<slug> tracking link). Stored in PI
+   *  metadata so the webhook — which has no cookie access — can attribute the
+   *  resulting booking (and its commission) to the campaign/partner. */
+  campaignId?: string | null
+  /** Partner id from the oc_attr cookie — see campaignId. */
+  partnerId?: string | null
 }
 
 interface CreateIntentResult {
@@ -54,7 +60,7 @@ interface CreateIntentResult {
  *   5. Mark the quote consumed.
  */
 export async function createPaymentIntent(input: CreateIntentInput): Promise<CreateIntentResult> {
-  const { quoteId, listingTitle, date, startAt, endAt, contact, gclid, clickType, marketingConsent, sessionId, trafficSource, trafficDetail } = input
+  const { quoteId, listingTitle, date, startAt, endAt, contact, gclid, clickType, marketingConsent, sessionId, trafficSource, trafficDetail, campaignId, partnerId } = input
 
   if (!quoteId) {
     throw new Error('Missing quoteId — please refresh your booking and try again.')
@@ -211,6 +217,11 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
       // Where the customer came from (first-party attribution, derived at checkout)
       ...(trafficSource ? { traffic_source: String(trafficSource).slice(0, 100) } : {}),
       ...(trafficDetail ? { traffic_detail: String(trafficDetail).slice(0, 200) } : {}),
+      // Which campaign/partner sent this visitor (/t/<slug> link) — the webhook
+      // has no cookie access, so this is the only way it can attribute the
+      // booking (and compute commission) to a partner.
+      ...(campaignId ? { campaign_id: String(campaignId) } : {}),
+      ...(partnerId ? { partner_id: String(partnerId) } : {}),
       ...(quoteRow.promo_code_id
         ? {
             promo_code_id: String(quoteRow.promo_code_id),

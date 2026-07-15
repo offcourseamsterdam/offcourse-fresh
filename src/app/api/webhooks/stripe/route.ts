@@ -5,6 +5,7 @@ import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { describeCustomerTypes } from '@/lib/fareharbor/customer-type-name'
 import { sendConfirmationEmail } from '@/lib/booking/send-confirmation-email'
 import { getExtrasFromQuote, parseMetaCents } from '@/lib/booking/pi-metadata'
+import { commissionForCampaign } from '@/lib/booking/commission'
 import { buildFhBookingPlan } from '@/lib/booking/finalize-booking'
 import { notifyCateringOrder } from '@/lib/catering/notify'
 import { hasFood, type ExtrasLineItem } from '@/lib/catering/filter'
@@ -248,6 +249,20 @@ export async function POST(request: NextRequest) {
     const extrasVatAmountCents = parseMetaCents(meta.extras_vat_amount_cents) ?? extractVat(extrasAmountCents, 21)
     const totalVatAmountCents = parseMetaCents(meta.total_vat_amount_cents) ?? (baseVatAmountCents + extrasVatAmountCents)
 
+    // Partner/campaign attribution — resolved server-side at create-intent time
+    // (from the oc_attr cookie, which the webhook can never read directly) and
+    // carried here via PI metadata. Commission is computed fresh from the
+    // campaign's current rate rather than cached earlier in the flow.
+    let commissionAmountCents: number | null = null
+    if (meta.campaign_id) {
+      const { data: campaign } = await supabase
+        .from('campaigns')
+        .select('percentage_value, investment_type')
+        .eq('id', meta.campaign_id)
+        .maybeSingle()
+      commissionAmountCents = commissionForCampaign(campaign, serverBaseAmount)
+    }
+
     // 1. Write the row first — the UNIQUE PI constraint is the exactly-once gate.
     const { data: insertedBooking, error: insertError } = await supabase.from('bookings').insert({
       booking_id: pi.id,
@@ -282,6 +297,9 @@ export async function POST(request: NextRequest) {
       gclid: meta.gclid || null,
       traffic_source: meta.traffic_source || null,
       traffic_detail: meta.traffic_detail || null,
+      campaign_id: meta.campaign_id || null,
+      partner_id: meta.partner_id || null,
+      commission_amount_cents: commissionAmountCents,
       promo_code_id: meta.promo_code_id || null,
       discount_amount_cents: Number(meta.discount_amount_cents ?? 0),
     })

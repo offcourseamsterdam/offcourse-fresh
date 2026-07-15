@@ -178,6 +178,34 @@ describe('createPaymentIntent — atomic quote claim', () => {
     expect(h.updateArgs[1]).toMatchObject({ consumed_intent_id: 'pi_new' })
   })
 
+  it('carries campaignId/partnerId into PI metadata when the visitor came via a tracking link', async () => {
+    h.results.push(
+      { data: makeQuoteRow(), error: null },   // claim succeeds
+      { data: null, error: null },             // consumed_intent_id update
+    )
+
+    await createPaymentIntent({ ...INPUT, campaignId: 'camp-1', partnerId: 'partner-1' })
+
+    expect(h.piCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ campaign_id: 'camp-1', partner_id: 'partner-1' }),
+      }),
+    )
+  })
+
+  it('omits campaign_id/partner_id from PI metadata for organic bookings (no attribution)', async () => {
+    h.results.push(
+      { data: makeQuoteRow(), error: null },
+      { data: null, error: null },
+    )
+
+    await createPaymentIntent(INPUT)
+
+    const metadata = h.piCreate.mock.calls[0][0].metadata
+    expect(metadata).not.toHaveProperty('campaign_id')
+    expect(metadata).not.toHaveProperty('partner_id')
+  })
+
   it('refuses when the recomputed total drifts from the stored quote', async () => {
     h.results.push(
       { data: makeQuoteRow({ total_cents: 14000 }), error: null },   // stored ≠ recomputed

@@ -219,6 +219,56 @@ describe('stripe webhook — payment_intent.succeeded (single finalizer)', () =>
     expect(h.fhCreateBookingIdempotent).not.toHaveBeenCalled()
   })
 
+  it('attributes campaign/partner + computes commission from PI metadata', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded({
+      metadata: { ...PI_META, campaign_id: 'camp-1', partner_id: 'partner-1', server_base_amount_cents: '15000' },
+    }))
+    h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
+    h.maybeSingle.mockResolvedValue({ data: { percentage_value: 10, investment_type: 'percentage' }, error: null })
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.insert.mock.calls[0][0]).toMatchObject({
+      campaign_id: 'camp-1',
+      partner_id: 'partner-1',
+      commission_amount_cents: 1500, // 15000 * 10 / 100
+    })
+  })
+
+  it('sets campaign/partner but leaves commission null when the campaign has no valid commission config', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded({
+      metadata: { ...PI_META, campaign_id: 'camp-1', partner_id: 'partner-1' },
+    }))
+    h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
+    h.maybeSingle.mockResolvedValue({ data: { percentage_value: null, investment_type: 'percentage' }, error: null })
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.insert.mock.calls[0][0]).toMatchObject({
+      campaign_id: 'camp-1',
+      partner_id: 'partner-1',
+      commission_amount_cents: null,
+    })
+  })
+
+  it('leaves campaign/partner/commission null for organic bookings (no campaign_id in metadata)', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded())
+    h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    // No campaign_id in metadata → never even queries the campaigns table.
+    expect(h.maybeSingle).not.toHaveBeenCalled()
+    expect(h.insert.mock.calls[0][0]).toMatchObject({
+      campaign_id: null,
+      partner_id: null,
+      commission_amount_cents: null,
+    })
+  })
+
   it('rejects an invalid signature with 400 and does no work', async () => {
     h.constructEvent.mockImplementation(() => {
       throw new Error('signature verification failed')
