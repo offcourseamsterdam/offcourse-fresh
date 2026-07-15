@@ -224,7 +224,10 @@ describe('stripe webhook — payment_intent.succeeded (single finalizer)', () =>
       metadata: { ...PI_META, campaign_id: 'camp-1', partner_id: 'partner-1', server_base_amount_cents: '15000' },
     }))
     h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
-    h.maybeSingle.mockResolvedValue({ data: { percentage_value: 10, investment_type: 'percentage' }, error: null })
+    h.maybeSingle.mockResolvedValue({
+      data: { percentage_value: 10, investment_type: 'percentage', partner_id: 'partner-1' },
+      error: null,
+    })
 
     const res = await POST(mockReq())
 
@@ -236,12 +239,33 @@ describe('stripe webhook — payment_intent.succeeded (single finalizer)', () =>
     })
   })
 
+  it('reads partner_id fresh off the campaign row, not the (possibly stale) cookie snapshot', async () => {
+    // The campaign was reassigned to a different partner after the cookie was
+    // set — the campaign row is the source of truth, not meta.partner_id.
+    h.constructEvent.mockReturnValue(makePiSucceeded({
+      metadata: { ...PI_META, campaign_id: 'camp-1', partner_id: 'stale-partner', server_base_amount_cents: '15000' },
+    }))
+    h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
+    h.maybeSingle.mockResolvedValue({
+      data: { percentage_value: 10, investment_type: 'percentage', partner_id: 'current-partner' },
+      error: null,
+    })
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.insert.mock.calls[0][0]).toMatchObject({ partner_id: 'current-partner' })
+  })
+
   it('sets campaign/partner but leaves commission null when the campaign has no valid commission config', async () => {
     h.constructEvent.mockReturnValue(makePiSucceeded({
       metadata: { ...PI_META, campaign_id: 'camp-1', partner_id: 'partner-1' },
     }))
     h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
-    h.maybeSingle.mockResolvedValue({ data: { percentage_value: null, investment_type: 'percentage' }, error: null })
+    h.maybeSingle.mockResolvedValue({
+      data: { percentage_value: null, investment_type: 'percentage', partner_id: 'partner-1' },
+      error: null,
+    })
 
     const res = await POST(mockReq())
 
@@ -249,6 +273,27 @@ describe('stripe webhook — payment_intent.succeeded (single finalizer)', () =>
     expect(h.insert.mock.calls[0][0]).toMatchObject({
       campaign_id: 'camp-1',
       partner_id: 'partner-1',
+      commission_amount_cents: null,
+    })
+  })
+
+  it('leaves campaign_id/partner_id/commission null when the campaign no longer exists — never rejects the booking over a stale attribution cookie', async () => {
+    // A customer can carry the oc_attr cookie for days; if an admin deletes the
+    // campaign in between, bookings.campaign_id/partner_id are real FKs and
+    // inserting the stale id would reject the WHOLE paid booking. Must degrade
+    // to unattributed instead.
+    h.constructEvent.mockReturnValue(makePiSucceeded({
+      metadata: { ...PI_META, campaign_id: 'deleted-campaign', partner_id: 'partner-1' },
+    }))
+    h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
+    h.maybeSingle.mockResolvedValue({ data: null, error: null })
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.insert.mock.calls[0][0]).toMatchObject({
+      campaign_id: null,
+      partner_id: null,
       commission_amount_cents: null,
     })
   })

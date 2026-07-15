@@ -251,16 +251,28 @@ export async function POST(request: NextRequest) {
 
     // Partner/campaign attribution — resolved server-side at create-intent time
     // (from the oc_attr cookie, which the webhook can never read directly) and
-    // carried here via PI metadata. Commission is computed fresh from the
-    // campaign's current rate rather than cached earlier in the flow.
+    // carried here via PI metadata. Re-verified against the campaigns table
+    // rather than trusted blindly: the attribution cookie can outlive the
+    // campaign (customer books days after clicking; an admin deletes the
+    // campaign in between), and bookings.campaign_id/partner_id are real FKs —
+    // inserting a stale id would reject the ENTIRE paid booking. partner_id is
+    // read fresh off the campaign row (not the cookie's snapshot) because that
+    // FK is continuously enforced by Postgres, so it's guaranteed current;
+    // campaign_id/commission are simply left null if the campaign is gone.
+    let campaignId: string | null = null
+    let partnerId: string | null = null
     let commissionAmountCents: number | null = null
     if (meta.campaign_id) {
       const { data: campaign } = await supabase
         .from('campaigns')
-        .select('percentage_value, investment_type')
+        .select('percentage_value, investment_type, partner_id')
         .eq('id', meta.campaign_id)
         .maybeSingle()
-      commissionAmountCents = commissionForCampaign(campaign, serverBaseAmount)
+      if (campaign) {
+        campaignId = String(meta.campaign_id)
+        partnerId = campaign.partner_id ?? null
+        commissionAmountCents = commissionForCampaign(campaign, serverBaseAmount)
+      }
     }
 
     // 1. Write the row first — the UNIQUE PI constraint is the exactly-once gate.
@@ -297,8 +309,8 @@ export async function POST(request: NextRequest) {
       gclid: meta.gclid || null,
       traffic_source: meta.traffic_source || null,
       traffic_detail: meta.traffic_detail || null,
-      campaign_id: meta.campaign_id || null,
-      partner_id: meta.partner_id || null,
+      campaign_id: campaignId,
+      partner_id: partnerId,
       commission_amount_cents: commissionAmountCents,
       promo_code_id: meta.promo_code_id || null,
       discount_amount_cents: Number(meta.discount_amount_cents ?? 0),
