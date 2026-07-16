@@ -244,12 +244,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
     }
 
-    // Slack notification
-    const itemSummary = newItems.map(i => `${i.name} ×${i.quantity}`).join(', ')
-    const cruiseDateStr = new Date(bookingSnapshot.booking_date ?? '').toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', timeZone: 'Europe/Amsterdam' })
-    await postSlackText(
-      `🍽️ *New catering pre-order* — ${bookingSnapshot.listing_title ?? 'cruise'} on ${cruiseDateStr}\n*Guest:* ${bookingSnapshot.customer_name}\n*Items:* ${itemSummary}`
-    ).catch(() => {})
+    // Slack notification — food only. Drinks-only pre-orders (e.g. "Unlimited
+    // Drinks" on a shared cruise) must stay silent here too, matching the
+    // supplier-email gate above: only food is a "catering order".
+    if (hasCatering) {
+      const itemSummary = newItems.map(i => `${i.name} ×${i.quantity}`).join(', ')
+      const cruiseDateStr = new Date(bookingSnapshot.booking_date ?? '').toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', timeZone: 'Europe/Amsterdam' })
+      await postSlackText(
+        `🍽️ *New catering pre-order* — ${bookingSnapshot.listing_title ?? 'cruise'} on ${cruiseDateStr}\n*Guest:* ${bookingSnapshot.customer_name}\n*Items:* ${itemSummary}`
+      ).catch(() => {})
+    }
   })
 
   return apiOk({ ordered: true, items: newItems.length })
