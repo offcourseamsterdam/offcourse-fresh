@@ -267,6 +267,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
               <DateCardPicker
                 selectedDate={state.date}
                 onSelectDate={handleInlineDateSelect}
+                fixedDate={props.fixedDate}
               />
 
               <GuestCounter guests={state.guests} onSet={(n) => dispatch({ type: 'SET_GUESTS', guests: n })} />
@@ -305,6 +306,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                   label: suggestDate.label,
                   onSelect: () => { handleInlineDateSelect(suggestDate.dateStr); goToPanel(0) },
                 } : undefined}
+                rainbowTheme={props.rainbowBoatCard}
               />
             </div>
           </SlidePanel>
@@ -329,6 +331,8 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                   allSlots={state.slots}
                   selectedSlot={state.selectedSlot}
                   onSelectSlot={(slot) => dispatch({ type: 'SELECT_SLOT', slot, category: 'private' })}
+                  offeredBoatIds={props.offeredBoatIds}
+                  rainbowBoatCard={props.rainbowBoatCard}
                 />
               )}
 

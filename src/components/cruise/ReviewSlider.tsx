@@ -33,9 +33,11 @@ interface ReviewSliderProps {
   reviews: SliderReview[]
   /** Combined Google + TripAdvisor total (for the headline count); defaults to the loaded count. */
   totalReviews?: number
+  /** Pride-only styling: heading gets the rainbow gradient treatment. */
+  isSpecialEvent?: boolean
 }
 
-export function ReviewSlider({ reviews, totalReviews }: ReviewSliderProps) {
+export function ReviewSlider({ reviews, totalReviews, isSpecialEvent }: ReviewSliderProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [modalReview, setModalReview] = useState<SliderReview | null>(null)
   const [showAll, setShowAll] = useState(false)
@@ -67,7 +69,7 @@ export function ReviewSlider({ reviews, totalReviews }: ReviewSliderProps) {
   return (
     <section>
       <div className="flex items-center justify-between mb-1">
-        <h2 className="font-briston text-[28px] sm:text-[36px] text-[var(--color-accent)] uppercase">
+        <h2 className={`font-briston text-[28px] sm:text-[36px] uppercase ${isSpecialEvent ? 'text-rainbow-gradient' : 'text-[var(--color-accent)]'}`}>
           What people say
         </h2>
         <div className="flex gap-2">

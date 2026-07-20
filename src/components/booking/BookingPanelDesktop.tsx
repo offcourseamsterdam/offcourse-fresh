@@ -165,6 +165,7 @@ export function BookingPanelDesktop(props: BookingPanelProps) {
         <DateCardPicker
           selectedDate={state.date}
           onSelectDate={handleInlineDateSelect}
+          fixedDate={props.fixedDate}
         />
 
         {isPrivate && (
@@ -204,6 +205,7 @@ export function BookingPanelDesktop(props: BookingPanelProps) {
                   label: suggestDate.label,
                   onSelect: () => handleInlineDateSelect(suggestDate.dateStr),
                 } : undefined}
+                rainbowTheme={props.rainbowBoatCard}
               />
             </div>
           )}
@@ -227,6 +229,8 @@ export function BookingPanelDesktop(props: BookingPanelProps) {
                     allSlots={state.slots}
                     selectedSlot={state.selectedSlot}
                     onSelectSlot={(slot) => dispatch({ type: 'SELECT_SLOT', slot, category: 'private' })}
+                    offeredBoatIds={props.offeredBoatIds}
+                    rainbowBoatCard={props.rainbowBoatCard}
                   />
                 </>
               ) : (

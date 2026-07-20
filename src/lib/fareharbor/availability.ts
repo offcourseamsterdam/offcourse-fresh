@@ -186,6 +186,14 @@ export function transformToSlot(
 ): AvailabilitySlot {
   const startTime = formatDisplayTime(availability.start_at)
 
+  // Most availabilities here are departure-time-only (end_at === start_at) — duration
+  // comes from which customer type/rate is picked (e.g. "Diana - 2 Hours"), parsed by
+  // name via typeMap. But some (e.g. fixed-schedule special events) have a real window,
+  // so prefer the availability's own start/end when it actually spans time.
+  const spanMinutes = Math.round(
+    (new Date(availability.end_at).getTime() - new Date(availability.start_at).getTime()) / 60_000
+  )
+
   const customerTypes: AvailabilityCustomerType[] = availability.customer_type_rates
     .map(rate => {
       const config = typeMap.get(rate.customer_type.pk)
@@ -200,7 +208,7 @@ export function transformToSlot(
         minimumParty: rate.minimum_party_size ?? 1,
         maximumParty: rate.maximum_party_size ?? (config?.maxGuests ?? 12),
         priceCents: rate.customer_prototype?.total_including_tax ?? rate.customer_prototype?.total ?? 0,
-        durationMinutes: config?.duration ?? 120,
+        durationMinutes: spanMinutes > 0 ? spanMinutes : (config?.duration ?? 120),
       }
     })
 

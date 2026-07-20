@@ -163,4 +163,21 @@ export interface BookingPanelProps {
    * we don't enforce the FareHarbor minimum party size gate.
    */
   maxGuests?: number | null
+  /**
+   * Boat ids ('diana' | 'curacao') this listing actually offers, derived from
+   * `cruise_listings.allowed_customer_type_pks` matched against `boats.fareharbor_customer_type_pks`.
+   * When set, BoatDurationStep omits cards for boats outside this list entirely
+   * (vs. "sold out") — for listings like a single-boat special event where the
+   * other boat was never part of the offering, not just unavailable today.
+   * Undefined/empty means "show every boat", preserving existing behavior.
+   */
+  offeredBoatIds?: string[]
+  /** Pride-only styling: boat card gets a smooth drifting rainbow gradient instead of its usual texture. */
+  rainbowBoatCard?: boolean
+  /**
+   * Special events only have real availability on one scheduled day (YYYY-MM-DD).
+   * When set, the date picker shows just that single day instead of a 14-day
+   * scroller + calendar — there's nothing else to pick.
+   */
+  fixedDate?: string
 }

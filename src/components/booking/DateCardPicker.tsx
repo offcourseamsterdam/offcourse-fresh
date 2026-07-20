@@ -10,6 +10,12 @@ const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
 interface DateCardPickerProps {
   selectedDate: string | null
   onSelectDate: (date: string) => void
+  /**
+   * Special events only have real availability on one scheduled day. When set,
+   * skip the 14-day scroller + calendar entirely and show just that single date
+   * card (still using the same visual style) — there's nothing else to pick.
+   */
+  fixedDate?: string
 }
 
 function buildUpcomingDates(count: number): { dateStr: string; day: number; dayName: string; month: string; isToday: boolean }[] {
@@ -29,19 +35,43 @@ function buildUpcomingDates(count: number): { dateStr: string; day: number; dayN
   return dates
 }
 
-export function DateCardPicker({ selectedDate, onSelectDate }: DateCardPickerProps) {
+function describeDate(dateStr: string): { dateStr: string; day: number; dayName: string; month: string } {
+  const d = new Date(`${dateStr}T12:00:00`)
+  return { dateStr, day: d.getDate(), dayName: SHORT_DAYS[d.getDay()], month: SHORT_MONTHS[d.getMonth()] }
+}
+
+export function DateCardPicker({ selectedDate, onSelectDate, fixedDate }: DateCardPickerProps) {
   const [showCalendar, setShowCalendar] = useState(false)
+
+  // Calendar state for the expanded view — declared unconditionally (rules of
+  // hooks) even though the fixedDate path below never uses it.
+  const today = getToday()
+  const [calYear, setCalYear] = useState(today.getFullYear())
+  const [calMonth, setCalMonth] = useState(today.getMonth())
+
+  if (fixedDate) {
+    const d = describeDate(fixedDate)
+    return (
+      <div>
+        <p className="font-avenir font-semibold text-[15px] text-[var(--color-ink)] mb-3">
+          Event date
+        </p>
+        <div className="flex-shrink-0 min-w-[80px] w-fit py-3 px-4 rounded-xl text-center border-2 border-[var(--color-primary)] text-[var(--color-primary)] bg-white shadow-sm">
+          <div className="text-xs font-semibold uppercase text-[var(--color-primary)]">{d.dayName}</div>
+          <div className="text-2xl font-bold my-0.5">{d.day}</div>
+          <div className="text-xs font-medium text-[var(--color-primary)]">{d.month}</div>
+        </div>
+      </div>
+    )
+  }
+
   const dates = buildUpcomingDates(14)
 
-  // Calendar state for the expanded view
-  const today = getToday()
   const todayStr = toDateStr(today)
   const tomorrow = new Date(today)
   tomorrow.setDate(today.getDate() + 1)
   const tomorrowStr = toDateStr(tomorrow)
 
-  const [calYear, setCalYear] = useState(today.getFullYear())
-  const [calMonth, setCalMonth] = useState(today.getMonth())
   const isPrevDisabled = calYear === today.getFullYear() && calMonth <= today.getMonth()
 
   function prevMonth() {

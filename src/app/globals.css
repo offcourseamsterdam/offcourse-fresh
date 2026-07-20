@@ -294,6 +294,61 @@
     background-position: center;
   }
 
+  /* Pride-only: smooth pastel rainbow gradient, slowly drifting. Kept light so
+     the dark-ink card text on top stays readable. */
+  @keyframes rainbow-drift {
+    0%   { background-position: 0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .bg-rainbow-smooth {
+    background-image: linear-gradient(
+      90deg,
+      #ffd1dc, #ffe3b3, #fff6b3, #c9f2c7, #b3e5ff, #c7c3ff, #f0c3f5, #ffd1dc
+    );
+    background-size: 300% 100%;
+    animation: rainbow-drift 12s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .bg-rainbow-smooth {
+      animation: none;
+      background-position: 30% 50%;
+    }
+  }
+
+  /* Pride-only: rainbow gradient headings. Saturated (unlike the pastel card
+     background above) since this has to read as actual text color, not just a
+     light tint — clipped to the glyphs via background-clip so it still reads
+     as "text", not a colored box. */
+  .text-rainbow-gradient {
+    background-image: linear-gradient(
+      90deg,
+      #ff4d6d, #ff8c42, #ffd23f, #4dd68c, #4da6ff, #7c5cff, #ff4dd8, #ff4d6d
+    );
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: rainbow-drift 12s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .text-rainbow-gradient {
+      animation: none;
+      background-position: 30% 50%;
+    }
+  }
+
+  /* Same rainbow text gradient, fixed in place — no drift animation. */
+  .text-rainbow-gradient-static {
+    background-image: linear-gradient(
+      90deg,
+      #ff4d6d, #ff8c42, #ffd23f, #4dd68c, #4da6ff, #7c5cff, #ff4dd8
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
   /* Font shorthand utilities — reference the CSS variables injected by next/font */
   .font-briston {
     font-family: var(--font-briston), Georgia, serif;

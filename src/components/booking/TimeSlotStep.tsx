@@ -13,6 +13,8 @@ interface TimeSlotStepProps {
   onSelect: (slot: AvailabilitySlot) => void
   /** When no slots available, suggest checking this date (label + callback) */
   suggestDate?: { label: string; onSelect: () => void }
+  /** Pride-only styling: the selected slot gets a smooth drifting rainbow gradient instead of the solid brand color. */
+  rainbowTheme?: boolean
 }
 
 const MAX_VISIBLE = 9  // 3 columns × 3 rows — matches Booking.com style
@@ -43,7 +45,7 @@ function windowStart(slots: AvailabilitySlot[], selectedPk: number | null): numb
   return start
 }
 
-export function TimeSlotStep({ slots, loading, mode, selectedSlotPk, onSelect, suggestDate }: TimeSlotStepProps) {
+export function TimeSlotStep({ slots, loading, mode, selectedSlotPk, onSelect, suggestDate, rainbowTheme }: TimeSlotStepProps) {
   const [showAll, setShowAll] = useState(false)
 
   if (loading) {
@@ -128,7 +130,9 @@ export function TimeSlotStep({ slots, loading, mode, selectedSlotPk, onSelect, s
                   : isChatToBook
                     ? 'border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 cursor-pointer'
                     : isSelected
-                      ? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-white scale-[1.02] shadow-md'
+                      ? rainbowTheme
+                        ? 'border-[var(--color-primary)] bg-rainbow-smooth text-[var(--color-primary)] scale-[1.02] shadow-md'
+                        : 'border-[var(--color-primary)] bg-[var(--color-primary)] text-white scale-[1.02] shadow-md'
                       : 'border-zinc-200 text-zinc-700 bg-white hover:border-[var(--color-primary)] hover:scale-[1.02] cursor-pointer'
               }`}
             >
