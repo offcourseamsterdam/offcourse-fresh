@@ -58,8 +58,11 @@ export function HeroCarousel({ slides }: HeroCarouselProps) {
   return (
     <div className="w-full">
       {/* ── DESKTOP: 3-up center-stage ─────────────────────────────────── */}
+      {/* overflow-x-hidden clips the side cards' translateX peek so they
+          can't push the page into horizontal scroll — the peek is still
+          visible, just capped at this container's own width. */}
       <div
-        className="hidden sm:block relative w-full"
+        className="hidden sm:block relative w-full overflow-x-hidden"
         style={{ height: 'clamp(240px, 46vh, 540px)', perspective: '1800px' }}
         onMouseEnter={() => setPaused(true)}
         onMouseLeave={() => { setPaused(false); setHoverSide(null) }}

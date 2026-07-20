@@ -112,10 +112,13 @@ function CruiseCard({ listing, rotation, slots, loading, date, guests }: {
 }) {
   const isPrivate = listing.category === 'private'
 
-  // sm:w-96 = 384px, i.e. 20% wider than the old sm:w-80 (320px). The row's
-  // gap-12 is unchanged, so the spacing between cards stays the same.
+  // sm:w-96 = 384px, i.e. 20% wider than the old sm:w-80 (320px). Below sm
+  // the card is a single full-width column. From sm up it's a fixed 384px —
+  // the row wraps (flex-wrap on the parent) instead of squeezing cards to
+  // fit, so any number of featured cards lays out cleanly without ever
+  // forcing the page into horizontal scroll.
   return (
-    <div className={`w-full sm:w-96 flex-shrink-0 ${rotation} transition-transform hover:rotate-0 duration-300`}>
+    <div className={`w-full sm:w-96 shrink-0 ${rotation} transition-transform hover:rotate-0 duration-300`}>
       {/* Polaroid frame */}
       <div className="bg-white p-4 pb-3 shadow-polaroid">
         {/* Image with badge */}
@@ -192,13 +195,10 @@ interface FeaturedCruisesProps {
 export function FeaturedCruises({ listings, sectionStyle }: FeaturedCruisesProps) {
   const { searchDate, searchGuests, searchLoading, searchResults } = useSearch()
 
-  // Prefer one private + one shared; fall back to first 2
-  const privateListings = listings.filter(l => l.category === 'private')
-  const sharedListings = listings.filter(l => l.category === 'shared')
-  const first = privateListings[0] ?? listings[0]
-  const second = sharedListings[0] ?? listings.find(l => l.id !== first?.id)
-  const displayListings = [first, second].filter(Boolean) as FeaturedCruiseListing[]
-
+  // Show every featured listing (already is_published + is_featured +
+  // display_order-sorted from the homepage query) — no cap to one
+  // private/one shared; the grid wraps to fit however many there are.
+  const displayListings = listings
   const rotations = ['-rotate-2', 'rotate-2']
 
   // Find slots for a given listing
@@ -237,7 +237,7 @@ export function FeaturedCruises({ listings, sectionStyle }: FeaturedCruisesProps
             </Link>
           </div>
         ) : (
-          <div className="flex flex-col sm:flex-row gap-12 justify-center items-start">
+          <div className="flex flex-wrap gap-8 sm:gap-12 justify-center items-start">
             {displayListings.map((listing, i) => (
               <CruiseCard
                 key={listing.id}
