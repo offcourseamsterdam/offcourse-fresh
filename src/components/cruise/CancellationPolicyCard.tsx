@@ -3,6 +3,8 @@ import { formatTierLines, type CancellationTier } from '@/lib/cancellation/polic
 
 interface CancellationPolicyCardProps {
   tiers: CancellationTier[]
+  /** Pride-only styling: the full-refund checkmark becomes a 🌈 emoji instead. */
+  isSpecialEvent?: boolean
 }
 
 /**
@@ -12,7 +14,7 @@ interface CancellationPolicyCardProps {
  * Renders one row per tier: status icon + bold refund label + muted detail line.
  * Visual rhythm matches the Food / Drinks cards next to it.
  */
-export function CancellationPolicyCard({ tiers }: CancellationPolicyCardProps) {
+export function CancellationPolicyCard({ tiers, isSpecialEvent }: CancellationPolicyCardProps) {
   const lines = formatTierLines(tiers)
 
   return (
@@ -23,13 +25,19 @@ export function CancellationPolicyCard({ tiers }: CancellationPolicyCardProps) {
       <ul className="space-y-3">
         {lines.map((line, i) => (
           <li key={i} className="flex items-start gap-3">
-            <span
-              className={`mt-0.5 flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${iconWrapClass(
-                line.refundPercent
-              )}`}
-            >
-              <TierIcon refundPercent={line.refundPercent} />
-            </span>
+            {isSpecialEvent && line.refundPercent === 100 ? (
+              <span className="mt-0.5 flex-shrink-0 w-6 h-6 flex items-center justify-center text-sm leading-none" aria-hidden="true">
+                🌈
+              </span>
+            ) : (
+              <span
+                className={`mt-0.5 flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${iconWrapClass(
+                  line.refundPercent
+                )}`}
+              >
+                <TierIcon refundPercent={line.refundPercent} />
+              </span>
+            )}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-[var(--color-ink)]">{line.label}</p>
               <p className="text-xs text-[var(--color-muted)] mt-0.5">{line.detail}</p>

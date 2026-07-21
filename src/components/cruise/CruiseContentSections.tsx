@@ -97,7 +97,7 @@ export function CruiseContentSections({
           </div>
           {cancellationTiers.length > 0 && (
             <div className="mt-3">
-              <CancellationPolicyCard tiers={cancellationTiers} />
+              <CancellationPolicyCard tiers={cancellationTiers} isSpecialEvent={isSpecialEvent} />
             </div>
           )}
         </section>
