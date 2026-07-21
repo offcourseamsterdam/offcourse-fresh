@@ -274,13 +274,20 @@ export function BookingPanelSlider(props: BookingPanelProps) {
               <GuestCounter guests={state.guests} onSet={(n) => dispatch({ type: 'SET_GUESTS', guests: n })} />
 
               {state.date && (
-                <Button variant="primary" size="md" className="w-full rounded-xl font-bold" onClick={async () => {
-                  dispatch({ type: 'SLOTS_LOADING' })
-                  goToPanel(1)
-                  if (state.date) {
-                    await fetchSlots(state.date, state.guests)
-                  }
-                }}>
+                <Button
+                  variant="primary"
+                  size="md"
+                  className={`w-full rounded-xl font-bold ${
+                    props.rainbowBoatCard ? 'bg-rainbow-vivid hover:opacity-90 [text-shadow:0_1px_3px_rgba(0,0,0,0.65),0_0_10px_rgba(0,0,0,0.35)]' : ''
+                  }`}
+                  onClick={async () => {
+                    dispatch({ type: 'SLOTS_LOADING' })
+                    goToPanel(1)
+                    if (state.date) {
+                      await fetchSlots(state.date, state.guests)
+                    }
+                  }}
+                >
                   Next
                 </Button>
               )}

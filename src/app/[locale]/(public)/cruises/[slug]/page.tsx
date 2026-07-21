@@ -96,15 +96,12 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
   // always show as fully-booked), skip the multi-day date scroller entirely,
   // and pick up the rainbow theme across headings/boat card/time button.
   // One config object per event rather than several parallel lookup maps.
-  const SPECIAL_EVENTS: Record<string, { date: string; hours: number; mapCoords: string }> = {
-    'pride-amsterdam-2026': { date: '2026-08-01', hours: 8, mapCoords: '52.369684,4.910362' },
+  const SPECIAL_EVENTS: Record<string, { date: string; mapCoords: string }> = {
+    'pride-amsterdam-2026': { date: '2026-08-01', mapCoords: '52.369684,4.910362' },
   }
   const specialEvent = SPECIAL_EVENTS[listing.slug]
   const isSpecialEvent = Boolean(specialEvent)
   const specialEventDate = specialEvent?.date
-  const perPersonPerHour = specialEvent && listing.starting_price != null
-    ? listing.starting_price / specialEvent.hours
-    : null
   // Whole-boat total: a special event is a single fixed-price private charter,
   // so the headline number is the boat price (per-person rate × capacity), not
   // a "starting from" — there's only one price.
@@ -149,9 +146,6 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
             </div>
             <p className="text-sm text-[var(--color-ink)] mt-1.5">
               €{listing.starting_price} per person
-              {perPersonPerHour != null && (
-                <span className="text-[var(--color-muted)]"> · €{perPersonPerHour.toFixed(2)} per person/hour</span>
-              )}
             </p>
             <span className="inline-flex items-center gap-1 mt-2.5 text-xs font-semibold text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2.5 py-1 rounded-full">
               🥂 Open bar included

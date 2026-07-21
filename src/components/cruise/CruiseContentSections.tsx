@@ -11,6 +11,20 @@ import type { CancellationTier } from '@/lib/cancellation/policy'
 
 type SerializedExtra = { id: string; name: string; description: string | null; image_url: string | null; ingredients: string[] | null; price_display: string; min_people: number | null }
 
+// Pride-only: official 6-stripe rainbow flag colors (red/orange/yellow/green/
+// blue/violet), cycled one per highlight checkmark as a solid fill. Static —
+// no animation. Icon color is chosen per swatch for contrast — yellow is too
+// light for a white check to read against, so it gets a dark one instead.
+// Source: https://en.wikipedia.org/wiki/Rainbow_flag_(LGBTQ)
+const PRIDE_FLAG_COLORS = [
+  { bg: '#E40303', icon: '#ffffff' },
+  { bg: '#FF8C00', icon: '#ffffff' },
+  { bg: '#FFED00', icon: '#1f2937' },
+  { bg: '#008026', icon: '#ffffff' },
+  { bg: '#004DFF', icon: '#ffffff' },
+  { bg: '#750787', icon: '#ffffff' },
+]
+
 interface ContentProps {
   highlights: { text: string }[]
   description: string | null
@@ -56,14 +70,22 @@ export function CruiseContentSections({
         <section>
           <h2 className={`text-xl font-bold mb-4 ${isSpecialEvent ? 'text-rainbow-gradient-static' : 'text-[var(--color-primary)]'}`}>Highlights</h2>
           <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {highlights.map((h, i) => (
-              <li key={i} className="flex items-start gap-2.5">
-                <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] flex items-center justify-center">
-                  <Check className="w-3 h-3" />
-                </span>
-                <span className="text-sm text-[var(--color-ink)]">{h.text}</span>
-              </li>
-            ))}
+            {highlights.map((h, i) => {
+              const pride = isSpecialEvent ? PRIDE_FLAG_COLORS[i % PRIDE_FLAG_COLORS.length] : null
+              return (
+                <li key={i} className="flex items-start gap-2.5">
+                  <span
+                    className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${
+                      pride ? '' : 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                    }`}
+                    style={pride ? { backgroundColor: pride.bg, color: pride.icon } : undefined}
+                  >
+                    <Check className="w-3 h-3" />
+                  </span>
+                  <span className="text-sm text-[var(--color-ink)]">{h.text}</span>
+                </li>
+              )
+            })}
           </ul>
         </section>
       )}
