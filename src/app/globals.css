@@ -53,11 +53,17 @@
     scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* Backstop against any element (a horizontal slider, a drag gesture that
+       leaks past its own container, a future layout bug) pushing the whole
+       page into horizontal scroll. Nothing on this site legitimately scrolls
+       sideways at the document level, so this only ever clips accidents. */
+    overflow-x: hidden;
   }
 
   body {
     font-family: var(--font-sans);
     font-weight: 300;
+    overflow-x: hidden;
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -316,15 +322,19 @@
     }
   }
 
+  /* Shared saturated 8-stop rainbow palette — one edit point for
+     .text-rainbow-gradient, .bg-rainbow-vivid, and .border-rainbow-gradient
+     below, which all animate the identical stop list. */
+  :root {
+    --rainbow-vivid-stops: #ff4d6d, #ff8c42, #ffd23f, #4dd68c, #4da6ff, #7c5cff, #ff4dd8, #ff4d6d;
+  }
+
   /* Pride-only: rainbow gradient headings. Saturated (unlike the pastel card
      background above) since this has to read as actual text color, not just a
      light tint — clipped to the glyphs via background-clip so it still reads
      as "text", not a colored box. */
   .text-rainbow-gradient {
-    background-image: linear-gradient(
-      90deg,
-      #ff4d6d, #ff8c42, #ffd23f, #4dd68c, #4da6ff, #7c5cff, #ff4dd8, #ff4d6d
-    );
+    background-image: linear-gradient(90deg, var(--rainbow-vivid-stops));
     background-size: 300% 100%;
     -webkit-background-clip: text;
     background-clip: text;
@@ -347,6 +357,43 @@
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
+  }
+
+  /* Pride-only: saturated rainbow fill for solid CTA buttons — same palette as
+     text-rainbow-gradient but as an actual background (not text-clipped).
+     The gradient's yellow/green stops don't pass contrast against white text
+     on their own — pair this class with a text-shadow on the label (see
+     MobileBookingCTA) rather than relying on the fill alone for legibility. */
+  .bg-rainbow-vivid {
+    background-image: linear-gradient(90deg, var(--rainbow-vivid-stops));
+    background-size: 300% 100%;
+    animation: rainbow-drift 12s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .bg-rainbow-vivid {
+      animation: none;
+      background-position: 30% 50%;
+    }
+  }
+
+  /* Pride-only: rainbow gradient border ("edge") — the padding-box/border-box
+     double-background trick keeps the card fill plain white while only the
+     border ring itself shows the gradient. */
+  .border-rainbow-gradient {
+    border: 2px solid transparent;
+    background-image:
+      linear-gradient(white, white),
+      linear-gradient(90deg, var(--rainbow-vivid-stops));
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
+    background-size: 100% 100%, 300% 100%;
+    animation: rainbow-drift 12s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .border-rainbow-gradient {
+      animation: none;
+      background-position: 0 0, 30% 50%;
+    }
   }
 
   /* Font shorthand utilities — reference the CSS variables injected by next/font */

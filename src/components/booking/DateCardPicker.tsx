@@ -16,6 +16,8 @@ interface DateCardPickerProps {
    * card (still using the same visual style) — there's nothing else to pick.
    */
   fixedDate?: string
+  /** Pride-only styling: the fixed event-date card gets a rainbow gradient border. */
+  rainbowTheme?: boolean
 }
 
 function buildUpcomingDates(count: number): { dateStr: string; day: number; dayName: string; month: string; isToday: boolean }[] {
@@ -40,7 +42,7 @@ function describeDate(dateStr: string): { dateStr: string; day: number; dayName:
   return { dateStr, day: d.getDate(), dayName: SHORT_DAYS[d.getDay()], month: SHORT_MONTHS[d.getMonth()] }
 }
 
-export function DateCardPicker({ selectedDate, onSelectDate, fixedDate }: DateCardPickerProps) {
+export function DateCardPicker({ selectedDate, onSelectDate, fixedDate, rainbowTheme }: DateCardPickerProps) {
   const [showCalendar, setShowCalendar] = useState(false)
 
   // Calendar state for the expanded view — declared unconditionally (rules of
@@ -56,7 +58,9 @@ export function DateCardPicker({ selectedDate, onSelectDate, fixedDate }: DateCa
         <p className="font-avenir font-semibold text-[15px] text-[var(--color-ink)] mb-3">
           Event date
         </p>
-        <div className="flex-shrink-0 min-w-[80px] w-fit py-3 px-4 rounded-xl text-center border-2 border-[var(--color-primary)] text-[var(--color-primary)] bg-white shadow-sm">
+        <div className={`flex-shrink-0 min-w-[80px] w-fit py-3 px-4 rounded-xl text-center text-[var(--color-primary)] shadow-sm ${
+          rainbowTheme ? 'border-rainbow-gradient' : 'border-2 border-[var(--color-primary)] bg-white'
+        }`}>
           <div className="text-xs font-semibold uppercase text-[var(--color-primary)]">{d.dayName}</div>
           <div className="text-2xl font-bold my-0.5">{d.day}</div>
           <div className="text-xs font-medium text-[var(--color-primary)]">{d.month}</div>

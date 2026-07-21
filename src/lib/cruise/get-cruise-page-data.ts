@@ -125,7 +125,11 @@ export const getCruisePageData = cache(async function getCruisePageData(listing:
 
   // Parse JSONB fields
   const highlights = (listing.highlights as Benefit[] | null) ?? []
-  const faqs = (listing.faqs as Faq[] | null) ?? []
+  // FAQs are a jsonb array, not a plain string, so they don't fit getLocalizedField
+  // (which only handles scalar text columns) — resolve the locale variant by hand,
+  // falling back to the English base column exactly like getLocalizedField does.
+  const localizedFaqs = loc === 'en' ? null : (listing as Record<string, unknown>)[`faqs_${loc}`] as Faq[] | null
+  const faqs = localizedFaqs ?? (listing.faqs as Faq[] | null) ?? []
   // Legacy short label used by the booking-panel "Free cancellation" badge.
   // Derived from the FH item's tiers so the badge hides if there's no full-refund tier.
   const topTier = cancellationTiers[0]

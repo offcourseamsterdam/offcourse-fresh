@@ -914,6 +914,12 @@ export type Database = {
           display_order: number | null
           duration_display: string | null
           faqs: Json | null
+          faqs_de: Json | null
+          faqs_es: Json | null
+          faqs_fr: Json | null
+          faqs_nl: Json | null
+          faqs_pt: Json | null
+          faqs_zh: Json | null
           fareharbor_item_pk: number
           google_maps_url: string | null
           hero_image_asset_id: string | null
@@ -984,6 +990,12 @@ export type Database = {
           display_order?: number | null
           duration_display?: string | null
           faqs?: Json | null
+          faqs_de?: Json | null
+          faqs_es?: Json | null
+          faqs_fr?: Json | null
+          faqs_nl?: Json | null
+          faqs_pt?: Json | null
+          faqs_zh?: Json | null
           fareharbor_item_pk: number
           google_maps_url?: string | null
           hero_image_asset_id?: string | null
@@ -1054,6 +1066,12 @@ export type Database = {
           display_order?: number | null
           duration_display?: string | null
           faqs?: Json | null
+          faqs_de?: Json | null
+          faqs_es?: Json | null
+          faqs_fr?: Json | null
+          faqs_nl?: Json | null
+          faqs_pt?: Json | null
+          faqs_zh?: Json | null
           fareharbor_item_pk?: number
           google_maps_url?: string | null
           hero_image_asset_id?: string | null
@@ -2404,6 +2422,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      ops_events: {
+        Row: {
+          actor_id: string | null
+          actor_type: string
+          booking_id: string | null
+          created_at: string
+          event_type: string
+          id: string
+          occurred_at: string
+          payload: Json
+          proposal_id: string | null
+          shift_id: string | null
+          source: string
+          staff_id: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          actor_type: string
+          booking_id?: string | null
+          created_at?: string
+          event_type: string
+          id?: string
+          occurred_at?: string
+          payload?: Json
+          proposal_id?: string | null
+          shift_id?: string | null
+          source: string
+          staff_id?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          actor_type?: string
+          booking_id?: string | null
+          created_at?: string
+          event_type?: string
+          id?: string
+          occurred_at?: string
+          payload?: Json
+          proposal_id?: string | null
+          shift_id?: string | null
+          source?: string
+          staff_id?: string | null
+        }
+        Relationships: []
       }
       partner_codes: {
         Row: {

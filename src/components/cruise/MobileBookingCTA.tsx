@@ -2,7 +2,12 @@
 
 import { useState, useEffect } from 'react'
 
-export function MobileBookingCTA() {
+interface MobileBookingCTAProps {
+  /** Pride-only styling: the CTA gets a saturated rainbow gradient fill. */
+  rainbowTheme?: boolean
+}
+
+export function MobileBookingCTA({ rainbowTheme }: MobileBookingCTAProps) {
   const [visible, setVisible] = useState(true)
 
   useEffect(() => {
@@ -29,7 +34,14 @@ export function MobileBookingCTA() {
     >
       <a
         href="#booking"
-        className="block w-full text-center bg-[var(--color-primary)] text-white font-bold text-base py-3.5 rounded-xl hover:bg-[var(--color-primary-dark)] transition-colors"
+        className={`block w-full text-center text-white font-bold text-base py-3.5 rounded-xl transition-colors ${
+          rainbowTheme
+            // The gradient drifts through light yellow/green stops that don't
+            // pass contrast against plain white text — the shadow keeps the
+            // label readable through every phase of the animation.
+            ? 'bg-rainbow-vivid hover:opacity-90 [text-shadow:0_1px_3px_rgba(0,0,0,0.65),0_0_10px_rgba(0,0,0,0.35)]'
+            : 'bg-[var(--color-primary)] hover:bg-[var(--color-primary-dark)]'
+        }`}
       >
         See tickets and prices
       </a>

@@ -166,6 +166,7 @@ export function BookingPanelDesktop(props: BookingPanelProps) {
           selectedDate={state.date}
           onSelectDate={handleInlineDateSelect}
           fixedDate={props.fixedDate}
+          rainbowTheme={props.rainbowBoatCard}
         />
 
         {isPrivate && (

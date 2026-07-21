@@ -172,7 +172,11 @@ export interface BookingPanelProps {
    * Undefined/empty means "show every boat", preserving existing behavior.
    */
   offeredBoatIds?: string[]
-  /** Pride-only styling: boat card gets a smooth drifting rainbow gradient instead of its usual texture. */
+  /**
+   * Pride-only styling: drives the rainbow gradient treatment across the whole
+   * booking flow — the boat card's texture, the selected time slot, the fixed
+   * event-date card's border, and the mobile sticky CTA's fill.
+   */
   rainbowBoatCard?: boolean
   /**
    * Special events only have real availability on one scheduled day (YYYY-MM-DD).

@@ -77,6 +77,19 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
     provider: { '@type': 'LocalBusiness', name: 'Off Course Amsterdam' },
   }
 
+  // FAQPage JSON-LD — lets AI answer engines and Google lift these Q&As
+  // directly into generated answers. Omitted entirely when a listing has no
+  // FAQs rather than emitting an empty (invalid) FAQPage block.
+  const faqJsonLd = data.faqs.length > 0 ? {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: data.faqs.map(faq => ({
+      '@type': 'Question',
+      name: faq.question,
+      acceptedAnswer: { '@type': 'Answer', text: faq.answer },
+    })),
+  } : null
+
   // Fixed-date special events (this item only has real availability on their one
   // scheduled day) get a distinct, simplified presentation throughout: they
   // default straight to that day instead of "today" (which would otherwise
@@ -141,7 +154,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
               )}
             </p>
             <span className="inline-flex items-center gap-1 mt-2.5 text-xs font-semibold text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2.5 py-1 rounded-full">
-              Open bar included
+              🥂 Open bar included
             </span>
           </div>
         )}
@@ -186,7 +199,10 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
     initialDate: date ?? specialEventDate ?? amsterdamToday,
     initialGuests: guests ? Number(guests) : undefined,
     initialTime: time,
-    cancellationPolicy: data.cancellationPolicy,
+    // Pride's real policy (full refund up to 3 weeks out, then none) is shown
+    // in full via the Cancellation Policy card — the blanket "Free cancellation"
+    // sidebar badge reads as a looser promise than that, so it's dropped here.
+    cancellationPolicy: isSpecialEvent ? null : data.cancellationPolicy,
     cancellationTiers: data.cancellationTiers,
     startingPrice: listing.starting_price ?? null,
     maxGuests: listing.max_guests ?? null,
@@ -209,6 +225,9 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
     <>
       <TrackPageView event="view_cruise_detail" metadata={{ slug, category: listing.category }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      {faqJsonLd && (
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
+      )}
       {/* LCP preload: tells the browser to fetch the hero AVIF before parsing the rest of the HTML.
           Typically saves 200-500ms on Largest Contentful Paint. React 19 hoists <link> to <head>. */}
       {heroPreload && (
@@ -226,7 +245,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
       )}
 
       <StickyBookingHeader title={data.title} priceDisplay={listing.price_display} />
-      <MobileBookingCTA />
+      <MobileBookingCTA rainbowTheme={isSpecialEvent} />
       {/* Pride-only easter egg: a rainbow ribbon trails the cursor on this one listing. */}
       {slug === 'pride-amsterdam-2026' && <RainbowCursorTrail />}
 
