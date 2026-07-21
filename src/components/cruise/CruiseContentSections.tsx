@@ -11,11 +11,6 @@ import type { CancellationTier } from '@/lib/cancellation/policy'
 
 type SerializedExtra = { id: string; name: string; description: string | null; image_url: string | null; ingredients: string[] | null; price_display: string; min_people: number | null }
 
-// Pride-only: colored-circle emoji cycled one per highlight bullet, in
-// rainbow-flag order. Static — no animation, no custom hex/contrast logic —
-// the emoji glyphs are already colored consistently across platforms.
-const PRIDE_EMOJI = ['🔴', '🟠', '🟡', '🟢', '🔵', '🟣']
-
 interface ContentProps {
   highlights: { text: string }[]
   description: string | null
@@ -65,7 +60,7 @@ export function CruiseContentSections({
               <li key={i} className="flex items-start gap-2.5">
                 {isSpecialEvent ? (
                   <span className="mt-0.5 flex-shrink-0 w-5 h-5 flex items-center justify-center text-sm leading-none" aria-hidden="true">
-                    {PRIDE_EMOJI[i % PRIDE_EMOJI.length]}
+                    🌈
                   </span>
                 ) : (
                   <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] flex items-center justify-center">
