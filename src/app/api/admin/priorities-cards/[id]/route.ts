@@ -1,13 +1,14 @@
 import { NextRequest } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { apiOk, apiError } from '@/lib/api/response'
+import { withRoute } from '@/lib/api/with-route'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { locales } from '@/lib/i18n/config'
 
 const WRITABLE = ['image_url', 'alt_text', 'title', 'body', 'rotate', 'sort_order', 'polaroid_color', 'title_color']
 
-export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const PATCH = withRoute(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const denied = await requireAdmin()
   if (denied) return denied
   const { id } = await params
@@ -32,4 +33,4 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   for (const locale of locales) revalidatePath(`/${locale}`)
 
   return apiOk({ card: data })
-}
+})

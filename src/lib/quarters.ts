@@ -17,6 +17,13 @@ export function currentQuarter(d: Date = new Date()): string {
   return quarterFromDate(d)
 }
 
+/** "2026-06-21T15:00:00+02:00" -> "2026-06". Sibling to quarterFromDate for
+ *  callers that need month-level bucketing (e.g. a "per maand" BTW view). */
+export function monthFromDate(date: string | Date): string {
+  const d = typeof date === 'string' ? new Date(date) : date
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
 export function quarterRange(quarter: string): { start: Date; endExclusive: Date } {
   const match = /^(\d{4})-Q([1-4])$/.exec(quarter)
   if (!match) throw new Error(`Invalid quarter format: ${quarter}`)

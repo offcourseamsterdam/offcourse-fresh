@@ -29,7 +29,6 @@ import { createHmac } from 'crypto'
 import { extrasUpsellEmailHtml } from '../src/emails/ExtrasUpsellEmail'
 
 const TO_EMAIL = process.argv[2] ?? 'beerzoomers@hotmail.com'
-const BOOKING_ID = process.argv[3] ?? 'e8b449c7-16ba-4comp7-82ea-6267a5c48d99'
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://offcourseamsterdam.com'
 
 function generateToken(bookingId: string): string {

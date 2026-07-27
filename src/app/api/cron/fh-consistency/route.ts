@@ -6,6 +6,7 @@ import { FHNotFoundError } from '@/lib/fareharbor/types'
 import { postSlackText } from '@/lib/slack/send-notification'
 import { buildFHBookingNote } from '@/lib/catering/build-fh-note'
 import type { ExtrasLineItem } from '@/lib/catering/filter'
+import { toAmsDateStr } from '@/lib/utils'
 
 /**
  * GET /api/cron/fh-consistency
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest) {
     .in('status', ['confirmed', 'booked'])
     .not('booking_date', 'is', null)
     .not('booking_uuid', 'is', null)
-    .gte('booking_date', new Date().toISOString().slice(0, 10))
+    .gte('booking_date', toAmsDateStr())
     .order('booking_date', { ascending: true })
 
   if (error) {

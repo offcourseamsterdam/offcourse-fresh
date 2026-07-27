@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react'
 import type { AvailabilitySlot, AvailabilityCustomerType } from '@/types'
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
 import type { CancellationTier } from '@/lib/cancellation/policy'

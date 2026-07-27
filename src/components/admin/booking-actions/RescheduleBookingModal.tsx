@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { Loader2, CalendarDays } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { fmtAdminTime } from '@/lib/admin/format'
+import { toAmsDateStr } from '@/lib/utils'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -52,7 +53,7 @@ export function RescheduleBookingModal({
 }: RescheduleBookingModalProps) {
   const tomorrow = new Date()
   tomorrow.setDate(tomorrow.getDate() + 1)
-  const tomorrowStr = tomorrow.toISOString().slice(0, 10)
+  const tomorrowStr = toAmsDateStr(tomorrow)
 
   const [date, setDate] = useState(tomorrowStr)
   const [slots, setSlots] = useState<Slot[]>([])

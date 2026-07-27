@@ -2,7 +2,6 @@ import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
-import { getCustomerTypeMap } from '@/lib/fareharbor/config'
 import { syncFareHarborItems, loadSyncedItems } from '@/lib/fareharbor/sync'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -50,12 +49,6 @@ export async function GET(request: NextRequest) {
         }
         const detail = await client.getAvailabilityDetail(availPk)
         return apiOk({ data: detail })
-      }
-
-      case 'customer-types': {
-        const typeMap = await getCustomerTypeMap()
-        const data = Array.from(typeMap.entries()).map(([pk, config]) => ({ ...config, pk }))
-        return apiOk({ data, count: data.length })
       }
 
       case 'supabase-items': {

@@ -22,13 +22,17 @@ export const maxDuration = 60
 // and is reclaimed. Normal completion takes seconds, and sweeps run 15 min apart.
 const STALE_CLAIM_MS = 5 * 60 * 1000
 
-// Escalate a still-unbooked paid row exactly once, in the 30–45 min age window
-// (the cron runs every 15 min, so this fires ~one time per stuck booking).
+// Escalate a still-unbooked paid row once it's been stuck this long. Tracked via
+// `fh_escalated_at` (set the first time we alert) rather than a fixed time window —
+// this must fire exactly once per stuck booking NO MATTER how often the cron
+// actually runs (currently once a day on the Vercel Hobby plan; the code used to
+// assume a 15-min cadence, which made a window-based check nearly always miss).
 const ESCALATE_MIN_MS = 30 * 60 * 1000
-const ESCALATE_MAX_MS = 45 * 60 * 1000
 
 /**
- * GET /api/cron/pending-fh-sweep — Vercel Cron, every 15 min.
+ * GET /api/cron/pending-fh-sweep — Vercel Cron, currently once daily (Vercel Hobby
+ * plan caps cron frequency at once/day; bump the vercel.json schedule if this ever
+ * moves to Pro — the escalation logic below is cadence-independent either way).
  *
  * The safety net for the "park, never refund" model. Finds bookings the webhook
  * left at `paid_pending_fh` (FareHarbor failed at finalize time) and completes them:
@@ -84,7 +88,7 @@ export async function GET(request: NextRequest) {
       .update({ status: 'fh_in_progress', updated_at: nowIso })
       .eq('id', cand.id)
       .eq('status', cand.status)
-      .select('id, stripe_payment_intent_id, created_at, extras_selected, customer_email, customer_name, customer_phone, listing_title, booking_date, start_time, end_time, guest_count, category, fareharbor_customer_type_rate_pk, base_amount_cents, discount_amount_cents, stripe_amount')
+      .select('id, stripe_payment_intent_id, created_at, extras_selected, customer_email, customer_name, customer_phone, listing_title, booking_date, start_time, end_time, guest_count, category, fareharbor_customer_type_rate_pk, base_amount_cents, discount_amount_cents, stripe_amount, fh_escalated_at')
       .maybeSingle()
     if (!claimed) continue // someone else claimed it
 
@@ -133,9 +137,12 @@ export async function GET(request: NextRequest) {
       await revert(claimed.id)
       failed++
       const ageMs = now.getTime() - new Date(claimed.created_at ?? nowIso).getTime()
-      if (ageMs >= ESCALATE_MIN_MS && ageMs < ESCALATE_MAX_MS) {
+      // Fire the escalation exactly once per booking, whenever the FIRST sweep run
+      // after the 30-min mark finds it still stuck — not tied to any run cadence.
+      if (ageMs >= ESCALATE_MIN_MS && !claimed.fh_escalated_at) {
+        await supabase.from('bookings').update({ fh_escalated_at: nowIso }).eq('id', claimed.id)
         await postSlackCritical([
-          '🔴 *PAID BUT UNBOOKED >30min* — the sweep still cannot book this paid cruise.',
+          '🔴 *PAID BUT UNBOOKED* — the sweep still cannot book this paid cruise.',
           `*Reason:* \`${err instanceof Error ? err.message : String(err)}\``,
           `*PI:* \`${piId}\` · Amount: €${((claimed.stripe_amount ?? 0) / 100).toFixed(0)}`,
           `*Customer:* ${claimed.customer_name ?? '?'} · ${claimed.customer_email ?? '?'} · ${claimed.customer_phone ?? '?'}`,

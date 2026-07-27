@@ -18,13 +18,15 @@ export function fmtAdminTime(iso: string | null): string {
 /** Format cents as €X,XX (nl-NL decimal). Returns '—' for null or 0. */
 export function fmtAdminAmount(cents: number | null): string {
   if (cents == null || cents === 0) return '—'
-  return `€${(cents / 100).toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const sign = cents < 0 ? '-' : ''
+  return `${sign}€${(Math.abs(cents) / 100).toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 /** Format cents as €X (no decimals). Returns '—' for null or 0. */
 export function fmtAdminAmountRounded(cents: number | null): string {
   if (cents == null || cents === 0) return '—'
-  return `€${Math.round(cents / 100)}`
+  const sign = cents < 0 ? '-' : ''
+  return `${sign}€${Math.round(Math.abs(cents) / 100)}`
 }
 
 /** Format ISO datetime as "28 apr. 14:00" in Amsterdam TZ. */

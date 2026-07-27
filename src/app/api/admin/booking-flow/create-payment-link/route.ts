@@ -8,6 +8,7 @@ import { getStripe } from '@/lib/stripe/server'
 import { Resend } from 'resend'
 import { paymentLinkEmailHtml } from '@/emails/PaymentLinkEmail'
 import { extractVat } from '@/lib/extras/calculate'
+import { CRUISE_VAT_RATE } from '@/lib/booking/constants'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://offcourseamsterdam.com'
 
@@ -117,7 +118,7 @@ export async function POST(request: NextRequest) {
     // throw off accounting reports.
     const supabase = createAdminClient()
     const bookingId = fhBooking?.uuid ?? `pl_${Date.now()}`
-    const baseVatAmountCents = extractVat(Number(overrideAmountCents), 9)
+    const baseVatAmountCents = extractVat(Number(overrideAmountCents), CRUISE_VAT_RATE)
     // Snapshot the customer-type label (best-effort; null never blocks the booking).
     const customerTypeName = await resolveCustomerTypeName(Number(availPk), Number(customerTypeRatePk))
     const { data: savedBooking, error: dbError } = await supabase
@@ -131,7 +132,7 @@ export async function POST(request: NextRequest) {
         stripe_session_id: session.id,
         stripe_amount: Number(overrideAmountCents),
         base_amount_cents: Number(overrideAmountCents),
-        base_vat_rate: 9,
+        base_vat_rate: CRUISE_VAT_RATE,
         base_vat_amount_cents: baseVatAmountCents,
         extras_amount_cents: 0,
         extras_vat_amount_cents: 0,

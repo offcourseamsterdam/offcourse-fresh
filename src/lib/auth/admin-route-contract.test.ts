@@ -57,20 +57,41 @@ function walk(dir: string): string[] {
  * Returns each HTTP handler DEFINED AS A FUNCTION BODY in the file, with whether
  * its body references requireAdmin(). Pure re-exports (`export { POST } from ...`)
  * have no body and are intentionally ignored — guard-ness lives in their target.
+ *
+ * Also recognizes the `createSummaryRoute()` factory (src/lib/api/create-summary-route.ts):
+ * finance `.../summary/route.ts` handlers are `export const { GET } = createSummaryRoute({...})`
+ * rather than `export function GET`, so there's no per-file body to grep for
+ * requireAdmin() — the factory itself calls requireAdmin() unconditionally on every
+ * invocation (see create-summary-route.ts and its own auth-denied-passthrough test),
+ * so any method destructured from a createSummaryRoute(...) call is treated as guarded.
  */
 function findHandlers(src: string): { method: string; guarded: boolean }[] {
   const marks: { method: string; index: number }[] = []
   for (const method of HTTP_METHODS) {
-    const re = new RegExp(`export\\s+(?:async\\s+)?function\\s+${method}\\b`, 'g')
+    // Matches both `export async function METHOD(` and the withRoute()-wrapped
+    // form `export const METHOD = withRoute(async (...`.
+    const re = new RegExp(`export\\s+(?:async\\s+function\\s+${method}\\b|const\\s+${method}\\s*=)`, 'g')
     let m: RegExpExecArray | null
     while ((m = re.exec(src))) marks.push({ method, index: m.index })
   }
   marks.sort((a, b) => a.index - b.index)
-  return marks.map((mark, i) => {
+  const handlers = marks.map((mark, i) => {
     const end = i + 1 < marks.length ? marks[i + 1].index : src.length
     const body = src.slice(mark.index, end)
     return { method: mark.method, guarded: /requireAdmin\s*\(/.test(body) }
   })
+
+  const factoryRe = /export\s+const\s+\{([^}]+)\}\s*=\s*createSummaryRoute\s*\(/g
+  let fm: RegExpExecArray | null
+  while ((fm = factoryRe.exec(src))) {
+    for (const name of fm[1].split(',').map(s => s.trim().split(':')[0].trim())) {
+      if ((HTTP_METHODS as readonly string[]).includes(name)) {
+        handlers.push({ method: name, guarded: true })
+      }
+    }
+  }
+
+  return handlers
 }
 
 const adminFiles = walk(ADMIN_DIR)
@@ -81,8 +102,54 @@ describe('admin route auth contract', () => {
     // deliberate acknowledgement — update via `npx vitest run --update-snapshots`.
     // 78 = 77 + /api/admin/boats/[id]/sync-capacity (pulls a boat's real max
     // guest capacity from FareHarbor instead of a manually-typed number).
+    // 79 = 78 + /api/admin/finance/vat-stripe-summary (BTW + Stripe payout
+    // reconciliation, bucketed by quarter, for the Finance tab).
+    // 81 = 79 + /api/admin/finance/viator/upload + /api/admin/finance/viator/summary
+    // (parse & store Viator payment advice .xlsx attachments, quarterly totals).
+    // 86 = 81 + /api/admin/finance/attachments/[source]/[id] (shared signed-URL
+    // redirect for stored source documents) + /api/admin/finance/viator/batches
+    // (per-batch line-item detail) + /api/admin/finance/getyourguide/upload,
+    // /summary, /payments (GetYourGuide payment-confirmation PDF ingestion).
+    // 89 = 86 + /api/admin/finance/boatlocal/upload, /summary, /batches
+    // (BoatLocal operator-invoice PDF ingestion, full VAT breakdown + lines).
+    // 92 = 89 + /api/admin/finance/zettle/upsert, /summary, /months
+    // (Zettle onboard POS: monthly card/cash figures read off the portal +
+    // cash-count reconciliation — no file upload, entered per month).
+    // 96 = 92 + /api/admin/finance/withlocals/upload, /payout, /summary,
+    // /bookings (Withlocals marketplace revenue: combines the per-booking
+    // invoice PDF with the monthly payout email; per-month revenue + 9%
+    // output VAT + 21% deductible commission VAT, per-tour breakdown).
+    // 97 = 96 + /api/admin/finance/btw-dashboard/summary (unified BTW view
+    // across every source with a VAT split).
+    // 100 = 97 + /api/admin/finance/clickandboat/upload, /summary, /bookings
+    // (Click & Boat CSV-export ingestion; 9% owed over the NET amount —
+    // Withlocals is gross, this and every source below is net).
+    // 103 = 100 + /api/admin/finance/getmyboat/payout, /summary, /bookings
+    // (Getmyboat payout-email ingestion, no attachment — same shape as
+    // Withlocals' payout side but exact-id matched, no fuzzy prefix needed).
+    // Viator and GetYourGuide were briefly excluded from the BTW dashboard's
+    // VAT split (an "international companies, no 9%" assumption) but that
+    // was reversed — both are wired into btw-dashboard/summary/route.ts now,
+    // no route-count change needed since no new routes were added for that.
+    // 106 = 103 + /api/admin/finance/barqo/upsert, /summary, /bookings
+    // (Barqo — only 2 known bookings, no recurring document at all, entered
+    // by hand off the dashboard like Zettle; same production Stripe account
+    // as everything else, not a separate integration).
+    // 110 = 106 + /api/admin/finance/revolut/upload, /classify, /summary,
+    // /transactions (Revolut payment-link sales — free-text descriptions mix
+    // 9%/21% per transaction with no reliable auto-split, so every
+    // transaction needs a human-confirmed classification via /classify
+    // before it counts as VAT-owed anywhere).
+    // 113 = 110 + /api/admin/finance/fareharbor/upload, /summary, /payouts
+    // (FareHarbor's own payment processing — archief, closed period ended
+    // early May 2026 when the site migrated to its native Stripe checkout;
+    // FareHarbor already computes the 9%/21% VAT split per line, nothing to
+    // derive or classify).
+    // 114 = 113 + /api/admin/finance/fareharbor/set-bank-date (FareHarbor's
+    // own reported payout date turned out unreliable for accounting purposes
+    // — this confirms the REAL bank-arrival date per payout, separately).
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`78`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`114`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {

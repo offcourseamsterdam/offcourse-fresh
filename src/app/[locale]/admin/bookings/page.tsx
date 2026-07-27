@@ -19,6 +19,13 @@ type SourceFilter = 'all' | 'website' | 'internal'
 type SortField = 'booking_date' | 'created_at'
 type SortDir = 'asc' | 'desc'
 
+function SortIcon({ field, sortField, sortDir }: { field: SortField; sortField: SortField; sortDir: SortDir }) {
+  if (sortField !== field) return <ArrowDown className="w-3 h-3 opacity-30" />
+  return sortDir === 'asc'
+    ? <ArrowUp className="w-3 h-3 text-zinc-900" />
+    : <ArrowDown className="w-3 h-3 text-zinc-900" />
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 
 export default function BookingsPage() {
@@ -81,13 +88,6 @@ export default function BookingsPage() {
     month: 'This month',
     quarter: 'This quarter',
     year: 'This year',
-  }
-
-  function SortIcon({ field }: { field: SortField }) {
-    if (sortField !== field) return <ArrowDown className="w-3 h-3 opacity-30" />
-    return sortDir === 'asc'
-      ? <ArrowUp className="w-3 h-3 text-zinc-900" />
-      : <ArrowDown className="w-3 h-3 text-zinc-900" />
   }
 
   return (
@@ -212,7 +212,7 @@ export default function BookingsPage() {
                       onClick={() => handleSortClick('booking_date')}
                       className="flex items-center gap-1 hover:text-zinc-900 transition-colors"
                     >
-                      Date <SortIcon field="booking_date" />
+                      Date <SortIcon field="booking_date" sortField={sortField} sortDir={sortDir} />
                     </button>
                   </th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider min-w-[120px]">
@@ -220,7 +220,7 @@ export default function BookingsPage() {
                       onClick={() => handleSortClick('created_at')}
                       className="flex items-center gap-1 hover:text-zinc-900 transition-colors"
                     >
-                      Created <SortIcon field="created_at" />
+                      Created <SortIcon field="created_at" sortField={sortField} sortDir={sortDir} />
                     </button>
                   </th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider min-w-[110px]">Time</th>

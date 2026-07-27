@@ -86,6 +86,9 @@ Before starting work on any track, READ the relevant docs:
 - **FareHarbor API reference:** `docs/fareharbor-api.md`
 - **Booking flow PRD:** `docs/prd-booking-flow.md`
 - **Track instructions:** `docs/tracks/track-{letter}.md`
+- **Active security & cleanup plan:** `docs/security-and-cleanup-plan.md` — phased fixes from the
+  2026-07 sitewide review (RLS/auth hardening, money-path tests, structural cleanup). Check before
+  starting booking/finance/admin work to avoid duplicating or conflicting with in-progress fixes.
 
 ## Development Phases
 
@@ -148,6 +151,43 @@ Next.js 16 renamed middleware → proxy. This project uses `src/proxy.ts` ONLY.
 **NEVER create `src/middleware.ts`** — the build will fail if both exist.
 If you need to modify request handling (auth, i18n, redirects), edit `src/proxy.ts`.
 
+### Testing Stripe Locally Without Live Keys
+`.env.local` holds LIVE Stripe keys by default. To test payment flows against Stripe's real
+TEST-mode API (not just mocks) without ever touching `.env.local`, pass test keys as one-off
+env vars to the command itself:
+```bash
+STRIPE_MODE=test STRIPE_SECRET_KEY_TEST=sk_test_... npx vitest run src/lib/booking/stripe-integration.test.ts
+```
+`src/lib/stripe/keys.ts` resolves `sk_test_`/`pk_test_` keys automatically when `STRIPE_MODE=test`
+is set — this is the ONLY way to verify a payment-flow change against real Stripe behavior instead
+of mocks. Never paste test (or worse, live) keys into `.env.local` just to run this once.
+
+### Supabase Schema Changes: Regenerate Types or Get Cryptic Errors
+After ANY migration that adds/changes a column, regenerating `src/lib/supabase/types.ts` (command
+in the Supabase section above) is not optional — skip it and `tsc` won't say "column missing," it
+will say `SelectQueryError<"column 'x' does not exist on 'table'.">` on every unrelated line that
+touches that row, which reads like a different bug entirely.
+
+### New Supabase Tables: RLS Is NOT Automatic
+Creating a table does not enable Row Level Security — it must be turned on explicitly
+(`ALTER TABLE ... ENABLE ROW LEVEL SECURITY`) in the same migration, plus a policy if the table
+needs any access at all (anon SELECT for public content, none for anything else — writes go
+through service-role API routes per the rule below). A 2026-07 audit found 21 tables had shipped
+with RLS silently off since creation. Nothing currently checks for this automatically — verify
+manually before shipping any migration that adds a table.
+
+### New Admin Route Export Shapes Need `admin-route-contract.test.ts` Updated Too
+`src/lib/auth/admin-route-contract.test.ts` enforces every `/api/admin/**` handler has
+`requireAdmin()` by regex-scanning each route file for its exported HTTP methods. Its
+`findHandlers()` only recognizes the shapes it's been taught: plain `export async function GET(...)`,
+`export const GET = withRoute(...)`, and `export const { GET } = createSummaryRoute(...)`. Introducing
+a new route-wrapper/factory pattern with a different export shape (this has happened 3 times
+already — `withRoute()`, then `createSummaryRoute()`) makes the guardrail **silently skip** those
+routes rather than fail — it reports zero unguarded handlers because it found zero handlers at all,
+which reads as "all clear" when it's actually blind. Whenever you add a new way of exporting a route
+handler, add a matching pattern to `findHandlers()` in the same change, and re-run the contract test
+file alone to confirm it now actually iterates the new routes instead of finding none.
+
 ## How to Work
 
 1. Always read the track instruction file before starting: `docs/tracks/track-{letter}.md`
@@ -172,12 +212,19 @@ If you need to modify request handling (auth, i18n, redirects), edit `src/proxy.
 6. **What NOT to test** — don't test React component rendering or Tailwind classes. Test the logic, not the UI.
 
 ### Current Test Coverage
-Run `npm test` for the live count (currently **582 tests across 53 files**). Key areas:
+Run `npm test` for the live count (currently **1215 tests across 120 files**, plus 6 opt-in
+integration tests that self-skip unless real Stripe test keys are supplied). Key areas:
 - FareHarbor 3-layer filters — `src/lib/fareharbor/filters.test.ts`
 - Extras pricing / VAT math — `src/lib/extras/calculate.test.ts`
 - Formatting utilities — `src/lib/utils.test.ts`
 - Google Ads (conversion value, campaign builders, reporting, transport) — `src/lib/google-ads/*.test.ts`
 - Stripe webhook — `src/app/api/webhooks/stripe/route.test.ts`
+- Booking money-path (quote/discount, PaymentIntent creation, `/book` payment gate, the
+  `pending-fh-sweep` recovery cron) — `src/lib/booking/calculate-quote.test.ts`,
+  `src/app/api/admin/booking-flow/book/route.post.test.ts`,
+  `src/app/api/cron/pending-fh-sweep/route.test.ts`
+- Real Stripe test-mode integration (opt-in, hits the actual Stripe test API — see Gotchas below) —
+  `src/lib/booking/stripe-integration.test.ts`
 
 ## Responsive Design (MANDATORY)
 
@@ -255,6 +302,12 @@ curl -s "https://api.supabase.com/v1/projects/fkylzllxvepmrtqxisrn/types/typescr
 
 **Note:** `CREATE POLICY IF NOT EXISTS` is not supported — use `CREATE POLICY` (without IF NOT EXISTS) in migration files.
 
+**Migrations 088–106 are already applied to prod.** They were run out-of-band via the Management
+API (the normal workflow above) before being committed, so `git log` on `supabase/migrations/`
+lags what's actually live. Do NOT replay this range against prod — most use bare `CREATE
+TABLE`/`CREATE POLICY`/`ALTER TABLE ... ADD COLUMN` without `IF NOT EXISTS`, so re-running errors
+on the first duplicate. `src/lib/supabase/types.ts` is in sync with all of them.
+
 ## Environment Variables
 
 ```bash
@@ -302,6 +355,12 @@ OUTSCRAPER_API_KEY=
 RESEND_API_KEY=
 CATERING_EMAIL_RECIPIENT=
 SLACK_WEBHOOK_URL=
+SLACK_BOT_TOKEN=            # enables critical alerts to Beer's DM; without it, alerts silently
+                            # fall back to the shared channel webhook only
+SLACK_ALERT_DM_CHANNEL=     # has a hardcoded fallback channel id if unset
+
+# Testing / dev flags
+SUPPRESS_CONFIRMATION_EMAILS=   # test-mode: suppress outbound Resend emails during manual testing
 
 # Site / deploy
 NEXT_PUBLIC_SITE_URL=https://offcourseamsterdam.com

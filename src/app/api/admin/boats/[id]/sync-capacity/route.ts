@@ -3,6 +3,7 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { parseCapacityFromNote } from '@/lib/fareharbor/customer-type-capacity'
+import { toAmsDateStr } from '@/lib/utils'
 
 /**
  * POST /api/admin/boats/[id]/sync-capacity
@@ -51,8 +52,8 @@ export async function POST(
 
     const client = getFareHarborClient()
     const today = new Date()
-    const startDate = today.toISOString().split('T')[0]
-    const endDate = new Date(today.getTime() + 6 * 86400000).toISOString().split('T')[0]
+    const startDate = toAmsDateStr(today)
+    const endDate = toAmsDateStr(new Date(today.getTime() + 6 * 86400000))
 
     // Fetch every item's availabilities concurrently — up to 6 items would
     // otherwise mean 6 sequential FareHarbor round-trips (~10s total) for

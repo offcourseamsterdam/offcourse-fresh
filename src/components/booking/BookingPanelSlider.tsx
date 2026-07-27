@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo, useRef } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { CalendarDays, Users, Clock, Ship, Ticket } from 'lucide-react'
 import { LazyMotion, m, AnimatePresence } from 'framer-motion'
 
@@ -16,6 +16,7 @@ import { ExtrasStep } from './ExtrasStep'
 import { PriceSummary } from './PriceSummary'
 import { BookingSummaryTabs } from './BookingSummaryTabs'
 import { CancellationCutoffRow } from './CancellationCutoffRow'
+import { WhatsAppQuestionPrompt } from './WhatsAppQuestionPrompt'
 import { Button } from '@/components/ui/button'
 import { fmtEuros, getToday, toDateStr } from '@/lib/utils'
 import { useBookingPanel } from './useBookingPanel'
@@ -129,8 +130,10 @@ export function BookingPanelSlider(props: BookingPanelProps) {
   const [panelIndex, setPanelIndex] = useState(0)
   const [direction, setDirection] = useState(1)
 
-  // Track whether extras panel has been visited (to keep it mounted)
-  const hasVisitedExtras = useRef(false)
+  // Track whether extras panel has been visited (to keep it mounted). Real state,
+  // not a ref — this value directly decides what renders below (see extrasBlock),
+  // and refs must not be read during render.
+  const [hasVisitedExtras, setHasVisitedExtras] = useState(false)
   const extrasPanelIndex = category === 'private' ? 3 : 2
 
   // ── Summary tabs for completed steps ──────────────────────────────────────
@@ -156,7 +159,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
   // ── Navigation ────────────────────────────────────────────────────────────
 
   const goToPanel = useCallback((index: number) => {
-    if (index === extrasPanelIndex) hasVisitedExtras.current = true
+    if (index === extrasPanelIndex) setHasVisitedExtras(true)
     setPanelIndex(prev => {
       setDirection(index > prev ? 1 : -1)
       return index
@@ -193,7 +196,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
   // ── Shared extras JSX (inlined, NOT a function component) ─────────────────
 
   const extrasVisible = panelIndex === extrasPanelIndex
-  const extrasBlock = hasVisitedExtras.current && (
+  const extrasBlock = hasVisitedExtras && (
     <div ref={extrasRef} className={`space-y-4 ${extrasVisible ? '' : 'hidden'}`}>
       <div className="border border-zinc-200 rounded-2xl p-5 bg-white">
         <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-3">
@@ -291,6 +294,8 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                   Next
                 </Button>
               )}
+
+              {props.rainbowBoatCard && state.date && <WhatsAppQuestionPrompt />}
             </SlidePanel>
           )}
 
@@ -342,6 +347,12 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                   offeredBoatIds={props.offeredBoatIds}
                   rainbowBoatCard={props.rainbowBoatCard}
                 />
+              )}
+
+              {props.rainbowBoatCard && (
+                <div className="mt-4">
+                  <WhatsAppQuestionPrompt />
+                </div>
               )}
 
               {basePriceCents > 0 && (

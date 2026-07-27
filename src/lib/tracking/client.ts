@@ -170,7 +170,7 @@ export function trackEvent(
 }
 
 /** Where a WhatsApp click came from — kept in the event's metadata.source. */
-export type WhatsAppSource = 'floating_button' | 'footer' | 'chat_to_book'
+export type WhatsAppSource = 'floating_button' | 'footer' | 'chat_to_book' | 'pride_booking_panel'
 
 /**
  * Track a tap on any WhatsApp button. Counted once per session per source
@@ -178,12 +178,15 @@ export type WhatsAppSource = 'floating_button' | 'footer' | 'chat_to_book'
  * for each). Records the source, the page it happened on, and the Google Ads
  * click id (gclid) if this visitor arrived via a Google ad within the 90-day
  * window — that's how we tell "an ad clicker contacted us on WhatsApp".
+ *
+ * `extra` merges in additional metadata — e.g. partner_id/campaign_slug from
+ * the attribution cookie, so a WhatsApp tap can also be traced to a partner.
  */
-export function trackWhatsAppClick(source: WhatsAppSource) {
+export function trackWhatsAppClick(source: WhatsAppSource, extra?: Record<string, unknown>) {
   const gclid = getCookie(COOKIE_GCLID) || undefined
   trackEvent(
     'whatsapp_click',
-    { source, path: window.location.pathname, gclid },
+    { source, path: window.location.pathname, gclid, ...extra },
     `whatsapp_click:${source}`,
   )
 }

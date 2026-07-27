@@ -1,6 +1,6 @@
 import { Resend } from 'resend'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { escapeHtml as esc } from '@/lib/utils'
+import { escapeHtml as esc, fmtEurosRounded as fmtAmountEur } from '@/lib/utils'
 import { generateInvoicePdf, makeInvoiceNumber } from '@/lib/booking/generate-invoice-pdf'
 import { allocateInvoiceNumber } from '@/lib/booking/allocate-invoice-number'
 import { postSlackText } from '@/lib/slack/send-notification'
@@ -9,10 +9,6 @@ let _resend: Resend | null = null
 function getResend(): Resend {
   if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY ?? '')
   return _resend
-}
-
-function fmtAmountEur(cents: number) {
-  return `€${(cents / 100).toFixed(0)}`
 }
 
 /** "5:00 PM" — clean English AM/PM format, Amsterdam timezone. */

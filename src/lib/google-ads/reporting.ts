@@ -1,4 +1,5 @@
 import { googleAdsCall, microsToEuros } from './campaign-client'
+import { toAmsDateStr } from '@/lib/utils'
 
 // Read-side: GAQL (Google Ads Query Language) queries via googleAds:search.
 // Every metric comes back in micros / raw counts; we convert money to euros and
@@ -32,11 +33,11 @@ interface GaqlRow {
   }
 }
 
-/** YYYY-MM-DD for `n` days ago (0 = today), local calendar date. */
+/** YYYY-MM-DD for `n` days ago (0 = today), Amsterdam calendar date (matches the Google Ads account's reporting timezone). */
 function ymd(daysAgo: number): string {
   const d = new Date()
   d.setDate(d.getDate() - daysAgo)
-  return d.toISOString().slice(0, 10)
+  return toAmsDateStr(d)
 }
 
 /** GAQL BETWEEN clause covering the last `days` calendar days (inclusive of today). */

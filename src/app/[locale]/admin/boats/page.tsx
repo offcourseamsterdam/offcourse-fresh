@@ -154,7 +154,8 @@ export default function BoatsAdminPage() {
   const [syncingCapacity, setSyncingCapacity] = useState<string | null>(null)
   const [capacityError, setCapacityError] = useState<Record<string, string>>({})
 
-  useEffect(() => { load() }, [])
+  // load() only touches setters + the stable supabase client; intentionally mount-only.
+  useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function load() {
     setLoading(true)

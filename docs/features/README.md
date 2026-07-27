@@ -32,3 +32,4 @@ One file per track or major feature. Written before every PR and kept up to date
 | "Invoice later" admin booking (pick a partner directly) | [invoice-later-admin-booking.md](invoice-later-admin-booking.md) | — | done |
 | Admin bookings search + Planning week view | [admin-bookings-search-and-planning.md](admin-bookings-search-and-planning.md) | — | done |
 | Special-event cruise listings (Pride Amsterdam 2026) | [special-event-listings.md](special-event-listings.md) | — | done |
+| Kasboek payout pipelines (Viator/GetYourGuide/BoatLocal/Withlocals/Click&Boat/GetMyBoat/Barqo/Revolut/Zettle/FareHarbor) + BTW dashboard | [kasboek-payout-pipelines.md](kasboek-payout-pipelines.md) | — | done |

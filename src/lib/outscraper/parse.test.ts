@@ -82,7 +82,7 @@ const TA_PAYLOAD = {
 
 describe('parseOutscraperPayload — Google', () => {
   it('maps reviews_data to ReviewRow shape', () => {
-    const { reviews, placeMeta } = parseOutscraperPayload(GOOGLE_PAYLOAD, 'google')
+    const { reviews } = parseOutscraperPayload(GOOGLE_PAYLOAD, 'google')
     expect(reviews).toHaveLength(2)
 
     const r = reviews[0]!

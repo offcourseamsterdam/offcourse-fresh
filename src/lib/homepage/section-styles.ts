@@ -138,9 +138,6 @@ export const SECTION_DEF_BY_KEY = Object.fromEntries(
   SECTION_DEFS.map(d => [d.key, d]),
 ) as Record<SectionKey, SectionDef>
 
-/** Empty style — the coded defaults apply. */
-export const EMPTY_SECTION_STYLE: SectionStyle = { background: null, text_colors: {} }
-
 /**
  * Build the inline style for a section's root element: the custom background
  * (when uploaded) plus the `--sec-*` text-colour variables (when set). Returns an

@@ -67,7 +67,7 @@ export function MobileCarousel({ images, title, onTap }: MobileCarouselProps) {
         className="flex overflow-x-auto scrollbar-hide"
         style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
       >
-        {images.map((img, i) => (
+        {images.map((img) => (
           <button
             key={img.url}
             type="button"

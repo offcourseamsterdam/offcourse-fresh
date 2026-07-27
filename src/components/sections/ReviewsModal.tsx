@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { X } from 'lucide-react'
 import { StarRating } from '@/components/ui/StarRating'
 import { ReviewPhoto } from '@/components/ui/ReviewPhoto'
+import { formatReviewMonthYear as formatDate } from '@/lib/utils'
 
 /** Minimal review shape the modal renders. Shared by the homepage + cruise sliders. */
 export interface ReviewsModalReview {
@@ -44,15 +45,6 @@ function sourceLabel(source: string | null): string {
   if (source === 'withlocals') return 'via Withlocals'
   if (source === 'getyourguide') return 'via GetYourGuide'
   return ''
-}
-
-function formatDate(publishTime: string | null): string {
-  if (!publishTime) return ''
-  try {
-    return new Date(publishTime).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-  } catch {
-    return ''
-  }
 }
 
 /**

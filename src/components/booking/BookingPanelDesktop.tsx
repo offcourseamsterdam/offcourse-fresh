@@ -28,6 +28,7 @@ import { TicketStep } from './TicketStep'
 import { ExtrasStep } from './ExtrasStep'
 import { PriceSummary } from './PriceSummary'
 import { CancellationCutoffRow } from './CancellationCutoffRow'
+import { WhatsAppQuestionPrompt } from './WhatsAppQuestionPrompt'
 import { Button } from '@/components/ui/button'
 import { fmtEuros, getToday, toDateStr } from '@/lib/utils'
 import { useBookingPanel } from './useBookingPanel'
@@ -233,6 +234,11 @@ export function BookingPanelDesktop(props: BookingPanelProps) {
                     offeredBoatIds={props.offeredBoatIds}
                     rainbowBoatCard={props.rainbowBoatCard}
                   />
+                  {props.rainbowBoatCard && (
+                    <div className="mt-4">
+                      <WhatsAppQuestionPrompt />
+                    </div>
+                  )}
                 </>
               ) : (
                 <>

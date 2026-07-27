@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { withRoute } from '@/lib/api/with-route'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -31,7 +32,7 @@ export async function GET() {
  * PUT /api/admin/reviews — update place_id + tripadvisor_url config.
  * Creates the config row if it doesn't exist yet.
  */
-export async function PUT(request: NextRequest) {
+export const PUT = withRoute(async (request: NextRequest) => {
   const denied = await requireAdmin()
   if (denied) return denied
 
@@ -58,4 +59,4 @@ export async function PUT(request: NextRequest) {
 
   if (error) return apiError(error.message)
   return apiOk({ updated: true })
-}
+})

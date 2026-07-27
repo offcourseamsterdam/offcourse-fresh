@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, type CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { Users, Zap } from 'lucide-react'
 import { SafeImage } from '@/components/ui/SafeImage'
 import { sectionRootStyle, roleColor, type SectionStyle } from '@/lib/homepage/section-styles'
@@ -98,12 +98,16 @@ function BoatCard({ boat, slideDir = 1 }: { boat: BoatData; slideDir?: 1 | -1 })
   const count = COUNT_FOR[activeState]
 
   // Track the previous count so we know the direction of change (adding vs
-  // removing cards) — that decides the stagger order of the dealt cards. During
-  // the render where count just changed, the ref still holds the OLD count.
-  const prevCountRef = useRef(count)
-  const prevCount = prevCountRef.current
-  useEffect(() => { prevCountRef.current = count }, [count])
-  const increasing = count > prevCount
+  // removing cards) — that decides the stagger order of the dealt cards. Uses the
+  // "adjust state during render" pattern (React refs must not be read/written
+  // during render): when count has changed since the last render, update both
+  // state values immediately, before this render commits.
+  const [prevCount, setPrevCount] = useState(count)
+  const [increasing, setIncreasing] = useState(true)
+  if (prevCount !== count) {
+    setIncreasing(count > prevCount)
+    setPrevCount(count)
+  }
 
   const photoForState = (s: BoatState): string | null =>
     s === 'open' ? boat.photo_url : s === 'covered' ? boat.photo_covered_url : boat.photo_interior_url

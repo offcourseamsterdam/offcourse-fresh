@@ -5,7 +5,22 @@ import {
   quarterRange,
   quarterLabel,
   previousQuarters,
+  monthFromDate,
 } from './quarters'
+
+describe('monthFromDate', () => {
+  it('parses an ISO string with a timezone offset in UTC', () => {
+    expect(monthFromDate('2026-06-21T15:00:00+02:00')).toBe('2026-06')
+  })
+
+  it('pads single-digit months', () => {
+    expect(monthFromDate(new Date(Date.UTC(2026, 0, 15)))).toBe('2026-01')
+  })
+
+  it('rolls over into the next year', () => {
+    expect(monthFromDate(new Date(Date.UTC(2025, 11, 31, 23, 59)))).toBe('2025-12')
+  })
+})
 
 describe('quarterFromDate', () => {
   it('Jan 1 → Q1', () => {

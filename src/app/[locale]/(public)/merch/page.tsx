@@ -1,6 +1,6 @@
 import Image from 'next/image'
 import { getTranslations } from 'next-intl/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { formatPrice } from '@/lib/utils'
 import type { Locale } from '@/lib/i18n/config'
 import type { Database } from '@/lib/supabase/types'
@@ -26,7 +26,10 @@ export async function generateMetadata({ params }: Props) {
 export default async function MerchPage({ params }: Props) {
   const { locale } = await params
   const t = await getTranslations('merch')
-  const supabase = await createClient()
+  // Cookie-less client — reading cookies() here would force this page dynamic
+  // and silently defeat the `revalidate = 60` ISR cache above. The is_active
+  // filter below (not RLS) is what actually gates visibility here.
+  const supabase = createAdminClient()
 
   const { data: productsData } = await supabase
     .from('merch_products')

@@ -58,8 +58,11 @@ export async function POST(
       note: booking.guest_note ?? undefined,
     }
 
-    // Validate new slot first
-    const validation = await fh.validateBooking(newAvailPk, bookingData)
+    // Validate new slot first. Pass the original booking UUID so FareHarbor accounts for
+    // its resource being released — otherwise a reschedule onto a conflicting slot on the
+    // same boat the customer already holds gets rejected with "Unable to satisfy resources"
+    // even though the actual rebookBooking() create call below would succeed.
+    const validation = await fh.validateBooking(newAvailPk, bookingData, booking.booking_uuid ?? undefined)
     if (!validation.is_bookable) {
       return apiError(validation.error ?? 'New slot is not available', 422)
     }

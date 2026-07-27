@@ -1,5 +1,52 @@
 import { describe, it, expect } from 'vitest'
-import { formatPrice, formatDate, formatShortDate, formatDuration, categorizeListings, slugify } from './utils'
+import { formatPrice, formatDate, formatShortDate, formatDuration, categorizeListings, slugify, fmtEuros, fmtEurosRounded, toAmsDateStr, formatReviewMonthYear } from './utils'
+
+// ── fmtEuros / fmtEurosRounded ───────────────────────────────────────────────
+
+describe('fmtEuros', () => {
+  it('formats positive cents with 2 decimals', () => {
+    expect(fmtEuros(1650)).toBe('€16.50')
+  })
+
+  it('places the minus sign before the euro symbol for negative amounts', () => {
+    expect(fmtEuros(-500)).toBe('-€5.00')
+  })
+
+  it('formats zero', () => {
+    expect(fmtEuros(0)).toBe('€0.00')
+  })
+})
+
+describe('fmtEurosRounded', () => {
+  it('formats positive cents with no decimals', () => {
+    expect(fmtEurosRounded(16500)).toBe('€165')
+  })
+
+  it('places the minus sign before the euro symbol for negative amounts', () => {
+    expect(fmtEurosRounded(-16500)).toBe('-€165')
+  })
+})
+
+// ── toAmsDateStr ──────────────────────────────────────────────────────────────
+
+describe('toAmsDateStr', () => {
+  it('returns the Amsterdam calendar date for a UTC instant just after Amsterdam midnight', () => {
+    // 2026-08-16T00:30:00 CEST (UTC+2) = 2026-08-15T22:30:00Z — still Aug 15 in UTC,
+    // but toISOString().slice(0,10) on this instant would ALSO say Aug 15 (matches).
+    // The real hazard case: an instant that's Aug 16 in Amsterdam but Aug 15 in UTC.
+    const lateNight = new Date('2026-08-15T22:30:00Z') // 00:30 Aug 16 in Amsterdam (CEST)
+    expect(toAmsDateStr(lateNight)).toBe('2026-08-16')
+    expect(lateNight.toISOString().slice(0, 10)).toBe('2026-08-15') // the bug this replaces
+  })
+
+  it('accepts a date-only string', () => {
+    expect(toAmsDateStr('2026-01-01')).toBe('2026-01-01')
+  })
+
+  it('defaults to the current instant when called with no argument', () => {
+    expect(toAmsDateStr()).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+})
 
 // ── formatPrice ─────────────────────────────────────────────────────────────
 
@@ -59,6 +106,29 @@ describe('formatDate', () => {
     const result = formatDate('2026-12-25')
     expect(result).toContain('December')
     expect(result).toContain('25')
+  })
+
+  it('always shows the Amsterdam calendar day, regardless of the runtime/viewer timezone', () => {
+    // 23:30 UTC on Aug 15 = 01:30 Aug 16 in Amsterdam (CEST, UTC+2) — a viewer whose
+    // browser is in a negative-offset timezone (or a server running in UTC) would see
+    // Aug 15 without the explicit Amsterdam timeZone this function now defaults to.
+    const result = formatDate(new Date('2026-08-15T23:30:00Z'))
+    expect(result).toContain('16')
+    expect(result).not.toContain('15')
+  })
+})
+
+describe('formatReviewMonthYear', () => {
+  it('formats a publish_time as "Month Year"', () => {
+    expect(formatReviewMonthYear('2026-06-15T12:00:00Z')).toBe('June 2026')
+  })
+
+  it('returns empty string for null', () => {
+    expect(formatReviewMonthYear(null)).toBe('')
+  })
+
+  it('does not throw for an unparseable date', () => {
+    expect(() => formatReviewMonthYear('not-a-date')).not.toThrow()
   })
 })
 

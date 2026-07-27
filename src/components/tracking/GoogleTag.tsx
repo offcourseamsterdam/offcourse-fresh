@@ -41,6 +41,14 @@ export function GoogleTag() {
         Consent Mode v2 defaults — must run synchronously BEFORE gtag.js loads.
         Everything denied until the user accepts the cookie banner.
       */}
+      {/*
+        Next's docs describe beforeInteractive's special early-injection behavior as scoped to
+        the TRUE root app/layout.tsx; <GoogleTag/> is rendered from [locale]/(public)/layout.tsx,
+        two levels deeper. Pre-existing placement, not introduced by this lint pass — flagged for
+        a dedicated look at whether the GDPR consent-mode default (deny-until-accept) actually
+        lands before gtag.js in practice, since that ordering is the entire point of this script.
+      */}
+      {/* eslint-disable-next-line @next/next/no-before-interactive-script-outside-document */}
       <Script
         id="gtag-consent-init"
         strategy="beforeInteractive"

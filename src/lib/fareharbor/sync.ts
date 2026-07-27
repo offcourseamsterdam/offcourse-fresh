@@ -1,6 +1,7 @@
 import { getFareHarborClient } from './client'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { FHMinimalAvailability } from './types'
+import { toAmsDateStr } from '@/lib/utils'
 
 export interface SyncResult {
   ok: boolean
@@ -46,8 +47,8 @@ export async function syncFareHarborItems(): Promise<SyncResult> {
     // Build a date range for the next 7 days to find availabilities
     // (resources and customer_type_rates live on availabilities, not items)
     const today = new Date()
-    const startDate = today.toISOString().split('T')[0]
-    const endDate = new Date(today.getTime() + 6 * 86400000).toISOString().split('T')[0]
+    const startDate = toAmsDateStr(today)
+    const endDate = toAmsDateStr(new Date(today.getTime() + 6 * 86400000))
 
     for (const item of items) {
       const shortname = ((item as unknown) as Record<string, unknown>).shortname as string ?? 'offcourse'

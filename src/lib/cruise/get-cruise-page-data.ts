@@ -1,5 +1,4 @@
 import { cache } from 'react'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import { formatExtraPrice } from '@/lib/constants'
@@ -20,12 +19,35 @@ export interface CruiseImageItem extends CruiseImage {
   asset: ImageAsset | null
 }
 
+// Columns actually read anywhere downstream of this query (traced exhaustively
+// 2026-07 through getCruisePageData, [slug]/page.tsx incl. generateMetadata, and
+// CruiseContentSections). Excludes admin-editor-only fields (benefits,
+// inclusions, boat_id, allowed_resource_pks, availability_filters,
+// booking_cutoff_hours, cancellation_policy, required_partner_id, is_archived,
+// is_featured, created_at, updated_at) and is_published/display_order (used only
+// as query predicates, never projected). All 7 variants of each locale-suffixed
+// field group stay — which one is needed depends on the request's locale.
+const LISTING_DETAIL_COLUMNS = `
+  id, slug, category, images, hero_image_asset_id, hero_image_url, video_url,
+  fareharbor_item_pk, allowed_customer_type_pks, highlights, price_display,
+  price_label, payment_mode, starting_price, max_guests, duration_display,
+  departure_location, google_maps_url,
+  title, title_de, title_es, title_fr, title_nl, title_pt, title_zh,
+  tagline, tagline_de, tagline_es, tagline_fr, tagline_nl, tagline_pt, tagline_zh,
+  description, description_de, description_es, description_fr, description_nl, description_pt, description_zh,
+  seo_title, seo_title_de, seo_title_es, seo_title_fr, seo_title_nl, seo_title_pt, seo_title_zh,
+  seo_meta_description, seo_meta_description_de, seo_meta_description_es, seo_meta_description_fr, seo_meta_description_nl, seo_meta_description_pt, seo_meta_description_zh,
+  faqs, faqs_de, faqs_es, faqs_fr, faqs_nl, faqs_pt, faqs_zh
+` as const
+
 // Deduplicate the listing fetch between generateMetadata and the page component
 export const getListingBySlug = cache(async (slug: string) => {
-  const supabase = await createClient()
+  // Cookie-less client — reading cookies() here would force this page dynamic
+  // and silently defeat the `revalidate = 60` ISR cache in [slug]/page.tsx.
+  const supabase = createAdminClient()
   const { data } = await supabase
     .from('cruise_listings')
-    .select('*')
+    .select(LISTING_DETAIL_COLUMNS)
     .eq('slug', slug)
     .eq('is_published', true)
     .single()
@@ -39,22 +61,19 @@ export const getListingBySlug = cache(async (slug: string) => {
 // (removing the old serial getCruiseOgImage query from generateMetadata).
 export const getCruisePageData = cache(async function getCruisePageData(listing: CruiseListing, locale: Locale) {
   const loc = locale
-  const supabase = await createClient()
-  // google_reviews_config holds OAuth tokens — we can't grant anon SELECT on the table.
-  // Use the service-role client server-side for the aggregate-stats query only.
-  const adminSupabase = createAdminClient()
+  // Cookie-less client for everything — reading cookies() would force this page
+  // dynamic and silently defeat the `revalidate = 60` ISR cache in [slug]/page.tsx.
+  // This also fixes the bug the old split used to work around: extras/listing_extras'
+  // RLS policies only grant SELECT to the `anon` role, so a logged-in admin/partner
+  // hitting this server-rendered page via the cookie-aware client (picking up the
+  // `authenticated` role) got 0 rows back — snacks/drinks silently invisible to
+  // logged-in users only. A single service-role client has no such gap.
+  const supabase = createAdminClient()
+  const adminSupabase = supabase
 
-  // Parallel queries.
-  //
-  // `extras` and `listing_extras` MUST use the admin client. Their RLS policies
-  // only grant SELECT to the `anon` role — when a logged-in user (admin/partner
-  // with a Supabase session cookie) hits this server-rendered page, the cookie-
-  // aware client picks up the `authenticated` role and the queries silently
-  // return 0 rows. Result: snacks/drinks invisible to logged-in users only.
-  // Same family as commit e752a9f for pricing_quotes.
-  // Image-asset ids come straight off `listing` (no dependency on the queries
-  // below), so the asset fetch joins this same parallel batch instead of running
-  // as a serial second round-trip.
+  // Parallel queries. Image-asset ids come straight off `listing` (no dependency
+  // on the queries below), so the asset fetch joins this same parallel batch
+  // instead of running as a serial second round-trip.
   const rawImages = (listing.images as CruiseImage[] | null) ?? []
   const assetIdsToFetch = [
     listing.hero_image_asset_id,

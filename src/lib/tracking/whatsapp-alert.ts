@@ -1,11 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { postSlackText } from '@/lib/slack/send-notification'
+import { postSlackText, postSlackDM } from '@/lib/slack/send-notification'
+
+/** Beer's Slack user id — affiliate-referred WhatsApp taps go straight to him, not the shared channel. */
+const AFFILIATE_ALERT_SLACK_USER_ID = 'U08PRAX8A07'
 
 /** Friendly labels for the WhatsApp click sources (mirrors the admin dashboard). */
 const SOURCE_LABELS: Record<string, string> = {
   floating_button: 'Floating button',
   footer: 'Footer link',
   chat_to_book: 'Chat to book',
+  pride_booking_panel: 'Pride WhatsApp prompt',
 }
 
 interface AdAlertParts {
@@ -77,5 +81,77 @@ export async function notifyGoogleAdsWhatsAppClick(
     )
   } catch (err) {
     console.error('[tracking/whatsapp-alert] failed:', err)
+  }
+}
+
+interface AffiliateAlertParts {
+  source?: string
+  page?: string | null
+  partnerName?: string | null
+  campaignSlug?: string | null
+}
+
+/** Build the Slack DM for a partner-referred visitor who opened WhatsApp. Pure + testable. */
+export function buildAffiliateWhatsAppAlert(parts: AffiliateAlertParts): string {
+  const label = parts.partnerName ?? parts.campaignSlug ?? 'unknown affiliate'
+  const lines = [
+    '🤝 *An affiliate-referred visitor just opened WhatsApp*',
+    `_Someone messaged in from the Pride cruise WhatsApp button, referred by *${label}*._`,
+    '',
+    `• Button: ${parts.source ? (SOURCE_LABELS[parts.source] ?? parts.source) : 'unknown'}`,
+  ]
+  if (parts.page) lines.push(`• Page: ${parts.page}`)
+  if (parts.campaignSlug) lines.push(`• Campaign: ${parts.campaignSlug}`)
+  return lines.join('\n')
+}
+
+/**
+ * If a WhatsApp click carries partner/campaign attribution (the visitor came in
+ * via a partner link), DM Beer directly — this is how commission conversations
+ * get credited to the right partner. Only once per session, same discipline as
+ * the Google Ads alert above. Best-effort: never throws.
+ *
+ * Call this BEFORE inserting the new whatsapp_click row, so the "already alerted"
+ * check sees only prior taps.
+ */
+export async function notifyAffiliateWhatsAppClick(
+  supabase: SupabaseClient,
+  sessionId: string,
+  metadata: Record<string, unknown> | null | undefined,
+): Promise<void> {
+  try {
+    const partnerId = typeof metadata?.partner_id === 'string' && metadata.partner_id ? metadata.partner_id : undefined
+    const campaignSlug = typeof metadata?.campaign_slug === 'string' && metadata.campaign_slug ? metadata.campaign_slug : undefined
+    if (!partnerId && !campaignSlug) return // no affiliate attribution → nothing to alert
+
+    // Dedup: only alert on the first WhatsApp tap of the session.
+    const { count } = await supabase
+      .from('tracking_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('session_id', sessionId)
+      .eq('event_name', 'whatsapp_click')
+    if ((count ?? 0) > 0) return // already had a tap (and thus already alerted)
+
+    let partnerName: string | null = null
+    if (partnerId) {
+      const { data: partner } = await supabase
+        .from('partners')
+        .select('name')
+        .eq('id', partnerId)
+        .maybeSingle()
+      partnerName = partner?.name ?? null
+    }
+
+    const source = typeof metadata?.source === 'string' ? metadata.source : undefined
+    const page = typeof metadata?.path === 'string' ? metadata.path : null
+
+    // Straight to Beer's DM only — no shared-channel fallback, so partner
+    // conversations don't leak into the general alerts channel.
+    await postSlackDM(
+      buildAffiliateWhatsAppAlert({ source, page, partnerName, campaignSlug }),
+      AFFILIATE_ALERT_SLACK_USER_ID,
+    )
+  } catch (err) {
+    console.error('[tracking/whatsapp-alert] affiliate alert failed:', err)
   }
 }

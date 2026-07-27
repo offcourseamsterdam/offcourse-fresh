@@ -16,7 +16,11 @@ import { BOOKINGS_CHANGED_CHANNEL, BOOKINGS_CHANGED_EVENT } from '@/lib/realtime
  */
 export function useBookingsChangedSignal(onChange: () => void): void {
   const onChangeRef = useRef(onChange)
-  onChangeRef.current = onChange
+  // Keep the ref in sync via its own effect (runs after every render) rather than
+  // writing to it during render — refs must not be written/read during render.
+  useEffect(() => {
+    onChangeRef.current = onChange
+  })
 
   useEffect(() => {
     const supabase = createClient()

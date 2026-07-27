@@ -1,14 +1,20 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useMemo } from 'react'
 import { ExternalLink, Loader2 } from 'lucide-react'
 import { CruiseTabProps } from './shared'
 import {
   formatTierLines,
   normalizeTiers,
-  type CancellationTier,
 } from '@/lib/cancellation/policy'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
+
+interface FHItemRow {
+  fareharbor_pk: number
+  name: string
+  cancellation_tiers: unknown
+}
 
 /**
  * Read-only view of the cancellation policy inherited from the parent
@@ -16,30 +22,13 @@ import {
  * we surface a link there so a single edit propagates to all virtual listings.
  */
 export function CruiseCancellationTab({ listing }: CruiseTabProps) {
-  const [tiers, setTiers] = useState<CancellationTier[] | null>(null)
-  const [fhItemName, setFhItemName] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    let cancelled = false
-    fetch('/api/admin/fareharbor-items')
-      .then(res => res.json())
-      .then(json => {
-        if (cancelled) return
-        const items: Array<{ fareharbor_pk: number; name: string; cancellation_tiers: unknown }> =
-          json.ok ? json.data?.items ?? [] : []
-        const item = items.find(i => i.fareharbor_pk === listing.fareharbor_item_pk)
-        setTiers(normalizeTiers(item?.cancellation_tiers))
-        setFhItemName(item?.name ?? null)
-        setLoading(false)
-      })
-      .catch(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [listing.fareharbor_item_pk])
+  const { data, isLoading: loading } = useAdminFetch<{ items: FHItemRow[] }>('/api/admin/fareharbor-items')
+  const item = useMemo(
+    () => data?.items?.find(i => i.fareharbor_pk === listing.fareharbor_item_pk) ?? null,
+    [data, listing.fareharbor_item_pk]
+  )
+  const tiers = useMemo(() => normalizeTiers(item?.cancellation_tiers), [item])
+  const fhItemName = item?.name ?? null
 
   if (loading) {
     return (

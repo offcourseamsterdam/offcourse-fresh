@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import { ReviewPhoto } from '@/components/ui/ReviewPhoto'
+import { formatReviewMonthYear as formatDate } from '@/lib/utils'
 // Lazy-load the reviews lightbox — it's a large component (filter UI, sort,
 // pagination, full review list) that most visitors never open. Downloaded only
 // when the user taps "See all reviews".
@@ -85,15 +86,6 @@ function AuthorPhoto({ url, name }: { url: string | null; name: string }) {
       {name.charAt(0).toUpperCase()}
     </div>
   )
-}
-
-function formatDate(publishTime: string | null): string {
-  if (!publishTime) return ''
-  try {
-    return new Date(publishTime).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-  } catch {
-    return ''
-  }
 }
 
 // ── Modal ────────────────────────────────────────────────────────────────────

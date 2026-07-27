@@ -2,7 +2,7 @@
 
 import { trackWhatsAppClick, type WhatsAppSource } from '@/lib/tracking/client'
 
-const WHATSAPP_URL = 'https://wa.me/31645351618'
+const DEFAULT_WHATSAPP_NUMBER = '31645351618'
 
 /**
  * A WhatsApp link that records the tap in our first-party tracking
@@ -16,17 +16,27 @@ export function WhatsAppLink({
   source,
   className,
   children,
+  phone = DEFAULT_WHATSAPP_NUMBER,
+  message,
+  extra,
 }: {
   source: WhatsAppSource
   className?: string
   children: React.ReactNode
+  /** Override the destination number — e.g. a dedicated partner-inquiries line. */
+  phone?: string
+  /** Pre-fills the WhatsApp chat's opening message. */
+  message?: string
+  /** Extra metadata merged into the tracked whatsapp_click event. */
+  extra?: Record<string, unknown>
 }) {
+  const url = `https://wa.me/${phone}${message ? `?text=${encodeURIComponent(message)}` : ''}`
   return (
     <a
-      href={WHATSAPP_URL}
+      href={url}
       target="_blank"
       rel="noopener noreferrer"
-      onClick={() => trackWhatsAppClick(source)}
+      onClick={() => trackWhatsAppClick(source, extra)}
       className={className}
     >
       {children}

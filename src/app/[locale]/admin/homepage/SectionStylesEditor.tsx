@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { Upload, Loader2, RotateCcw } from 'lucide-react'
 import { SECTION_DEFS } from '@/lib/homepage/section-styles'
 import { downscaleImage } from '@/lib/images/client-downscale'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/
 
@@ -20,29 +21,17 @@ interface StyleRow {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function SectionStylesEditor() {
-  const [styles, setStyles] = useState<Record<string, StyleRow>>({})
-  const [loading, setLoading] = useState(true)
+  const { data, isLoading: loading, refresh: load } =
+    useAdminFetch<{ styles: StyleRow[] }>('/api/admin/homepage-styles')
+  const styles = useMemo(() => {
+    const map: Record<string, StyleRow> = {}
+    for (const r of data?.styles ?? []) map[r.section_key] = r
+    return map
+  }, [data])
   const [busy, setBusy] = useState<string | null>(null) // `${section}:bg` | `${section}:${role}`
   const [hexDraft, setHexDraft] = useState<Record<string, string>>({}) // in-progress hex typing per `${section}:${role}`
   const fileRefs = useRef<Record<string, HTMLInputElement | null>>({})
   const polaroidRefs = useRef<Record<string, HTMLInputElement | null>>({})
-
-  useEffect(() => { void load() }, [])
-
-  async function load() {
-    setLoading(true)
-    try {
-      const res = await fetch('/api/admin/homepage-styles')
-      const json = await res.json()
-      if (json.ok) {
-        const map: Record<string, StyleRow> = {}
-        for (const r of json.data.styles as StyleRow[]) map[r.section_key] = r
-        setStyles(map)
-      }
-    } finally {
-      setLoading(false)
-    }
-  }
 
   async function uploadBackground(section: string, file: File) {
     setBusy(`${section}:bg`)

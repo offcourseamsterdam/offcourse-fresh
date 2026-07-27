@@ -1,12 +1,13 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { withRoute } from '@/lib/api/with-route'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireRole } from '@/lib/auth/server'
 import { VALID_ROLES } from '@/lib/auth/types'
 
 // POST /api/admin/users/invite — invite a new user with a specific role (admin only)
-export async function POST(request: NextRequest) {
+export const POST = withRoute(async (request: NextRequest) => {
   const denied = await requireAdmin()
   if (denied) return denied
   try {
@@ -62,4 +63,4 @@ export async function POST(request: NextRequest) {
   }
 
   return apiOk({ success: true, userId: authData.user.id })
-}
+})

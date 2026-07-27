@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { CruiseTabProps, patchListing, inputCls } from './shared'
 import { Field } from './Field'
 import { TabSaveButton } from './TabSaveButton'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 
 interface PartnerOption {
   id: string
@@ -14,22 +15,15 @@ interface PartnerOption {
 export function CruisePaymentTab({ listing, onSave }: CruiseTabProps) {
   const [paymentMode, setPaymentMode] = useState<'stripe' | 'partner_invoice'>(listing.payment_mode)
   const [partnerId, setPartnerId] = useState<string>(listing.required_partner_id ?? '')
-  const [partners, setPartners] = useState<PartnerOption[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    // The API returns { ok: true, data: { partners: [...] } } — not a bare array.
-    fetch('/api/admin/partners')
-      .then(r => r.json())
-      .then(json => {
-        const list = json?.data?.partners
-        if (Array.isArray(list)) {
-          setPartners(list.map((p: { id: string; name: string }) => ({ id: p.id, name: p.name })))
-        }
-      })
-      .catch(() => {})
-  }, [])
+  // The API returns { ok: true, data: { partners: [...] } } — not a bare array.
+  const { data: partnersData } = useAdminFetch<{ partners: { id: string; name: string }[] }>('/api/admin/partners')
+  const partners = useMemo<PartnerOption[]>(
+    () => (partnersData?.partners ?? []).map(p => ({ id: p.id, name: p.name })),
+    [partnersData]
+  )
 
   async function save() {
     setSaving(true)

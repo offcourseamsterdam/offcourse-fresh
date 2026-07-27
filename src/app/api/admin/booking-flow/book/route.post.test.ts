@@ -17,7 +17,12 @@ const h = vi.hoisted(() => ({
   fhCancel: vi.fn().mockResolvedValue(undefined),
   maybeSingle: vi.fn().mockResolvedValue({ data: null }),
   insert: vi.fn().mockResolvedValue({ error: null }),
-  piRetrieve: vi.fn().mockResolvedValue({ metadata: {} }),
+  // Default = a legit settled payment whose metadata matches WEBSITE_BODY, so the
+  // website payment gate passes. Negative cases below override per test.
+  piRetrieve: vi.fn().mockResolvedValue({
+    status: 'succeeded',
+    metadata: { avail_pk: '1001', customer_type_rate_pk: '2002', guest_count: '2' },
+  }),
   resolveCustomerTypeName: vi.fn().mockResolvedValue(null),
   describeCustomerTypes: vi.fn().mockResolvedValue(null),
   sendConfirmationEmail: vi.fn().mockResolvedValue(undefined),
@@ -25,7 +30,11 @@ const h = vi.hoisted(() => ({
   sendCateringOrderEmailForBooking: vi.fn().mockResolvedValue({ ok: true, resent: false, recipient: 'x' }),
   notifyBookingFailure: vi.fn().mockResolvedValue(undefined),
   postSlackText: vi.fn().mockResolvedValue(undefined),
+  postSlackCritical: vi.fn().mockResolvedValue(undefined),
   requireAdmin: vi.fn().mockResolvedValue(null),
+  // 'promo_codes' lookup for the isAuthorizedByFullPromo check — independent of the
+  // generic 'bookings'/other-table mock below. Defaults to "no such code" (not found).
+  promoMaybeSingle: vi.fn().mockResolvedValue({ data: null }),
 }))
 
 vi.mock('@/lib/fareharbor/client', () => ({
@@ -41,15 +50,22 @@ vi.mock('@/lib/fareharbor/customer-type-name', () => ({
 }))
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
-    from: () => ({
-      select: () => ({ eq: () => ({ maybeSingle: h.maybeSingle, single: h.maybeSingle }) }),
-      // saveToSupabase now chains .insert(...).select('id').single() — h.insert
-      // still receives the payload (existing call/payload assertions keep working)
-      // and its configured resolved value ({ error, data? }) is what .single() returns.
-      insert: (payload: unknown) => ({
-        select: () => ({ single: () => h.insert(payload) }),
-      }),
-    }),
+    from: (table: string) => {
+      // Only 'promo_codes' (the new isAuthorizedByFullPromo check) gets its own mock —
+      // every other table keeps the exact prior shared behavior, unchanged.
+      if (table === 'promo_codes') {
+        return { select: () => ({ eq: () => ({ maybeSingle: h.promoMaybeSingle }) }) }
+      }
+      return {
+        select: () => ({ eq: () => ({ maybeSingle: h.maybeSingle, single: h.maybeSingle }) }),
+        // saveToSupabase now chains .insert(...).select('id').single() — h.insert
+        // still receives the payload (existing call/payload assertions keep working)
+        // and its configured resolved value ({ error, data? }) is what .single() returns.
+        insert: (payload: unknown) => ({
+          select: () => ({ single: () => h.insert(payload) }),
+        }),
+      }
+    },
   }),
 }))
 vi.mock('@/lib/stripe/server', () => ({ getStripe: () => ({ paymentIntents: { retrieve: h.piRetrieve } }) }))
@@ -58,7 +74,7 @@ vi.mock('@/lib/booking/send-confirmation-email', () => ({ sendConfirmationEmail:
 vi.mock('@/lib/catering/notify', () => ({ notifyCateringOrder: h.notifyCateringOrder }))
 vi.mock('@/lib/catering/send-catering-email', () => ({ sendCateringOrderEmailForBooking: h.sendCateringOrderEmailForBooking }))
 vi.mock('@/lib/booking/notify-booking-failure', () => ({ notifyBookingFailure: h.notifyBookingFailure }))
-vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText }))
+vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText, postSlackCritical: h.postSlackCritical }))
 
 import { POST } from './route'
 
@@ -97,6 +113,15 @@ describe('POST /book — finalize (no claim mutex)', () => {
     h.fhValidate.mockResolvedValue({ is_bookable: true })
     h.fhCreate.mockResolvedValue({ uuid: 'fh-new' })
     h.sendCateringOrderEmailForBooking.mockResolvedValue({ ok: true, resent: false, recipient: 'x' })
+    // Restore the "legit settled payment" default each test (clearAllMocks keeps
+    // implementations, but a negative test may have overridden it).
+    h.piRetrieve.mockResolvedValue({
+      status: 'succeeded',
+      metadata: { avail_pk: '1001', customer_type_rate_pk: '2002', guest_count: '2' },
+    })
+    // Default: no such promo code — restored each test since a prior test may
+    // override it (clearAllMocks keeps mockResolvedValue overrides, doesn't reset them).
+    h.promoMaybeSingle.mockResolvedValue({ data: null })
   })
 
   it('validates + books + saves on the happy path', async () => {
@@ -108,6 +133,47 @@ describe('POST /book — finalize (no claim mutex)', () => {
     expect(h.insert).toHaveBeenCalledTimes(1)
     // No extras on this booking — nothing to auto-send to the supplier.
     expect(h.sendCateringOrderEmailForBooking).not.toHaveBeenCalled()
+  })
+
+  // ── Website payment gate (2026-07 security fix) ─────────────────────────────
+  // The public /api/booking-flow/book takes no admin auth for `website` source, so
+  // a website booking must prove a settled, matching payment before we ever touch
+  // FareHarbor. Without this, anyone could POST a booking and consume boat capacity.
+
+  it('SECURITY: rejects a website booking with NO payment intent (402) and never books', async () => {
+    const res = await POST(mockReq({ ...WEBSITE_BODY, stripePaymentIntentId: undefined }))
+
+    expect(res.status).toBe(402)
+    expect(h.fhValidate).not.toHaveBeenCalled()
+    expect(h.fhCreate).not.toHaveBeenCalled()
+    expect(h.insert).not.toHaveBeenCalled()
+  })
+
+  it('SECURITY: rejects a website booking whose PaymentIntent has not succeeded (402)', async () => {
+    h.piRetrieve.mockResolvedValue({
+      status: 'requires_payment_method',
+      metadata: { avail_pk: '1001', customer_type_rate_pk: '2002', guest_count: '2' },
+    })
+
+    const res = await POST(mockReq(WEBSITE_BODY))
+
+    expect(res.status).toBe(402)
+    expect(h.fhCreate).not.toHaveBeenCalled()
+    expect(h.insert).not.toHaveBeenCalled()
+  })
+
+  it('SECURITY: rejects a website booking whose details do not match the paid PI (409)', async () => {
+    // Paid for one slot, then tries to book a different (e.g. more expensive) one.
+    h.piRetrieve.mockResolvedValue({
+      status: 'succeeded',
+      metadata: { avail_pk: '9999', customer_type_rate_pk: '2002', guest_count: '2' },
+    })
+
+    const res = await POST(mockReq(WEBSITE_BODY))
+
+    expect(res.status).toBe(409)
+    expect(h.fhCreate).not.toHaveBeenCalled()
+    expect(h.insert).not.toHaveBeenCalled()
   })
 
   it('instantly auto-sends the catering email when departure is within 7 days', async () => {
@@ -156,19 +222,23 @@ describe('POST /book — finalize (no claim mutex)', () => {
     expect(h.fhCancel).toHaveBeenCalledWith('fh-dupe')
     // A cleanly-handled race must NOT page anyone.
     expect(h.postSlackText).not.toHaveBeenCalled()
+    expect(h.postSlackCritical).not.toHaveBeenCalled()
   })
 
-  it('fires the CRITICAL repair alert on a genuine (non-23505) save failure', async () => {
+  it('fires the CRITICAL repair alert (to Beer\'s DM, not just the channel) on a genuine (non-23505) save failure', async () => {
     h.fhCreate.mockResolvedValue({ uuid: 'fh-real' })
     h.insert.mockResolvedValue({ error: { code: '08006', message: 'connection failure' } })
 
     const res = await POST(mockReq(WEBSITE_BODY))
 
     expect(res.status).toBe(200) // customer still got their booking
-    expect(h.postSlackText).toHaveBeenCalledWith(
+    // Must go through postSlackCritical (DM + channel fallback), NOT the plain
+    // channel-only postSlackText — this is the last-line safety net for a paid,
+    // FareHarbor-booked cruise whose DB row failed to save.
+    expect(h.postSlackCritical).toHaveBeenCalledWith(
       expect.stringContaining('CRITICAL: BOOKING DB SAVE FAILED'),
     )
-    expect(h.postSlackText).toHaveBeenCalledWith(
+    expect(h.postSlackCritical).toHaveBeenCalledWith(
       expect.stringContaining('recreate the FareHarbor booking'),
     )
   })
@@ -225,6 +295,83 @@ describe('POST /book — partner_invoice auth gate (Webikeamsterdam regression)'
     h.requireAdmin.mockResolvedValue(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
 
     const res = await POST(mockReq({ ...WEBSITE_BODY, bookingSource: 'withlocals', promoCodeId: 'promo-1' }))
+
+    expect(h.requireAdmin).toHaveBeenCalledTimes(1)
+    expect(res.status).toBe(401)
+  })
+})
+
+describe('POST /book — complimentary auth gate (2026-07 anonymous full-discount fix)', () => {
+  // Regression: the full-discount checkout (CheckoutFlow.tsx) previously sent an
+  // ad-hoc bookingSource:'partner' — not even a value in BOOKING_SOURCES — which
+  // required admin auth for EVERY caller, so a real customer redeeming a genuine
+  // 100%-off code got a 401. Fixed to send 'complimentary' (the canonical value) with
+  // a server-side re-validation of the promo: it must be a REAL, active,
+  // discount_type:'full' code — the client's word is never trusted for authorization,
+  // otherwise anyone could claim any promoCodeId for a free booking.
+  const FULL_PROMO_ROW = {
+    id: 'promo-full-1', code: 'FULL-COMP', label: 'Comp', discount_type: 'full',
+    discount_value: null, fixed_discount_cents: null, max_uses: null, uses_count: 0,
+    valid_from: null, valid_until: null, is_active: true, campaign_id: null, discount_scope: 'all',
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubEnv('SLACK_WEBHOOK_URL', 'https://hooks.slack.test/x')
+    h.maybeSingle.mockResolvedValue({ data: null })
+    h.insert.mockResolvedValue({ error: null, data: { id: 'booking-row-id' } })
+    h.fhValidate.mockResolvedValue({ is_bookable: true })
+    h.fhCreate.mockResolvedValue({ uuid: 'fh-new' })
+    h.promoMaybeSingle.mockResolvedValue({ data: null })
+  })
+
+  it('does NOT require admin auth when the promo is real and discount_type:"full"', async () => {
+    h.promoMaybeSingle.mockResolvedValue({ data: FULL_PROMO_ROW })
+
+    const res = await POST(mockReq({ ...WEBSITE_BODY, bookingSource: 'complimentary', promoCodeId: 'promo-full-1', stripePaymentIntentId: undefined }))
+
+    expect(h.requireAdmin).not.toHaveBeenCalled()
+    expect(res.status).toBe(200)
+    expect(h.fhCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it('still requires admin auth when NO promoCodeId is given (admin picks "complimentary" manually)', async () => {
+    h.requireAdmin.mockResolvedValue(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
+
+    const res = await POST(mockReq({ ...WEBSITE_BODY, bookingSource: 'complimentary', stripePaymentIntentId: undefined }))
+
+    expect(h.requireAdmin).toHaveBeenCalledTimes(1)
+    expect(res.status).toBe(401)
+    expect(h.fhCreate).not.toHaveBeenCalled()
+  })
+
+  it('SECURITY: still requires admin auth when the promoCodeId does not exist / is not active', async () => {
+    h.requireAdmin.mockResolvedValue(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
+    h.promoMaybeSingle.mockResolvedValue({ data: { ...FULL_PROMO_ROW, is_active: false } })
+
+    const res = await POST(mockReq({ ...WEBSITE_BODY, bookingSource: 'complimentary', promoCodeId: 'promo-full-1', stripePaymentIntentId: undefined }))
+
+    expect(h.requireAdmin).toHaveBeenCalledTimes(1)
+    expect(res.status).toBe(401)
+    expect(h.fhCreate).not.toHaveBeenCalled()
+  })
+
+  it('SECURITY: a real but non-"full" promo (e.g. percentage) does NOT bypass admin auth, even if the client claims it is free', async () => {
+    h.requireAdmin.mockResolvedValue(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
+    h.promoMaybeSingle.mockResolvedValue({ data: { ...FULL_PROMO_ROW, discount_type: 'percentage', discount_value: 100 } })
+
+    const res = await POST(mockReq({ ...WEBSITE_BODY, bookingSource: 'complimentary', promoCodeId: 'promo-full-1', stripePaymentIntentId: undefined }))
+
+    expect(h.requireAdmin).toHaveBeenCalledTimes(1)
+    expect(res.status).toBe(401)
+    expect(h.fhCreate).not.toHaveBeenCalled()
+  })
+
+  it('SECURITY: the full-promo exception is scoped to "complimentary" only, not other internal sources', async () => {
+    h.requireAdmin.mockResolvedValue(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
+    h.promoMaybeSingle.mockResolvedValue({ data: FULL_PROMO_ROW })
+
+    const res = await POST(mockReq({ ...WEBSITE_BODY, bookingSource: 'withlocals', promoCodeId: 'promo-full-1', stripePaymentIntentId: undefined }))
 
     expect(h.requireAdmin).toHaveBeenCalledTimes(1)
     expect(res.status).toBe(401)

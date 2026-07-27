@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { withRoute } from '@/lib/api/with-route'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireRole } from '@/lib/auth/server'
@@ -29,7 +30,7 @@ export async function GET() {
 }
 
 // PATCH /api/admin/users — update role or is_active for a user (admin only)
-export async function PATCH(request: NextRequest) {
+export const PATCH = withRoute(async (request: NextRequest) => {
   const denied = await requireAdmin()
   if (denied) return denied
   try {
@@ -66,4 +67,4 @@ export async function PATCH(request: NextRequest) {
   }
 
   return apiOk({ user: data })
-}
+})

@@ -1,5 +1,8 @@
-export const LOCALES = ['en', 'nl', 'de', 'fr', 'es', 'pt', 'zh'] as const
-export type Locale = (typeof LOCALES)[number]
+// Canonical locale list lives in src/lib/i18n/config.ts — re-exported here
+// (with this file's existing names) so nothing importing from this module needs
+// to change.
+export { locales as LOCALES } from '@/lib/i18n/config'
+export type { Locale } from '@/lib/i18n/config'
 
 export const OFF_COURSE_SYSTEM_PROMPT = `You are writing for Off Course Amsterdam — an electric canal boat company in Amsterdam.
 

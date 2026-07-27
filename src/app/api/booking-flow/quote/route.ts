@@ -35,7 +35,6 @@ export async function POST(request: NextRequest) {
       selectedExtraIds = [],
       extraQuantities = {},
       promoCodeId,
-      discountAmountCents,
       customerTypeRates,
     } = body
 
@@ -56,7 +55,6 @@ export async function POST(request: NextRequest) {
       selectedExtraIds: Array.isArray(selectedExtraIds) ? selectedExtraIds : [],
       extraQuantities: extraQuantities && typeof extraQuantities === 'object' ? extraQuantities : {},
       promoCodeId: promoCodeId ?? null,
-      discountAmountCents: discountAmountCents != null ? Number(discountAmountCents) : 0,
       customerTypeRates: Array.isArray(customerTypeRates)
         ? customerTypeRates.map((r: { pk: number; count: number }) => ({
             pk: Number(r.pk), count: Number(r.count),

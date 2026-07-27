@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { AdminFormModal } from '@/components/admin/ui/AdminFormModal'
 import { TextField, SelectField, TextAreaField, Field } from '@/components/admin/ui/fields'
 import { useAdminSave, adminMutate } from '@/hooks/useAdminSave'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 
 interface Channel {
   id: string
@@ -48,9 +49,18 @@ interface CampaignModalProps {
 }
 
 export function CampaignModal({ open, onClose, onSaved, defaultChannelId, defaultPartnerId, editing }: CampaignModalProps) {
-  const [channels, setChannels] = useState<Channel[]>([])
-  const [allPartners, setAllPartners] = useState<Partner[]>([])
-  const [listings, setListings] = useState<Listing[]>([])
+  const { data: channelsData, isLoading: channelsLoading } =
+    useAdminFetch<Channel[]>(open ? '/api/admin/tracking/channels' : null)
+  const { data: partnersData, isLoading: partnersLoading } =
+    useAdminFetch<{ partners: Partner[] } | Partner[]>(open ? '/api/admin/partners' : null)
+  const { data: listingsData, isLoading: listingsLoading } =
+    useAdminFetch<{ listings: Listing[] } | Listing[]>(open ? '/api/admin/cruise-listings' : null)
+
+  const channels = channelsData ?? []
+  const allPartners = Array.isArray(partnersData) ? partnersData : partnersData?.partners ?? []
+  const listings = Array.isArray(listingsData) ? listingsData : listingsData?.listings ?? []
+  const loadingOptions = channelsLoading || partnersLoading || listingsLoading
+
   const { saving, error, setError, run } = useAdminSave()
 
   // Form state
@@ -64,23 +74,12 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId, defaul
   const [notes, setNotes] = useState('')
   const [settlementModel, setSettlementModel] = useState<'affiliate' | 'reseller'>('affiliate')
 
-  // Load channels, partners, and listings on mount
-  useEffect(() => {
-    if (!open) return
-    Promise.all([
-      fetch('/api/admin/tracking/channels').then((r) => r.json()),
-      fetch('/api/admin/partners').then((r) => r.json()),
-      fetch('/api/admin/cruise-listings').then((r) => r.json()),
-    ]).then(([chJson, pJson, lJson]) => {
-      if (chJson.ok) setChannels(chJson.data)
-      if (pJson.ok) setAllPartners(pJson.data?.partners ?? pJson.data ?? [])
-      if (lJson.ok) setListings(lJson.data?.listings ?? lJson.data ?? [])
-    }).catch(() => {})
-  }, [open])
-
-  // Reset/prefill form when opening
+  // Reset/prefill form when opening. A key-based remount would be the more
+  // "textbook" fix, but that requires the parent to manage a stable key across
+  // open/editing changes — out of scope for this modal in isolation.
   useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setName(editing?.name ?? '')
       setChannelId(editing?.channel_id ?? defaultChannelId ?? '')
       setPartnerId(editing?.partner_id ?? defaultPartnerId ?? '')
@@ -133,6 +132,7 @@ export function CampaignModal({ open, onClose, onSaved, defaultChannelId, defaul
       saving={saving}
       error={error}
       submitLabel={editing ? 'Save Changes' : 'Create Campaign'}
+      submitDisabled={loadingOptions}
     >
       <TextField
         label="Campaign name *"

@@ -1,6 +1,20 @@
 export type DateCreatedFilter = 'all' | 'today' | 'week' | 'month' | 'quarter' | 'year'
 
 /**
+ * Midnight Amsterdam-local, as a Date, for the given Amsterdam-local Y/M/D.
+ * `day` may be out of range (e.g. 0 or negative, from `day - daysBack` near a
+ * month boundary) — the multi-arg Date constructor normalizes that correctly
+ * (interpreted in the runtime's local timezone), unlike building an ISO string
+ * first, which requires an already-valid calendar date and produces Invalid Date
+ * otherwise. Shared by `dateCreatedThreshold` below and `getWeekStart` (week.ts).
+ */
+export function amsStartOf(year: number, month: number, day: number): Date {
+  const ref = new Date(year, month, day, 0, 0, 0)
+  const offset = ref.getTime() - new Date(ref.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' })).getTime()
+  return new Date(ref.getTime() + offset)
+}
+
+/**
  * Returns the start-of-period Date for a given date-created filter preset,
  * or null when the filter is 'all' (no threshold applied).
  *
@@ -30,12 +44,6 @@ export function dateCreatedThreshold(filter: DateCreatedFilter, now = new Date()
   // produce an Invalid Date instead — which then makes every comparison against the
   // threshold evaluate to false, so the "This week" filter would show everything rather
   // than nothing.
-  function amsStartOf(y: number, m: number, d: number): Date {
-    const ref = new Date(y, m, d, 0, 0, 0)
-    const offset = ref.getTime() - new Date(ref.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' })).getTime()
-    return new Date(ref.getTime() + offset)
-  }
-
   if (filter === 'today') return amsStartOf(year, month, day)
 
   if (filter === 'week') {

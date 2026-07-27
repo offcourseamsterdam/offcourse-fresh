@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
 
     for (const setting of settings) {
       // For quarterly invoices, also check partner email as fallback
-      let recipients = [...setting.email_recipients]
+      const recipients = [...setting.email_recipients]
       if (recipients.length === 0 && setting.partner_id) {
         const { data: partner } = await supabase
           .from('partners')

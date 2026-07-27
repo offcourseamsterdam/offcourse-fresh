@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { Loader2, X, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -59,39 +60,27 @@ function Toggle({ enabled, onToggle, disabled }: { enabled: boolean; onToggle: (
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function ExtrasTab({ listingId, listingCategory }: ExtrasTabProps) {
-  const [resolvedExtras, setResolvedExtras] = useState<Extra[]>([])
-  const [allExtras, setAllExtras] = useState<Extra[]>([])
-  const [loading, setLoading] = useState(true)
+  const {
+    data: resolvedData,
+    isLoading: resolvedLoading,
+    error: resolvedFetchError,
+    refresh: refreshResolved,
+  } = useAdminFetch<{ extras: Extra[] }>(`/api/admin/cruise-listings/${listingId}/extras?guestCount=1`)
+  const {
+    data: allData,
+    isLoading: allLoading,
+    error: allFetchError,
+    refresh: refreshAll,
+  } = useAdminFetch<{ extras: Extra[] }>('/api/admin/extras')
+
+  const resolvedExtras = resolvedData?.extras ?? []
+  const allExtras = allData?.extras ?? []
+  const loading = resolvedLoading || allLoading
+
   const [saving, setSaving] = useState<string | null>(null) // extra id being saved
   const [selectedPerListing, setSelectedPerListing] = useState('')
-  const [error, setError] = useState<string | null>(null)
-
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const [resolvedRes, allRes] = await Promise.all([
-        fetch(`/api/admin/cruise-listings/${listingId}/extras?guestCount=1`),
-        fetch('/api/admin/extras'),
-      ])
-      if (!resolvedRes.ok || !allRes.ok) {
-        throw new Error('Failed to load extras data')
-      }
-      const resolvedJson = await resolvedRes.json()
-      const allJson = await allRes.json()
-
-      if (resolvedJson.ok) setResolvedExtras(resolvedJson.data?.extras ?? [])
-      if (allJson.ok) setAllExtras(allJson.data?.extras ?? [])
-    } catch {
-      setError('Failed to load extras. Please try again.')
-    } finally {
-      setLoading(false)
-    }
-  }, [listingId])
-
-  useEffect(() => {
-    fetchData()
-  }, [fetchData])
+  const [patchError, setPatchError] = useState<string | null>(null)
+  const error = patchError ?? resolvedFetchError ?? allFetchError
 
   async function patchExtra(extraId: string, isEnabled: boolean): Promise<boolean> {
     setSaving(extraId)
@@ -103,13 +92,15 @@ export default function ExtrasTab({ listingId, listingCategory }: ExtrasTabProps
       })
       const json = await res.json()
       if (!json.ok) {
-        setError(json.error ?? 'Failed to update extra')
+        setPatchError(json.error ?? 'Failed to update extra')
         return false
       }
-      await fetchData()
+      setPatchError(null)
+      refreshResolved()
+      refreshAll()
       return true
     } catch {
-      setError('Failed to update extra')
+      setPatchError('Failed to update extra')
       return false
     } finally {
       setSaving(null)

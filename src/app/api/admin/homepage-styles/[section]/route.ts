@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { apiOk, apiError } from '@/lib/api/response'
+import { withRoute } from '@/lib/api/with-route'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { SECTION_DEF_BY_KEY, type SectionKey, type TextRoleKey } from '@/lib/homepage/section-styles'
@@ -16,7 +17,7 @@ interface RouteParams {
 // PATCH /api/admin/homepage-styles/[section]
 // Body: { text_colors?: { h2?, h3?, body? }, clearBackground?: boolean }
 // A null/empty colour value clears that role back to its coded default.
-export async function PATCH(req: NextRequest, { params }: RouteParams) {
+export const PATCH = withRoute(async (req: NextRequest, { params }: RouteParams) => {
   const denied = await requireAdmin()
   if (denied) return denied
 
@@ -83,4 +84,4 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   for (const locale of locales) revalidatePath(`/${locale}`)
 
   return apiOk(data ?? { section_key: section, background: null, text_colors: {} })
-}
+})

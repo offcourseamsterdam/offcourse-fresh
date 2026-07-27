@@ -179,14 +179,21 @@ export class FareHarborClient {
    *  pre-charge gate (and in /book) while a user waits, so on a slow/unreachable
    *  FareHarbor we fail fast and the caller fails closed (no charge) — the customer
    *  just retries. No money is at stake here, so retrying-and-hanging isn't worth it. */
+  /**
+   * Pass originalBookingUuid when validating a reschedule onto a slot that conflicts
+   * with the customer's own existing booking on the same resource — FareHarbor's
+   * validate endpoint accounts for the original booking's capacity being released,
+   * same as the `rebooking` field on the create endpoint (see rebookBooking below).
+   */
   async validateBooking(
     availPk: number,
-    data: FHBookingRequest
+    data: FHBookingRequest,
+    originalBookingUuid?: string
   ): Promise<FHValidationResult> {
     const url = `/companies/${COMPANY}/availabilities/${availPk}/bookings/validate/`
     return this.request<FHValidationResult>(url, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(originalBookingUuid ? { ...data, rebooking: originalBookingUuid } : data),
     })
   }
 

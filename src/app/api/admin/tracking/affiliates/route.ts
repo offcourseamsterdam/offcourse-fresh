@@ -53,7 +53,9 @@ export async function GET(request: NextRequest) {
             .from('bookings')
             .select('campaign_id, partner_id, base_amount_cents, commission_amount_cents, status')
             .in('campaign_id', campaignIds)
-            .in('status', ['confirmed', 'completed'])
+            // 'completed' was dead — nothing ever writes that value to bookings.status
+            // (see src/lib/booking/booking-status-contract.test.ts). Removed 2026-07.
+            .in('status', ['confirmed'])
             .gte('created_at', from)
             .lte('created_at', to)
         : { data: [] }

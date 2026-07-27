@@ -54,7 +54,7 @@ describe('allocateInvoiceNumber', () => {
   it('numbers are in ascending order (as the DB sequence guarantees)', async () => {
     const numbers = ['OC-2026-00010', 'OC-2026-00011', 'OC-2026-00012']
     const rpc = vi.fn()
-    numbers.forEach((n, i) => rpc.mockResolvedValueOnce({ data: n, error: null }))
+    numbers.forEach((n) => rpc.mockResolvedValueOnce({ data: n, error: null }))
     vi.mocked(createAdminClient).mockReturnValue({ rpc } as never)
 
     const results = await Promise.all(['pi_a', 'pi_b', 'pi_c'].map(pi => allocateInvoiceNumber(pi)))

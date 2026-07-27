@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Loader2, ChevronRight } from 'lucide-react'
 import { fmtTime, fmtPrice } from './helpers'
 import type { Listing } from './types'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 
 interface DateListingsStepProps {
   date: string
@@ -16,28 +16,8 @@ interface DateListingsStepProps {
 }
 
 export function DateListingsStep({ date, onDateChange, onPickListing }: DateListingsStepProps) {
-  const [listings, setListings] = useState<Listing[] | null>(null)
-  const [loadingListings, setLoadingListings] = useState(false)
-  const [listingsError, setListingsError] = useState<string | null>(null)
-
-  async function searchListings() {
-    setLoadingListings(true)
-    setListingsError(null)
-    setListings(null)
-    try {
-      const res = await fetch(`/api/admin/booking-flow?date=${date}`)
-      const json = await res.json()
-      if (json.ok) {
-        setListings(json.data)
-      } else {
-        setListingsError(json.error ?? 'Failed to load listings')
-      }
-    } catch {
-      setListingsError('Network error')
-    } finally {
-      setLoadingListings(false)
-    }
-  }
+  const { data: listings, isLoading: loadingListings, error: listingsError, refresh: searchListings } =
+    useAdminFetch<Listing[]>(date ? `/api/admin/booking-flow?date=${date}` : null)
 
   return (
     <div className="space-y-4">

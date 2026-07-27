@@ -16,6 +16,7 @@ vi.mock('@/lib/fareharbor/client', () => ({
 }))
 
 import { calculateQuote } from './calculate-quote'
+import type { PromoCodeRow } from '@/lib/promo-codes/validate'
 
 const baseInput = {
   listingId: 'listing-1',
@@ -26,6 +27,26 @@ const baseInput = {
   durationMinutes: 120,
   selectedExtraIds: [],
   extraQuantities: {},
+}
+
+/** A valid promo row with sensible defaults; override per test. */
+function makePromo(over: Partial<PromoCodeRow> = {}): PromoCodeRow {
+  return {
+    id: 'promo-1',
+    code: 'TEST-CODE',
+    label: 'Test',
+    discount_type: 'percentage',
+    discount_value: 10,
+    fixed_discount_cents: null,
+    max_uses: null,
+    uses_count: 0,
+    valid_from: null,
+    valid_until: null,
+    is_active: true,
+    campaign_id: null,
+    discount_scope: 'all',
+    ...over,
+  }
 }
 
 const noExtrasFromDb = {
@@ -320,7 +341,7 @@ describe('calculateQuote — Unlimited Bar drift scenario', () => {
   })
 })
 
-// ── Promo discount ─────────────────────────────────────────────────────────
+// ── Promo discount (server-derived — never trusts a client amount) ──────────
 
 describe('calculateQuote — promo discount', () => {
   beforeEach(() => {
@@ -330,27 +351,46 @@ describe('calculateQuote — promo discount', () => {
       ],
     })
   })
+  // total before discount = base 10000 + city tax (2 × 260) 520 = 10520
 
-  it('caps the discount at the pre-discount total', async () => {
-    const result = await calculateQuote({
-      ...baseInput,
-      discountAmountCents: 999_999,        // absurdly large
-    })
+  it('SECURITY: a forged client discount with no promo code has zero effect', async () => {
+    // The old exploit posted a huge discountAmountCents to book for €0.50. That field
+    // no longer exists on QuoteInput; even smuggled in, it must be ignored entirely.
+    const forged = { ...baseInput, discountAmountCents: 999_999 } as unknown as Parameters<typeof calculateQuote>[0]
+    const result = await calculateQuote(forged)
 
-    // total before discount = 10000 + 520 = 10520. Discount can't exceed that.
+    expect(result.discountAmountCents).toBe(0)
+    expect(result.totalCents).toBe(10520) // full price
+  })
+
+  it('derives a percentage discount from the validated promo code', async () => {
+    const result = await calculateQuote(
+      { ...baseInput, promoCodeId: 'promo-1' },
+      { validatePromo: async () => ({ ok: true, code: makePromo({ discount_type: 'percentage', discount_value: 20, discount_scope: 'all' }) }) },
+    )
+
+    // 20% of 10520 = 2104
+    expect(result.discountAmountCents).toBe(2104)
+    expect(result.totalCents).toBe(8416)
+  })
+
+  it('applies a full (100%) discount and floors at the Stripe minimum', async () => {
+    const result = await calculateQuote(
+      { ...baseInput, promoCodeId: 'promo-full' },
+      { validatePromo: async () => ({ ok: true, code: makePromo({ discount_type: 'full', discount_scope: 'all' }) }) },
+    )
+
     expect(result.discountAmountCents).toBe(10520)
-    // Floor at €0.50
     expect(result.totalCents).toBe(50)
   })
 
-  it('applies a normal discount cleanly', async () => {
-    const result = await calculateQuote({
-      ...baseInput,
-      discountAmountCents: 2000,
-    })
+  it('gives no discount when the promo fails validation (expired / exhausted / wrong cruise)', async () => {
+    const result = await calculateQuote(
+      { ...baseInput, promoCodeId: 'promo-bad' },
+      { validatePromo: async () => ({ ok: false, reason: 'expired', message: 'This code has expired.' }) },
+    )
 
-    // 10000 + 520 - 2000 = 8520
-    expect(result.discountAmountCents).toBe(2000)
-    expect(result.totalCents).toBe(8520)
+    expect(result.discountAmountCents).toBe(0)
+    expect(result.totalCents).toBe(10520)
   })
 })

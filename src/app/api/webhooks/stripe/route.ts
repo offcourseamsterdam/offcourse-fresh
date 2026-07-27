@@ -5,18 +5,20 @@ import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { describeCustomerTypes } from '@/lib/fareharbor/customer-type-name'
 import { sendConfirmationEmail } from '@/lib/booking/send-confirmation-email'
 import { getExtrasFromQuote, parseMetaCents } from '@/lib/booking/pi-metadata'
-import { commissionForCampaign } from '@/lib/booking/commission'
+import { resolveCampaignCommission } from '@/lib/booking/campaign-commission'
 import { buildFhBookingPlan } from '@/lib/booking/finalize-booking'
 import { notifyCateringOrder } from '@/lib/catering/notify'
 import { hasFood, type ExtrasLineItem } from '@/lib/catering/filter'
 import { isWithinCateringAutoSendWindow } from '@/lib/catering/auto-send-cutoff'
 import { sendCateringOrderEmailForBooking } from '@/lib/catering/send-catering-email'
 import { extractVat } from '@/lib/extras/calculate'
+import { CRUISE_VAT_RATE, EXTRAS_VAT_RATE } from '@/lib/booking/constants'
 import { reportBookingConversion } from '@/lib/google-ads/report-conversion'
 import { reportRefundAdjustment } from '@/lib/google-ads/report-refund'
 import { postSlackText, postSlackCritical } from '@/lib/slack/send-notification'
 import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
 import { resolvePaymentMethodLabel } from '@/lib/stripe/payment-method-label'
+import { resolveStripeFeeCents } from '@/lib/stripe/fee'
 import { stripeWebhookSecret } from '@/lib/stripe/keys'
 import { formatAmsterdamTime } from '@/lib/utils'
 import type Stripe from 'stripe'
@@ -245,8 +247,8 @@ export async function POST(request: NextRequest) {
     const extrasAmountCents = Number(meta.extras_amount_cents ?? 0)
     // VAT fields may be absent from PI metadata; fall back to server-side compute
     // (9% base, 21% extras). parseMetaCents keeps an explicit "0" as a real zero.
-    const baseVatAmountCents = parseMetaCents(meta.base_vat_amount_cents) ?? extractVat(serverBaseAmount, 9)
-    const extrasVatAmountCents = parseMetaCents(meta.extras_vat_amount_cents) ?? extractVat(extrasAmountCents, 21)
+    const baseVatAmountCents = parseMetaCents(meta.base_vat_amount_cents) ?? extractVat(serverBaseAmount, CRUISE_VAT_RATE)
+    const extrasVatAmountCents = parseMetaCents(meta.extras_vat_amount_cents) ?? extractVat(extrasAmountCents, EXTRAS_VAT_RATE)
     const totalVatAmountCents = parseMetaCents(meta.total_vat_amount_cents) ?? (baseVatAmountCents + extrasVatAmountCents)
 
     // Partner/campaign attribution — resolved server-side at create-intent time
@@ -255,23 +257,17 @@ export async function POST(request: NextRequest) {
     // rather than trusted blindly: the attribution cookie can outlive the
     // campaign (customer books days after clicking; an admin deletes the
     // campaign in between), and bookings.campaign_id/partner_id are real FKs —
-    // inserting a stale id would reject the ENTIRE paid booking. partner_id is
-    // read fresh off the campaign row (not the cookie's snapshot) because that
-    // FK is continuously enforced by Postgres, so it's guaranteed current;
-    // campaign_id/commission are simply left null if the campaign is gone.
+    // inserting a stale id would reject the ENTIRE paid booking. Shared with
+    // the admin /book route's own campaign lookups (src/lib/booking/campaign-commission.ts).
     let campaignId: string | null = null
     let partnerId: string | null = null
     let commissionAmountCents: number | null = null
     if (meta.campaign_id) {
-      const { data: campaign } = await supabase
-        .from('campaigns')
-        .select('percentage_value, investment_type, partner_id')
-        .eq('id', meta.campaign_id)
-        .maybeSingle()
-      if (campaign) {
-        campaignId = String(meta.campaign_id)
-        partnerId = campaign.partner_id ?? null
-        commissionAmountCents = commissionForCampaign(campaign, serverBaseAmount)
+      const resolved = await resolveCampaignCommission(supabase, String(meta.campaign_id), serverBaseAmount)
+      if (resolved) {
+        campaignId = resolved.campaignId
+        partnerId = resolved.partnerId
+        commissionAmountCents = resolved.commissionAmountCents
       }
     }
 
@@ -285,7 +281,7 @@ export async function POST(request: NextRequest) {
       stripe_payment_intent_id: pi.id,
       stripe_amount: pi.amount,
       base_amount_cents: serverBaseAmount,
-      base_vat_rate: 9,
+      base_vat_rate: CRUISE_VAT_RATE,
       base_vat_amount_cents: baseVatAmountCents,
       extras_amount_cents: extrasAmountCents,
       extras_vat_amount_cents: extrasVatAmountCents,
@@ -390,6 +386,27 @@ export async function POST(request: NextRequest) {
     // static list we OFFERED — always card/ideal/link — so it can't tell card from
     // iDEAL). Look it up best-effort; never block the booking on it.
     const paymentMethodLabel = await resolvePaymentMethodLabel(stripe, pi)
+    // Stripe's own processing fee — lives on the charge's balance_transaction, not
+    // the PI. Best-effort, for the admin Finance/VAT reconciliation view only;
+    // never blocks or fails the booking.
+    const stripeFeeCents = await resolveStripeFeeCents(stripe, pi)
+    if (stripeFeeCents != null) {
+      try {
+        // supabase-js doesn't throw on a DB-level failure — it returns
+        // { error } — so this must be checked explicitly, not just wrapped
+        // in try/catch, or a real write failure (RLS, constraint) would be
+        // silently ignored despite the catch block implying it's logged.
+        const { error: feeUpdateError } = await supabase
+          .from('bookings')
+          .update({ stripe_fee_cents: stripeFeeCents })
+          .eq('stripe_payment_intent_id', pi.id)
+        if (feeUpdateError) {
+          console.error('[stripe-webhook] stripe_fee_cents update failed (ignored):', pi.id, feeUpdateError.message)
+        }
+      } catch (err) {
+        console.error('[stripe-webhook] stripe_fee_cents update failed (ignored):', pi.id, err)
+      }
+    }
     // Selected FareHarbor customer type for the Slack alert (best-effort, cached lookup).
     const customerTypesLabel = await describeCustomerTypes(Number(meta.avail_pk), {
       customerTypeRatePk: meta.customer_type_rate_pk ? Number(meta.customer_type_rate_pk) : null,

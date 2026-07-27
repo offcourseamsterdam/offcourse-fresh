@@ -5,13 +5,13 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import { StatusBadge } from './StatusBadge'
 import type { ImageAsset, ProcessingStep } from '@/lib/images/types'
 import { formatBytes } from './format'
+import { locales as LOCALES } from '@/lib/i18n/config'
 
 interface Props {
   asset: ImageAsset
   onProcessed: () => void
 }
 
-const LOCALES = ['en', 'nl', 'de', 'fr', 'es', 'pt', 'zh'] as const
 
 const STEPS: { key: ProcessingStep; label: string }[] = [
   { key: 'download',    label: 'Download' },

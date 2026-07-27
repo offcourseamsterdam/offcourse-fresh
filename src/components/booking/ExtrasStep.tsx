@@ -54,6 +54,10 @@ export function ExtrasStep({
 
   useEffect(() => {
     let cancelled = false
+    // Refetches on listingId/guestCount change and merges into PREVIOUS selection
+    // state (see setSelectedIds/setQuantities below) — genuinely more than a plain
+    // fetch-on-mount, so not a simple SWR-hook swap; scoped disable is intentional.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true)
     setFetchError(null)
 

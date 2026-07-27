@@ -118,8 +118,9 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
     durationMinutes: Number(quoteRow.duration_minutes),
     selectedExtraIds: (quoteRow.selected_extra_ids as string[]) ?? [],
     extraQuantities: (quoteRow.extra_quantities as Record<string, number>) ?? {},
+    // Discount is re-derived from promo_code_id inside calculateQuote — the stored
+    // discount is not fed back in (that would re-trust a value a poisoned quote set).
     promoCodeId: quoteRow.promo_code_id,
-    discountAmountCents: Number(quoteRow.discount_amount_cents ?? 0),
     customerTypeRates: storedRates ?? undefined,
   })
 

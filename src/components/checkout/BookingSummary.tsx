@@ -82,7 +82,7 @@ export function BookingSummary({
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-zinc-500">Date</span>
-            <span className="font-medium text-zinc-800">{formatDate(date + 'T12:00:00')}</span>
+            <span className="font-medium text-zinc-800">{formatDate(date)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-zinc-500">Time</span>

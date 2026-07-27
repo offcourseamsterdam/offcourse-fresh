@@ -106,9 +106,12 @@ export default function StatisticsPage() {
   const funnel = funnelData ?? []
   const loading = loadingOverview || loadingFunnel
 
-  // Keep refs so the auto-refresh interval always calls the latest refresh functions
+  // Keep refs so the auto-refresh interval always calls the latest refresh functions.
+  // Updated via its own effect (runs after every render), not during render.
   const refreshRef = useRef({ refreshOverview, refreshFunnel })
-  refreshRef.current = { refreshOverview, refreshFunnel }
+  useEffect(() => {
+    refreshRef.current = { refreshOverview, refreshFunnel }
+  })
 
   // Auto-refresh every 30 seconds for live visitor updates
   useEffect(() => {

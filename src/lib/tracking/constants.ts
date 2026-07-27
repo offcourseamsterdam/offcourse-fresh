@@ -104,9 +104,4 @@ export const SOCIAL_SOURCES = ['facebook', 'instagram', 'tiktok', 'twitter', 'li
 
 // ── Rate limiting & debounce ──
 
-export const DEBOUNCE_MS = 2000
-export const RATE_LIMIT_SESSION = 60
-export const RATE_LIMIT_EVENT = 120
-export const RATE_LIMIT_WINDOW_MS = 60_000
-export const UTM_MAX_LENGTH = 100
 export const USER_AGENT_MAX_LENGTH = 500

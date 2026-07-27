@@ -69,7 +69,36 @@ export async function validatePromoCode(
   }
 
   const row = await (opts.lookup ?? dbLookup)(code)
+  return validateRow(row, { listingId: opts.listingId, scopeLookup: opts.scopeLookup })
+}
 
+interface ValidateByIdOptions {
+  listingId?: string | null
+  /** Injectable lookup for tests. */
+  lookupById?: (id: string) => Promise<PromoCodeRow | null>
+  scopeLookup?: ScopeLookupFn
+}
+
+/**
+ * Validate a promo by its id (not its human code). Used server-side by the pricing
+ * quote to re-derive the discount from the actual promo row — the enforcement path
+ * must never trust a client-supplied discount amount (2026-07 security fix: a forged
+ * discount previously let anyone book any cruise for €0.50).
+ */
+export async function validatePromoCodeById(
+  id: string,
+  options?: ValidateByIdOptions,
+): Promise<ValidationResult> {
+  if (!id) return { ok: false, reason: 'empty', message: 'No promo code.' }
+  const row = await (options?.lookupById ?? dbLookupById)(id)
+  return validateRow(row, { listingId: options?.listingId, scopeLookup: options?.scopeLookup })
+}
+
+/** Shared validation of a fetched promo row: active, date window, usage cap, campaign scope. */
+async function validateRow(
+  row: PromoCodeRow | null,
+  opts: { listingId?: string | null; scopeLookup?: ScopeLookupFn },
+): Promise<ValidationResult> {
   if (!row) {
     return { ok: false, reason: 'not_found', message: 'This code doesn\'t exist.' }
   }
@@ -112,6 +141,16 @@ async function dbLookup(normalised: string): Promise<PromoCodeRow | null> {
     .from('promo_codes')
     .select('id, code, label, discount_type, discount_value, fixed_discount_cents, max_uses, uses_count, valid_from, valid_until, is_active, campaign_id, discount_scope')
     .eq('code', normalised)
+    .maybeSingle()
+  return (data as PromoCodeRow) ?? null
+}
+
+async function dbLookupById(id: string): Promise<PromoCodeRow | null> {
+  const supabase = createAdminClient()
+  const { data } = await supabase
+    .from('promo_codes')
+    .select('id, code, label, discount_type, discount_value, fixed_discount_cents, max_uses, uses_count, valid_from, valid_until, is_active, campaign_id, discount_scope')
+    .eq('id', id)
     .maybeSingle()
   return (data as PromoCodeRow) ?? null
 }

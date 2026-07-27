@@ -1,6 +1,5 @@
 import { getTranslations } from 'next-intl/server'
 import dynamic from 'next/dynamic'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { HeroSection } from '@/components/sections/HeroSection'
 import { ReviewsSection } from '@/components/sections/ReviewsSection'
@@ -42,9 +41,13 @@ export async function generateMetadata({ params }: Props) {
 
 export default async function HomePage({ params }: Props) {
   const { locale } = await params
-  const supabase = await createClient()
-  // google_reviews_config is RLS-protected (service-role only). Bypass for the public stats + source URLs.
-  const adminSupabase = createAdminClient()
+  // Cookie-less client for everything — reading cookies() would force this page
+  // dynamic and silently defeat the `revalidate = 60` ISR cache above. All
+  // queries below are public read-only content (anon-readable RLS policies or
+  // their own is_active/is_published filter), so a single service-role client
+  // is safe and simpler than juggling two.
+  const supabase = createAdminClient()
+  const adminSupabase = supabase
 
   const [listingsResult, reviewsResult, slidesResult, boatsResult, prioritiesResult, googleConfigResult, reviewsCountResult, sectionStylesResult] = await Promise.all([
     supabase

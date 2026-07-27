@@ -25,10 +25,12 @@ export async function postSlackText(text: string): Promise<void> {
  * instead of the shared channel. Requires a bot token; no-ops (returns false) when
  * SLACK_BOT_TOKEN isn't set, so the caller can fall back to the channel webhook.
  * Never throws.
+ *
+ * `channel` overrides the destination (a Slack user ID also works — Slack opens
+ * the DM automatically) — defaults to the shared alert DM used by postSlackCritical.
  */
-export async function postSlackDM(text: string): Promise<boolean> {
+export async function postSlackDM(text: string, channel = process.env.SLACK_ALERT_DM_CHANNEL || 'D08PRAXD13R'): Promise<boolean> {
   const token = process.env.SLACK_BOT_TOKEN
-  const channel = process.env.SLACK_ALERT_DM_CHANNEL || 'D08PRAXD13R'
   if (!token) return false
 
   try {

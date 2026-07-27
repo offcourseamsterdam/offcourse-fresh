@@ -57,7 +57,7 @@ export function SearchResultsPage({ results, date, guests, locale }: SearchResul
   }, [results, activeDagdeel, activeType])
 
   const style = DAGDEEL_STYLES[activeDagdeel]
-  const formattedDate = formatDate(date + 'T12:00:00', locale as Locale)
+  const formattedDate = formatDate(date, locale as Locale)
 
   return (
     <div className={`relative min-h-screen bg-gradient-to-b ${style.gradient} transition-all duration-300`}>

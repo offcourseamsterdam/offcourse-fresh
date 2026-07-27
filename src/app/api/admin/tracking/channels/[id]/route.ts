@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { withRoute } from '@/lib/api/with-route'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -21,10 +22,10 @@ export async function GET(
   return apiOk(data)
 }
 
-export async function PUT(
+export const PUT = withRoute(async (
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
-) {
+) => {
   const denied = await requireAdmin()
   if (denied) return denied
   const { id } = await params
@@ -48,12 +49,12 @@ export async function PUT(
 
   if (error) return apiError(error.message)
   return apiOk(data)
-}
+})
 
-export async function DELETE(
+export const DELETE = withRoute(async (
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
-) {
+) => {
   const denied = await requireAdmin()
   if (denied) return denied
   const { id } = await params
@@ -61,4 +62,4 @@ export async function DELETE(
   const { error } = await supabase.from('channels').update({ is_active: false }).eq('id', id)
   if (error) return apiError(error.message)
   return apiOk({ deleted: true })
-}
+})

@@ -14,6 +14,8 @@ import type { Listing, Slot, Rate, Contact, PendingBooking } from '@/components/
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
 import { BOOKING_SOURCES } from '@/lib/constants'
 import type { BookingSource } from '@/lib/constants'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
+import { toAmsDateStr } from '@/lib/utils'
 
 // Declare gtag so TypeScript doesn't complain
 declare global {
@@ -25,7 +27,7 @@ declare global {
 // ── Page ───────────────────────────────────────────────────────────────────
 
 export default function BookingFlowPage() {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = toAmsDateStr()
 
   // Step state
   const [step, setStep] = useState(1)
@@ -46,11 +48,12 @@ export default function BookingFlowPage() {
   // unlike the public Webikeamsterdam QR checkout). The suggested invoice
   // amount is fetched from the server (uses an active campaign's commission %
   // when one exists for this partner+listing) but is always editable.
-  const [partners, setPartners] = useState<{ id: string; name: string }[]>([])
-  const [partnersLoading, setPartnersLoading] = useState(false)
+  const { data: partnersData, isLoading: partnersLoading } = useAdminFetch<{ partners: { id: string; name: string }[] }>(
+    bookingSource === 'invoice_later' ? '/api/admin/partners' : null
+  )
+  const partners = partnersData?.partners ?? []
   const [selectedPartnerId, setSelectedPartnerId] = useState<string>('')
   const [invoiceAmountInput, setInvoiceAmountInput] = useState('')
-  const [invoiceSuggestionLoading, setInvoiceSuggestionLoading] = useState(false)
   const [invoiceSuggestionNote, setInvoiceSuggestionNote] = useState<string | null>(null)
 
   // Step 1
@@ -108,18 +111,6 @@ export default function BookingFlowPage() {
       setInvoiceSuggestionNote(null)
     }
   }, [bookingSource])
-
-  // Fetch the partner list once, the first time "Invoice later" is selected
-  useEffect(() => {
-    if (!isInvoiceLater || partners.length > 0 || partnersLoading) return
-    setPartnersLoading(true)
-    fetch('/api/admin/partners')
-      .then(res => res.json())
-      .then(json => {
-        if (json.ok) setPartners(json.data.partners.map((p: { id: string; name: string }) => ({ id: p.id, name: p.name })))
-      })
-      .finally(() => setPartnersLoading(false))
-  }, [isInvoiceLater, partners.length, partnersLoading])
 
   // Pre-fill recovery amount with the calculated grand total when entering step 5
   useEffect(() => {
@@ -218,31 +209,42 @@ export default function BookingFlowPage() {
       }, 0)
     : null
 
-  // Fetch the suggested invoice amount once a partner + listing are both known.
-  // Only pre-fills — never overwrites an amount the admin already typed.
-  useEffect(() => {
-    if (!isInvoiceLater || step !== 5 || !selectedPartnerId || !selectedListing || invoiceAmountInput) return
-    const activeRate = isSharedListing ? primarySharedRate : selectedRate
-    const calc = extrasStep?.calculation
-    const baseCents = calc?.base_amount_cents ?? (isSharedListing ? (sharedBaseAmountCents ?? 0) : (activeRate ? ratePrice(activeRate) ?? 0 : 0))
-    if (baseCents <= 0) return
+  // Suggested invoice amount — only fetched once a partner + listing are both
+  // known AND the admin hasn't already typed an amount (the `!invoiceAmountInput`
+  // guard below is what makes this "pre-fill only, never overwrite typed input":
+  // once invoiceAmountInput is set, the URL collapses to null and useAdminFetch
+  // stops fetching entirely, so it can never come back and clobber a manual edit).
+  const invoiceSuggestionActiveRate = isSharedListing ? primarySharedRate : selectedRate
+  const invoiceSuggestionBaseCents =
+    extrasStep?.calculation?.base_amount_cents ??
+    (isSharedListing
+      ? (sharedBaseAmountCents ?? 0)
+      : (invoiceSuggestionActiveRate ? ratePrice(invoiceSuggestionActiveRate) ?? 0 : 0))
 
-    setInvoiceSuggestionLoading(true)
-    setInvoiceSuggestionNote(null)
-    fetch(`/api/admin/booking-flow/invoice-suggestion?partnerId=${selectedPartnerId}&listingId=${selectedListing.id}&baseAmountCents=${baseCents}`)
-      .then(res => res.json())
-      .then(json => {
-        if (!json.ok) return
-        setInvoiceAmountInput((json.data.suggestedInvoiceCents / 100).toFixed(2))
-        setInvoiceSuggestionNote(
-          json.data.hasCampaign
-            ? `Suggested from an active ${json.data.commissionPercent}% commission campaign — edit if needed.`
-            : 'No active campaign for this partner + listing — defaulted to the full amount. Edit if needed.'
-        )
-      })
-      .finally(() => setInvoiceSuggestionLoading(false))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isInvoiceLater, step, selectedPartnerId, selectedListing])
+  const invoiceSuggestionUrl =
+    isInvoiceLater && step === 5 && selectedPartnerId && selectedListing && !invoiceAmountInput && invoiceSuggestionBaseCents > 0
+      ? `/api/admin/booking-flow/invoice-suggestion?partnerId=${selectedPartnerId}&listingId=${selectedListing.id}&baseAmountCents=${invoiceSuggestionBaseCents}`
+      : null
+
+  const { data: invoiceSuggestionData, isLoading: invoiceSuggestionLoading } = useAdminFetch<{
+    suggestedInvoiceCents: number
+    hasCampaign: boolean
+    commissionPercent: number | null
+  }>(invoiceSuggestionUrl)
+
+  // Layered on top of the hook: applying the fetched suggestion to form state
+  // isn't something the hook itself can do — it just fetches. The "don't
+  // overwrite" guard lives in invoiceSuggestionUrl above; this effect only
+  // runs the one time fresh data actually arrives.
+  useEffect(() => {
+    if (!invoiceSuggestionData) return
+    setInvoiceAmountInput((invoiceSuggestionData.suggestedInvoiceCents / 100).toFixed(2))
+    setInvoiceSuggestionNote(
+      invoiceSuggestionData.hasCampaign
+        ? `Suggested from an active ${invoiceSuggestionData.commissionPercent}% commission campaign — edit if needed.`
+        : 'No active campaign for this partner + listing — defaulted to the full amount. Edit if needed.'
+    )
+  }, [invoiceSuggestionData])
 
   // ── Step 4 → 5: Extras confirmed ────────────────────────────────────────
 
@@ -658,7 +660,7 @@ export default function BookingFlowPage() {
               <>
                 <div className="rounded-md bg-indigo-50 border border-indigo-200 px-4 py-3 text-xs text-indigo-900">
                   No payment is taken now. Pick the partner this booking will be invoiced to —
-                  the suggested amount below comes from an active campaign's commission %, if
+                  the suggested amount below comes from an active campaign&apos;s commission %, if
                   one exists for this partner + listing, or defaults to the full price.
                 </div>
 

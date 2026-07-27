@@ -7,6 +7,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe } from '@/lib/stripe/server'
 import type { BookingSource } from '@/lib/constants'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { validatePromoCodeById } from '@/lib/promo-codes/validate'
 import { normalizePartnerCode } from '@/lib/partner-codes/generate'
 import { validatePartnerCode, reasonMessage } from '@/lib/partner-codes/validate'
 import { sendConfirmationEmail } from '@/lib/booking/send-confirmation-email'
@@ -17,18 +18,20 @@ import { sendCateringOrderEmailForBooking } from '@/lib/catering/send-catering-e
 import { notifyBookingFailure } from '@/lib/booking/notify-booking-failure'
 import { commissionFromInvoiceAmount } from '@/lib/booking/invoice-suggestion'
 import { commissionForCampaign } from '@/lib/booking/commission'
+import { resolveCampaignCommission } from '@/lib/booking/campaign-commission'
+import { parseAttribution } from '@/lib/tracking/attribution'
 import { extractVat } from '@/lib/extras/calculate'
-import { formatAmsterdamTime } from '@/lib/utils'
-import { postSlackText } from '@/lib/slack/send-notification'
+import { formatAmsterdamTime, fmtEurosRounded as fmtAmountEur } from '@/lib/utils'
+import { postSlackText, postSlackCritical } from '@/lib/slack/send-notification'
 import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
-import { CITY_TAX_CENTS_PER_GUEST } from '@/lib/booking/constants'
+import { CITY_TAX_CENTS_PER_GUEST, CRUISE_VAT_RATE, EXTRAS_VAT_RATE } from '@/lib/booking/constants'
 import type { Json } from '@/lib/supabase/types'
 
-/** Standard NL cruise VAT rate (9% — tourism / transport). */
-const BASE_VAT_RATE_PERCENT = 9
-
-/** Fallback VAT rate for extras when not provided per-item (most are drinks at 21%). */
-const DEFAULT_EXTRAS_VAT_RATE_PERCENT = 21
+// VAT rates: use the shared constants (src/lib/booking/constants.ts) — every
+// booking-creation site (this route, the Stripe webhook, create-payment-link)
+// must agree on these, and the invoice PDF already reads them from there too.
+const BASE_VAT_RATE_PERCENT: number = CRUISE_VAT_RATE
+const DEFAULT_EXTRAS_VAT_RATE_PERCENT: number = EXTRAS_VAT_RATE
 
 /** Booking sources that are paid third-party platforms — eligible for auto campaign attribution
  *  via `resolveCampaignId` when no cookie-based attribution is present. */
@@ -126,7 +129,25 @@ export async function POST(request: NextRequest) {
     // partner_invoice WITHOUT a code (e.g. an admin picking a partner directly) has
     // no self-proving credential, so it still requires a real admin session.
     const isAuthorizedByPartnerCode = isPartnerInvoice && !!(promoCodeId || partnerCode)
-    if (isInternal && !isAuthorizedByPartnerCode) {
+    //
+    // Second exception, same shape: an anonymous customer who redeemed a genuine
+    // comp code (discount_type:'full') during checkout — CheckoutFlow.tsx sends
+    // bookingSource:'complimentary' with the promo id it validated client-side, but
+    // the client's word is never trusted for authorization. Re-validate the code for
+    // real here (2026-07 fix — the 'complimentary' source previously required an
+    // admin session for EVERY caller, including real customers, which was both a
+    // functional bug — real customers got a 401 — and, once you consider fixing the
+    // functional bug naively, a latent hole: nothing else in this route re-checks a
+    // promo code for the non-partner-invoice path, so simply removing the admin gate
+    // without this check would let anyone claim any promoCodeId for a free booking).
+    // Admin-created complimentary bookings (staff picks it in /admin/fareharbor with
+    // no code) have no promoCodeId, so they still fall through to requireAdmin below.
+    const isAuthorizedByFullPromo = bookingSource === 'complimentary' && !!promoCodeId &&
+      await (async () => {
+        const validation = await validatePromoCodeById(String(promoCodeId), { listingId: listingId ?? null })
+        return validation.ok && validation.code.discount_type === 'full'
+      })()
+    if (isInternal && !isAuthorizedByPartnerCode && !isAuthorizedByFullPromo) {
       const denied = await requireAdmin()
       if (denied) return denied
     }
@@ -198,6 +219,41 @@ export async function POST(request: NextRequest) {
       // needed. The bookings UNIQUE(stripe_payment_intent_id) constraint + the
       // findRaceWinner re-check + the 23505-cancel branch below remain the backstop
       // against any rare race (e.g. an admin card payment that the webhook also sees).
+    }
+
+    // ── Payment gate for public (website) bookings ───────────────────────────
+    // SECURITY (2026-07): this route re-exports to the PUBLIC /api/booking-flow/book,
+    // which takes no admin auth for `website` source. Internal sources are already
+    // gated above (admin session or a validated partner code). A `website` booking
+    // must therefore PROVE payment before we create a real FareHarbor reservation —
+    // otherwise anyone could POST a booking and consume boat capacity for free.
+    // Paid website checkouts are normally finalized by the Stripe webhook; if a
+    // request reaches /book directly it must carry a settled PaymentIntent whose
+    // server-set metadata matches the booking it's asking us to create.
+    if (!isInternal) {
+      if (!stripePaymentIntentId) {
+        return apiError('Payment required for this booking.', 402)
+      }
+      let pi
+      try {
+        pi = await getStripe().paymentIntents.retrieve(String(stripePaymentIntentId))
+      } catch {
+        return apiError('Could not verify payment.', 402)
+      }
+      if (pi.status !== 'succeeded') {
+        return apiError('Payment has not been completed.', 402)
+      }
+      // Bind the booking to what was actually paid for. PI metadata is set
+      // server-side at intent creation (create-intent.ts) and cannot be forged by
+      // the client, so this blocks paying for a cheap slot then booking another.
+      const md = pi.metadata ?? {}
+      const paymentMatchesBooking =
+        String(md.avail_pk ?? '') === String(availPk) &&
+        String(md.customer_type_rate_pk ?? '') === String(customerTypeRatePk) &&
+        String(md.guest_count ?? '') === String(guestCount)
+      if (!paymentMatchesBooking) {
+        return apiError('Booking details do not match the payment.', 409)
+      }
     }
 
     const fh = getFareHarborClient()
@@ -805,7 +861,7 @@ async function resolveInvoiceLaterContext(params: {
  * Side effects: up to 3 reads to Supabase (cookie campaign + promo row + promo campaign).
  * No writes.
  */
-async function resolveAttribution(params: {
+export async function resolveAttribution(params: {
   attrCookie: string | null
   promoCodeId: string | null
   partnerInvoiceContext: PartnerInvoiceContext | null
@@ -816,21 +872,23 @@ async function resolveAttribution(params: {
   let partnerId: string | null = null
   let commissionAmountCents: number | null = null
 
-  // Layer 1: cookie attribution
+  // Layer 1: cookie attribution. partnerId is resolved fresh from the campaign
+  // row (via resolveCampaignCommission), not trusted from the cookie's own
+  // snapshot — the cookie can outlive a partner reassignment on the campaign,
+  // and the FK is continuously enforced by Postgres, so the row is always
+  // current. This matches Layer 2 below and the Stripe webhook's own lookup
+  // (src/lib/booking/campaign-commission.ts) — previously this layer alone
+  // trusted the cookie's partner_id, a real drift between the two call sites.
   try {
     if (params.attrCookie) {
-      const attr = JSON.parse(params.attrCookie)
-      if (attr.campaign_id) {
+      const attr = parseAttribution(params.attrCookie)
+      if (attr?.campaign_id) {
         const supabase = createAdminClient()
-        const { data: campaign } = await supabase
-          .from('campaigns')
-          .select('percentage_value, investment_type')
-          .eq('id', attr.campaign_id)
-          .maybeSingle()
-        if (campaign) {
-          campaignId = attr.campaign_id
-          partnerId = attr.partner_id ?? null
-          commissionAmountCents = commissionForCampaign(campaign, params.baseAmountCents)
+        const resolved = await resolveCampaignCommission(supabase, attr.campaign_id, params.baseAmountCents)
+        if (resolved) {
+          campaignId = resolved.campaignId
+          partnerId = resolved.partnerId
+          commissionAmountCents = resolved.commissionAmountCents
         }
       }
     }
@@ -848,15 +906,11 @@ async function resolveAttribution(params: {
         .eq('id', params.promoCodeId)
         .maybeSingle()
       if (promoRow?.campaign_id) {
-        const { data: campaign } = await supabase
-          .from('campaigns')
-          .select('id, partner_id, percentage_value, investment_type')
-          .eq('id', promoRow.campaign_id)
-          .maybeSingle()
-        if (campaign) {
-          campaignId = campaign.id
-          partnerId = campaign.partner_id ?? null
-          commissionAmountCents = commissionForCampaign(campaign, params.baseAmountCents)
+        const resolved = await resolveCampaignCommission(supabase, promoRow.campaign_id, params.baseAmountCents)
+        if (resolved) {
+          campaignId = resolved.campaignId
+          partnerId = resolved.partnerId
+          commissionAmountCents = resolved.commissionAmountCents
         }
       }
     } catch {
@@ -1055,11 +1109,10 @@ async function applyPromoCodeUsage(
  * This posts to Slack with ALL booking details so the admin can manually recover.
  */
 async function alertBookingSaveFailure(p: BookingPayload, dbError: string) {
-  const webhookUrl = process.env.SLACK_WEBHOOK_URL
-  if (!webhookUrl) {
-    console.error('[book] CRITICAL: Booking save failed AND no Slack webhook configured!', { dbError, payload: p })
-    return
-  }
+  // Always log locally regardless of Slack config — this is the most severe alert in
+  // the codebase (money moved, boat booked, our record is missing) and must leave a
+  // trail even if Slack itself is unreachable.
+  console.error('[book] CRITICAL: Booking DB save failed — customer paid, FareHarbor booked, our record is missing.', { dbError, payload: p })
 
   const text = [
     '🚨 *CRITICAL: BOOKING DB SAVE FAILED* 🚨',
@@ -1083,11 +1136,10 @@ async function alertBookingSaveFailure(p: BookingPayload, dbError: string) {
     '```',
   ].filter(Boolean).join('\n')
 
-  await postSlackText(text)
-}
-
-function fmtAmountEur(cents: number) {
-  return `€${(cents / 100).toFixed(0)}`
+  // CRITICAL alert — routes to Beer's DM (falls back to the shared channel if the
+  // bot token isn't configured). This is the last-line safety net for a paid,
+  // FareHarbor-booked cruise whose DB row failed to save; it must not be lost.
+  await postSlackCritical(text)
 }
 
 interface SlackPayload {
@@ -1121,9 +1173,6 @@ interface SlackPayload {
 }
 
 async function sendSlackNotification(p: SlackPayload) {
-  const webhookUrl = process.env.SLACK_WEBHOOK_URL
-  if (!webhookUrl) return // not configured
-
   const startTime = formatAmsterdamTime(p.startAt)
   const endTime = formatAmsterdamTime(p.endAt)
 
@@ -1178,9 +1227,6 @@ function generatePromoCode(): string {
 }
 
 async function notifyPromoRotation(oldCode: string, newCode: string, label: string, maxUses: number) {
-  const webhookUrl = process.env.SLACK_WEBHOOK_URL
-  if (!webhookUrl) return
-
   const text = [
     '🔄 *Promo code rotated*',
     `*${label}* hit its ${maxUses}-use limit.`,

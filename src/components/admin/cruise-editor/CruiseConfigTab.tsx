@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { CruiseTabProps, patchListing, inputCls } from './shared'
 import { Field } from './Field'
 import { TabSaveButton } from './TabSaveButton'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 
 interface FHItemCache {
   fareharbor_pk: number
@@ -30,30 +31,18 @@ export function CruiseConfigTab({ listing, onSave }: CruiseTabProps) {
     is_featured: listing.is_featured,
     display_order: listing.display_order,
   })
-  const [fhItems, setFhItems] = useState<FHItemCache[]>([])
-  const [fhItem, setFhItem] = useState<FHItemCache | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [boats, setBoats] = useState<BoatOption[]>([])
 
-  useEffect(() => {
-    fetch('/api/admin/boats')
-      .then(r => r.json())
-      .then(json => { if (json.ok) setBoats(json.data) })
-  }, [])
+  const { data: boatsData } = useAdminFetch<BoatOption[]>('/api/admin/boats')
+  const boats = boatsData ?? []
 
-  useEffect(() => {
-    fetch('/api/admin/fareharbor-test?action=supabase-items')
-      .then(r => r.json())
-      .then(json => {
-        if (json.ok) {
-          const items = json.data as FHItemCache[]
-          setFhItems(items)
-          const item = items.find(i => i.fareharbor_pk === listing.fareharbor_item_pk)
-          if (item) setFhItem(item)
-        }
-      })
-  }, [listing.fareharbor_item_pk])
+  const { data: fhItemsData } = useAdminFetch<FHItemCache[]>('/api/admin/fareharbor-test?action=supabase-items')
+  const fhItems = useMemo(() => fhItemsData ?? [], [fhItemsData])
+  const fhItem = useMemo(
+    () => fhItems.find(i => i.fareharbor_pk === form.fareharbor_item_pk) ?? null,
+    [fhItems, form.fareharbor_item_pk]
+  )
 
   function togglePk(list: number[], pk: number) {
     return list.includes(pk) ? list.filter(p => p !== pk) : [...list, pk]
@@ -112,10 +101,7 @@ export function CruiseConfigTab({ listing, onSave }: CruiseTabProps) {
           {fhItems.map(item => (
             <button
               key={item.fareharbor_pk}
-              onClick={() => {
-                setForm(f => ({ ...f, fareharbor_item_pk: item.fareharbor_pk }))
-                setFhItem(item)
-              }}
+              onClick={() => setForm(f => ({ ...f, fareharbor_item_pk: item.fareharbor_pk }))}
               className={`px-3 py-1.5 rounded-md border text-xs transition-all ${
                 form.fareharbor_item_pk === item.fareharbor_pk
                   ? 'border-zinc-900 bg-zinc-900 text-white'

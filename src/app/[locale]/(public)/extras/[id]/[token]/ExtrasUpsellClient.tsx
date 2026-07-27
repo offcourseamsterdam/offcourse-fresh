@@ -274,7 +274,7 @@ function ExtraDetailModal({
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    onClick={() => onQty(Math.max(0, qty - 1))}
+                    onClick={() => { const n = qty - 1; onQty(n < minQty ? 0 : n) }}
                     className="w-11 h-11 rounded-full border border-gray-200 flex items-center justify-center text-gray-600 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors text-base font-bold"
                   >−</button>
                   <span className="w-6 text-center text-sm font-semibold">{qty}</span>
@@ -316,7 +316,7 @@ function AlreadyOrdered({ items }: { items: { name: string; quantity?: number; i
         </svg>
       </div>
       <h2 className="text-xl font-bold text-[var(--color-ink)] mb-2">Pre-order confirmed!</h2>
-      <p className="text-sm text-[var(--color-muted)] mb-6">We'll have everything ready when you arrive. See you on the water!</p>
+      <p className="text-sm text-[var(--color-muted)] mb-6">We&apos;ll have everything ready when you arrive. See you on the water!</p>
       <div className="inline-block bg-[#f4f1ec] rounded-xl px-6 py-4 text-left">
         <p className="text-xs font-semibold text-[var(--color-muted)] uppercase tracking-wide mb-2">Your order</p>
         {items.map((item, i) => (

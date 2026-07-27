@@ -1,4 +1,6 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
+import { requireCronSecret } from '@/lib/auth/require-cron-secret'
+import { alertCronFailure } from '@/lib/cron/alert'
 import { syncGYGReviews } from '@/lib/getyourguide/sync'
 
 /**
@@ -9,11 +11,9 @@ import { syncGYGReviews } from '@/lib/getyourguide/sync'
  * If Cloudflare blocks the request, logs a warning and returns blocked:true —
  * in that case use the admin computer-use import as a fallback.
  */
-export async function GET(request: Request) {
-  const authHeader = request.headers.get('authorization')
-  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+export async function GET(request: NextRequest) {
+  const denied = requireCronSecret(request)
+  if (denied) return denied
 
   try {
     const result = await syncGYGReviews()
@@ -23,8 +23,7 @@ export async function GET(request: Request) {
     }
     return NextResponse.json({ ok: true, ...result })
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[cron/getyourguide-reviews]', message)
-    return NextResponse.json({ ok: false, error: message }, { status: 500 })
+    await alertCronFailure('getyourguide-reviews', err)
+    return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : String(err) }, { status: 500 })
   }
 }

@@ -1,12 +1,14 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import Image from 'next/image'
 import { toast } from 'sonner'
 import { Loader2, X, UtensilsCrossed } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { fmtEuros } from '@/lib/utils'
 import { extractVat } from '@/lib/extras/calculate'
 import type { AdminExtraLineItem } from '@/lib/admin/types'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 
 interface CatalogExtra {
   id: string
@@ -65,43 +67,31 @@ export function AddCateringModal({
   onClose,
   onSuccess,
 }: AddCateringModalProps) {
-  const [catalogItems, setCatalogItems] = useState<CatalogExtra[]>([])
+  const { data: extrasData, isLoading: loading, error: loadError } =
+    useAdminFetch<{ extras: CatalogExtra[] }>('/api/admin/extras')
+  const catalogItems = useMemo(
+    () => (extrasData?.extras ?? []).filter(e => e.is_active && e.category === 'food'),
+    [extrasData]
+  )
   const [quantities, setQuantities] = useState<Record<string, number>>({})
-  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Pre-populate quantities from existing extras on the booking once the catalog has loaded
   useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch('/api/admin/extras')
-        const json = await res.json()
-        const all: CatalogExtra[] = json.data?.extras ?? []
-        const catering = all.filter(
-          e => e.is_active && e.category === 'food',
-        )
-        setCatalogItems(catering)
-
-        // Pre-populate from existing extras on the booking
-        const initial: Record<string, number> = {}
-        for (const catalogItem of catering) {
-          const existing = existingExtras.find(
-            x => x.extra_id === catalogItem.id ||
-              (x.name === catalogItem.name && x.category === catalogItem.category),
-          )
-          if (existing) {
-            initial[catalogItem.id] = existing.quantity ?? 1
-          }
-        }
-        setQuantities(initial)
-      } catch {
-        setError('Failed to load catering options')
-      } finally {
-        setLoading(false)
+    if (catalogItems.length === 0) return
+    const initial: Record<string, number> = {}
+    for (const catalogItem of catalogItems) {
+      const existing = existingExtras.find(
+        x => x.extra_id === catalogItem.id ||
+          (x.name === catalogItem.name && x.category === catalogItem.category),
+      )
+      if (existing) {
+        initial[catalogItem.id] = existing.quantity ?? 1
       }
     }
-    load()
-  }, [existingExtras])
+    setQuantities(initial)
+  }, [catalogItems, existingExtras])
 
   function setQty(extraId: string, qty: number) {
     setQuantities(prev => ({ ...prev, [extraId]: Math.max(0, qty) }))
@@ -289,9 +279,11 @@ export function AddCateringModal({
                           >
                             {/* Thumbnail */}
                             {extra.image_url ? (
-                              <img
+                              <Image
                                 src={extra.image_url}
                                 alt={extra.name}
+                                width={40}
+                                height={40}
                                 className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
                               />
                             ) : (
@@ -358,7 +350,9 @@ export function AddCateringModal({
 
         {/* ── Footer ── */}
         <div className="border-t border-zinc-100 px-5 py-4 space-y-3">
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {(error || loadError) && (
+            <p className="text-sm text-red-600">{error ?? 'Failed to load catering options'}</p>
+          )}
 
           {selectedCount > 0 && (
             <div className="flex items-center justify-between text-sm">

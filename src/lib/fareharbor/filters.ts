@@ -32,6 +32,7 @@ export type ReasonCode =
   | 'NO_AVAILABILITIES'
   | 'PAST_DATE'
   | 'API_ERROR'
+  | 'LISTING_NOT_FOUND'
   | null
 
 export type BoatStatus = 'available' | 'sold_out' | 'too_many_guests' | 'unavailable'

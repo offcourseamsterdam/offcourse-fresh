@@ -89,12 +89,3 @@ export function buildTypeMapFromAvailabilities(
 
   return typeMap
 }
-
-/**
- * @deprecated Use buildTypeMapFromAvailabilities() instead.
- * This always returns an empty map because the fareharbor_customer_types
- * table was dropped in migration 006.
- */
-export async function getCustomerTypeMap(): Promise<Map<number, CustomerTypeConfig>> {
-  return new Map()
-}

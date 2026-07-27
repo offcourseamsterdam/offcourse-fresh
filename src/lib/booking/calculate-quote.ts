@@ -23,6 +23,8 @@ import { calculateExtras, type ExtrasCalculation, type Extra } from '@/lib/extra
 import { isChildLabel } from '@/lib/booking/adult-count'
 import { CITY_TAX_CENTS_PER_GUEST as CITY_TAX_PER_GUEST_CENTS } from '@/lib/booking/constants'
 import { DEFAULT_DURATION_MINUTES } from '@/lib/constants'
+import { validatePromoCodeById, type ValidationResult } from '@/lib/promo-codes/validate'
+import { applyPromoCode } from '@/lib/promo-codes/apply'
 
 export interface QuoteInput {
   listingId: string
@@ -33,14 +35,12 @@ export interface QuoteInput {
   durationMinutes?: number
   selectedExtraIds?: string[]
   extraQuantities?: Record<string, number>
-  promoCodeId?: string | null
   /**
-   * Discount amount in cents, computed by /api/promo/validate on the client.
-   * The server caps this to the pre-discount total — it never trusts a value
-   * larger than what's owed. A future improvement is to re-fetch the promo
-   * code and compute the discount entirely server-side.
+   * The promo code's id (from /api/promo/validate). The discount is re-derived
+   * server-side from this id — the client's displayed discount amount is NEVER
+   * trusted (2026-07 security fix). No id → no discount.
    */
-  discountAmountCents?: number
+  promoCodeId?: string | null
   /**
    * For shared cruises with multiple ticket types (e.g. adult + child).
    * When provided, the server verifies each rate individually and sums the
@@ -63,13 +63,20 @@ export interface QuoteResult {
 
 const STRIPE_MIN_CENTS = 50
 
+export interface QuoteDeps {
+  /** Injectable promo validation (by id) for tests. Defaults to the real DB-backed one. */
+  validatePromo?: (id: string, opts: { listingId?: string | null }) => Promise<ValidationResult>
+}
+
 /**
- * Compute the canonical price for a booking selection. Pure function that
- * fetches FH availability + extras and returns totals. No DB writes, no
- * Stripe calls — caller decides what to do with the result.
+ * Compute the canonical price for a booking selection. Fetches FH availability +
+ * extras and returns totals. No DB writes, no Stripe calls — caller decides what
+ * to do with the result. The promo discount is always derived server-side from
+ * the promo code id; client-supplied amounts are never trusted.
  */
-export async function calculateQuote(input: QuoteInput): Promise<QuoteResult> {
+export async function calculateQuote(input: QuoteInput, deps: QuoteDeps = {}): Promise<QuoteResult> {
   const {
+    listingId,
     availPk,
     customerTypeRatePk,
     guestCount,
@@ -77,7 +84,7 @@ export async function calculateQuote(input: QuoteInput): Promise<QuoteResult> {
     durationMinutes = DEFAULT_DURATION_MINUTES,
     selectedExtraIds = [],
     extraQuantities = {},
-    discountAmountCents: rawDiscount = 0,
+    promoCodeId,
     customerTypeRates,
   } = input
 
@@ -139,10 +146,10 @@ export async function calculateQuote(input: QuoteInput): Promise<QuoteResult> {
   // 2. Fetch active extras from the DB (only the ones the user selected).
   //    Filtering by is_active means a deactivated extra silently drops — we
   //    log the count mismatch below for forensics.
-  //    NOTE: use createAdminClient (raw service role, no cookies) — the
-  //    cookie-aware createServiceClient picks up the user's auth role and
-  //    falls foul of the extras table's `authenticated`-less RLS policy,
-  //    silently returning 0 rows for logged-in admins/partners.
+  //    NOTE: use createAdminClient (raw service role, no cookies) — a
+  //    cookie-aware client picks up the user's auth role and falls foul of
+  //    the extras table's `authenticated`-less RLS policy, silently
+  //    returning 0 rows for logged-in admins/partners.
   const supabase = createAdminClient()
   const extrasResult = selectedExtraIds.length > 0
     ? await supabase.from('extras').select('*').in('id', selectedExtraIds).eq('is_active', true)
@@ -188,9 +195,23 @@ export async function calculateQuote(input: QuoteInput): Promise<QuoteResult> {
   // 4. City tax (municipality levy, not in FareHarbor — applies to all cruise types).
   const cityTaxCents = guestCount * CITY_TAX_PER_GUEST_CENTS
 
-  // 5. Apply promo discount, capped to the pre-discount total.
+  // 5. Apply promo discount — ALWAYS derived server-side from the promo code id.
+  //    The client's displayed discount is never trusted: a forged discountAmountCents
+  //    previously let anyone book any cruise for €0.50 (2026-07 security fix). No valid
+  //    code → no discount. applyPromoCode already caps the discount to the base.
   const totalBeforeDiscount = extrasCalculation.grand_total_cents + cityTaxCents
-  const discountAmountCents = Math.max(0, Math.min(rawDiscount, totalBeforeDiscount))
+  let discountAmountCents = 0
+  if (promoCodeId) {
+    const validatePromo = deps.validatePromo ?? validatePromoCodeById
+    const validation = await validatePromo(promoCodeId, { listingId })
+    if (validation.ok) {
+      // 'cruise' scope discounts base + city tax only (extras still paid); 'all' → grand total.
+      const discountableBase = validation.code.discount_scope === 'cruise'
+        ? serverBaseAmount + cityTaxCents
+        : undefined
+      discountAmountCents = applyPromoCode(validation.code, totalBeforeDiscount, discountableBase).discountAmountCents
+    }
+  }
 
   // 6. Floor at Stripe minimum (€0.50).
   const totalCents = Math.max(STRIPE_MIN_CENTS, totalBeforeDiscount - discountAmountCents)

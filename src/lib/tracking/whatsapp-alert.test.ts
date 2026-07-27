@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildWhatsAppAdAlert } from './whatsapp-alert'
+import { buildWhatsAppAdAlert, buildAffiliateWhatsAppAlert } from './whatsapp-alert'
 
 describe('buildWhatsAppAdAlert', () => {
   it('includes a headline and the friendly button label', () => {
@@ -37,5 +37,37 @@ describe('buildWhatsAppAdAlert', () => {
 
   it('handles a fully empty input without throwing', () => {
     expect(buildWhatsAppAdAlert({})).toContain('Button: unknown')
+  })
+})
+
+describe('buildAffiliateWhatsAppAlert', () => {
+  it('prefers the partner name over the campaign slug', () => {
+    const msg = buildAffiliateWhatsAppAlert({ partnerName: 'Golden Tours', campaignSlug: 'golden-tours-2026' })
+    expect(msg).toContain('referred by *Golden Tours*')
+    expect(msg).toContain('Campaign: golden-tours-2026')
+  })
+
+  it('falls back to the campaign slug when there is no partner name', () => {
+    const msg = buildAffiliateWhatsAppAlert({ campaignSlug: 'golden-tours-2026' })
+    expect(msg).toContain('referred by *golden-tours-2026*')
+  })
+
+  it('falls back to a generic label when neither is known', () => {
+    const msg = buildAffiliateWhatsAppAlert({})
+    expect(msg).toContain('referred by *unknown affiliate*')
+  })
+
+  it('includes the friendly button label and page when present', () => {
+    const msg = buildAffiliateWhatsAppAlert({
+      source: 'pride_booking_panel',
+      page: '/en/cruises/pride-amsterdam-2026',
+      partnerName: 'Golden Tours',
+    })
+    expect(msg).toContain('Button: Pride WhatsApp prompt')
+    expect(msg).toContain('Page: /en/cruises/pride-amsterdam-2026')
+  })
+
+  it('omits the campaign line when there is no campaign slug', () => {
+    expect(buildAffiliateWhatsAppAlert({ partnerName: 'Golden Tours' })).not.toContain('Campaign:')
   })
 })

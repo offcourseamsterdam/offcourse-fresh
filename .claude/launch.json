@@ -14,6 +14,13 @@
       "runtimeArgs": ["run", "dev:local"],
       "port": 3000,
       "autoPort": true
+    },
+    {
+      "name": "Next.js Stripe Test Mode",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:local", "--", "-p", "3050"],
+      "port": 3050,
+      "autoPort": false
     }
   ]
 }

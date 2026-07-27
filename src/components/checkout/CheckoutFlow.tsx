@@ -2,68 +2,26 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { loadStripe } from '@stripe/stripe-js'
-import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
+import { Elements } from '@stripe/react-stripe-js'
 import { Loader2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { GuestInfoForm } from './GuestInfoForm'
 import { BookingSummary } from './BookingSummary'
 import { CancellationCutoff } from './CancellationCutoff'
+import { CheckoutProgress } from './CheckoutProgress'
+import { PromoCodeInput } from './PromoCodeInput'
+import { PaymentStep } from './PaymentStep'
+import type { BookingData, ServerQuote, PromoResult } from './types'
 import { trackEvent, getSessionId } from '@/lib/tracking/client'
 import { BOATS } from '@/lib/fareharbor/config'
 import { SESSION_BOOKING_KEY, SESSION_CONTACT_KEY } from '@/lib/constants'
-import { getErrorMessage, fmtEuros } from '@/lib/utils'
-import type { CustomerDetails, AvailabilitySlot, AvailabilityCustomerType } from '@/types'
-import type { ExtrasCalculation } from '@/lib/extras/calculate'
+import { getErrorMessage } from '@/lib/utils'
+import type { CustomerDetails } from '@/types'
 import type { CancellationTier } from '@/lib/cancellation/policy'
 
 import { stripePublishableKey, stripeIsTestMode } from '@/lib/stripe/keys'
 
 const stripePromise = loadStripe(stripePublishableKey)
-
-// ── Booking data shape (from sessionStorage) ────────────────────────────────
-
-interface BookingData {
-  listingId: string
-  listingSlug: string
-  listingTitle: string
-  listingHeroImageUrl: string | null
-  category: 'private' | 'shared'
-  date: string
-  guests: number
-  selectedSlot: AvailabilitySlot
-  selectedBoat: string | null
-  selectedCustomerType: AvailabilityCustomerType | null
-  ticketCounts: Record<number, number>
-  totalTickets: number
-  selectedExtraIds: string[]
-  extrasCalculation: ExtrasCalculation | null
-  extraQuantities: Record<string, number>
-  basePriceCents: number
-  cityTaxCents: number
-  durationMinutes?: number
-}
-
-/** Server-canonical quote response from /api/booking-flow/quote */
-interface ServerQuote {
-  quoteId: string
-  expiresAt: string
-  basePriceCents: number
-  serverBaseAmountCents: number
-  extrasCalculation: ExtrasCalculation
-  cityTaxCents: number
-  discountAmountCents: number
-  totalCents: number
-  durationMinutes: number
-}
-
-interface PromoResult {
-  promoCodeId: string
-  label: string
-  discountType: 'percentage' | 'fixed_amount' | 'full'
-  discountAmountCents: number
-  newTotalCents: number
-  isFull: boolean
-}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -94,261 +52,6 @@ interface CheckoutFlowProps {
   partnerName?: string | null
 }
 
-// ── Progress indicator ───────────────────────────────────────────────────────
-
-function CheckoutProgress({ step, hidePayment = false }: { step: 'details' | 'payment'; hidePayment?: boolean }) {
-  const steps = hidePayment
-    ? [{ key: 'cruise', label: 'Cruise' }, { key: 'details', label: 'Details' }] as const
-    : [{ key: 'cruise', label: 'Cruise' }, { key: 'details', label: 'Details' }, { key: 'payment', label: 'Payment' }] as const
-
-  const activeIndex = step === 'details' ? 1 : 2
-
-  return (
-    <div className="flex items-center gap-0 mb-8">
-      {steps.map((s, i) => {
-        const isDone = i < activeIndex
-        const isActive = i === activeIndex
-        return (
-          <div key={s.key} className="flex items-center gap-0 flex-1 last:flex-none">
-            <div className="flex flex-col items-center gap-1">
-              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors
-                ${isDone ? 'bg-[var(--color-primary)] text-white' : isActive ? 'bg-[var(--color-primary)] text-white ring-4 ring-[var(--color-primary)]/20' : 'bg-zinc-100 text-zinc-400'}`}>
-                {isDone ? (
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path d="M5 13l4 4L19 7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                ) : (
-                  i + 1
-                )}
-              </div>
-              <span className={`text-[10px] font-medium whitespace-nowrap ${isActive ? 'text-zinc-900' : isDone ? 'text-[var(--color-primary)]' : 'text-zinc-400'}`}>
-                {s.label}
-              </span>
-            </div>
-            {i < steps.length - 1 && (
-              <div className={`h-px flex-1 mx-2 mb-4 transition-colors ${isDone ? 'bg-[var(--color-primary)]' : 'bg-zinc-200'}`} />
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-// ── Promo code input ─────────────────────────────────────────────────────────
-
-function PromoCodeInput({
-  grandTotalCents,
-  baseAmountCents,
-  cityTaxCents,
-  initialCode,
-  onApplied,
-  onRemoved,
-  applied,
-  required,
-  listingId,
-}: {
-  grandTotalCents: number
-  /** Cruise base (no extras). Used so promos discount cruise + city tax only, not extras. */
-  baseAmountCents: number
-  cityTaxCents: number
-  initialCode?: string
-  onApplied: (result: PromoResult) => void
-  onRemoved: () => void
-  applied: PromoResult | null
-  required?: boolean
-  /** When provided, the server uses this to reject codes scoped to a different cruise. */
-  listingId?: string | null
-}) {
-  const [open, setOpen] = useState(!!initialCode || !!required)
-  const [value, setValue] = useState(initialCode ?? '')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  // Auto-validate URL-provided code on mount
-  useEffect(() => {
-    if (initialCode && !applied) {
-      handleApply(initialCode)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  async function handleApply(code?: string) {
-    const codeToApply = (code ?? value).trim()
-    if (!codeToApply) return
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/promo/validate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: codeToApply,
-          amountCents: grandTotalCents,
-          baseAmountCents,
-          cityTaxCents,
-          listingId,
-        }),
-      })
-      const json = await res.json()
-      if (!json.ok) {
-        setError(json.error ?? 'Invalid code.')
-      } else {
-        onApplied(json.data)
-        setError(null)
-      }
-    } catch {
-      setError('Could not validate code. Please try again.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  if (applied) {
-    return (
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm text-emerald-800">
-          <svg className="w-4 h-4 shrink-0 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path d="M5 13l4 4L19 7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span>
-            <span className="font-semibold">{applied.label}</span>
-            {applied.isFull
-              ? ' — your cruise is included, no payment needed'
-              : ` — ${fmtEuros(applied.discountAmountCents)} off`}
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={onRemoved}
-          className="text-xs text-emerald-600 hover:text-emerald-800 underline shrink-0"
-        >
-          Remove
-        </button>
-      </div>
-    )
-  }
-
-  return (
-    <div>
-      {required && !applied && (
-        <p className="text-sm font-medium text-zinc-700 mb-2">Enter your booking code to proceed</p>
-      )}
-      {!open && !required ? (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="text-sm text-zinc-400 hover:text-zinc-600 underline underline-offset-2 transition-colors"
-        >
-          Have a promo code?
-        </button>
-      ) : (
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={value}
-            onChange={e => setValue(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleApply()}
-            placeholder="XXXX"
-            autoFocus
-            spellCheck={false}
-            autoComplete="off"
-            className={`flex-1 px-4 py-2.5 rounded-xl border text-sm uppercase tracking-widest font-mono transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20 focus:border-[var(--color-primary)] ${
-              error ? 'border-red-400' : 'border-zinc-200'
-            }`}
-          />
-          <button
-            type="button"
-            onClick={() => handleApply()}
-            disabled={loading || !value.trim()}
-            className="px-4 py-2.5 rounded-xl bg-zinc-900 text-white text-sm font-medium hover:bg-zinc-700 transition-colors disabled:opacity-40"
-          >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Apply'}
-          </button>
-        </div>
-      )}
-      {error && <p className="text-xs text-red-500 mt-1.5">{error}</p>}
-    </div>
-  )
-}
-
-// ── Payment inner form (needs to be inside <Elements>) ──────────────────────
-
-function PaymentForm({
-  amountCents,
-  onSuccess,
-  bookingData,
-}: {
-  amountCents: number
-  onSuccess: (paymentIntentId: string) => void
-  bookingData: BookingData
-}) {
-  const stripe = useStripe()
-  const elements = useElements()
-  const [paying, setPaying] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function handlePay(e: React.FormEvent) {
-    e.preventDefault()
-    if (!stripe || !elements) return
-    setPaying(true)
-    setError(null)
-
-    // Save booking state for iDEAL redirect recovery
-    sessionStorage.setItem(SESSION_BOOKING_KEY, JSON.stringify(bookingData))
-
-    const result = await stripe.confirmPayment({
-      elements,
-      confirmParams: {
-        return_url: window.location.href.split('?')[0],
-      },
-      redirect: 'if_required',
-    })
-
-    if (result.error) {
-      setError(result.error.message ?? 'Payment failed. Please try again.')
-      setPaying(false)
-    } else if (result.paymentIntent?.status === 'succeeded') {
-      sessionStorage.removeItem(SESSION_BOOKING_KEY)
-      onSuccess(result.paymentIntent.id)
-    }
-  }
-
-  return (
-    <form onSubmit={handlePay} className="space-y-4">
-      <h2 className="text-lg font-bold text-zinc-900">Payment</h2>
-      <PaymentElement options={{ wallets: { applePay: 'auto', googlePay: 'auto' } }} />
-
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
-      <button
-        type="submit"
-        disabled={!stripe || !elements || paying}
-        className="w-full py-3.5 rounded-xl bg-[var(--color-accent)] text-white text-sm font-bold hover:bg-[var(--color-accent-dark)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {paying ? (
-          <span className="flex items-center justify-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" /> Processing...
-          </span>
-        ) : (
-          `Confirm & Pay ${fmtEuros(amountCents)}`
-        )}
-      </button>
-
-      <p className="text-[10px] text-zinc-400 text-center">
-        By confirming, you agree to our cancellation policy and terms of service.
-      </p>
-      <p className="text-[10px] text-zinc-400 text-center">
-        📄 A VAT invoice will be included in your confirmation email.
-      </p>
-    </form>
-  )
-}
-
 // ── Main checkout flow ──────────────────────────────────────────────────────
 
 export function CheckoutFlow({
@@ -360,7 +63,7 @@ export function CheckoutFlow({
 }: CheckoutFlowProps) {
   const isPartnerInvoice = paymentMode === 'partner_invoice'
   const [bookingData, setBookingData] = useState<BookingData | null>(null)
-  const [contact, setContact] = useState<CustomerDetails | null>(null)
+  const [, setContact] = useState<CustomerDetails | null>(null)
   const [clientSecret, setClientSecret] = useState<string | null>(null)
   const [creatingIntent, setCreatingIntent] = useState(false)
   const [submittingPartnerBooking, _setSubmittingPartnerBooking] = useState(false)
@@ -561,8 +264,11 @@ export function CheckoutFlow({
     }
   }
 
-  // Full-discount: no Stripe, call book API directly
-  async function handleFullDiscountBooking(details: CustomerDetails, bookingSource: 'partner' | 'partner_invoice' = 'partner') {
+  // Full-discount: no Stripe, call book API directly. 'complimentary' matches the
+  // canonical BOOKING_SOURCES value (not an ad-hoc 'partner' string) — the server
+  // independently re-validates the promo code is a genuine discount_type:'full'
+  // comp code before authorizing without an admin session (2026-07 fix).
+  async function handleFullDiscountBooking(details: CustomerDetails, bookingSource: 'complimentary' | 'partner_invoice' = 'complimentary') {
     if (!bookingData || !promoResult) return
     setCreatingIntent(true)
     setError(null)
@@ -803,7 +509,7 @@ export function CheckoutFlow({
                   transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
                 >
                   <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'stripe' } }}>
-                    <PaymentForm
+                    <PaymentStep
                       amountCents={totalAmountCents}
                       onSuccess={handlePaymentSuccess}
                       bookingData={bookingData}
