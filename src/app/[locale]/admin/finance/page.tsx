@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { Loader2, RefreshCw, Receipt, ArrowRight, AlertTriangle, Upload, ChevronDown, ChevronRight, FileDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
+import { FinanceShareLinks } from '@/components/admin/FinanceShareLinks'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { useFinanceUpload } from '@/hooks/useFinanceUpload'
 import { fmtAdminAmount, fmtAdminAmountRounded, fmtAdminDate } from '@/lib/admin/format'
@@ -156,6 +157,7 @@ export default function FinancePage() {
             Partner settlements &amp; BTW / Stripe payout reconciliation
           </p>
         </div>
+        <FinanceShareLinks />
       </div>
 
       {/* Tabs */}
@@ -1287,12 +1289,44 @@ function groupWithlocalsByQuarter(months: MonthWithlocalsSummary[]): WithlocalsQ
     .map(([quarter, totals]) => ({ quarter, totals }))
 }
 
+interface WithlocalsPayoutGroup {
+  payoutDate: string | null
+  bookings: WithlocalsBookingRow[]
+  totalCents: number
+}
+
+// Groups by the actual bank payout date rather than trip month, so each
+// group's total lines up 1:1 with a single line on the bank statement —
+// the "Per maand" view groups by trip date, which almost never matches how
+// Withlocals batches its payouts (see docs/features/kasboek-payout-pipelines.md).
+function groupWithlocalsByPayout(bookings: WithlocalsBookingRow[]): WithlocalsPayoutGroup[] {
+  const byPayout = new Map<string, WithlocalsBookingRow[]>()
+  for (const b of bookings) {
+    const key = b.payoutDate ?? '__pending__'
+    const arr = byPayout.get(key) ?? []
+    arr.push(b)
+    byPayout.set(key, arr)
+  }
+  return [...byPayout.entries()]
+    .sort(([a], [b]) => {
+      if (a === '__pending__') return -1
+      if (b === '__pending__') return 1
+      return b.localeCompare(a)
+    })
+    .map(([payoutDate, rows]) => ({
+      payoutDate: payoutDate === '__pending__' ? null : payoutDate,
+      bookings: rows.sort((a, b) => (a.tripAt ?? '').localeCompare(b.tripAt ?? '')),
+      totalCents: rows.reduce((sum, r) => sum + (r.netPayoutCents ?? 0), 0),
+    }))
+}
+
 function WithlocalsTab() {
   const { data, isLoading, error, refresh } = useAdminFetch<WithlocalsData>('/api/admin/finance/withlocals/summary')
   const { data: bookingsData, refresh: refreshBookings } =
     useAdminFetch<{ bookings: WithlocalsBookingRow[] }>('/api/admin/finance/withlocals/bookings')
 
   const [expandedMonth, setExpandedMonth] = useState<string | null>(null)
+  const [expandedPayout, setExpandedPayout] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const months = data?.months ?? []
@@ -1301,6 +1335,7 @@ function WithlocalsTab() {
   const quarterRows = groupWithlocalsByQuarter(months).filter(q => !year || q.quarter.startsWith(year))
   const bookings = bookingsData?.bookings ?? []
   const incompleteBookings = bookings.filter(b => !b.tripAt) // payout stub, invoice not ingested yet
+  const payoutGroups = groupWithlocalsByPayout(bookings)
 
   function afterSave() {
     refresh()
@@ -1511,6 +1546,78 @@ function WithlocalsTab() {
               </tbody>
             ))}
           </table>
+          </div>
+        </div>
+      )}
+
+      {payoutGroups.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+            Per uitbetaling — voor reconciliatie met de bank
+          </p>
+          <div className="rounded-lg border border-zinc-200 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-zinc-50 border-b border-zinc-200">
+                <tr>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Uitbetaald op</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Boekingen</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Netto totaal (= bankregel)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 bg-white">
+                {payoutGroups.map(g => {
+                  const key = g.payoutDate ?? 'pending'
+                  const expanded = expandedPayout === key
+                  return (
+                    <Fragment key={key}>
+                      <tr
+                        className="hover:bg-zinc-50 transition-colors cursor-pointer"
+                        onClick={() => setExpandedPayout(expanded ? null : key)}
+                      >
+                        <td className="px-4 py-3 font-medium text-zinc-900 whitespace-nowrap flex items-center gap-2">
+                          {expanded ? <ChevronDown className="w-4 h-4 text-zinc-400" /> : <ChevronRight className="w-4 h-4 text-zinc-400" />}
+                          {g.payoutDate ? fmtAdminDate(g.payoutDate) : (
+                            <span className="text-amber-700">Nog niet uitbetaald</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right text-zinc-500">{g.bookings.length}</td>
+                        <td className="px-4 py-3 text-right whitespace-nowrap font-semibold text-emerald-700">
+                          {fmtAdminAmount(g.totalCents)}
+                        </td>
+                      </tr>
+                      {expanded && (
+                        <tr>
+                          <td colSpan={3} className="px-4 pb-4 pt-0">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="text-zinc-400 uppercase tracking-wider">
+                                  <th className="text-left py-1.5 pr-3">Gast</th>
+                                  <th className="text-left py-1.5 pr-3">Tour</th>
+                                  <th className="text-right py-1.5 pr-3">Vaardatum</th>
+                                  <th className="text-right py-1.5 pr-3">Factuur</th>
+                                  <th className="text-right py-1.5">Netto</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-zinc-50">
+                                {g.bookings.map(b => (
+                                  <tr key={b.id}>
+                                    <td className="py-1 pr-3 text-zinc-700">{b.guestName ?? `#${b.bookingId.slice(0, 8)}`}</td>
+                                    <td className="py-1 pr-3 text-zinc-500 truncate max-w-[16rem]">{b.tourName ?? '—'}</td>
+                                    <td className="py-1 pr-3 text-right whitespace-nowrap text-zinc-500">{dayLabel(b.tripAt)}</td>
+                                    <td className="py-1 pr-3 text-right whitespace-nowrap text-zinc-400">{b.invoiceNumber ?? '—'}</td>
+                                    <td className="py-1 text-right whitespace-nowrap text-zinc-900">{fmtAdminAmount(b.netPayoutCents ?? 0)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

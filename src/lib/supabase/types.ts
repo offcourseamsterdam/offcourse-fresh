@@ -1853,6 +1853,33 @@ export type Database = {
         }
         Relationships: []
       }
+      finance_share_links: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          label: string | null
+          revoked_at: string | null
+          token: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label?: string | null
+          revoked_at?: string | null
+          token: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label?: string | null
+          revoked_at?: string | null
+          token?: string
+        }
+        Relationships: []
+      }
       getmyboat_bookings: {
         Row: {
           booking_id: string

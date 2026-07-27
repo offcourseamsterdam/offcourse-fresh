@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireAdminOrFinanceShare } from '@/lib/auth/finance-share'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { parseClickAndBoatCsv } from '@/lib/finance/clickandboat-csv'
 
@@ -18,7 +18,7 @@ const MAX_SIZE_BYTES = 1024 * 1024 // plain text CSV, generous headroom
  * Body: FormData { file }
  */
 export async function POST(req: NextRequest) {
-  const denied = await requireAdmin()
+  const denied = await requireAdminOrFinanceShare()
   if (denied) return denied
   try {
     const formData = await req.formData()

@@ -64,6 +64,14 @@ function walk(dir: string): string[] {
  * requireAdmin() — the factory itself calls requireAdmin() unconditionally on every
  * invocation (see create-summary-route.ts and its own auth-denied-passthrough test),
  * so any method destructured from a createSummaryRoute(...) call is treated as guarded.
+ *
+ * Also recognizes requireAdminOrFinanceShare() (src/lib/auth/finance-share.ts): every
+ * /api/admin/finance/** route accepts this as an alternative to a bare requireAdmin()
+ * call, so an accountant holding a temporary finance_share_links token can view/upload
+ * without a real admin session. It still denies everyone else exactly like requireAdmin()
+ * — see finance-share.test.ts. Routes that manage the tokens themselves
+ * (share-links/route.ts, share-links/[id]/route.ts) deliberately keep bare requireAdmin(),
+ * since the token must never be able to mint or revoke tokens.
  */
 function findHandlers(src: string): { method: string; guarded: boolean }[] {
   const marks: { method: string; index: number }[] = []
@@ -78,7 +86,7 @@ function findHandlers(src: string): { method: string; guarded: boolean }[] {
   const handlers = marks.map((mark, i) => {
     const end = i + 1 < marks.length ? marks[i + 1].index : src.length
     const body = src.slice(mark.index, end)
-    return { method: mark.method, guarded: /requireAdmin\s*\(/.test(body) }
+    return { method: mark.method, guarded: /requireAdmin(?:OrFinanceShare)?\s*\(/.test(body) }
   })
 
   const factoryRe = /export\s+const\s+\{([^}]+)\}\s*=\s*createSummaryRoute\s*\(/g
@@ -148,8 +156,11 @@ describe('admin route auth contract', () => {
     // 114 = 113 + /api/admin/finance/fareharbor/set-bank-date (FareHarbor's
     // own reported payout date turned out unreliable for accounting purposes
     // — this confirms the REAL bank-arrival date per payout, separately).
+    // 116 = 114 + /api/admin/finance/share-links + /share-links/[id] (issue
+    // and revoke temporary accountant tokens for the Finance tab — migration
+    // 107, src/lib/auth/finance-share.ts).
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`114`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`116`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {

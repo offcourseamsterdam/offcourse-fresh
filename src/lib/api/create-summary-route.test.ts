@@ -8,7 +8,7 @@ const h = vi.hoisted(() => ({
   fromSpy: vi.fn(),
 }))
 
-vi.mock('@/lib/auth/require-admin', () => ({ requireAdmin: h.requireAdmin }))
+vi.mock('@/lib/auth/finance-share', () => ({ requireAdminOrFinanceShare: h.requireAdmin }))
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from: (table: string) => {

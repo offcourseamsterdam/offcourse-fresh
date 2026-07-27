@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { apiOk, apiError } from './response'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireAdminOrFinanceShare } from '@/lib/auth/finance-share'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { Database } from '@/lib/supabase/types'
 
@@ -48,7 +48,7 @@ export function createSummaryRoute<Row, Mapped, Summary>(
 ): { GET: (req: NextRequest) => Promise<NextResponse> } {
   return {
     GET: async (_req: NextRequest): Promise<NextResponse> => {
-      const denied = await requireAdmin()
+      const denied = await requireAdminOrFinanceShare()
       if (denied) return denied
       try {
         const supabase = createAdminClient()

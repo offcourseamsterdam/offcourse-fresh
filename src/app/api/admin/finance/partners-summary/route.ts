@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireAdminOrFinanceShare } from '@/lib/auth/finance-share'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { quarterFromDate } from '@/lib/quarters'
 
@@ -30,7 +30,7 @@ import { quarterFromDate } from '@/lib/quarters'
  * }
  */
 export async function GET(_req: NextRequest) {
-  const denied = await requireAdmin()
+  const denied = await requireAdminOrFinanceShare()
   if (denied) return denied
   try {
     const supabase = createAdminClient()

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { apiError } from '@/lib/api/response'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireAdminOrFinanceShare } from '@/lib/auth/finance-share'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getFinanceAttachmentSignedUrl } from '@/lib/finance/attachment-storage'
 
@@ -22,7 +22,7 @@ type Source = keyof typeof SOURCES
  * reached through an authenticated admin request, never a public URL.
  */
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ source: string; id: string }> }) {
-  const denied = await requireAdmin()
+  const denied = await requireAdminOrFinanceShare()
   if (denied) return denied
   try {
     const { source, id } = await params

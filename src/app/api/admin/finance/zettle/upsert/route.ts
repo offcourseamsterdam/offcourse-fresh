@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireAdminOrFinanceShare } from '@/lib/auth/finance-share'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
@@ -44,7 +44,7 @@ const FIELD_MAP: Record<string, string> = {
 const MONTH_RE = /^\d{4}-\d{2}-01$/
 
 export async function POST(req: NextRequest) {
-  const denied = await requireAdmin()
+  const denied = await requireAdminOrFinanceShare()
   if (denied) return denied
   try {
     const body = await req.json().catch(() => null)
