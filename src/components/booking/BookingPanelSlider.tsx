@@ -425,6 +425,12 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                   ticketLabelOverride={props.rainbowBoatCard ? 'Single Ticket + open bar' : undefined}
                 />
 
+                {props.rainbowBoatCard && (
+                  <div className="mt-4">
+                    <WhatsAppQuestionPrompt />
+                  </div>
+                )}
+
                 {basePriceCents > 0 && (
                   <div className="mt-4 pt-4 border-t border-zinc-100">
                     {cityTaxCents > 0 && (

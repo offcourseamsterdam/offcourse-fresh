@@ -262,6 +262,11 @@ export function BookingPanelDesktop(props: BookingPanelProps) {
                     minPartyOverride={props.minPartyOverride}
                     ticketLabelOverride={props.rainbowBoatCard ? 'Single Ticket + open bar' : undefined}
                   />
+                  {props.rainbowBoatCard && (
+                    <div className="mt-4">
+                      <WhatsAppQuestionPrompt />
+                    </div>
+                  )}
                 </>
               )}
 
