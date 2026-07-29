@@ -29,6 +29,8 @@ interface ExtrasStepProps {
     selectedExtraIds: string[],
     calculation: ExtrasCalculation
   ) => void
+  /** Special-event listings (e.g. Pride) never carry extras by design — skip the card entirely instead of showing an empty state. Regular listings keep the "No optional extras" message, since an empty result there is more likely a setup gap worth surfacing. */
+  hideWhenEmpty?: boolean
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -40,6 +42,7 @@ export function ExtrasStep({
   baseAmountCents,
   durationMinutes = DEFAULT_DURATION_MINUTES,
   onExtrasChange,
+  hideWhenEmpty = false,
 }: ExtrasStepProps) {
   // Fallback: if adultCount wasn't provided (older callers), assume all are adults.
   const adults = adultCount ?? guestCount
@@ -178,24 +181,42 @@ export function ExtrasStep({
 
   if (loading) {
     return (
-      <div className="flex items-center gap-3 py-6 text-zinc-500 text-sm">
-        <Loader2 className="w-4 h-4 animate-spin" />
-        Loading extras…
+      <div className="border border-zinc-200 rounded-2xl p-5">
+        <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-3">
+          Add food, drinks &amp; extras
+        </h3>
+        <div className="flex items-center gap-3 py-6 text-zinc-500 text-sm">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Loading extras…
+        </div>
       </div>
     )
   }
 
   if (fetchError) {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-        {fetchError}
+      <div className="border border-zinc-200 rounded-2xl p-5">
+        <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-3">
+          Add food, drinks &amp; extras
+        </h3>
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {fetchError}
+        </div>
       </div>
     )
   }
 
   if (categoriesInOrder.length === 0) {
+    // Special events never carry extras by design — skip the card entirely
+    // rather than show an empty state.
+    if (hideWhenEmpty) return null
     return (
-      <p className="text-sm text-zinc-500 py-4">No optional extras available for this cruise.</p>
+      <div className="border border-zinc-200 rounded-2xl p-5">
+        <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-3">
+          Add food, drinks &amp; extras
+        </h3>
+        <p className="text-sm text-zinc-500">No optional extras available for this cruise.</p>
+      </div>
     )
   }
 
@@ -212,7 +233,10 @@ export function ExtrasStep({
   const selectedFoodCount = foodCats.flatMap(c => grouped[c] ?? []).filter(e => selectedIds.has(e.id)).length
 
   return (
-    <div className="space-y-4">
+    <div className="border border-zinc-200 rounded-2xl p-5 space-y-4">
+      <h3 className="font-avenir font-bold text-base text-[var(--color-ink)]">
+        Add food, drinks &amp; extras
+      </h3>
       {/* Page indicator */}
       {hasFood && hasDrinks && (
         <div className="flex gap-1.5">

@@ -337,15 +337,15 @@ export default function AdminCruisesPage() {
                   <div className="flex flex-wrap gap-2">
                     {selectedFhItem.customer_types.map(ct => (
                       <button
-                        key={ct.id}
-                        onClick={() => setForm(f => ({ ...f, allowed_customer_type_pks: togglePk(f.allowed_customer_type_pks, ct.fareharbor_pk) }))}
+                        key={ct.customer_type_pk}
+                        onClick={() => setForm(f => ({ ...f, allowed_customer_type_pks: togglePk(f.allowed_customer_type_pks, ct.customer_type_pk) }))}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs transition-all ${
-                          form.allowed_customer_type_pks.includes(ct.fareharbor_pk)
+                          form.allowed_customer_type_pks.includes(ct.customer_type_pk)
                             ? 'border-zinc-900 bg-zinc-900 text-white'
                             : 'border-zinc-200 bg-white hover:border-zinc-400'
                         }`}
                       >
-                        {form.allowed_customer_type_pks.includes(ct.fareharbor_pk) && <Check className="w-3 h-3" />}
+                        {form.allowed_customer_type_pks.includes(ct.customer_type_pk) && <Check className="w-3 h-3" />}
                         {ct.name} <span className="opacity-60">· {ct.duration_minutes}min</span>
                       </button>
                     ))}

@@ -11,7 +11,11 @@ export interface FHItem {
   item_type: 'private' | 'shared'
   last_synced_at: string | null
   resources: { id: string; fareharbor_pk: number; name: string; capacity: number }[]
-  customer_types: { id: string; fareharbor_pk: number; name: string; boat_name: string; duration_minutes: number; max_guests: number }[]
+  // fareharbor_pk here is the customer_type_RATE pk (volatile, minted per
+  // availability instance); customer_type_pk is the stable catalog key that
+  // the availability filter's Layer 2 (src/lib/fareharbor/filters.ts) actually
+  // matches against. Use customer_type_pk when building allowed_customer_type_pks.
+  customer_types: { id: string; fareharbor_pk: number; customer_type_pk: number; name: string; boat_name: string; duration_minutes: number; max_guests: number }[]
 }
 
 export function ItemRow({ item }: { item: FHItem }) {

@@ -22,14 +22,16 @@ export interface CruiseImageItem extends CruiseImage {
 // Columns actually read anywhere downstream of this query (traced exhaustively
 // 2026-07 through getCruisePageData, [slug]/page.tsx incl. generateMetadata, and
 // CruiseContentSections). Excludes admin-editor-only fields (benefits,
-// inclusions, boat_id, allowed_resource_pks, availability_filters,
+// inclusions, boat_id, allowed_resource_pks,
 // booking_cutoff_hours, cancellation_policy, required_partner_id, is_archived,
 // is_featured, created_at, updated_at) and is_published/display_order (used only
 // as query predicates, never projected). All 7 variants of each locale-suffixed
 // field group stay — which one is needed depends on the request's locale.
+// availability_filters is included despite being admin-editor data — [slug]/page.tsx
+// reads its min_guests_override to drive the solo-booking floor override.
 const LISTING_DETAIL_COLUMNS = `
   id, slug, category, images, hero_image_asset_id, hero_image_url, video_url,
-  fareharbor_item_pk, allowed_customer_type_pks, highlights, price_display,
+  fareharbor_item_pk, allowed_customer_type_pks, availability_filters, highlights, price_display,
   price_label, payment_mode, starting_price, max_guests, duration_display,
   departure_location, google_maps_url,
   title, title_de, title_es, title_fr, title_nl, title_pt, title_zh,

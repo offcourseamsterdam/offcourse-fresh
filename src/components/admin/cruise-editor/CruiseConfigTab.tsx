@@ -9,7 +9,13 @@ import { useAdminFetch } from '@/hooks/useAdminFetch'
 interface FHItemCache {
   fareharbor_pk: number
   resources: Array<{ fareharbor_pk: number; name: string }>
-  customer_types: Array<{ fareharbor_pk: number; name: string; duration_minutes: number }>
+  // fareharbor_pk here is the customer_type_RATE pk (volatile, minted per
+  // availability instance); customer_type_pk is the stable catalog key that
+  // Layer 2 of the availability filter (src/lib/fareharbor/filters.ts)
+  // actually matches against. allowed_customer_type_pks must be built from
+  // customer_type_pk, NOT fareharbor_pk — see the "Allowed durations" chips
+  // below, which used to write the wrong one.
+  customer_types: Array<{ fareharbor_pk: number; customer_type_pk: number; name: string; duration_minutes: number }>
 }
 
 interface BoatOption {
@@ -172,18 +178,18 @@ export function CruiseConfigTab({ listing, onSave }: CruiseTabProps) {
           <div className="flex flex-wrap gap-2">
             {fhItem.customer_types.map(ct => (
               <button
-                key={ct.fareharbor_pk}
+                key={ct.customer_type_pk}
                 onClick={() =>
                   setForm(f => ({
                     ...f,
                     allowed_customer_type_pks: togglePk(
                       f.allowed_customer_type_pks,
-                      ct.fareharbor_pk
+                      ct.customer_type_pk
                     ),
                   }))
                 }
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs transition-all ${
-                  form.allowed_customer_type_pks.includes(ct.fareharbor_pk)
+                  form.allowed_customer_type_pks.includes(ct.customer_type_pk)
                     ? 'border-zinc-900 bg-zinc-900 text-white'
                     : 'border-zinc-200 bg-white hover:border-zinc-400'
                 }`}

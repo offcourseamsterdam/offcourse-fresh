@@ -120,7 +120,7 @@ export function BookingPanelDesktop(props: BookingPanelProps) {
   const fhMinParty = !isPrivate && state.selectedSlot
     ? Math.max(...state.selectedSlot.customerTypes.map(ct => ct.minimumParty ?? 1), 1)
     : 1
-  const minParty = (!isPrivate && !slotHasExistingBookings) ? Math.max(fhMinParty, 2) : fhMinParty
+  const minParty = (!isPrivate && !slotHasExistingBookings) ? Math.max(fhMinParty, props.minPartyOverride ?? 2) : fhMinParty
   const belowMinParty = !slotHasExistingBookings && !isPrivate && state.totalTickets > 0 && state.totalTickets < minParty
 
   // ── Fetch slots for private on mount (hook only auto-fetches for shared) ──
@@ -144,7 +144,8 @@ export function BookingPanelDesktop(props: BookingPanelProps) {
 
   // ── Suggest next date when fully booked ──────────────────────────────────
   const suggestDate = useMemo(() => {
-    if (!state.date) return undefined
+    // Special events only run on their one fixed date — there's no "next day" to suggest.
+    if (!state.date || props.fixedDate) return undefined
     const d = new Date(state.date + 'T12:00:00')
     d.setDate(d.getDate() + 1)
     const today = getToday()
@@ -258,20 +259,27 @@ export function BookingPanelDesktop(props: BookingPanelProps) {
                     }
                     onConfirm={() => {}}
                     hasExistingBookings={slotHasExistingBookings}
+                    minPartyOverride={props.minPartyOverride}
+                    ticketLabelOverride={props.rainbowBoatCard ? 'Single Ticket + open bar' : undefined}
                   />
                 </>
               )}
 
               {/* Running total inside the selection box */}
               {basePriceCents > 0 && (
-                <div className="mt-4 pt-4 border-t border-zinc-100">
-                  <div className="flex items-center justify-between mb-1">
+                <div className="mt-4 pt-4 border-t border-zinc-100 space-y-1">
+                  {cityTaxCents > 0 && (
+                    <div className="flex items-center justify-between text-xs text-[var(--color-muted)]">
+                      <span>City tax</span>
+                      <span>+ {fmtEuros(cityTaxCents)}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
                     <span className="font-avenir font-bold text-base text-[var(--color-ink)]">Total</span>
                     <span className="font-avenir font-bold text-base text-[var(--color-ink)]">
                       {fmtEuros(basePriceCents + cityTaxCents)}
                     </span>
                   </div>
-                  <p className="text-xs text-[var(--color-muted)]">Includes taxes and charges</p>
                 </div>
               )}
             </div>
@@ -295,19 +303,15 @@ export function BookingPanelDesktop(props: BookingPanelProps) {
           {/* Extras + full price summary + Proceed */}
           {showExtras && (
             <div className="space-y-4">
-              <div className="border border-zinc-200 rounded-2xl p-5">
-                <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-3">
-                  Add food, drinks &amp; extras
-                </h3>
-                <ExtrasStep
-                  listingId={listingId}
-                  guestCount={guestCount}
-                  adultCount={adultCount}
-                  baseAmountCents={basePriceCents}
-                  durationMinutes={state.selectedCustomerType?.durationMinutes}
-                  onExtrasChange={handleExtrasChange}
-                />
-              </div>
+              <ExtrasStep
+                listingId={listingId}
+                guestCount={guestCount}
+                adultCount={adultCount}
+                baseAmountCents={basePriceCents}
+                durationMinutes={state.selectedCustomerType?.durationMinutes}
+                onExtrasChange={handleExtrasChange}
+                hideWhenEmpty={props.rainbowBoatCard}
+              />
 
               {basePriceCents > 0 && (
                 <div className="space-y-3">

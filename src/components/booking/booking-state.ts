@@ -183,4 +183,12 @@ export interface BookingPanelProps {
    * scroller + calendar — there's nothing else to pick.
    */
   fixedDate?: string
+  /**
+   * Overrides the default floor of 2 guests we enforce on an empty shared
+   * slot (see `minParty` in BookingPanelDesktop/BookingPanelSlider). From
+   * `cruise_listings.availability_filters.min_guests_override` — e.g. 1 for
+   * a listing where solo bookings should be allowed (Pride Amsterdam 2026).
+   * Undefined/null keeps the existing floor-of-2 behavior.
+   */
+  minPartyOverride?: number | null
 }

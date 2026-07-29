@@ -2,12 +2,14 @@ import { notFound } from 'next/navigation'
 import { getTranslations } from 'next-intl/server'
 import { Clock, Users, Umbrella } from 'lucide-react'
 import { BookingPanel } from '@/components/booking/BookingPanel'
+import { PrideEventWhatsAppCard } from '@/components/booking/PrideEventWhatsAppCard'
 import { ImageGallery } from '@/components/cruise/ImageGallery'
 import { StickyBookingHeader } from '@/components/cruise/StickyBookingHeader'
 import { MobileBookingCTA } from '@/components/cruise/MobileBookingCTA'
 import { RainbowCursorTrail } from '@/components/cruise/RainbowCursorTrail'
 import { CruiseContentSections } from '@/components/cruise/CruiseContentSections'
 import { getListingBySlug, getCruisePageData } from '@/lib/cruise/get-cruise-page-data'
+import { AvailabilityFiltersSchema } from '@/lib/fareharbor/filters'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import { TrackPageView } from '@/components/tracking/TrackPageView'
 import type { Locale } from '@/lib/i18n/config'
@@ -102,10 +104,13 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
   const specialEvent = SPECIAL_EVENTS[listing.slug]
   const isSpecialEvent = Boolean(specialEvent)
   const specialEventDate = specialEvent?.date
-  // Whole-boat total: a special event is a single fixed-price private charter,
-  // so the headline number is the boat price (per-person rate × capacity), not
-  // a "starting from" — there's only one price.
-  const fullBoatPrice = specialEvent && listing.starting_price != null && listing.max_guests
+  // Whole-boat total only applies to a PRIVATE special event (a single
+  // fixed-price charter) — the headline number is the boat price (per-person
+  // rate × capacity), not a "starting from". A SHARED special event (e.g.
+  // Pride Amsterdam 2026 — Pride Party Boat) sells per-person tickets off a
+  // shared pool, same pricing shape as any other shared listing, so there's
+  // no "whole boat" total to show.
+  const fullBoatPrice = specialEvent && listing.category === 'private' && listing.starting_price != null && listing.max_guests
     ? listing.starting_price * listing.max_guests
     : null
 
@@ -130,23 +135,36 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
   const renderStartCruisingHeader = () =>
     isSpecialEvent ? (
       // Special event: heading on its own row (so "CRUISING" never gets clipped
-      // by a competing price column), whole-boat price leading, per-person
-      // breakdown beneath, open-bar accent, then the clean meta list.
+      // by a competing price column), price leading (whole-boat total for a
+      // private charter, straight per-person for a shared one), open-bar
+      // accent, then the clean meta list.
       <div className="mb-4 sm:mb-6">
         <h2 className="font-briston text-[28px] sm:text-[36px] uppercase leading-none text-rainbow-gradient">
           Start Cruising
         </h2>
-        {fullBoatPrice != null && (
+        {fullBoatPrice != null ? (
           <div className="mt-4">
             <div className="flex items-baseline gap-2">
               <p className="font-palmore text-4xl text-[var(--color-primary)] leading-none">
-                €{fullBoatPrice.toLocaleString('en-US')}
+                €{listing.starting_price}
               </p>
-              <span className="text-sm text-[var(--color-muted)]">whole boat</span>
+              <span className="text-sm text-[var(--color-muted)]">per person</span>
             </div>
             <p className="text-sm text-[var(--color-ink)] mt-1.5">
-              €{listing.starting_price} per person
+              €{fullBoatPrice.toLocaleString('en-US')} whole boat
             </p>
+            <span className="inline-flex items-center gap-1 mt-2.5 text-xs font-semibold text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2.5 py-1 rounded-full">
+              🥂 Open bar included
+            </span>
+          </div>
+        ) : listing.starting_price != null && (
+          <div className="mt-4">
+            <div className="flex items-baseline gap-2">
+              <p className="font-palmore text-4xl text-[var(--color-primary)] leading-none">
+                €{listing.starting_price}
+              </p>
+              <span className="text-sm text-[var(--color-muted)]">per person</span>
+            </div>
             <span className="inline-flex items-center gap-1 mt-2.5 text-xs font-semibold text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2.5 py-1 rounded-full">
               🥂 Open bar included
             </span>
@@ -184,6 +202,11 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
   const offeredBoatIds = data.listingBoats
     .map(b => (b.name.toLowerCase().includes('diana') ? 'diana' : 'curacao'))
 
+  const parsedAvailabilityFilters = AvailabilityFiltersSchema.safeParse(listing.availability_filters)
+  const minPartyOverride = parsedAvailabilityFilters.success
+    ? parsedAvailabilityFilters.data.min_guests_override ?? null
+    : null
+
   const bookingPanelProps = {
     listingId: listing.id,
     listingSlug: listing.slug,
@@ -200,6 +223,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
     cancellationTiers: data.cancellationTiers,
     startingPrice: listing.starting_price ?? null,
     maxGuests: listing.max_guests ?? null,
+    minPartyOverride,
     offeredBoatIds,
     rainbowBoatCard: isSpecialEvent,
     fixedDate: specialEventDate,
@@ -283,6 +307,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
         <div id="booking" className="lg:hidden max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-8">
           {renderStartCruisingHeader()}
           <BookingPanel {...bookingPanelProps} layout="inline" />
+          {isSpecialEvent && <PrideEventWhatsAppCard />}
         </div>
 
         {/* ── Content + desktop sidebar ── */}
@@ -314,6 +339,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                 layout="sidebar"
                 sidebarHeader={renderStartCruisingHeader()}
               />
+              {isSpecialEvent && <PrideEventWhatsAppCard />}
             </div>
           </div>
         </div>
