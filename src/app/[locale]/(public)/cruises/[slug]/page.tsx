@@ -146,12 +146,12 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
           <div className="mt-4">
             <div className="flex items-baseline gap-2">
               <p className="font-palmore text-4xl text-[var(--color-primary)] leading-none">
-                €{listing.starting_price}
+                €{fullBoatPrice.toLocaleString('en-US')}
               </p>
-              <span className="text-sm text-[var(--color-muted)]">per person</span>
+              <span className="text-sm text-[var(--color-muted)]">whole boat</span>
             </div>
             <p className="text-sm text-[var(--color-ink)] mt-1.5">
-              €{fullBoatPrice.toLocaleString('en-US')} whole boat
+              €{listing.starting_price} per person
             </p>
             <span className="inline-flex items-center gap-1 mt-2.5 text-xs font-semibold text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2.5 py-1 rounded-full">
               🥂 Open bar included
