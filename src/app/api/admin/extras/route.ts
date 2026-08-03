@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { withRoute } from '@/lib/api/with-route'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -15,7 +16,7 @@ export async function GET() {
   return apiOk({ extras: data })
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute(async (request: NextRequest) => {
   const denied = await requireAdmin()
   if (denied) return denied
   const supabase = createAdminClient()
@@ -56,4 +57,4 @@ export async function POST(request: NextRequest) {
   const { data, error } = await supabase.from('extras').insert(allowed).select().single()
   if (error) return apiError(error.message)
   return apiOk({ extra: data })
-}
+})

@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { X } from 'lucide-react'
 import { StarRating } from '@/components/ui/StarRating'
 import { ReviewPhoto } from '@/components/ui/ReviewPhoto'
+import { formatReviewMonthYear as formatDate } from '@/lib/utils'
 
 /** Minimal review shape the modal renders. Shared by the homepage + cruise sliders. */
 export interface ReviewsModalReview {
@@ -24,22 +25,26 @@ async function fetchAllReviews(): Promise<ReviewsModalReview[]> {
   return []
 }
 
-type SourceFilter = 'all' | 'google' | 'tripadvisor'
+type SourceFilter = 'all' | 'google' | 'tripadvisor' | 'withlocals' | 'getyourguide'
 type SortOrder = 'newest' | 'oldest'
+
+const KNOWN_SOURCES: Array<Exclude<SourceFilter, 'all'>> = ['google', 'tripadvisor', 'withlocals', 'getyourguide']
+
+function sourceTabLabel(source: SourceFilter): string {
+  if (source === 'all') return 'All'
+  if (source === 'google') return 'Google'
+  if (source === 'tripadvisor') return 'TripAdvisor'
+  if (source === 'withlocals') return 'Withlocals'
+  if (source === 'getyourguide') return 'GetYourGuide'
+  return source
+}
 
 function sourceLabel(source: string | null): string {
   if (source === 'tripadvisor') return 'via TripAdvisor'
   if (source === 'google') return 'via Google'
+  if (source === 'withlocals') return 'via Withlocals'
+  if (source === 'getyourguide') return 'via GetYourGuide'
   return ''
-}
-
-function formatDate(publishTime: string | null): string {
-  if (!publishTime) return ''
-  try {
-    return new Date(publishTime).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-  } catch {
-    return ''
-  }
 }
 
 /**
@@ -71,9 +76,8 @@ export function ReviewsModal({ reviews: initialReviews, onClose }: { reviews: Re
     }
   }, [onClose])
 
-  const hasGoogle = reviews.some(r => r.source === 'google')
-  const hasTa = reviews.some(r => r.source === 'tripadvisor')
-  const showSourceFilter = hasGoogle && hasTa
+  const availableSources = KNOWN_SOURCES.filter(s => reviews.some(r => r.source === s))
+  const showSourceFilter = availableSources.length > 1
 
   const filtered = useMemo(() => {
     let list = reviews
@@ -125,9 +129,9 @@ export function ReviewsModal({ reviews: initialReviews, onClose }: { reviews: Re
         <div className="px-4 sm:px-6 py-3 border-b border-gray-100 flex flex-wrap items-center gap-x-2 gap-y-2 flex-shrink-0">
           {showSourceFilter && (
             <div className="flex gap-1">
-              {(['all', 'google', 'tripadvisor'] as SourceFilter[]).map(s => (
+              {(['all', ...availableSources] as SourceFilter[]).map(s => (
                 <button key={s} onClick={() => setSource(s)} className={pill(source === s)}>
-                  {s === 'all' ? 'All' : s === 'google' ? 'Google' : 'TripAdvisor'}
+                  {sourceTabLabel(s)}
                 </button>
               ))}
             </div>

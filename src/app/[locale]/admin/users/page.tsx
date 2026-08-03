@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { VALID_ROLES } from '@/lib/auth/types'
 import type { UserProfile, UserRole } from '@/lib/auth/types'
 
@@ -13,9 +14,8 @@ const roleBadgeColors: Record<UserRole, string> = {
 }
 
 export default function AdminUsersPage() {
-  const [users, setUsers] = useState<UserProfile[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { data, isLoading: loading, error, refresh, mutate } = useAdminFetch<{ users: UserProfile[] }>('/api/admin/users')
+  const users = data?.users ?? []
 
   // Invite form
   const [inviteEmail, setInviteEmail] = useState('')
@@ -23,29 +23,15 @@ export default function AdminUsersPage() {
   const [inviteLoading, setInviteLoading] = useState(false)
   const [inviteMessage, setInviteMessage] = useState<string | null>(null)
 
-  async function loadUsers() {
-    setLoading(true)
-    const res = await fetch('/api/admin/users')
-    const data = await res.json()
-    if (data.error) {
-      setError(data.error)
-    } else {
-      setUsers(data.users)
-    }
-    setLoading(false)
-  }
-
-  useEffect(() => { loadUsers() }, [])
-
   async function updateUser(id: string, patch: { role?: UserRole; is_active?: boolean }) {
     const res = await fetch('/api/admin/users', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, ...patch }),
     })
-    const data = await res.json()
-    if (!data.error) {
-      setUsers(prev => prev.map(u => u.id === id ? { ...u, ...patch } : u))
+    const json = await res.json()
+    if (json.ok) {
+      mutate(prev => prev ? { users: prev.users.map(u => u.id === id ? { ...u, ...patch } : u) } : prev)
     }
   }
 
@@ -58,14 +44,14 @@ export default function AdminUsersPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
     })
-    const data = await res.json()
+    const json = await res.json()
     setInviteLoading(false)
-    if (data.error) {
-      setInviteMessage(`Error: ${data.error}`)
+    if (!json.ok) {
+      setInviteMessage(`Error: ${json.error}`)
     } else {
       setInviteMessage(`Invite sent to ${inviteEmail}`)
       setInviteEmail('')
-      loadUsers()
+      refresh()
     }
   }
 

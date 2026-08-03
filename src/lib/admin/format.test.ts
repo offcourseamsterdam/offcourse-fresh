@@ -35,6 +35,9 @@ describe('fmtAdminAmount', () => {
   it('returns — for 0', () => {
     expect(fmtAdminAmount(0)).toBe('—')
   })
+  it('places the minus sign before the euro symbol for negative amounts', () => {
+    expect(fmtAdminAmount(-500)).toBe('-€5,00')
+  })
 })
 
 describe('fmtAdminAmountRounded', () => {
@@ -43,6 +46,9 @@ describe('fmtAdminAmountRounded', () => {
   })
   it('returns — for null', () => {
     expect(fmtAdminAmountRounded(null)).toBe('—')
+  })
+  it('places the minus sign before the euro symbol for negative amounts', () => {
+    expect(fmtAdminAmountRounded(-16500)).toBe('-€165')
   })
 })
 

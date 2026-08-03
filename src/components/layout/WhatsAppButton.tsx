@@ -10,6 +10,10 @@ function useShowAdminButton() {
   useEffect(() => {
     const host = window.location.hostname
     const isRealProduction = host === 'offcourseamsterdam.com' || host === 'www.offcourseamsterdam.com'
+    // window.location isn't available during SSR — this must run post-mount, and
+    // setting state here (rather than a lazy useState initializer) is required to
+    // avoid a hydration mismatch between the server's default render and the client.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setShow(!isRealProduction)
   }, [])
   return show
@@ -26,7 +30,11 @@ function useMobileCTAVisible() {
   useEffect(() => {
     const el = document.getElementById('booking')
     if (!el) return // No booking section = no CTA bar = stay at default position
-    // Booking section exists → CTA bar shows until user scrolls to booking
+    // Booking section exists → CTA bar shows until user scrolls to booking. This
+    // initial value depends on a DOM query (getElementById) unavailable during SSR,
+    // so it must be set post-mount; the observer below correctly setState in its
+    // own subscription callback and isn't the flagged line.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCtaVisible(true)
     const observer = new IntersectionObserver(
       ([entry]) => setCtaVisible(!entry.isIntersecting),

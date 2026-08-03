@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeCode, validatePromoCode, type PromoCodeRow } from './validate'
+import { normalizeCode, validatePromoCode, validatePromoCodeById, type PromoCodeRow } from './validate'
 
 // ── normalizeCode ────────────────────────────────────────────────────────────
 
@@ -117,5 +117,44 @@ describe('validatePromoCode', () => {
   it('passes with null valid_until (never expires)', async () => {
     const result = await validatePromoCode('TEST-1234', async () => makeCode({ valid_until: null }))
     expect(result.ok).toBe(true)
+  })
+})
+
+// ── validatePromoCodeById (the server-side enforcement path for quotes) ───────
+
+describe('validatePromoCodeById', () => {
+  it('rejects an empty id without hitting the DB', async () => {
+    const result = await validatePromoCodeById('', { lookupById: async () => makeCode() })
+    expect(result.ok).toBe(false)
+  })
+
+  it('looks up by the given id and validates the row', async () => {
+    let lookedUp = ''
+    const result = await validatePromoCodeById('abc-123', {
+      lookupById: async (id) => { lookedUp = id; return makeCode({ id }) },
+    })
+    expect(lookedUp).toBe('abc-123')
+    expect(result.ok).toBe(true)
+  })
+
+  it('rejects an unknown id', async () => {
+    const result = await validatePromoCodeById('nope', { lookupById: async () => null })
+    expect(result.ok).toBe(false)
+  })
+
+  it('applies the same rules as by-code (inactive / expired / exhausted)', async () => {
+    const inactive = await validatePromoCodeById('x', { lookupById: async () => makeCode({ is_active: false }) })
+    expect(inactive.ok).toBe(false)
+    const exhausted = await validatePromoCodeById('x', { lookupById: async () => makeCode({ max_uses: 5, uses_count: 5 }) })
+    expect(exhausted.ok).toBe(false)
+  })
+
+  it('rejects a campaign-scoped code used on the wrong listing', async () => {
+    const result = await validatePromoCodeById('x', {
+      listingId: 'listing-A',
+      lookupById: async () => makeCode({ campaign_id: 'camp-1' }),
+      scopeLookup: async () => ({ campaign_id: 'camp-1', listing_id: 'listing-B', partner_id: null, percentage_value: null, investment_type: null }),
+    })
+    expect(result.ok).toBe(false)
   })
 })

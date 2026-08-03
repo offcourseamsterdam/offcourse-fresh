@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo, useRef } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { CalendarDays, Users, Clock, Ship, Ticket } from 'lucide-react'
 import { LazyMotion, m, AnimatePresence } from 'framer-motion'
 
@@ -16,6 +16,7 @@ import { ExtrasStep } from './ExtrasStep'
 import { PriceSummary } from './PriceSummary'
 import { BookingSummaryTabs } from './BookingSummaryTabs'
 import { CancellationCutoffRow } from './CancellationCutoffRow'
+import { WhatsAppQuestionPrompt } from './WhatsAppQuestionPrompt'
 import { Button } from '@/components/ui/button'
 import { fmtEuros, getToday, toDateStr } from '@/lib/utils'
 import { useBookingPanel } from './useBookingPanel'
@@ -129,8 +130,10 @@ export function BookingPanelSlider(props: BookingPanelProps) {
   const [panelIndex, setPanelIndex] = useState(0)
   const [direction, setDirection] = useState(1)
 
-  // Track whether extras panel has been visited (to keep it mounted)
-  const hasVisitedExtras = useRef(false)
+  // Track whether extras panel has been visited (to keep it mounted). Real state,
+  // not a ref — this value directly decides what renders below (see extrasBlock),
+  // and refs must not be read during render.
+  const [hasVisitedExtras, setHasVisitedExtras] = useState(false)
   const extrasPanelIndex = category === 'private' ? 3 : 2
 
   // ── Summary tabs for completed steps ──────────────────────────────────────
@@ -156,7 +159,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
   // ── Navigation ────────────────────────────────────────────────────────────
 
   const goToPanel = useCallback((index: number) => {
-    if (index === extrasPanelIndex) hasVisitedExtras.current = true
+    if (index === extrasPanelIndex) setHasVisitedExtras(true)
     setPanelIndex(prev => {
       setDirection(index > prev ? 1 : -1)
       return index
@@ -178,7 +181,8 @@ export function BookingPanelSlider(props: BookingPanelProps) {
   // ── Suggest next date when fully booked ─────────────────────────────────────
 
   const suggestDate = useMemo(() => {
-    if (!state.date) return undefined
+    // Special events only run on their one fixed date — there's no "next day" to suggest.
+    if (!state.date || props.fixedDate) return undefined
     const selected = new Date(state.date + 'T12:00:00')
     const tomorrow = new Date(selected)
     tomorrow.setDate(selected.getDate() + 1)
@@ -193,21 +197,17 @@ export function BookingPanelSlider(props: BookingPanelProps) {
   // ── Shared extras JSX (inlined, NOT a function component) ─────────────────
 
   const extrasVisible = panelIndex === extrasPanelIndex
-  const extrasBlock = hasVisitedExtras.current && (
+  const extrasBlock = hasVisitedExtras && (
     <div ref={extrasRef} className={`space-y-4 ${extrasVisible ? '' : 'hidden'}`}>
-      <div className="border border-zinc-200 rounded-2xl p-5 bg-white">
-        <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-3">
-          Add food, drinks & extras
-        </h3>
-        <ExtrasStep
-          listingId={listingId}
-          guestCount={guestCount}
-          adultCount={adultCount}
-          baseAmountCents={basePriceCents}
-          durationMinutes={state.selectedCustomerType?.durationMinutes}
-          onExtrasChange={handleExtrasChange}
-        />
-      </div>
+      <ExtrasStep
+        listingId={listingId}
+        guestCount={guestCount}
+        adultCount={adultCount}
+        baseAmountCents={basePriceCents}
+        durationMinutes={state.selectedCustomerType?.durationMinutes}
+        onExtrasChange={handleExtrasChange}
+        hideWhenEmpty={props.rainbowBoatCard}
+      />
 
       {basePriceCents > 0 && (
         <div className="space-y-4">
@@ -241,15 +241,17 @@ export function BookingPanelSlider(props: BookingPanelProps) {
   const hasTickets = !isPrivate && state.totalTickets > 0
 
   // Enforce FareHarbor minimum party size — prevents a solo booking on a
-  // shared cruise that requires 2+ guests (mirrors the TicketStep warning).
-  //
-  // Exception: if the slot already has other bookings (remaining capacity <
-  // boat maximum), the cruise is already "happening" and a solo add-on is fine.
-  const minParty = !isPrivate && state.selectedSlot
-    ? Math.max(...state.selectedSlot.customerTypes.map(ct => ct.minimumParty ?? 1), 1)
-    : 1
+  // FareHarbor's minimal availability endpoint always returns minimum_party_size=1
+  // but rejects solo bookings on empty slots at booking time. Mirror that rule
+  // in the UI: empty shared slots require at least 2 guests.
+  // Exception: if the slot already has bookings the cruise is "happening"
+  // and a solo add-on is fine.
   const slotHasExistingBookings = !isPrivate && !!props.maxGuests && !!state.selectedSlot
     && state.selectedSlot.capacity < props.maxGuests
+  const fhMinParty = !isPrivate && state.selectedSlot
+    ? Math.max(...state.selectedSlot.customerTypes.map(ct => ct.minimumParty ?? 1), 1)
+    : 1
+  const minParty = (!isPrivate && !slotHasExistingBookings) ? Math.max(fhMinParty, props.minPartyOverride ?? 2) : fhMinParty
   const belowMinParty = !slotHasExistingBookings && hasTickets && state.totalTickets < minParty
 
   return (
@@ -265,21 +267,32 @@ export function BookingPanelSlider(props: BookingPanelProps) {
               <DateCardPicker
                 selectedDate={state.date}
                 onSelectDate={handleInlineDateSelect}
+                fixedDate={props.fixedDate}
+                rainbowTheme={props.rainbowBoatCard}
               />
 
               <GuestCounter guests={state.guests} onSet={(n) => dispatch({ type: 'SET_GUESTS', guests: n })} />
 
               {state.date && (
-                <Button variant="primary" size="md" className="w-full rounded-xl font-bold" onClick={async () => {
-                  dispatch({ type: 'SLOTS_LOADING' })
-                  goToPanel(1)
-                  if (state.date) {
-                    await fetchSlots(state.date, state.guests)
-                  }
-                }}>
+                <Button
+                  variant="primary"
+                  size="md"
+                  className={`w-full rounded-xl font-bold ${
+                    props.rainbowBoatCard ? 'bg-rainbow-vivid hover:opacity-90 [text-shadow:0_1px_3px_rgba(0,0,0,0.65),0_0_10px_rgba(0,0,0,0.35)]' : ''
+                  }`}
+                  onClick={async () => {
+                    dispatch({ type: 'SLOTS_LOADING' })
+                    goToPanel(1)
+                    if (state.date) {
+                      await fetchSlots(state.date, state.guests)
+                    }
+                  }}
+                >
                   Next
                 </Button>
               )}
+
+              {props.rainbowBoatCard && state.date && <WhatsAppQuestionPrompt />}
             </SlidePanel>
           )}
 
@@ -303,6 +316,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                   label: suggestDate.label,
                   onSelect: () => { handleInlineDateSelect(suggestDate.dateStr); goToPanel(0) },
                 } : undefined}
+                rainbowTheme={props.rainbowBoatCard}
               />
             </div>
           </SlidePanel>
@@ -327,16 +341,29 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                   allSlots={state.slots}
                   selectedSlot={state.selectedSlot}
                   onSelectSlot={(slot) => dispatch({ type: 'SELECT_SLOT', slot, category: 'private' })}
+                  offeredBoatIds={props.offeredBoatIds}
+                  rainbowBoatCard={props.rainbowBoatCard}
                 />
               )}
 
+              {props.rainbowBoatCard && (
+                <div className="mt-4">
+                  <WhatsAppQuestionPrompt />
+                </div>
+              )}
+
               {basePriceCents > 0 && (
-                <div className="mt-4 pt-4 border-t border-zinc-100">
-                  <div className="flex items-center justify-between mb-1">
+                <div className="mt-4 pt-4 border-t border-zinc-100 space-y-1">
+                  {cityTaxCents > 0 && (
+                    <div className="flex items-center justify-between text-xs text-[var(--color-muted)]">
+                      <span>City tax</span>
+                      <span>+ {fmtEuros(cityTaxCents)}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
                     <span className="font-avenir font-bold text-base text-[var(--color-ink)]">Total</span>
                     <span className="font-avenir font-bold text-base text-[var(--color-ink)]">{fmtEuros(basePriceCents + cityTaxCents)}</span>
                   </div>
-                  <p className="text-xs text-[var(--color-muted)]">Includes taxes and charges</p>
                 </div>
               )}
             </div>
@@ -346,7 +373,12 @@ export function BookingPanelSlider(props: BookingPanelProps) {
         {/* ── SHARED: Panel 0 — DATE + TIME ─────────────────────────── */}
         {!isPrivate && panelIndex === 0 && (
           <SlidePanel panelKey="shared-panel-0" direction={direction} initial={false} className="space-y-6">
-            <DateCardPicker selectedDate={state.date} onSelectDate={handleInlineDateSelect} />
+            <DateCardPicker
+              selectedDate={state.date}
+              onSelectDate={handleInlineDateSelect}
+              fixedDate={props.fixedDate}
+              rainbowTheme={props.rainbowBoatCard}
+            />
 
             {state.date && (
               <div ref={timeSlotsRef}>
@@ -364,6 +396,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                     label: suggestDate.label,
                     onSelect: () => handleInlineDateSelect(suggestDate.dateStr),
                   } : undefined}
+                  rainbowTheme={props.rainbowBoatCard}
                 />
               </div>
             )}
@@ -376,7 +409,10 @@ export function BookingPanelSlider(props: BookingPanelProps) {
             {state.selectedSlot && (
               <div ref={bookingCardRef} className="border-2 border-[var(--color-primary)] rounded-2xl p-5 bg-white">
                 <h3 className="font-avenir font-bold text-base text-[var(--color-ink)] mb-1">Ticket</h3>
-                {props.cancellationPolicy && <CancellationInfo text={props.cancellationPolicy} />}
+                {belowMinParty
+                  ? <CancellationInfo text="Minimum two guests for this time slot." />
+                  : props.cancellationPolicy && <CancellationInfo text={props.cancellationPolicy} />
+                }
 
                 <TicketStep
                   customerTypes={state.selectedSlot.customerTypes}
@@ -385,15 +421,28 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                   onUpdateCount={(pk, count) => dispatch({ type: 'UPDATE_TICKET_COUNT', customerTypePk: pk, count })}
                   onConfirm={() => dispatch({ type: 'CONFIRM_TICKETS' })}
                   hasExistingBookings={slotHasExistingBookings}
+                  minPartyOverride={props.minPartyOverride}
+                  ticketLabelOverride={props.rainbowBoatCard ? 'Single Ticket + open bar' : undefined}
                 />
+
+                {props.rainbowBoatCard && (
+                  <div className="mt-4">
+                    <WhatsAppQuestionPrompt />
+                  </div>
+                )}
 
                 {basePriceCents > 0 && (
                   <div className="mt-4 pt-4 border-t border-zinc-100">
-                    <div className="flex items-center justify-between mb-1">
+                    {cityTaxCents > 0 && (
+                      <div className="flex items-center justify-between text-xs text-[var(--color-muted)] mb-1">
+                        <span>City tax</span>
+                        <span>+ {fmtEuros(cityTaxCents)}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between mb-4">
                       <span className="font-avenir font-bold text-base text-[var(--color-ink)]">Total</span>
                       <span className="font-avenir font-bold text-base text-[var(--color-ink)]">{fmtEuros(basePriceCents + cityTaxCents)}</span>
                     </div>
-                    <p className="text-xs text-[var(--color-muted)] mb-4">Includes taxes and charges</p>
 
                     <Button
                       variant="primary"

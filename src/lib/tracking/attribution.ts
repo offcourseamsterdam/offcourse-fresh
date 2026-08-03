@@ -214,14 +214,36 @@ export interface AttributionData {
   utm_content?: string
 }
 
-export function getAttribution(): AttributionData | null {
-  const raw = getCookie(COOKIE_ATTRIBUTION)
+const ATTRIBUTION_STRING_FIELDS = [
+  'campaign_slug', 'campaign_id', 'partner_id', 'campaign_link_id',
+  'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+] as const
+
+/**
+ * Parse the oc_attr cookie value defensively — same discipline as
+ * parseFirstTouch (src/lib/tracking/traffic-source.ts) for oc_src: validate
+ * the JSON shape and only keep recognized string fields before trusting it.
+ * Returns null for anything malformed or empty.
+ */
+export function parseAttribution(raw: string | null | undefined): AttributionData | null {
   if (!raw) return null
   try {
-    return JSON.parse(raw) as AttributionData
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    const obj = parsed as Record<string, unknown>
+    const out: AttributionData = {}
+    for (const key of ATTRIBUTION_STRING_FIELDS) {
+      const val = obj[key]
+      if (typeof val === 'string' && val.trim()) out[key] = val
+    }
+    return Object.keys(out).length > 0 ? out : null
   } catch {
     return null
   }
+}
+
+export function getAttribution(): AttributionData | null {
+  return parseAttribution(getCookie(COOKIE_ATTRIBUTION))
 }
 
 // ── Channel resolution (server-side, maps UTM to channel slug) ──

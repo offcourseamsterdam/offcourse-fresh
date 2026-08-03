@@ -1,6 +1,7 @@
 import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { parseDurationMinutesFromCustomerTypeName } from '@/lib/fareharbor/customer-type-duration'
 
 const PAGE_SIZE = 500
 
@@ -38,14 +39,14 @@ export async function GET(request: Request) {
           traffic_source, traffic_detail,
           extras_selected, base_amount_cents, extras_amount_cents,
           base_vat_amount_cents, extras_vat_amount_cents, total_vat_amount_cents,
-          fareharbor_customer_type_rate_pk, customer_type_name,
+          fareharbor_customer_type_rate_pk, fareharbor_availability_pk, customer_type_name,
           campaign_id, promo_code_id, discount_amount_cents,
           partner_id,
           campaigns ( name ),
           promo_codes ( code ),
           partners ( name )
         `)
-        .in('status', ['confirmed', 'booked', 'pending_payment'])
+        .in('status', ['confirmed', 'booked', 'pending_payment', 'paid_pending_fh'])
         // Exclude skeleton rows created by FareHarbor's own booking.created webhook —
         // those rows have no booking_date and duplicate our own full booking record.
         // Every real booking (website, admin, stripe_recovery) always has booking_date set.
@@ -82,13 +83,18 @@ export async function GET(request: Request) {
         : null
 
       // Fix end_time for private cruises: FareHarbor returns start == end for private slots.
-      // Recompute from start_time + duration_minutes when that's the case.
+      // Recompute from start_time + duration parsed from the customer type NAME (e.g.
+      // "Diana - 2 Hours") — not the FH rate pk. The rate pk is minted per availability
+      // instance, not a stable catalog key, so a pk-keyed duration_minutes lookup (ctMap,
+      // below) goes stale the moment it's synced. The name is stable and already
+      // snapshotted on the row. See parseDurationMinutesFromCustomerTypeName.
       let endTime = b.end_time
-      if (ctInfo?.duration_minutes && b.start_time) {
+      const durationMinutes = parseDurationMinutesFromCustomerTypeName(b.customer_type_name ?? ctInfo?.name)
+      if (durationMinutes && b.start_time) {
         const startMs = new Date(b.start_time).getTime()
         const endMs   = b.end_time ? new Date(b.end_time).getTime() : startMs
         if (Math.abs(endMs - startMs) < 60_000) { // same time = FH quirk
-          endTime = new Date(startMs + ctInfo.duration_minutes * 60_000).toISOString()
+          endTime = new Date(startMs + durationMinutes * 60_000).toISOString()
         }
       }
 

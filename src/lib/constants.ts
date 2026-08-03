@@ -45,15 +45,24 @@ export type ListingCategory = (typeof LISTING_CATEGORIES)[number]
 // ── Booking sources ─────────────────────────────────────────────────────────
 
 export const BOOKING_SOURCES = [
-  { value: 'website', label: 'Website (regular)' },
-  { value: 'complimentary', label: 'Complimentary' },
-  { value: 'withlocals', label: 'Withlocals' },
-  { value: 'clickandboat', label: 'Click&Boat' },
-  { value: 'getyourguide', label: 'GetYourGuide' },
-  { value: 'tripadvisor', label: 'TripAdvisor' },
-  { value: 'partner_invoice', label: 'Partner invoice' },
-  { value: 'payment_link', label: 'Betaallink' },
-  { value: 'stripe_recovery', label: 'Stripe recovery (already paid)' },
+  { value: 'website', label: 'Website (regular)', adminSelectable: true },
+  { value: 'complimentary', label: 'Complimentary', adminSelectable: true },
+  { value: 'withlocals', label: 'Withlocals', adminSelectable: true },
+  { value: 'clickandboat', label: 'Click&Boat', adminSelectable: true },
+  { value: 'getyourguide', label: 'GetYourGuide', adminSelectable: true },
+  { value: 'tripadvisor', label: 'TripAdvisor', adminSelectable: true },
+  // Public-only: the Webikeamsterdam QR checkout (customer types a partner code,
+  // no admin session). Not admin-selectable — an admin has no code to enter and
+  // this flow is validated entirely by resolvePartnerInvoiceContext(). Admins who
+  // want to record a booking against a partner for later invoicing should use
+  // "Invoice later" instead.
+  { value: 'partner_invoice', label: 'Partner invoice', adminSelectable: false },
+  // Admin-only: staff picks an existing partner directly, no code needed. The
+  // suggested invoice amount is computed from an active campaign's commission %
+  // when one exists for that partner+listing, editable either way.
+  { value: 'invoice_later', label: 'Invoice later', adminSelectable: true },
+  { value: 'payment_link', label: 'Betaallink', adminSelectable: true },
+  { value: 'stripe_recovery', label: 'Stripe recovery (already paid)', adminSelectable: true },
 ] as const
 
 export type BookingSource = typeof BOOKING_SOURCES[number]['value']

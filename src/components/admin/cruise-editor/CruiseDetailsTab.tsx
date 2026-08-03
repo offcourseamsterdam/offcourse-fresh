@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { CruiseTabProps, patchListing, inputCls } from './shared'
 import { Field } from './Field'
 import { TabSaveButton } from './TabSaveButton'
 import { RichTextEditor } from '@/components/admin/RichTextEditor'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 
 interface FHItem {
   fareharbor_pk: number
@@ -27,18 +28,10 @@ export function CruiseDetailsTab({ listing, onSave }: CruiseTabProps) {
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [fhItems, setFhItems] = useState<FHItem[]>([])
 
   // Load FH items once so we can show the item name next to its PK
-  useEffect(() => {
-    fetch('/api/admin/fareharbor-items')
-      .then(r => r.json())
-      .then(json => {
-        const list = json?.data?.items
-        if (Array.isArray(list)) setFhItems(list)
-      })
-      .catch(() => {})
-  }, [])
+  const { data: fhItemsData } = useAdminFetch<{ items: FHItem[] }>('/api/admin/fareharbor-items')
+  const fhItems = fhItemsData?.items ?? []
 
   const fhItemName = (() => {
     const pk = Number(form.fareharbor_item_pk)

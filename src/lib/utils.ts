@@ -10,9 +10,10 @@ export function cn(...inputs: ClassValue[]) {
 
 // ── Price formatting ─────────────────────────────────────────────────────────
 
-/** Format cents as €X.XX (e.g. 1650 → "€16.50") */
+/** Format cents as €X.XX (e.g. 1650 → "€16.50", -500 → "-€5.00") */
 export function fmtEuros(cents: number): string {
-  return `€${(cents / 100).toFixed(2)}`
+  const sign = cents < 0 ? '-' : ''
+  return `${sign}€${(Math.abs(cents) / 100).toFixed(2)}`
 }
 
 export function formatPrice(
@@ -40,11 +41,25 @@ export function formatDate(
   }
 ): string {
   const d = typeof date === 'string' ? new Date(date) : date
-  return new Intl.DateTimeFormat(locale, options).format(d)
+  // Amsterdam is always ahead of UTC (+1/+2h), so a bare "YYYY-MM-DD" string
+  // (parsed as UTC midnight) still falls on the same Amsterdam calendar day —
+  // this makes the date display correctly for any viewer's browser timezone
+  // without needing to pre-shift the input to noon before calling this.
+  return new Intl.DateTimeFormat(locale, { timeZone: 'Europe/Amsterdam', ...options }).format(d)
 }
 
 export function formatShortDate(date: Date | string, locale: Locale = 'en'): string {
   return formatDate(date, locale, { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+/** "June 2026" style, for a review's publish_time. Returns '' for null or an unparseable date. */
+export function formatReviewMonthYear(publishTime: string | null): string {
+  if (!publishTime) return ''
+  try {
+    return new Date(publishTime).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  } catch {
+    return ''
+  }
 }
 
 // ── Duration formatting ──────────────────────────────────────────────────────
@@ -94,11 +109,25 @@ export function getToday(): Date {
   return d
 }
 
+/**
+ * Amsterdam-local YYYY-MM-DD for a given instant (defaults to now). Safe to
+ * use in server code (which runs in UTC on Vercel) to compute "today" or a
+ * booking's calendar date — unlike `toISOString().slice(0,10)` (reads the UTC
+ * date, which is the wrong calendar day for roughly the first 1-2 hours after
+ * Amsterdam midnight) or the `'T12:00:00'` workaround reinvented at several
+ * call sites to dodge the same problem.
+ */
+export function toAmsDateStr(date: Date | string = new Date()): string {
+  const d = typeof date === 'string' ? new Date(date) : date
+  return d.toLocaleDateString('en-CA', { timeZone: 'Europe/Amsterdam' })
+}
+
 // ── Price formatting (rounded) ──────────────────────────────────────────────
 
-/** Format cents as €X (no decimals, e.g. 16500 → "€165") */
+/** Format cents as €X (no decimals, e.g. 16500 → "€165", -16500 → "-€165") */
 export function fmtEurosRounded(cents: number): string {
-  return `€${Math.round(cents / 100)}`
+  const sign = cents < 0 ? '-' : ''
+  return `${sign}€${Math.round(Math.abs(cents) / 100)}`
 }
 
 // ── Error handling ──────────────────────────────────────────────────────────
@@ -108,12 +137,6 @@ export function getErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : 'Unknown error'
 }
 
-// ── Text helpers ────────────────────────────────────────────────────────────
-
-/** Simple pluralization */
-export function pluralize(n: number, singular: string, plural: string): string {
-  return n === 1 ? singular : plural
-}
 
 // ── HTML escaping ─────────────────────────────────────────────────────────────
 

@@ -1,5 +1,6 @@
 import { getStripe } from '@/lib/stripe/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { calculateQuote } from '@/lib/booking/calculate-quote'
 import { type ExtrasCalculation } from '@/lib/extras/calculate'
 import { fmtEuros } from '@/lib/utils'
@@ -34,6 +35,12 @@ interface CreateIntentInput {
   /** Analytics session id (cookie or stable-per-tab anon). Stored in PI metadata
    *  so the webhook can link the booking to its originating visit (device, channel). */
   sessionId?: string | null
+  /** Campaign id from the oc_attr cookie (/t/<slug> tracking link). Stored in PI
+   *  metadata so the webhook — which has no cookie access — can attribute the
+   *  resulting booking (and its commission) to the campaign/partner. */
+  campaignId?: string | null
+  /** Partner id from the oc_attr cookie — see campaignId. */
+  partnerId?: string | null
 }
 
 interface CreateIntentResult {
@@ -54,7 +61,7 @@ interface CreateIntentResult {
  *   5. Mark the quote consumed.
  */
 export async function createPaymentIntent(input: CreateIntentInput): Promise<CreateIntentResult> {
-  const { quoteId, listingTitle, date, startAt, endAt, contact, gclid, clickType, marketingConsent, sessionId, trafficSource, trafficDetail } = input
+  const { quoteId, listingTitle, date, startAt, endAt, contact, gclid, clickType, marketingConsent, sessionId, trafficSource, trafficDetail, campaignId, partnerId } = input
 
   if (!quoteId) {
     throw new Error('Missing quoteId — please refresh your booking and try again.')
@@ -62,29 +69,47 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
 
   const supabase = createAdminClient()
 
-  // 1. Look up the quote
-  const { data: quoteRow, error: quoteError } = await supabase
+  // 1+2. Atomically claim the quote: UPDATE … WHERE consumed_at IS NULL.
+  //      Two concurrent requests (e.g. a double-tap on Pay) both racing a
+  //      separate read-then-write would each see consumed_at = null and charge
+  //      twice. With a conditional update only one request wins the transition;
+  //      the loser gets no row back and is rejected.
+  const now = new Date()
+  const { data: quoteRow, error: claimError } = await supabase
     .from('pricing_quotes')
-    .select('*')
+    .update({ consumed_at: now.toISOString() })
     .eq('id', quoteId)
+    .is('consumed_at', null)
+    .select('*')
     .maybeSingle()
 
-  if (quoteError || !quoteRow) {
+  if (claimError || !quoteRow) {
+    // Claim failed — look the row up to report the precise reason.
+    const { data: existing } = await supabase
+      .from('pricing_quotes')
+      .select('id, consumed_at')
+      .eq('id', quoteId)
+      .maybeSingle()
+    if (existing?.consumed_at) {
+      throw new Error('This quote has already been used. Please refresh your booking and try again.')
+    }
     throw new Error('Your price quote could not be found. Please refresh your booking and try again.')
   }
 
-  // 2. Validate freshness
-  const now = new Date()
+  // Expired quotes stay claimed — they can never be used again anyway.
   if (new Date(quoteRow.expires_at) < now) {
     throw new Error('Your price quote has expired. Please refresh your booking and try again.')
   }
-  if (quoteRow.consumed_at) {
-    throw new Error('This quote has already been used. Please refresh your booking and try again.')
-  }
+
+  // From here on the quote is claimed. If anything below fails (price drift,
+  // Stripe outage), release the claim so the customer can simply retry.
+  try {
 
   // 3. Defence-in-depth: re-run the calculation with the same inputs.
   //    If it differs, refuse — something changed (price, deactivated extra) since
   //    the quote was issued.
+  const quoteBreakdown = quoteRow.breakdown as Record<string, unknown> | null
+  const storedRates = quoteBreakdown?.customerTypeRates as Array<{ pk: number; count: number }> | null | undefined
   const recomputed = await calculateQuote({
     listingId: String(quoteRow.listing_id ?? ''),
     availPk: Number(quoteRow.avail_pk),
@@ -94,8 +119,10 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
     durationMinutes: Number(quoteRow.duration_minutes),
     selectedExtraIds: (quoteRow.selected_extra_ids as string[]) ?? [],
     extraQuantities: (quoteRow.extra_quantities as Record<string, number>) ?? {},
+    // Discount is re-derived from promo_code_id inside calculateQuote — the stored
+    // discount is not fed back in (that would re-trust a value a poisoned quote set).
     promoCodeId: quoteRow.promo_code_id,
-    discountAmountCents: Number(quoteRow.discount_amount_cents ?? 0),
+    customerTypeRates: storedRates ?? undefined,
   })
 
   if (recomputed.totalCents !== quoteRow.total_cents) {
@@ -111,6 +138,43 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
 
   if (recomputed.totalCents < 50) {
     throw new Error('Amount must be at least €0.50')
+  }
+
+  // 3b. Validate availability with FareHarbor BEFORE charging. A slot can sell out
+  //     between quote and pay; catching it here means the customer is never charged
+  //     for an unbookable cruise (the webhook is the sole finalizer and never refunds).
+  const fh = getFareHarborClient()
+  const isPrivate = String(quoteRow.category) === 'private'
+  const validateGuestCount = Number(quoteRow.guest_count ?? 1)
+  const validateCustomers = (!isPrivate && storedRates && storedRates.length > 0)
+    ? storedRates.flatMap(({ pk, count }) =>
+        Array.from({ length: count }, () => ({ customer_type_rate: Number(pk) })))
+    : Array.from({ length: isPrivate ? 1 : validateGuestCount }, () => ({
+        customer_type_rate: Number(quoteRow.customer_type_rate_pk ?? 0),
+      }))
+
+  let validation
+  try {
+    validation = await fh.validateBooking(Number(quoteRow.avail_pk), {
+      contact: {
+        name: contact?.name ?? '',
+        phone: contact?.phone ?? '',
+        email: contact?.email ?? '',
+      },
+      customers: validateCustomers,
+    })
+  } catch (err) {
+    // FareHarbor slow/unreachable at the pre-charge gate → fail CLOSED. Never charge
+    // for a slot we couldn't verify; the customer simply retries (no money moved).
+    console.error('[create-intent] pre-charge validate failed:', err)
+    const e = new Error('We could not confirm availability just now. Please try again in a moment.') as Error & { code?: string }
+    e.code = 'FH_VALIDATE_UNAVAILABLE'
+    throw e
+  }
+  if (!validation.is_bookable) {
+    const e = new Error(validation.error || 'That time slot is no longer available — please pick another time.') as Error & { code?: string }
+    e.code = 'FH_NOT_BOOKABLE'
+    throw e
   }
 
   // 4. Create Stripe PaymentIntent against the recomputed total.
@@ -130,6 +194,7 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
       customer_type_rate_pk: String(quoteRow.customer_type_rate_pk ?? ''),
       customer_type_name: String(recomputed.customerTypeName ?? ''),
       guest_count: String(quoteRow.guest_count),
+      ...(storedRates?.length ? { customer_type_rates: JSON.stringify(storedRates) } : {}),
       category: String(quoteRow.category),
       date: String(date ?? ''),
       start_at: String(startAt ?? ''),
@@ -158,6 +223,11 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
       ...(trafficSource ? { traffic_source: String(trafficSource).slice(0, 100) } : {}),
       ...(trafficDetail ? { traffic_detail: String(trafficDetail).slice(0, 200) } : {}),
       ...(trafficSource ? { traffic_label: formatTrafficSource(trafficSource, trafficDetail).slice(0, 200) } : {}),
+      // Which campaign/partner sent this visitor (/t/<slug> link) — the webhook
+      // has no cookie access, so this is the only way it can attribute the
+      // booking (and compute commission) to a partner.
+      ...(campaignId ? { campaign_id: String(campaignId) } : {}),
+      ...(partnerId ? { partner_id: String(partnerId) } : {}),
       ...(quoteRow.promo_code_id
         ? {
             promo_code_id: String(quoteRow.promo_code_id),
@@ -167,10 +237,11 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
     },
   })
 
-  // 5. Mark the quote consumed (best-effort; ignore failure — Stripe is the source of truth)
+  // 5. Record which PaymentIntent consumed the quote (the claim itself already
+  //    happened atomically in step 1; best-effort, Stripe is the source of truth)
   await supabase
     .from('pricing_quotes')
-    .update({ consumed_at: now.toISOString(), consumed_intent_id: paymentIntent.id })
+    .update({ consumed_intent_id: paymentIntent.id })
     .eq('id', quoteId)
 
   console.log('[create-intent] charge', {
@@ -187,5 +258,16 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Cre
     calculation: recomputed.extrasCalculation,
     discountAmountCents: recomputed.discountAmountCents,
     chargedCents: recomputed.totalCents,
+  }
+
+  } catch (err) {
+    // Release the claim — without this, a transient failure would lock the
+    // customer out with "quote already used" until they rebuild their booking.
+    await supabase
+      .from('pricing_quotes')
+      .update({ consumed_at: null })
+      .eq('id', quoteId)
+      .is('consumed_intent_id', null)
+    throw err
   }
 }

@@ -1,55 +1,98 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { NextRequest } from 'next/server'
-import { extractVat } from '@/lib/extras/calculate'
 
 /**
- * Tests the Stripe webhook's most consequential invariants:
- *   1. The Google Ads conversion is reported BEFORE the idempotency early-return,
- *      so card payments already booked by /book still fire a conversion.
- *   2. An already-processed PaymentIntent does NOT create a second FareHarbor
- *      booking (idempotency).
- *   3. A bad signature is rejected with 400 and does no work.
- *   4. checkout.session.completed confirms booking + sends Slack + email,
- *      with phone: null normalised to undefined.
- *   5. checkout.session.completed is idempotent: already-confirmed booking → skip.
- *   6. checkout.session.expired cancels the FH slot and marks booking cancelled.
- *   7. checkout.session.expired skips FH cancel when booking_uuid is absent.
+ * Tests the Stripe webhook as the SINGLE booking finalizer (write-row-first):
+ *   1. Happy path: insert paid_pending_fh → FareHarbor booked → flip to confirmed,
+ *      send Slack + email + catering. Never refunds.
+ *   2. Duplicate Stripe delivery: the row INSERT hits 23505 → exit before any
+ *      FareHarbor call (the exactly-once gate that replaced the claim mutex).
+ *   3. Retry-then-park: FareHarbor create fails → row stays paid_pending_fh, a
+ *      CRITICAL alert fires, and `stripe.refunds.create` is NEVER called.
+ *   4. Refund guard: an already-refunded PI is not (re)booked.
+ *   5. The Google Ads conversion fires for every successful payment.
+ *   6. checkout.session.completed / .expired behaviour (unchanged).
+ *   7. A bad signature is rejected with 400 and does no work.
  */
 
 const h = vi.hoisted(() => ({
   constructEvent: vi.fn(),
   reportBookingConversion: vi.fn().mockResolvedValue(undefined),
   reportRefundAdjustment: vi.fn().mockResolvedValue(undefined),
-  fhCreateBooking: vi.fn(),
-  fhValidateBooking: vi.fn(),
+  fhCreateBookingIdempotent: vi.fn(),
   fhCancelBooking: vi.fn().mockResolvedValue(undefined),
+  refundsCreate: vi.fn().mockResolvedValue({ id: 're_test_1' }),
+  refundsList: vi.fn().mockResolvedValue({ data: [] }),
   maybeSingle: vi.fn(),
+  insert: vi.fn().mockResolvedValue({ error: null, data: { id: 'booking-row-id' } }),
+  update: vi.fn().mockResolvedValue({ error: null }),
   sendConfirmationEmail: vi.fn().mockResolvedValue(undefined),
   notifyCateringOrder: vi.fn().mockResolvedValue(undefined),
+  sendCateringOrderEmailForBooking: vi.fn().mockResolvedValue({ ok: true, resent: false, recipient: 'x' }),
   postSlackText: vi.fn().mockResolvedValue(undefined),
+  postSlackCritical: vi.fn().mockResolvedValue(undefined),
   getExtrasFromQuote: vi.fn().mockResolvedValue([]),
-  capturedInsert: null as Record<string, unknown> | null,
-  insertResult: { error: null } as { error: null | { code?: string; message: string } },
+  resolveStripeFeeCents: vi.fn().mockResolvedValue(null),
 }))
 
 vi.mock('@/lib/stripe/server', () => ({
-  getStripe: () => ({ webhooks: { constructEvent: h.constructEvent } }),
+  getStripe: () => ({
+    webhooks: { constructEvent: h.constructEvent },
+    refunds: { create: h.refundsCreate, list: h.refundsList },
+  }),
 }))
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
-    // `table` distinguishes the assertion-relevant 'bookings' insert (captured)
-    // from side-channel inserts like ops_events (best-effort, ignored here).
-    from: (table: string) => ({
+    from: () => ({
       select: () => ({ eq: () => ({ maybeSingle: h.maybeSingle }) }),
-      update: () => ({ eq: () => Promise.resolve({ error: null }) }),
-      insert: (row: Record<string, unknown>) => {
-        if (table === 'bookings') h.capturedInsert = row
-        return Promise.resolve(h.insertResult)
-      },
-      delete: () => ({ eq: () => ({ eq: () => Promise.resolve({ error: null }) }) }),
+      // Captures the update payload as the first h.update arg (existing tests only
+      // check call occurrence, never inspect arguments, so this is additive).
+      update: (payload: unknown) => ({ eq: (...eqArgs: unknown[]) => h.update(payload, ...eqArgs) }),
+      // Route now chains .insert(...).select('id').single() — h.insert still
+      // receives the payload (for the existing call/payload assertions) and its
+      // configured resolved value ({ error, data? }) is what .single() returns.
+      insert: (payload: unknown) => ({
+        select: () => ({ single: () => h.insert(payload) }),
+      }),
     }),
   }),
 }))
+vi.mock('@/lib/google-ads/report-conversion', () => ({ reportBookingConversion: h.reportBookingConversion }))
+vi.mock('@/lib/google-ads/report-refund', () => ({ reportRefundAdjustment: h.reportRefundAdjustment }))
+vi.mock('@/lib/fareharbor/client', () => ({
+  getFareHarborClient: () => ({
+    createBookingIdempotent: h.fhCreateBookingIdempotent,
+    cancelBooking: h.fhCancelBooking,
+  }),
+}))
+vi.mock('@/lib/booking/send-confirmation-email', () => ({ sendConfirmationEmail: h.sendConfirmationEmail }))
+vi.mock('@/lib/catering/notify', () => ({ notifyCateringOrder: h.notifyCateringOrder }))
+vi.mock('@/lib/catering/send-catering-email', () => ({ sendCateringOrderEmailForBooking: h.sendCateringOrderEmailForBooking }))
+vi.mock('@/lib/slack/send-notification', () => ({
+  postSlackText: h.postSlackText,
+  postSlackCritical: h.postSlackCritical,
+}))
+vi.mock('@/lib/stripe/payment-method-label', () => ({
+  resolvePaymentMethodLabel: vi.fn().mockResolvedValue('card'),
+}))
+vi.mock('@/lib/stripe/fee', () => ({
+  // null by default — the route's `if (stripeFeeCents != null)` guard then skips
+  // the extra bookings.update call entirely, so existing update-call assertions
+  // elsewhere in this file are unaffected.
+  resolveStripeFeeCents: h.resolveStripeFeeCents,
+}))
+vi.mock('@/lib/booking/pi-metadata', () => ({
+  getExtrasFromQuote: h.getExtrasFromQuote,
+  parseMetaCents: (v: string | undefined) => {
+    if (v == null || v === '') return null
+    const n = Number(v)
+    return Number.isFinite(n) ? n : null
+  },
+}))
+// Mocked as its own module (not through the generic supabase.from() mock above) so
+// this best-effort audit write never shows up in h.insert's call count/args — every
+// existing assertion on the FIRST h.insert call being the booking row stays valid.
+vi.mock('@/lib/webhooks/log', () => ({ logWebhookEvent: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/ops/events', () => ({ emitOpsEvent: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/ghost/guest-move-drafter', () => ({ draftGuestMoveForNewBooking: vi.fn().mockResolvedValue('skipped') }))
 // after() requires a real Next.js request scope, absent when calling POST directly
@@ -58,19 +101,6 @@ vi.mock('next/server', async importOriginal => {
   const actual = await importOriginal<typeof import('next/server')>()
   return { ...actual, after: (cb: () => unknown) => cb() }
 })
-vi.mock('@/lib/google-ads/report-conversion', () => ({ reportBookingConversion: h.reportBookingConversion }))
-vi.mock('@/lib/google-ads/report-refund', () => ({ reportRefundAdjustment: h.reportRefundAdjustment }))
-vi.mock('@/lib/fareharbor/client', () => ({
-  getFareHarborClient: () => ({
-    createBooking: h.fhCreateBooking,
-    validateBooking: h.fhValidateBooking,
-    cancelBooking: h.fhCancelBooking,
-  }),
-}))
-vi.mock('@/lib/booking/send-confirmation-email', () => ({ sendConfirmationEmail: h.sendConfirmationEmail }))
-vi.mock('@/lib/catering/notify', () => ({ notifyCateringOrder: h.notifyCateringOrder }))
-vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText }))
-vi.mock('@/lib/booking/recover-from-pi', () => ({ getExtrasFromQuote: h.getExtrasFromQuote }))
 
 import { POST } from './route'
 
@@ -81,31 +111,262 @@ function mockReq(): NextRequest {
   } as unknown as NextRequest
 }
 
-// ── payment_intent.succeeded ──────────────────────────────────────────────────
+const PI_META = {
+  avail_pk: '1001',
+  customer_type_rate_pk: '2002',
+  guest_count: '2',
+  category: 'private',
+  guest_name: 'Dana Test',
+  guest_email: 'dana@example.com',
+  listing_title: 'Canal Cruise',
+  date: '2026-06-20',
+  start_at: '2026-06-20T17:00:00Z',
+  end_at: '2026-06-20T18:30:00Z',
+}
 
-describe('stripe webhook — payment_intent.succeeded', () => {
+function makePiSucceeded(overrides: object = {}) {
+  return {
+    type: 'payment_intent.succeeded',
+    data: { object: { id: 'pi_test', amount: 16500, metadata: PI_META, ...overrides } },
+  }
+}
+
+// ── payment_intent.succeeded — the single finalizer ───────────────────────────
+
+describe('stripe webhook — payment_intent.succeeded (single finalizer)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubEnv('STRIPE_WEBHOOK_SECRET', 'whsec_test')
-    h.capturedInsert = null
-    h.insertResult = { error: null }
+    vi.stubEnv('SLACK_WEBHOOK_URL', 'https://hooks.slack.test/x')
+    h.refundsList.mockResolvedValue({ data: [] })
+    h.insert.mockResolvedValue({ error: null, data: { id: 'booking-row-id' } })
+    h.update.mockResolvedValue({ error: null })
+    h.getExtrasFromQuote.mockResolvedValue([])
+    h.sendCateringOrderEmailForBooking.mockResolvedValue({ ok: true, resent: false, recipient: 'x' })
+    h.resolveStripeFeeCents.mockResolvedValue(null)
   })
 
-  it('fires the conversion before the idempotency early-return and does not double-book', async () => {
-    h.constructEvent.mockReturnValue({
-      type: 'payment_intent.succeeded',
-      data: { object: { id: 'pi_already_booked', metadata: {} } },
-    })
-    // A booking already exists for this PI (browser /book ran first).
-    h.maybeSingle.mockResolvedValue({ data: { id: 'existing-booking' } })
+  it('write-row-first happy path: insert pending → book → confirm → notify, no refund', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded())
+    h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
 
     const res = await POST(mockReq())
 
     expect(res.status).toBe(200)
-    // Conversion must fire even though we early-return for the existing booking.
+    // Row written first at paid_pending_fh, then FareHarbor booked exactly once.
+    expect(h.insert).toHaveBeenCalledTimes(1)
+    expect(h.insert.mock.calls[0][0]).toMatchObject({ status: 'paid_pending_fh', booking_uuid: null })
+    expect(h.fhCreateBookingIdempotent).toHaveBeenCalledTimes(1)
+    // Flipped to confirmed + notifications fired. Tightened (2026-07) to inspect the
+    // actual payload, not just call occurrence — a status or booking_uuid regression
+    // here would previously have passed silently.
+    expect(h.update).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'confirmed', booking_uuid: 'fh-new' }),
+      'stripe_payment_intent_id',
+      'pi_test',
+    )
+    expect(h.sendConfirmationEmail).toHaveBeenCalledTimes(1)
+    expect(h.notifyCateringOrder).toHaveBeenCalledTimes(1)
+    // No food/drinks on this booking — nothing to auto-send to the supplier.
+    expect(h.sendCateringOrderEmailForBooking).not.toHaveBeenCalled()
+    // The whole point: never refunds.
+    expect(h.refundsCreate).not.toHaveBeenCalled()
+  })
+
+  it('stores the resolved Stripe fee on the booking, best-effort', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded())
+    h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
+    h.resolveStripeFeeCents.mockResolvedValue(187) // e.g. €1.87 Stripe fee on a card payment
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    const feeUpdateCall = h.update.mock.calls.find(
+      (call) => (call[0] as Record<string, unknown> | undefined)?.stripe_fee_cents !== undefined
+    )
+    expect(feeUpdateCall?.[0]).toMatchObject({ stripe_fee_cents: 187 })
+  })
+
+  it('never writes stripe_fee_cents when the fee could not be resolved', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded())
+    h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
+    h.resolveStripeFeeCents.mockResolvedValue(null)
+
+    await POST(mockReq())
+
+    const feeUpdateCall = h.update.mock.calls.find(
+      (call) => (call[0] as Record<string, unknown> | undefined)?.stripe_fee_cents !== undefined
+    )
+    expect(feeUpdateCall).toBeUndefined()
+  })
+
+  it('instantly auto-sends the catering email when departure is within 7 days', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded()) // PI_META.date is in the past — always within window
+    h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
+    h.getExtrasFromQuote.mockResolvedValue([{ name: 'Cheese Platter', category: 'food', amount_cents: 2000, extra_id: 'x' }])
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.sendCateringOrderEmailForBooking).toHaveBeenCalledTimes(1)
+    expect(h.sendCateringOrderEmailForBooking).toHaveBeenCalledWith('booking-row-id')
+  })
+
+  it('does NOT instantly auto-send catering when departure is more than 7 days out', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded({ metadata: { ...PI_META, date: '2099-01-01' } }))
+    h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
+    h.getExtrasFromQuote.mockResolvedValue([{ name: 'Cheese Platter', category: 'food', amount_cents: 2000, extra_id: 'x' }])
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    // Held back for the daily cron to pick up once it crosses the 7-day mark.
+    expect(h.sendCateringOrderEmailForBooking).not.toHaveBeenCalled()
+  })
+
+  it('duplicate Stripe delivery: insert 23505 → exit before any FareHarbor call', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded())
+    h.insert.mockResolvedValue({ error: { code: '23505', message: 'duplicate key' } })
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    // The conversion still fires (once per pay), but no booking work happens.
     expect(h.reportBookingConversion).toHaveBeenCalledTimes(1)
-    // Must NOT create a second FareHarbor booking for an already-processed PI.
-    expect(h.fhCreateBooking).not.toHaveBeenCalled()
+    expect(h.fhCreateBookingIdempotent).not.toHaveBeenCalled()
+    expect(h.sendConfirmationEmail).not.toHaveBeenCalled()
+    expect(h.refundsCreate).not.toHaveBeenCalled()
+  })
+
+  it('retry-then-park: FareHarbor create fails → row stays parked, alert fires, NEVER refunds', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded())
+    h.fhCreateBookingIdempotent.mockRejectedValue(new Error('FareHarbor request timed out after 45000ms'))
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.insert).toHaveBeenCalledTimes(1) // the parked row was written
+    expect(h.update).not.toHaveBeenCalled()   // never flipped to confirmed
+    // CRITICAL alert with the "do NOT refund" instruction, and absolutely no refund.
+    expect(h.postSlackCritical).toHaveBeenCalledWith(expect.stringContaining('do NOT refund'))
+    expect(h.refundsCreate).not.toHaveBeenCalled()
+    expect(h.sendConfirmationEmail).not.toHaveBeenCalled()
+  })
+
+  it('refund guard: an already-refunded PI is not (re)booked', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded())
+    h.refundsList.mockResolvedValue({ data: [{ id: 're_1' }] })
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.insert).not.toHaveBeenCalled()
+    expect(h.fhCreateBookingIdempotent).not.toHaveBeenCalled()
+  })
+
+  it('skips payment_link PIs (handled by checkout.session.completed)', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded({ metadata: { ...PI_META, booking_source: 'payment_link' } }))
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.insert).not.toHaveBeenCalled()
+    expect(h.fhCreateBookingIdempotent).not.toHaveBeenCalled()
+  })
+
+  it('attributes campaign/partner + computes commission from PI metadata', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded({
+      metadata: { ...PI_META, campaign_id: 'camp-1', partner_id: 'partner-1', server_base_amount_cents: '15000' },
+    }))
+    h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
+    h.maybeSingle.mockResolvedValue({
+      data: { percentage_value: 10, investment_type: 'percentage', partner_id: 'partner-1' },
+      error: null,
+    })
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.insert.mock.calls[0][0]).toMatchObject({
+      campaign_id: 'camp-1',
+      partner_id: 'partner-1',
+      commission_amount_cents: 1500, // 15000 * 10 / 100
+    })
+  })
+
+  it('reads partner_id fresh off the campaign row, not the (possibly stale) cookie snapshot', async () => {
+    // The campaign was reassigned to a different partner after the cookie was
+    // set — the campaign row is the source of truth, not meta.partner_id.
+    h.constructEvent.mockReturnValue(makePiSucceeded({
+      metadata: { ...PI_META, campaign_id: 'camp-1', partner_id: 'stale-partner', server_base_amount_cents: '15000' },
+    }))
+    h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
+    h.maybeSingle.mockResolvedValue({
+      data: { percentage_value: 10, investment_type: 'percentage', partner_id: 'current-partner' },
+      error: null,
+    })
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.insert.mock.calls[0][0]).toMatchObject({ partner_id: 'current-partner' })
+  })
+
+  it('sets campaign/partner but leaves commission null when the campaign has no valid commission config', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded({
+      metadata: { ...PI_META, campaign_id: 'camp-1', partner_id: 'partner-1' },
+    }))
+    h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
+    h.maybeSingle.mockResolvedValue({
+      data: { percentage_value: null, investment_type: 'percentage', partner_id: 'partner-1' },
+      error: null,
+    })
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.insert.mock.calls[0][0]).toMatchObject({
+      campaign_id: 'camp-1',
+      partner_id: 'partner-1',
+      commission_amount_cents: null,
+    })
+  })
+
+  it('leaves campaign_id/partner_id/commission null when the campaign no longer exists — never rejects the booking over a stale attribution cookie', async () => {
+    // A customer can carry the oc_attr cookie for days; if an admin deletes the
+    // campaign in between, bookings.campaign_id/partner_id are real FKs and
+    // inserting the stale id would reject the WHOLE paid booking. Must degrade
+    // to unattributed instead.
+    h.constructEvent.mockReturnValue(makePiSucceeded({
+      metadata: { ...PI_META, campaign_id: 'deleted-campaign', partner_id: 'partner-1' },
+    }))
+    h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
+    h.maybeSingle.mockResolvedValue({ data: null, error: null })
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.insert.mock.calls[0][0]).toMatchObject({
+      campaign_id: null,
+      partner_id: null,
+      commission_amount_cents: null,
+    })
+  })
+
+  it('leaves campaign/partner/commission null for organic bookings (no campaign_id in metadata)', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded())
+    h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    // No campaign_id in metadata → never even queries the campaigns table.
+    expect(h.maybeSingle).not.toHaveBeenCalled()
+    expect(h.insert.mock.calls[0][0]).toMatchObject({
+      campaign_id: null,
+      partner_id: null,
+      commission_amount_cents: null,
+    })
   })
 
   it('rejects an invalid signature with 400 and does no work', async () => {
@@ -117,85 +378,7 @@ describe('stripe webhook — payment_intent.succeeded', () => {
 
     expect(res.status).toBe(400)
     expect(h.reportBookingConversion).not.toHaveBeenCalled()
-    expect(h.fhCreateBooking).not.toHaveBeenCalled()
-  })
-
-  // ── VAT fallback (the `0 || extractVat` trap) ───────────────────────────────
-  // PI metadata VAT fields are read as `Number(meta.x) || extractVat(...)`. Since
-  // 0 is falsy, a metadata VAT of '0' is OVERRIDDEN by the server recompute, while
-  // a real value passes through. These pin that behaviour so a future change to the
-  // fallback is a conscious decision, not a silent regression.
-
-  const succeededMeta = {
-    avail_pk: '111',
-    customer_type_rate_pk: '222',
-    guest_count: '2',
-    category: 'private',
-    listing_id: 'listing_1',
-    listing_title: 'Hidden Gems Private Boat Tour',
-    date: '2026-07-01',
-    start_at: '2026-07-01T18:00:00+02:00',
-    end_at: '2026-07-01T19:30:00+02:00',
-    guest_name: 'Test Guest',
-    guest_email: 'guest@example.com',
-    guest_phone: '+31600000000',
-    server_base_amount_cents: '15000',
-  }
-
-  function setupCreatePath() {
-    h.maybeSingle.mockResolvedValue({ data: null })          // no existing booking
-    h.fhValidateBooking.mockResolvedValue({ is_bookable: true })
-    h.fhCreateBooking.mockResolvedValue({ uuid: 'fh-new-uuid' })
-  }
-
-  it('recomputes VAT when metadata base_vat is "0" (0 is falsy → fallback fires)', async () => {
-    setupCreatePath()
-    h.constructEvent.mockReturnValue({
-      type: 'payment_intent.succeeded',
-      data: { object: { id: 'pi_vat_zero', amount: 16500, metadata: { ...succeededMeta, base_vat_amount_cents: '0' } } },
-    })
-
-    const res = await POST(mockReq())
-
-    expect(res.status).toBe(200)
-    expect(h.fhCreateBooking).toHaveBeenCalledTimes(1)
-    // '0' is falsy → recompute 9% of the base, NOT a stored 0.
-    expect(h.capturedInsert!.base_vat_amount_cents).toBe(extractVat(15000, 9))
-    expect(h.capturedInsert!.base_vat_amount_cents).not.toBe(0)
-    // Claim is inserted in pending_payment with a null uuid (finalize promotes it).
-    expect(h.capturedInsert!.status).toBe('pending_payment')
-    expect(h.capturedInsert!.booking_uuid).toBeNull()
-  })
-
-  it('uses a real metadata base_vat value as-is (no recompute)', async () => {
-    setupCreatePath()
-    h.constructEvent.mockReturnValue({
-      type: 'payment_intent.succeeded',
-      data: { object: { id: 'pi_vat_real', amount: 16500, metadata: { ...succeededMeta, base_vat_amount_cents: '1239' } } },
-    })
-
-    const res = await POST(mockReq())
-
-    expect(res.status).toBe(200)
-    expect(h.capturedInsert!.base_vat_amount_cents).toBe(1239)
-  })
-
-  it('claims before creating: a lost claim (duplicate PI) never calls FareHarbor', async () => {
-    h.maybeSingle.mockResolvedValue({ data: null })          // passes the existence pre-check
-    h.fhValidateBooking.mockResolvedValue({ is_bookable: true })
-    h.fhCreateBooking.mockResolvedValue({ uuid: 'fh-x' })
-    // The claim insert loses the unique-constraint race.
-    h.insertResult = { error: { code: '23505', message: 'duplicate key value' } }
-
-    h.constructEvent.mockReturnValue({
-      type: 'payment_intent.succeeded',
-      data: { object: { id: 'pi_lost', amount: 16500, metadata: succeededMeta } },
-    })
-
-    const res = await POST(mockReq())
-
-    expect(res.status).toBe(200)
-    expect(h.fhCreateBooking).not.toHaveBeenCalled()
+    expect(h.fhCreateBookingIdempotent).not.toHaveBeenCalled()
   })
 })
 
@@ -205,6 +388,7 @@ describe('stripe webhook — checkout.session.completed', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubEnv('STRIPE_WEBHOOK_SECRET', 'whsec_test')
+    h.update.mockResolvedValue({ error: null })
   })
 
   function makeSession(overrides: object = {}) {
@@ -252,11 +436,8 @@ describe('stripe webhook — checkout.session.completed', () => {
     expect(res.status).toBe(200)
     expect(h.postSlackText).toHaveBeenCalledTimes(1)
     expect(h.sendConfirmationEmail).toHaveBeenCalledTimes(1)
-    // The original bug: null phone must arrive as undefined, not null
     expect(h.sendConfirmationEmail).toHaveBeenCalledWith(
-      expect.objectContaining({
-        contact: expect.objectContaining({ phone: undefined }),
-      }),
+      expect.objectContaining({ contact: expect.objectContaining({ phone: undefined }) }),
     )
   })
 
@@ -272,9 +453,7 @@ describe('stripe webhook — checkout.session.completed', () => {
   })
 
   it('skips sessions that are not payment_link bookings', async () => {
-    h.constructEvent.mockReturnValue(
-      makeSession({ metadata: { booking_source: 'other' } }),
-    )
+    h.constructEvent.mockReturnValue(makeSession({ metadata: { booking_source: 'other' } }))
 
     const res = await POST(mockReq())
 
@@ -289,29 +468,20 @@ describe('stripe webhook — checkout.session.expired', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubEnv('STRIPE_WEBHOOK_SECRET', 'whsec_test')
+    h.update.mockResolvedValue({ error: null })
   })
 
   function makeExpiredSession() {
     return {
       type: 'checkout.session.expired',
-      data: {
-        object: {
-          id: 'cs_expired_123',
-          metadata: { booking_source: 'payment_link' },
-        },
-      },
+      data: { object: { id: 'cs_expired_123', metadata: { booking_source: 'payment_link' } } },
     }
   }
 
   it('cancels the FareHarbor slot and posts a Slack note', async () => {
     h.constructEvent.mockReturnValue(makeExpiredSession())
     h.maybeSingle.mockResolvedValue({
-      data: {
-        id: 1,
-        booking_uuid: 'fh-uuid-to-cancel',
-        customer_name: 'Bob Test',
-        listing_title: 'Canal Cruise',
-      },
+      data: { id: 1, booking_uuid: 'fh-uuid-to-cancel', customer_name: 'Bob Test', listing_title: 'Canal Cruise' },
     })
 
     const res = await POST(mockReq())
@@ -324,12 +494,7 @@ describe('stripe webhook — checkout.session.expired', () => {
   it('skips FH cancel when booking has no fareharbor uuid', async () => {
     h.constructEvent.mockReturnValue(makeExpiredSession())
     h.maybeSingle.mockResolvedValue({
-      data: {
-        id: 1,
-        booking_uuid: null,
-        customer_name: 'Carol Test',
-        listing_title: 'Canal Cruise',
-      },
+      data: { id: 1, booking_uuid: null, customer_name: 'Carol Test', listing_title: 'Canal Cruise' },
     })
 
     const res = await POST(mockReq())
@@ -337,5 +502,101 @@ describe('stripe webhook — checkout.session.expired', () => {
     expect(res.status).toBe(200)
     expect(h.fhCancelBooking).not.toHaveBeenCalled()
     expect(h.postSlackText).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ── charge.refunded ────────────────────────────────────────────────────────
+// Previously untested entirely — reportRefundAdjustment was mocked but never
+// actually exercised by any test in this file.
+
+function makeChargeRefunded(overrides: object = {}) {
+  return {
+    type: 'charge.refunded',
+    data: {
+      object: {
+        payment_intent: 'pi_test',
+        amount: 16500,
+        amount_refunded: 16500,
+        ...overrides,
+      },
+    },
+  }
+}
+
+describe('stripe webhook — charge.refunded', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubEnv('STRIPE_WEBHOOK_SECRET', 'whsec_test')
+    vi.stubEnv('SLACK_WEBHOOK_URL', 'https://hooks.slack.test/x')
+    h.update.mockResolvedValue({ error: null })
+  })
+
+  it('a FULL refund (amount_refunded >= amount) sets payment_status to refunded', async () => {
+    h.constructEvent.mockReturnValue(makeChargeRefunded({ amount: 16500, amount_refunded: 16500 }))
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.update).toHaveBeenCalledWith(
+      { payment_status: 'refunded' },
+      'stripe_payment_intent_id',
+      'pi_test',
+    )
+    expect(h.reportRefundAdjustment).toHaveBeenCalledWith(expect.objectContaining({
+      paymentIntentId: 'pi_test', isFullRefund: true, refundedCents: 16500, chargeAmountCents: 16500,
+    }))
+    expect(h.postSlackText).toHaveBeenCalledWith(expect.stringContaining('Full refund'))
+  })
+
+  it('a PARTIAL refund (amount_refunded < amount) sets payment_status to partially_refunded', async () => {
+    h.constructEvent.mockReturnValue(makeChargeRefunded({ amount: 16500, amount_refunded: 5000 }))
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.update).toHaveBeenCalledWith(
+      { payment_status: 'partially_refunded' },
+      'stripe_payment_intent_id',
+      'pi_test',
+    )
+    expect(h.reportRefundAdjustment).toHaveBeenCalledWith(expect.objectContaining({
+      paymentIntentId: 'pi_test', isFullRefund: false, refundedCents: 5000, chargeAmountCents: 16500,
+    }))
+    expect(h.postSlackText).toHaveBeenCalledWith(expect.stringContaining('Partial refund'))
+  })
+
+  it('resolves payment_intent when Stripe sends the expanded object instead of a bare id string', async () => {
+    h.constructEvent.mockReturnValue(makeChargeRefunded({
+      payment_intent: { id: 'pi_expanded' }, amount: 16500, amount_refunded: 16500,
+    }))
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.update).toHaveBeenCalledWith(
+      { payment_status: 'refunded' },
+      'stripe_payment_intent_id',
+      'pi_expanded',
+    )
+  })
+
+  it('is a no-op (does not crash, does not update or notify) when payment_intent is missing entirely', async () => {
+    h.constructEvent.mockReturnValue(makeChargeRefunded({ payment_intent: null }))
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.update).not.toHaveBeenCalled()
+    expect(h.reportRefundAdjustment).not.toHaveBeenCalled()
+  })
+
+  it('does not let a reportRefundAdjustment failure block the Slack notification or crash the handler', async () => {
+    h.reportRefundAdjustment.mockRejectedValue(new Error('Google Ads API down'))
+    h.constructEvent.mockReturnValue(makeChargeRefunded())
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.postSlackText).toHaveBeenCalledWith(expect.stringContaining('refund'))
   })
 })

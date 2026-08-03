@@ -135,6 +135,37 @@ export function calculateRefundCents(
  *     { refundPercent: 0,   label: 'No refund',   detail: 'within 24 hours of departure' },
  *   ]
  */
+/**
+ * "48 hours" reads fine for the usual short-notice tiers, but a multi-week
+ * tier (e.g. a fixed-date event's "3 weeks out") shouldn't render as "504
+ * hours" — express it in the largest whole unit that divides evenly.
+ * Anything under 3 days stays in hours, matching today's 24h/48h display.
+ */
+function formatHours(hours: number): string {
+  if (hours >= 24 * 7 && hours % (24 * 7) === 0) {
+    const weeks = hours / (24 * 7)
+    return `${weeks} week${weeks === 1 ? '' : 's'}`
+  }
+  if (hours >= 72 && hours % 24 === 0) {
+    const days = hours / 24
+    return `${days} day${days === 1 ? '' : 's'}`
+  }
+  return `${hours} hour${hours === 1 ? '' : 's'}`
+}
+
+/** "24–48 hours", not "24 hours–48 hours" — same unit shown once, at the end. */
+function formatHoursRange(fromHours: number, toHours: number): string {
+  const from = formatHours(fromHours)
+  const to = formatHours(toHours)
+  const [, fromUnit] = from.split(' ')
+  const [, toUnit] = to.split(' ')
+  if (fromUnit === toUnit) {
+    const [fromNum] = from.split(' ')
+    return `${fromNum}–${to}`
+  }
+  return `${from}–${to}`
+}
+
 export function formatTierLines(tiers: CancellationTier[]): Array<{
   refundPercent: number
   label: string
@@ -151,14 +182,15 @@ export function formatTierLines(tiers: CancellationTier[]): Array<{
 
     let detail: string
     if (idx === 0) {
-      // Top tier — "up to N hours before departure"
-      detail = `up to ${tier.hours_before} hours before departure`
+      // Top tier — "up to N before departure"
+      detail = `up to ${formatHours(tier.hours_before)} before departure`
     } else if (!next) {
-      // Bottom tier — "within N hours of departure"
-      detail = `within ${tier.hours_before === 0 ? tiers[idx - 1].hours_before : tier.hours_before} hours of departure`
+      // Bottom tier — "within N of departure"
+      const hrs = tier.hours_before === 0 ? tiers[idx - 1].hours_before : tier.hours_before
+      detail = `within ${formatHours(hrs)} of departure`
     } else {
-      // Middle tier — "between X–Y hours before departure"
-      detail = `${tier.hours_before}–${tiers[idx - 1].hours_before} hours before departure`
+      // Middle tier — "between X–Y before departure"
+      detail = `${formatHoursRange(tier.hours_before, tiers[idx - 1].hours_before)} before departure`
     }
 
     return { refundPercent: tier.refund_percent, label, detail }

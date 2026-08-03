@@ -25,4 +25,5 @@ export type ReviewsConfig = {
   tripadvisor_url: string | null
   tripadvisor_rating: number | null
   tripadvisor_total_reviews: number | null
+  withlocals_experience_short_id: string | null
 }

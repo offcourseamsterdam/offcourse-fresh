@@ -19,11 +19,15 @@ export function useReviews() {
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<string | null>(null)
 
-  async function saveConfig(placeId: string, tripadvisorUrl: string) {
+  async function saveConfig(placeId: string, tripadvisorUrl: string, withlocalsShortId: string) {
     const res = await fetch('/api/admin/reviews', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ place_id: placeId, tripadvisor_url: tripadvisorUrl || null }),
+      body: JSON.stringify({
+        place_id: placeId,
+        tripadvisor_url: tripadvisorUrl || null,
+        withlocals_experience_short_id: withlocalsShortId || null,
+      }),
     })
     const json = await res.json()
     if (json.ok) await fetchReviews()
@@ -81,12 +85,13 @@ export function useReviews() {
 
   const googleReviews = reviews.filter(r => r.source === 'google')
   const taReviews = reviews.filter(r => r.source === 'tripadvisor')
+  const withlocalsReviews = reviews.filter(r => r.source === 'withlocals')
   const activeReviews = reviews.filter(r => r.is_active)
 
   return {
     reviews, loading, error, config, fetchReviews,
     syncing, syncResult, handleSync, saveConfig,
     toggleActive, handleDelete,
-    googleReviews, taReviews, activeReviews,
+    googleReviews, taReviews, withlocalsReviews, activeReviews,
   }
 }

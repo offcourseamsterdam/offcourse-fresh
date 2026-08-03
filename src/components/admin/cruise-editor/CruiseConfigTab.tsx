@@ -1,14 +1,21 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { CruiseTabProps, patchListing, inputCls } from './shared'
 import { Field } from './Field'
 import { TabSaveButton } from './TabSaveButton'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 
 interface FHItemCache {
   fareharbor_pk: number
   resources: Array<{ fareharbor_pk: number; name: string }>
-  customer_types: Array<{ fareharbor_pk: number; name: string; duration_minutes: number }>
+  // fareharbor_pk here is the customer_type_RATE pk (volatile, minted per
+  // availability instance); customer_type_pk is the stable catalog key that
+  // Layer 2 of the availability filter (src/lib/fareharbor/filters.ts)
+  // actually matches against. allowed_customer_type_pks must be built from
+  // customer_type_pk, NOT fareharbor_pk — see the "Allowed durations" chips
+  // below, which used to write the wrong one.
+  customer_types: Array<{ fareharbor_pk: number; customer_type_pk: number; name: string; duration_minutes: number }>
 }
 
 interface BoatOption {
@@ -30,30 +37,18 @@ export function CruiseConfigTab({ listing, onSave }: CruiseTabProps) {
     is_featured: listing.is_featured,
     display_order: listing.display_order,
   })
-  const [fhItems, setFhItems] = useState<FHItemCache[]>([])
-  const [fhItem, setFhItem] = useState<FHItemCache | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [boats, setBoats] = useState<BoatOption[]>([])
 
-  useEffect(() => {
-    fetch('/api/admin/boats')
-      .then(r => r.json())
-      .then(json => { if (json.ok) setBoats(json.data) })
-  }, [])
+  const { data: boatsData } = useAdminFetch<BoatOption[]>('/api/admin/boats')
+  const boats = boatsData ?? []
 
-  useEffect(() => {
-    fetch('/api/admin/fareharbor-test?action=supabase-items')
-      .then(r => r.json())
-      .then(json => {
-        if (json.ok) {
-          const items = json.data as FHItemCache[]
-          setFhItems(items)
-          const item = items.find(i => i.fareharbor_pk === listing.fareharbor_item_pk)
-          if (item) setFhItem(item)
-        }
-      })
-  }, [listing.fareharbor_item_pk])
+  const { data: fhItemsData } = useAdminFetch<FHItemCache[]>('/api/admin/fareharbor-test?action=supabase-items')
+  const fhItems = useMemo(() => fhItemsData ?? [], [fhItemsData])
+  const fhItem = useMemo(
+    () => fhItems.find(i => i.fareharbor_pk === form.fareharbor_item_pk) ?? null,
+    [fhItems, form.fareharbor_item_pk]
+  )
 
   function togglePk(list: number[], pk: number) {
     return list.includes(pk) ? list.filter(p => p !== pk) : [...list, pk]
@@ -112,10 +107,7 @@ export function CruiseConfigTab({ listing, onSave }: CruiseTabProps) {
           {fhItems.map(item => (
             <button
               key={item.fareharbor_pk}
-              onClick={() => {
-                setForm(f => ({ ...f, fareharbor_item_pk: item.fareharbor_pk }))
-                setFhItem(item)
-              }}
+              onClick={() => setForm(f => ({ ...f, fareharbor_item_pk: item.fareharbor_pk }))}
               className={`px-3 py-1.5 rounded-md border text-xs transition-all ${
                 form.fareharbor_item_pk === item.fareharbor_pk
                   ? 'border-zinc-900 bg-zinc-900 text-white'
@@ -186,18 +178,18 @@ export function CruiseConfigTab({ listing, onSave }: CruiseTabProps) {
           <div className="flex flex-wrap gap-2">
             {fhItem.customer_types.map(ct => (
               <button
-                key={ct.fareharbor_pk}
+                key={ct.customer_type_pk}
                 onClick={() =>
                   setForm(f => ({
                     ...f,
                     allowed_customer_type_pks: togglePk(
                       f.allowed_customer_type_pks,
-                      ct.fareharbor_pk
+                      ct.customer_type_pk
                     ),
                   }))
                 }
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs transition-all ${
-                  form.allowed_customer_type_pks.includes(ct.fareharbor_pk)
+                  form.allowed_customer_type_pks.includes(ct.customer_type_pk)
                     ? 'border-zinc-900 bg-zinc-900 text-white'
                     : 'border-zinc-200 bg-white hover:border-zinc-400'
                 }`}

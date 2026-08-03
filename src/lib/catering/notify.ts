@@ -9,7 +9,7 @@
 
 import { postSlackText } from '@/lib/slack/send-notification'
 import { formatAmsterdamTime } from '@/lib/utils'
-import { filterCateringItems } from './filter'
+import { filterFoodItems } from './filter'
 import type { ExtrasLineItem } from './filter'
 
 export interface CateringNotifyInput {
@@ -22,7 +22,10 @@ export interface CateringNotifyInput {
 }
 
 export async function notifyCateringOrder(input: CateringNotifyInput): Promise<void> {
-  const items = filterCateringItems(input.extrasSelected)
+  // Only FOOD is a catering order (ordered from the supplier). Drinks like
+  // "Unlimited Drinks" are stocked on the boat and must NOT trigger this alert —
+  // matching the admin Food Orders page, which also lists food-only.
+  const items = filterFoodItems(input.extrasSelected)
   if (items.length === 0) return
 
   const { cruiseName, dateStr, startTimeStr, guestCount } = input

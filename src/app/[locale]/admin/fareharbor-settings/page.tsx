@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { Loader2, Clock, Users } from 'lucide-react'
 import { CancellationTiersEditor } from '@/components/admin/CancellationTiersEditor'
 import { normalizeTiers, type CancellationTier } from '@/lib/cancellation/policy'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 
 interface FHItem {
   id: string
@@ -16,35 +17,23 @@ interface FHItem {
   cancellation_tiers: CancellationTier[] | null
 }
 
+interface RawItem {
+  id: string
+  [key: string]: unknown
+}
+
 export default function FareHarborSettingsPage() {
-  const [items, setItems] = useState<FHItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const { data, isLoading: loading, mutate } = useAdminFetch<{ items: RawItem[] }>('/api/admin/fareharbor-items')
+  const items = useMemo<FHItem[]>(() => {
+    const rows = data?.items ?? []
+    return rows.map(d => ({
+      ...d,
+      cancellation_tiers: Array.isArray(d.cancellation_tiers)
+        ? (d.cancellation_tiers as unknown as CancellationTier[])
+        : null,
+    })) as FHItem[]
+  }, [data])
   const [saving, setSaving] = useState<string | null>(null)
-
-  async function load() {
-    setLoading(true)
-    try {
-      const res = await fetch('/api/admin/fareharbor-items')
-      const json = await res.json()
-      const data: Array<Record<string, unknown>> = json.ok ? json.data?.items ?? [] : []
-      setItems(
-        data.map(d => ({
-          ...d,
-          cancellation_tiers: Array.isArray(d.cancellation_tiers)
-            ? (d.cancellation_tiers as unknown as CancellationTier[])
-            : null,
-        })) as FHItem[]
-      )
-    } catch (err) {
-      console.error('FH items load error:', err)
-    }
-    setLoading(false)
-  }
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    load()
-  }, [])
 
   async function patchItem(id: string, body: Record<string, unknown>): Promise<boolean> {
     const res = await fetch(`/api/admin/fareharbor-items/${id}`, {
@@ -60,7 +49,7 @@ export default function FareHarborSettingsPage() {
     setSaving(id)
     const ok = await patchItem(id, { [field]: value })
     if (!ok) console.error('FH item update error:', field)
-    setItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item))
+    mutate(prev => prev ? { items: prev.items.map(item => item.id === id ? { ...item, [field]: value } : item) } : prev, { revalidate: false })
     setSaving(null)
   }
 
@@ -73,7 +62,7 @@ export default function FareHarborSettingsPage() {
       setSaving(null)
       throw new Error('Failed to update cancellation tiers')
     }
-    setItems(prev => prev.map(item => item.id === id ? { ...item, cancellation_tiers: normalized } : item))
+    mutate(prev => prev ? { items: prev.items.map(item => item.id === id ? { ...item, cancellation_tiers: normalized } : item) } : prev, { revalidate: false })
     setSaving(null)
   }
 

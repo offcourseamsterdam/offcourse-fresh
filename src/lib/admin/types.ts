@@ -53,6 +53,7 @@ export interface AdminBooking {
   promo_code: string | null
   discount_amount_cents: number | null
   partner_name: string | null
+  fareharbor_availability_pk: number | null
 }
 
 export interface AdminPromoCode {

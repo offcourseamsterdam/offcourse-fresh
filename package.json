@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "gads": "tsx scripts/google-ads/gads.ts",
-    "report:conversions": "tsx scripts/conversion-report.ts"
+    "report:conversions": "tsx scripts/conversion-report.ts",
+    "reconcile:stripe": "tsx scripts/reconcile-stripe-bookings.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
@@ -32,16 +33,20 @@
     "@tiptap/starter-kit": "^3.23.6",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "exceljs": "^4.4.0",
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.7.0",
     "next": "^16.2.9",
     "next-intl": "^4.9.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.1.200",
     "qrcode.react": "^4.2.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "recharts": "^3.8.1",
     "resend": "^6.10.0",
     "sharp": "^0.34.5",
+    "sonner": "^2.0.7",
     "stripe": "^22.0.0",
     "swr": "^2.4.1",
     "tailwind-merge": "^3.5.0",
@@ -58,9 +63,11 @@
     "eslint-config-next": "^16.2.9",
     "jsdom": "^29.1.0",
     "tailwindcss": "^4",
-    "ttf2woff2": "^8.0.1",
     "typescript": "^5",
     "vercel": "^50.38.3",
     "vitest": "^4.1.2"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   }
 }

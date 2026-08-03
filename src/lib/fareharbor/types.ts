@@ -23,6 +23,10 @@ export interface FHCustomerType {
   pk: number
   singular: string
   plural: string
+  /** Free-text hint, e.g. "Up to 8 people" (private boat capacity) or "13+ years"
+   *  (shared age bracket) — the only place a private boat's real guest capacity
+   *  is exposed as data at all; see parseCapacityFromNote. */
+  note?: string
 }
 
 export interface FHCustomerTypeRate {
@@ -97,6 +101,10 @@ export interface FHBookingResponse {
   status: string
   is_cancelled: boolean | null
   note: string | null
+  // The reference we stamp on create (= the Stripe PaymentIntent id). FareHarbor may
+  // or may not echo it on the bookings-list endpoint; createBookingIdempotent prefers
+  // it for an exact match and falls back to email+availability when it's absent.
+  voucher_number?: string | null
   created_at: string
   rebooked_from?: string
   rebooked_to?: string

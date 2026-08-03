@@ -1,3 +1,4 @@
+import { Toaster } from 'sonner'
 import ProtectedLayout from '@/components/auth/ProtectedLayout'
 import DashboardSidebar from '@/components/layout/DashboardSidebar'
 import type { NavSection } from '@/components/layout/DashboardSidebar'
@@ -15,7 +16,8 @@ const navSections: NavSection[] = [
       { href: '/admin/bookings',  label: 'Bookings',  icon: 'bookings' },
       { href: '/admin/inbox',     label: 'Inbox',     icon: 'inbox',     badge: 'inbox-open-count' },
       { href: '/admin/catering',  label: 'Catering',  icon: 'catering',  badge: 'pending-catering-count' },
-      { href: '/admin/scheduling', label: 'Scheduling', icon: 'planning' },
+      { href: '/admin/planning',  label: 'Planning',  icon: 'planning' },
+      { href: '/admin/scheduling', label: 'Scheduling', icon: 'schedule' },
       { href: '/admin/maintenance', label: 'Maintenance', icon: 'maintenance' },
       { href: '/admin/stock',      label: 'Stock',      icon: 'stock' },
       { href: '/admin/customers', label: 'Customers', icon: 'customers', comingSoon: true },
@@ -78,6 +80,7 @@ export default async function AdminLayout({ children, params }: Props) {
           <AdminDataPreloader />
           <DashboardSidebar locale={locale} profile={profile} portalName="Admin Panel" navSections={navSections} />
           <main className="flex-1 overflow-auto">{children}</main>
+          <Toaster richColors position="bottom-right" />
         </div>
       )}
     </ProtectedLayout>

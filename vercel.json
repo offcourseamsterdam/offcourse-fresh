@@ -33,6 +33,10 @@
       "schedule": "0 8 * * *"
     },
     {
+      "path": "/api/cron/catering-auto-send",
+      "schedule": "30 8 * * *"
+    },
+    {
       "path": "/api/cron/fh-consistency",
       "schedule": "0 6 * * *"
     },
@@ -51,6 +55,14 @@
     {
       "path": "/api/cron/withlocals-reviews",
       "schedule": "0 8 * * 1"
+    },
+    {
+      "path": "/api/cron/pending-fh-sweep",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/getyourguide-reviews",
+      "schedule": "15 8 * * 1"
     }
   ]
 }

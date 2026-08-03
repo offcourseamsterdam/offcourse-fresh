@@ -1,5 +1,7 @@
+import Image from 'next/image'
 import { Check } from 'lucide-react'
 import { ExtrasGrid } from './ExtrasGrid'
+import { CancellationPolicyCard } from './CancellationPolicyCard'
 import { ReviewSlider } from './ReviewSlider'
 import { BoatCard } from './BoatCard'
 import { TruncatedDescription } from './TruncatedDescription'
@@ -18,29 +20,53 @@ interface ContentProps {
   listingBoats: { id: string; name: string; max_capacity: number | null; is_electric: boolean | null; description: string | null; photo_url: string | null; photo_covered_url: string | null; photo_interior_url: string | null }[]
   serializedReviews: { id: string; reviewer_name: string; review_text: string; rating: number; source: string | null; author_photo_url: string | null; review_image_url: string | null; publish_time: string | null }[]
   totalReviews?: number
-  listing: { departure_location: string | null }
+  listing: { departure_location: string | null; google_maps_url: string | null }
   faqs: { question: string; answer: string }[]
   loc: Locale
   faqLabel: string
+  /**
+   * Fixed-date special events (Pride, etc.) already bake unlimited drinks into
+   * the price, so the pay-per-item food/drinks upsell grid doesn't apply — an
+   * "open bar included" card replaces it instead. Also drives the rainbow
+   * heading treatment used throughout these event pages.
+   */
+  isSpecialEvent?: boolean
+  /** "lat,lng" for a listing whose meeting point differs from the default dock — renders an actual embedded map, not just a link out. */
+  mapCoords?: string
 }
+
+// Placeholder until a Pride-specific shot is uploaded — swap via the listing's
+// photo manager once available.
+const OPEN_BAR_IMAGE_URL = 'https://fkylzllxvepmrtqxisrn.supabase.co/storage/v1/object/public/cruise-images/c419659a-a021-42ef-bfb7-77bde2a0a82a/friends-on-a-boat-amsterdam-canals-chill-canal-electric_800.webp'
+
+const headingClass = (isSpecialEvent: boolean | undefined, extra = '') =>
+  `font-briston text-[28px] sm:text-[36px] uppercase ${extra} ${
+    isSpecialEvent ? 'text-rainbow-gradient' : 'text-[var(--color-accent)]'
+  }`
 
 export function CruiseContentSections({
   highlights, description, serializedFood, serializedDrinks,
   cancellationTiers, listingBoats, serializedReviews, totalReviews,
-  listing, faqs, loc, faqLabel,
+  listing, faqs, loc, faqLabel, isSpecialEvent, mapCoords,
 }: ContentProps) {
   return (
     <div className="lg:col-span-2 space-y-10">
       {/* Highlights */}
       {highlights.length > 0 && (
         <section>
-          <h2 className="text-xl font-bold text-[var(--color-primary)] mb-4">Highlights</h2>
+          <h2 className={`text-xl font-bold mb-4 ${isSpecialEvent ? 'text-rainbow-gradient-static' : 'text-[var(--color-primary)]'}`}>Highlights</h2>
           <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {highlights.map((h, i) => (
               <li key={i} className="flex items-start gap-2.5">
-                <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] flex items-center justify-center">
-                  <Check className="w-3 h-3" />
-                </span>
+                {isSpecialEvent ? (
+                  <span className="mt-0.5 flex-shrink-0 w-5 h-5 flex items-center justify-center text-sm leading-none" aria-hidden="true">
+                    🌈
+                  </span>
+                ) : (
+                  <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] flex items-center justify-center">
+                    <Check className="w-3 h-3" />
+                  </span>
+                )}
                 <span className="text-sm text-[var(--color-ink)]">{h.text}</span>
               </li>
             ))}
@@ -53,20 +79,41 @@ export function CruiseContentSections({
         <TruncatedDescription html={description} maxLength={500} />
       )}
 
-      {/* Things you need to know */}
-      {(serializedFood.length > 0 || serializedDrinks.length > 0 || cancellationTiers.length > 0) && (
+      {/* Things you need to know — special events already include an open bar
+          in the price, so the pay-per-item food/drinks upsell doesn't apply. */}
+      {isSpecialEvent ? (
         <section>
-          <h2 className="font-briston text-[28px] sm:text-[36px] text-[var(--color-accent)] uppercase mb-6">
-            Things you need to know
-          </h2>
-          <ExtrasGrid foodExtras={serializedFood} drinkExtras={serializedDrinks} cancellationTiers={cancellationTiers} />
+          <h2 className={headingClass(isSpecialEvent, 'mb-6')}>Things you need to know</h2>
+          <div className="rounded-2xl overflow-hidden bg-white shadow-sm border border-zinc-100 flex flex-col sm:flex-row">
+            <div className="relative w-full sm:w-64 h-48 sm:h-auto flex-shrink-0">
+              <Image src={OPEN_BAR_IMAGE_URL} alt="Open bar included" fill className="object-cover" sizes="256px" />
+            </div>
+            <div className="p-6 flex flex-col justify-center">
+              <h3 className="font-avenir font-bold text-lg text-[var(--color-primary)] mb-1">Open bar included</h3>
+              <p className="text-sm text-[var(--color-ink)]">
+                Unlimited beer, wine, and sodas are already baked into your price — nothing extra to buy on board, just show up and drink.
+              </p>
+            </div>
+          </div>
+          {cancellationTiers.length > 0 && (
+            <div className="mt-3">
+              <CancellationPolicyCard tiers={cancellationTiers} isSpecialEvent={isSpecialEvent} />
+            </div>
+          )}
         </section>
+      ) : (
+        (serializedFood.length > 0 || serializedDrinks.length > 0 || cancellationTiers.length > 0) && (
+          <section>
+            <h2 className={headingClass(isSpecialEvent, 'mb-6')}>Things you need to know</h2>
+            <ExtrasGrid foodExtras={serializedFood} drinkExtras={serializedDrinks} cancellationTiers={cancellationTiers} />
+          </section>
+        )
       )}
 
       {/* Our boats */}
       {listingBoats.length > 0 && (
         <section>
-          <h2 className="font-briston text-[28px] sm:text-[36px] text-[var(--color-accent)] uppercase mb-6">Our boats</h2>
+          <h2 className={headingClass(isSpecialEvent, 'mb-6')}>Our boats</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {listingBoats.map((boat) => (
               <BoatCard
@@ -87,13 +134,13 @@ export function CruiseContentSections({
       {/* Reviews */}
       {serializedReviews.length > 0 && (
         <section id="reviews">
-          <ReviewSlider reviews={serializedReviews} totalReviews={totalReviews} />
+          <ReviewSlider reviews={serializedReviews} totalReviews={totalReviews} isSpecialEvent={isSpecialEvent} />
         </section>
       )}
 
       {/* Meeting point */}
       <section>
-        <h2 className="font-briston text-[28px] sm:text-[36px] text-[var(--color-accent)] uppercase mb-4">Where we meet</h2>
+        <h2 className={headingClass(isSpecialEvent, 'mb-4')}>Where we meet</h2>
         {listing.departure_location && (
           <p className="text-sm text-[var(--color-ink)] mb-3 flex items-center gap-1.5">
             <svg viewBox="0 0 24 24" className="w-4 h-4 text-[var(--color-primary)] flex-shrink-0" fill="currentColor">
@@ -102,14 +149,57 @@ export function CruiseContentSections({
             {listing.departure_location}
           </p>
         )}
-        <div className="rounded-xl overflow-hidden shadow-sm aspect-[16/9]">
-          <iframe
-            src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2435.4996052156116!2d4.888518977372259!3d52.37949287202471!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x47c60937bd90461f%3A0x242f1bc48df48c07!2sOff~Course%20Canal%20Cruises!5e0!3m2!1sen!2snl!4v1776093877188!5m2!1sen!2snl"
-            width="100%" height="100%" style={{ border: 0 }}
-            allowFullScreen loading="lazy" referrerPolicy="no-referrer-when-downgrade"
-            title="Off Course Canal Cruises — meeting point"
-          />
-        </div>
+        {mapCoords ? (
+          // Listing has its own meeting point, distinct from the default departure
+          // dock, and we have resolved coordinates for it — embed a real map (a
+          // share link like maps.app.goo.gl doesn't convert into embeddable pb=
+          // form on its own, but a plain q=lat,lng embed needs no API key).
+          <div className="space-y-2">
+            <div className="rounded-xl overflow-hidden shadow-sm aspect-[16/9]">
+              <iframe
+                src={`https://www.google.com/maps?q=${mapCoords}&output=embed`}
+                width="100%" height="100%" style={{ border: 0 }}
+                allowFullScreen loading="lazy" referrerPolicy="no-referrer-when-downgrade"
+                title="Meeting point"
+              />
+            </div>
+            {listing.google_maps_url && (
+              <a
+                href={listing.google_maps_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-semibold text-[var(--color-primary)] hover:underline"
+              >
+                Open in Google Maps →
+              </a>
+            )}
+          </div>
+        ) : listing.google_maps_url ? (
+          // Custom meeting point but no resolved coordinates yet — link out
+          // rather than force a broken embed.
+          <a
+            href={listing.google_maps_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-3 rounded-xl bg-white border border-zinc-100 shadow-sm p-5 hover:border-[var(--color-primary)] transition-colors"
+          >
+            <span className="flex-shrink-0 w-10 h-10 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] flex items-center justify-center">
+              <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+              </svg>
+            </span>
+            <span className="flex-1 text-sm font-semibold text-[var(--color-primary)]">Open this meeting point in Google Maps</span>
+          </a>
+        ) : (
+          <div className="rounded-xl overflow-hidden shadow-sm aspect-[16/9]">
+            <iframe
+              src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2435.4996052156116!2d4.888518977372259!3d52.37949287202471!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x47c60937bd90461f%3A0x242f1bc48df48c07!2sOff~Course%20Canal%20Cruises!5e0!3m2!1sen!2snl!4v1776093877188!5m2!1sen!2snl"
+              width="100%" height="100%" style={{ border: 0 }}
+              allowFullScreen loading="lazy" referrerPolicy="no-referrer-when-downgrade"
+              title="Off Course Canal Cruises — meeting point"
+            />
+          </div>
+        )}
       </section>
 
       {/* FAQ */}

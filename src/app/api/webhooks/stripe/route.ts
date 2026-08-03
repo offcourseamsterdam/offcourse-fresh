@@ -2,31 +2,42 @@ import { NextRequest, NextResponse, after } from 'next/server'
 import { getStripe } from '@/lib/stripe/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
+import { describeCustomerTypes } from '@/lib/fareharbor/customer-type-name'
 import { sendConfirmationEmail } from '@/lib/booking/send-confirmation-email'
-import { getExtrasFromQuote } from '@/lib/booking/recover-from-pi'
-import { claimBooking, finalizeBooking, releaseClaim } from '@/lib/booking/claim'
-import { sendCriticalAlert } from '@/lib/alerts/critical-alert'
+import { getExtrasFromQuote, parseMetaCents } from '@/lib/booking/pi-metadata'
+import { resolveCampaignCommission } from '@/lib/booking/campaign-commission'
+import { buildFhBookingPlan } from '@/lib/booking/finalize-booking'
+import { notifyCateringOrder } from '@/lib/catering/notify'
+import { hasFood, type ExtrasLineItem } from '@/lib/catering/filter'
+import { isWithinCateringAutoSendWindow } from '@/lib/catering/auto-send-cutoff'
+import { sendCateringOrderEmailForBooking } from '@/lib/catering/send-catering-email'
+import { extractVat } from '@/lib/extras/calculate'
+import { CRUISE_VAT_RATE, EXTRAS_VAT_RATE } from '@/lib/booking/constants'
+import { reportBookingConversion } from '@/lib/google-ads/report-conversion'
+import { reportRefundAdjustment } from '@/lib/google-ads/report-refund'
+import { postSlackText, postSlackCritical } from '@/lib/slack/send-notification'
+import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
+import { resolvePaymentMethodLabel } from '@/lib/stripe/payment-method-label'
+import { resolveStripeFeeCents } from '@/lib/stripe/fee'
+import { stripeWebhookSecret } from '@/lib/stripe/keys'
+import { formatAmsterdamTime } from '@/lib/utils'
 import { logWebhookEvent } from '@/lib/webhooks/log'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { draftGuestMoveForNewBooking } from '@/lib/ghost/guest-move-drafter'
-import { notifyCateringOrder } from '@/lib/catering/notify'
-import { buildFHBookingNote } from '@/lib/catering/build-fh-note'
-import type { ExtrasLineItem } from '@/lib/catering/filter'
-import { extractVat } from '@/lib/extras/calculate'
-import { reportBookingConversion } from '@/lib/google-ads/report-conversion'
-import { reportRefundAdjustment } from '@/lib/google-ads/report-refund'
-import { postSlackText } from '@/lib/slack/send-notification'
-import { formatAmsterdamTime } from '@/lib/utils'
-import { formatTrafficSource } from '@/lib/tracking/traffic-source'
 import type Stripe from 'stripe'
+
+// The payment_intent.succeeded handler may spend up to ~40s retrying a transient
+// FareHarbor failure before parking the booking. Keep the function timeout well
+// above that so a retry sequence is never killed mid-flight.
+export const maxDuration = 60
 
 export async function POST(request: NextRequest) {
   const stripe = getStripe()
   const body = await request.text()
   const sig = request.headers.get('stripe-signature') ?? ''
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
+  const webhookSecret = stripeWebhookSecret
   if (!webhookSecret) {
-    console.error('[stripe-webhook] STRIPE_WEBHOOK_SECRET not set')
+    console.error('[stripe-webhook] webhook secret not set (STRIPE_WEBHOOK_SECRET or STRIPE_WEBHOOK_SECRET_TEST)')
     return NextResponse.json({ error: 'Misconfigured' }, { status: 500 })
   }
 
@@ -110,6 +121,7 @@ export async function POST(request: NextRequest) {
       ].join('\n'))
       // Still send confirmation email — customer paid and needs their booking details
     } else {
+      await notifyBookingsChanged()
       await emitOpsEvent({
         eventType: 'booking_confirmed',
         actorType: 'system',
@@ -202,6 +214,8 @@ export async function POST(request: NextRequest) {
 
     if (updateError) {
       console.error('[stripe-webhook] checkout.session.expired: DB update failed', updateError)
+    } else {
+      await notifyBookingsChanged()
     }
 
     await postSlackText([
@@ -213,94 +227,81 @@ export async function POST(request: NextRequest) {
   }
 
   // ── payment_intent.succeeded ──────────────────────────────────────────────
-  // Safety net for async payment methods (iDEAL, Bancontact, SEPA, etc.).
+  // THE single finalizer. For every website payment (card or iDEAL) this is the
+  // only place a FareHarbor booking is created — the browser no longer books, it
+  // just polls the confirmation page.
   //
-  // Card payments confirm synchronously — the browser calls /book immediately
-  // after Stripe.confirmPayment returns. But redirect-based methods (iDEAL)
-  // send the user to their bank and back, and the browser-side flow can fail:
-  //   • Race condition: handlePaymentSuccess ran while React state was null
-  //   • Browser closed before returning from the bank
-  //   • Network error after bank redirect
-  //
-  // When the browser flow fails, this webhook is the last line of defence.
-  // It reads everything it needs from PI metadata + the stored pricing quote,
-  // then creates the FareHarbor booking, saves to Supabase, and sends
-  // the confirmation email and Slack notification — same as /book.
+  // Write-row-first: we insert the bookings row at status 'paid_pending_fh' the
+  // instant payment succeeds. The UNIQUE(stripe_payment_intent_id) constraint
+  // (migration 052) is the exactly-once gate — a duplicate Stripe delivery loses
+  // the INSERT (23505) and exits before touching FareHarbor (this replaces the
+  // old claim mutex). We then create the FareHarbor booking (idempotent + retry
+  // on transient errors) and flip the row to 'confirmed'. On hard failure we
+  // PARK the row (keep the money, alert a human, let the pending-fh-sweep cron
+  // retry) — we NEVER auto-refund.
   if (event.type === 'payment_intent.succeeded') {
     const pi = event.data.object as Stripe.PaymentIntent
     const meta = pi.metadata ?? {}
 
     // Payment link bookings are handled in checkout.session.completed above.
-    // The Checkout Session creates its own PI — if we don't skip here, the webhook
-    // would try to create a second FareHarbor booking for the same slot.
     if (meta.booking_source === 'payment_link') {
       return NextResponse.json({ received: true })
     }
 
-    // Google Ads conversion — report BEFORE the idempotency check below, because
-    // that check early-returns for card payments already booked by /book, which
-    // would otherwise skip the conversion (card is most revenue). This event
-    // fires for EVERY successful payment, so it's the one reliable once-per-pay
-    // hook. reportBookingConversion has its own dedupe and never throws; we still
-    // wrap defensively so nothing here can break the booking flow below.
+    // Google Ads conversion — fires once per successful payment (own dedupe).
+    // Reported on the real payment regardless of booking outcome; a later
+    // deliberate refund retracts it via charge.refunded.
     try {
       await reportBookingConversion({ supabase, pi })
     } catch (err) {
       console.error('[stripe-webhook] reportBookingConversion error (ignored):', err)
     }
 
-    // Idempotency — skip if the browser-side /book already ran.
-    const { data: existingBooking } = await supabase
-      .from('bookings')
-      .select('id')
-      .eq('stripe_payment_intent_id', pi.id)
-      .maybeSingle()
-
-    if (existingBooking) {
-      console.log('[stripe-webhook] PI already processed by /book, skipping:', pi.id)
-      return NextResponse.json({ received: true })
+    // Refund guard: never (re)book a payment that has already been refunded.
+    try {
+      const refunds = await stripe.refunds.list({ payment_intent: pi.id, limit: 1 })
+      if (refunds.data.length > 0) {
+        console.log('[stripe-webhook] PI already refunded — not booking:', pi.id)
+        return NextResponse.json({ received: true })
+      }
+    } catch {
+      // A refund-lookup failure must not block a legitimate booking — proceed.
     }
 
-    console.log('[stripe-webhook] payment_intent.succeeded — creating booking for PI:', pi.id)
+    console.log('[stripe-webhook] payment_intent.succeeded — finalizing PI:', pi.id)
 
-    // Retrieve extras line items from the stored quote breakdown.
     const extrasSelected = await getExtrasFromQuote(meta.quote_id)
-
-    // Build the FareHarbor booking request.
-    const fh = getFareHarborClient()
-    const isPrivate = meta.category === 'private'
     const guestCount = Number(meta.guest_count ?? 1)
-    const customers = Array.from({ length: isPrivate ? 1 : guestCount }, () => ({
-      customer_type_rate: Number(meta.customer_type_rate_pk),
-    }))
-    const fhNote = buildFHBookingNote(null, (extrasSelected ?? []) as unknown as ExtrasLineItem[])
-    const bookingBody = {
-      contact: {
-        name: meta.guest_name ?? '',
-        phone: meta.guest_phone ?? '',
-        email: meta.guest_email ?? '',
-      },
-      customers,
-      ...(fhNote ? { note: fhNote } : {}),
-    }
-
-    // VAT fields may be absent from PI metadata (older intents, browser-side
-    // omissions, etc.). Fall back to server-side compute: 9% on base, 21% on
-    // extras. City tax is 0% VAT (municipal levy).
     const serverBaseAmount = Number(meta.server_base_amount_cents ?? 0)
     const extrasAmountCents = Number(meta.extras_amount_cents ?? 0)
-    const baseVatAmountCents = Number(meta.base_vat_amount_cents)
-      || extractVat(serverBaseAmount, 9)
-    const extrasVatAmountCents = Number(meta.extras_vat_amount_cents)
-      || extractVat(extrasAmountCents, 21)
-    const totalVatAmountCents = Number(meta.total_vat_amount_cents)
-      || (baseVatAmountCents + extrasVatAmountCents)
+    // VAT fields may be absent from PI metadata; fall back to server-side compute
+    // (9% base, 21% extras). parseMetaCents keeps an explicit "0" as a real zero.
+    const baseVatAmountCents = parseMetaCents(meta.base_vat_amount_cents) ?? extractVat(serverBaseAmount, CRUISE_VAT_RATE)
+    const extrasVatAmountCents = parseMetaCents(meta.extras_vat_amount_cents) ?? extractVat(extrasAmountCents, EXTRAS_VAT_RATE)
+    const totalVatAmountCents = parseMetaCents(meta.total_vat_amount_cents) ?? (baseVatAmountCents + extrasVatAmountCents)
 
-    // The full booking row. We claim it in pending_payment BEFORE creating the
-    // FareHarbor booking, so the UNIQUE(stripe_payment_intent_id) constraint
-    // serializes us against the browser /book path — exactly one creates the
-    // FareHarbor booking. claimBooking forces status + nulls booking_uuid.
-    const bookingRow = {
+    // Partner/campaign attribution — resolved server-side at create-intent time
+    // (from the oc_attr cookie, which the webhook can never read directly) and
+    // carried here via PI metadata. Re-verified against the campaigns table
+    // rather than trusted blindly: the attribution cookie can outlive the
+    // campaign (customer books days after clicking; an admin deletes the
+    // campaign in between), and bookings.campaign_id/partner_id are real FKs —
+    // inserting a stale id would reject the ENTIRE paid booking. Shared with
+    // the admin /book route's own campaign lookups (src/lib/booking/campaign-commission.ts).
+    let campaignId: string | null = null
+    let partnerId: string | null = null
+    let commissionAmountCents: number | null = null
+    if (meta.campaign_id) {
+      const resolved = await resolveCampaignCommission(supabase, String(meta.campaign_id), serverBaseAmount)
+      if (resolved) {
+        campaignId = resolved.campaignId
+        partnerId = resolved.partnerId
+        commissionAmountCents = resolved.commissionAmountCents
+      }
+    }
+
+    // 1. Write the row first — the UNIQUE PI constraint is the exactly-once gate.
+    const { data: insertedBooking, error: insertError } = await supabase.from('bookings').insert({
       booking_id: pi.id,
       booking_uuid: null,
       fareharbor_availability_pk: Number(meta.avail_pk),
@@ -309,7 +310,7 @@ export async function POST(request: NextRequest) {
       stripe_payment_intent_id: pi.id,
       stripe_amount: pi.amount,
       base_amount_cents: serverBaseAmount,
-      base_vat_rate: 9,
+      base_vat_rate: CRUISE_VAT_RATE,
       base_vat_amount_cents: baseVatAmountCents,
       extras_amount_cents: extrasAmountCents,
       extras_vat_amount_cents: extrasVatAmountCents,
@@ -325,7 +326,7 @@ export async function POST(request: NextRequest) {
       customer_name: meta.guest_name ?? '',
       customer_email: meta.guest_email ?? '',
       customer_phone: meta.guest_phone ?? '',
-      status: 'confirmed',
+      status: 'paid_pending_fh',
       payment_status: 'paid',
       currency: 'eur',
       booking_source: 'website',
@@ -333,67 +334,83 @@ export async function POST(request: NextRequest) {
       gclid: meta.gclid || null,
       traffic_source: meta.traffic_source || null,
       traffic_detail: meta.traffic_detail || null,
+      campaign_id: campaignId,
+      partner_id: partnerId,
+      commission_amount_cents: commissionAmountCents,
       promo_code_id: meta.promo_code_id || null,
       discount_amount_cents: Number(meta.discount_amount_cents ?? 0),
-    }
+    })
+      .select('id')
+      .single()
 
-    // Claim the PaymentIntent FIRST — before touching FareHarbor (race guard).
-    // Losing the claim means the browser /book path already owns this payment, so
-    // we back off SILENTLY. This ordering is what stops the loser of an iDEAL race
-    // from hitting FareHarbor, seeing the boat already taken, and firing a false
-    // "booking failed" alert when the booking actually succeeded on the other path.
-    const claim = await claimBooking(supabase, bookingRow)
-    if (claim.outcome === 'lost') {
-      console.log('[stripe-webhook] PI already claimed by another path, skipping:', pi.id)
-      return NextResponse.json({ received: true })
-    }
-    if (claim.outcome === 'error') {
-      await alertWebhookFailure(pi, `DB claim failed: ${claim.error}`)
-      return NextResponse.json({ received: true })
-    }
-
-    // We own the claim — validate (read-only). Reaching here means we are NOT the
-    // loser of a race, so a not-bookable result is a GENUINE failure. Release the
-    // claim first so Stripe's 72h retry can re-attempt cleanly.
-    try {
-      const validation = await fh.validateBooking(Number(meta.avail_pk), bookingBody)
-      if (!validation.is_bookable) {
-        console.error('[stripe-webhook] FH validation failed:', validation.error)
-        await releaseClaim(supabase, pi.id)
-        await alertWebhookFailure(pi, `FareHarbor validation failed: ${validation.error ?? 'unknown'}`)
+    if (insertError) {
+      // 23505 → a duplicate Stripe delivery already owns this PI. Exit before any
+      // FareHarbor call (this is the exactly-once gate that replaces the mutex).
+      if (insertError.code === '23505') {
+        console.log('[stripe-webhook] duplicate delivery for PI — already finalizing:', pi.id)
         return NextResponse.json({ received: true })
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.error('[stripe-webhook] FH validate failed:', msg)
-      await releaseClaim(supabase, pi.id)
-      await alertWebhookFailure(pi, `FareHarbor error: ${msg}`)
+      console.error('[stripe-webhook] booking row insert failed for PI', pi.id, insertError)
+      await alertWebhookFailure(stripe, pi, `Booking row insert failed: ${insertError.message}`,
+        '_The customer is charged but we could not record the payment. Investigate Supabase — do NOT refund without checking._')
       return NextResponse.json({ received: true })
     }
 
-    // Validation passed — create the FareHarbor booking, then promote the row.
+    // Row is now visible in the admin Bookings/Planning views (status: paid_pending_fh) —
+    // ping any open page to refetch. Covers both outcomes below (confirmed or parked)
+    // with one call, since the row is already there either way. Awaited (not
+    // fire-and-forget) — an un-awaited promise risks never completing before a
+    // serverless function tears down.
+    await notifyBookingsChanged()
+
+    // 2. We own the row — create the FareHarbor booking (idempotent + retry).
+    //    The booking body (incl. shared adult/child rate splits + the voucher tag) is
+    //    built by the shared core so the webhook and the sweep cron can't drift.
+    const fh = getFareHarborClient()
+    const { availPk, date: bookingDate, body: bookingBody } =
+      buildFhBookingPlan(pi, (extrasSelected ?? []) as unknown as ExtrasLineItem[])
+
     let fhBookingUuid: string | undefined
     try {
-      const booking = await fh.createBooking(Number(meta.avail_pk), bookingBody)
+      const booking = await fh.createBookingIdempotent(availPk, bookingBody, bookingDate)
       fhBookingUuid = booking?.uuid
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      console.error('[stripe-webhook] FH createBooking failed:', msg)
-      // Release the claim so Stripe's retry (72h) can re-attempt cleanly.
-      await releaseClaim(supabase, pi.id)
-      await alertWebhookFailure(pi, `FareHarbor error: ${msg}`)
+      // PARK — keep the money, alert a human, NEVER refund. The row stays
+      // 'paid_pending_fh' and the pending-fh-sweep cron retries it shortly.
+      console.error('[stripe-webhook] FareHarbor booking failed — parking PI:', pi.id, msg)
+      await alertWebhookFailure(stripe, pi, `FareHarbor booking failed: ${msg}`,
+        '_Payment is captured; the booking is PARKED (paid_pending_fh). Create the FareHarbor booking manually and flip the row to confirmed — do NOT refund._')
       return NextResponse.json({ received: true })
     }
 
-    const fin = await finalizeBooking(supabase, pi.id, { bookingUuid: fhBookingUuid ?? null })
-    if (fin.ok === false) {
-      console.error('[stripe-webhook] finalize failed for PI', pi.id, fin.error)
-      await alertWebhookFailure(pi, `DB finalize failed: ${fin.error}`)
-      // Don't return early — still send Slack + email so we know the cruise is booked
+    // 3. Booked — flip the row to confirmed. Retry the DB write a few times: the
+    // FareHarbor booking already EXISTS, so a transient DB blip must not strand the
+    // row at paid_pending_fh (which would make the sweep create a second booking).
+    let updateError: { message: string } | null = null
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { error } = await supabase
+        .from('bookings')
+        .update({ status: 'confirmed', booking_uuid: fhBookingUuid ?? null })
+        .eq('stripe_payment_intent_id', pi.id)
+      updateError = error
+      if (!updateError) break
+      await new Promise(resolve => setTimeout(resolve, 300 * (attempt + 1)))
+    }
+
+    if (updateError) {
+      console.error('[stripe-webhook] confirmed-flip failed for PI', pi.id, updateError)
+      await alertWebhookFailure(stripe, pi, `FareHarbor booked (${fhBookingUuid}) but the confirmed-flip failed: ${updateError.message}`,
+        `_The FareHarbor booking EXISTS (\`${fhBookingUuid}\`). Flip the row to confirmed in Supabase — do NOT recreate or refund._`)
+      // Don't return — still notify; the cruise IS booked.
     } else {
+      // Status just changed paid_pending_fh → confirmed — that's visible on the
+      // admin views (status badge), so ping again.
+      await notifyBookingsChanged()
       await emitOpsEvent({
         eventType: 'booking_confirmed',
         actorType: 'system',
+        bookingId: insertedBooking?.id,
         source: 'webhooks/stripe:payment_intent.succeeded',
         payload: {
           stripe_payment_intent_id: pi.id,
@@ -415,17 +432,56 @@ export async function POST(request: NextRequest) {
 
     const startTime = formatAmsterdamTime(meta.start_at)
     const endTime = formatAmsterdamTime(meta.end_at)
+    // The method actually USED lives on the charge (pi.payment_method_types is the
+    // static list we OFFERED — always card/ideal/link — so it can't tell card from
+    // iDEAL). Look it up best-effort; never block the booking on it.
+    const paymentMethodLabel = await resolvePaymentMethodLabel(stripe, pi)
+    // Stripe's own processing fee — lives on the charge's balance_transaction, not
+    // the PI. Best-effort, for the admin Finance/VAT reconciliation view only;
+    // never blocks or fails the booking.
+    const stripeFeeCents = await resolveStripeFeeCents(stripe, pi)
+    if (stripeFeeCents != null) {
+      try {
+        // supabase-js doesn't throw on a DB-level failure — it returns
+        // { error } — so this must be checked explicitly, not just wrapped
+        // in try/catch, or a real write failure (RLS, constraint) would be
+        // silently ignored despite the catch block implying it's logged.
+        const { error: feeUpdateError } = await supabase
+          .from('bookings')
+          .update({ stripe_fee_cents: stripeFeeCents })
+          .eq('stripe_payment_intent_id', pi.id)
+        if (feeUpdateError) {
+          console.error('[stripe-webhook] stripe_fee_cents update failed (ignored):', pi.id, feeUpdateError.message)
+        }
+      } catch (err) {
+        console.error('[stripe-webhook] stripe_fee_cents update failed (ignored):', pi.id, err)
+      }
+    }
+    // Selected FareHarbor customer type for the Slack alert (best-effort, cached lookup).
+    const customerTypesLabel = await describeCustomerTypes(Number(meta.avail_pk), {
+      customerTypeRatePk: meta.customer_type_rate_pk ? Number(meta.customer_type_rate_pk) : null,
+    })
     const slackText = [
-      `*New booking confirmed!* 🎉 _(iDEAL/async — via webhook)_`,
+      `*New booking confirmed!* 🎉 _(${paymentMethodLabel} — via webhook)_`,
       `*${meta.listing_title}*`,
       `📅 ${meta.date} · ${startTime} – ${endTime}`,
       `👥 ${guestCount} guest${guestCount !== 1 ? 's' : ''} · ${meta.category}`,
+      customerTypesLabel ? `⛵ Type: ${customerTypesLabel}` : '',
       `💰 €${(pi.amount / 100).toFixed(0)}`,
       `👤 ${meta.guest_name} · ${meta.guest_email}`,
-      meta.traffic_source ? `📍 ${formatTrafficSource(meta.traffic_source, meta.traffic_detail)}` : '',
       fhBookingUuid ? `🎫 FH: ${fhBookingUuid}` : '',
       `💳 PI: ${pi.id}`,
     ].filter(Boolean).join('\n')
+
+    // Catering already inside the 7-day auto-send window at booking time (e.g. a
+    // last-minute booking) gets its supplier email sent instantly here, instead of
+    // waiting for the daily cron. Bookings further out stay queued — the cron picks
+    // them up the day they cross the 7-day mark.
+    const insertedBookingId = insertedBooking?.id ?? null
+    const shouldAutoSendCateringNow =
+      insertedBookingId !== null &&
+      hasFood((extrasSelected ?? []) as never) &&
+      isWithinCateringAutoSendWindow(meta.date ?? null)
 
     // Slack + email + catering fire concurrently (all best-effort side channels)
     await Promise.allSettled([
@@ -448,6 +504,9 @@ export async function POST(request: NextRequest) {
         fareharborCustomerTypeRatePk: meta.customer_type_rate_pk
           ? Number(meta.customer_type_rate_pk)
           : null,
+        stripePaymentIntentId: pi.id,
+        baseAmountCents: serverBaseAmount || null,
+        discountAmountCents: Number(meta.discount_amount_cents ?? 0),
       }),
       notifyCateringOrder({
         cruiseName: meta.listing_title ?? '',
@@ -456,6 +515,7 @@ export async function POST(request: NextRequest) {
         guestCount,
         extrasSelected,
       }),
+      ...(shouldAutoSendCateringNow && insertedBookingId ? [sendCateringOrderEmailForBooking(insertedBookingId)] : []),
     ])
   }
 
@@ -475,6 +535,7 @@ export async function POST(request: NextRequest) {
         .from('bookings')
         .update({ payment_status: isFullRefund ? 'refunded' : 'partially_refunded' })
         .eq('stripe_payment_intent_id', piId)
+      await notifyBookingsChanged()
 
       // Google Ads: retract (full) or restate (partial) the conversion so
       // reported revenue stays honest. No-op if we never reported this one.
@@ -505,7 +566,7 @@ export async function POST(request: NextRequest) {
     const dispute = event.data.object as Stripe.Dispute
     const chargeId = typeof dispute.charge === 'string' ? dispute.charge : (dispute.charge as Stripe.Charge)?.id
 
-    await sendCriticalAlert([
+    await postSlackText([
       '🚨 *CHARGEBACK OPENED* 🚨',
       '_A customer disputed a charge. Respond in Stripe within 7 days to avoid auto-losing._',
       '',
@@ -515,7 +576,7 @@ export async function POST(request: NextRequest) {
       `Dispute: \`${dispute.id}\``,
       '',
       `https://dashboard.stripe.com/disputes/${dispute.id}`,
-    ].join('\n'), { subject: '🚨 Off Course chargeback opened — respond within 7 days' })
+    ].join('\n'))
   }
 
   // ── payment_intent.payment_failed ──────────────────────────────────────────
@@ -540,16 +601,24 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Alert when the webhook can't complete a booking for a paid PI.
+ * Alert Slack when the webhook can't complete a booking for a paid PI.
  * Critical — Stripe confirmed the money, but FareHarbor or Supabase failed.
- * Fans out to Slack AND email so a single dead channel can't swallow it.
+ *
+ * The customer's *actual* payment method is derived from the charge (never
+ * hardcoded), so the alert no longer claims "iDEAL/async" for a card/Link pay.
  */
-async function alertWebhookFailure(pi: Stripe.PaymentIntent, reason: string) {
+async function alertWebhookFailure(
+  stripe: Stripe,
+  pi: Stripe.PaymentIntent,
+  reason: string,
+  actionLine?: string,
+) {
   const meta = pi.metadata ?? {}
+  const method = await resolvePaymentMethodLabel(stripe, pi).catch(() => 'online payment')
 
   const text = [
     '🚨 *CRITICAL: WEBHOOK BOOKING FAILED* 🚨',
-    '_Customer paid (iDEAL/async) but the booking could not be completed._',
+    `_Customer paid (${method}) but the booking could not be completed._`,
     '',
     `*Reason:* \`${reason}\``,
     `*PI:* \`${pi.id}\`  ·  Amount: €${(pi.amount / 100).toFixed(0)}`,
@@ -557,8 +626,12 @@ async function alertWebhookFailure(pi: Stripe.PaymentIntent, reason: string) {
     `*Cruise:* ${meta.listing_title}  ·  Date: ${meta.date}`,
     `*Avail PK:* ${meta.avail_pk}  ·  CT Rate PK:* ${meta.customer_type_rate_pk}`,
     '',
-    '_Manually create the FareHarbor booking and send a confirmation email._',
+    actionLine ?? '_Manually create the FareHarbor booking and send a confirmation email._',
   ].join('\n')
 
-  await sendCriticalAlert(text, { subject: '🚨 CRITICAL: Off Course webhook booking failed' })
+  if (process.env.SLACK_BOT_TOKEN || process.env.SLACK_WEBHOOK_URL) {
+    await postSlackCritical(text)
+  } else {
+    console.error('[stripe-webhook] CRITICAL (no Slack configured):', text)
+  }
 }

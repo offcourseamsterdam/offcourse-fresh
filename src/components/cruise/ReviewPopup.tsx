@@ -49,7 +49,7 @@ export function ReviewPopup({ reviews, totalReviews, avgRating: avgRatingProp, v
   return (
     <div
       className={`absolute bottom-4 left-4 z-10 w-56 bg-white rounded-xl shadow-xl p-3 transition-opacity duration-300 hidden sm:block ${
-        visible ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        visible ? 'opacity-100' : 'opacity-0'
       }`}
       onMouseEnter={() => { setIsHovering(true); onHoverChange(true) }}
       onMouseLeave={() => { setIsHovering(false); onHoverChange(false) }}

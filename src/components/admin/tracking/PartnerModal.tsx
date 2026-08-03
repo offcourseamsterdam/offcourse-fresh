@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { AdminFormModal } from '@/components/admin/ui/AdminFormModal'
 import { TextField, SelectField, TextAreaField } from '@/components/admin/ui/fields'
 import { useAdminSave, adminMutate } from '@/hooks/useAdminSave'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 
 interface Channel {
   id: string
@@ -30,7 +31,7 @@ interface PartnerModalProps {
 }
 
 export function PartnerModal({ open, onClose, onSaved, editing }: PartnerModalProps) {
-  const [channels, setChannels] = useState<Channel[]>([])
+  const { data: channels } = useAdminFetch<Channel[]>(open ? '/api/admin/tracking/channels' : null)
   const { saving, error, setError, run } = useAdminSave()
 
   // Form state
@@ -42,20 +43,12 @@ export function PartnerModal({ open, onClose, onSaved, editing }: PartnerModalPr
   const [website, setWebsite] = useState('')
   const [notes, setNotes] = useState('')
 
-  // Load channels on mount
-  useEffect(() => {
-    if (!open) return
-    fetch('/api/admin/tracking/channels')
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.ok) setChannels(json.data)
-      })
-      .catch(() => {})
-  }, [open])
-
-  // Reset/prefill form when opening
+  // Reset/prefill form when opening. A key-based remount would be the more
+  // "textbook" fix, but that requires the parent to manage a stable key across
+  // open/editing changes — out of scope for this modal in isolation.
   useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setName(editing?.name ?? '')
       setChannelId(editing?.channel_id ?? '')
       setEmail(editing?.email ?? '')
@@ -112,7 +105,7 @@ export function PartnerModal({ open, onClose, onSaved, editing }: PartnerModalPr
 
       <SelectField label="Channel *" value={channelId} onChange={(e) => setChannelId(e.target.value)}>
         <option value="">Select a channel...</option>
-        {channels.map((ch) => (
+        {(channels ?? []).map((ch) => (
           <option key={ch.id} value={ch.id}>{ch.name}</option>
         ))}
       </SelectField>

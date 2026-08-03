@@ -16,6 +16,13 @@
       "autoPort": true
     },
     {
+      "name": "Next.js Stripe Test Mode",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:local", "--", "-p", "3050"],
+      "port": 3050,
+      "autoPort": false
+    },
+    {
       "name": "Exchange Dev Server",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "/Users/beer/Developer/Exchange-released-version", "run", "dev"],

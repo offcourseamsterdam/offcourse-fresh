@@ -85,6 +85,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   maintenance: Wrench,
   notifications: Bell,
   stock: Boxes,
+  schedule: Clock,
 }
 
 const PREFETCH_URLS: Record<string, string> = {
@@ -117,6 +118,9 @@ export default function DashboardSidebar({
   const inboxOpenCount = inboxOpen?.count ?? 0
 
   useEffect(() => {
+    // localStorage isn't available during SSR — this must run post-mount to avoid
+    // a hydration mismatch against the server's default-expanded render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRail(localStorage.getItem(RAIL_STORAGE_KEY) === '1')
   }, [])
 

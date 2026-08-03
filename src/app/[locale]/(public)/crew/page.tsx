@@ -1,6 +1,6 @@
 import Image from 'next/image'
 import { getTranslations } from 'next-intl/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import type { Database } from '@/lib/supabase/types'
 
 type Person = Database['public']['Tables']['people']['Row']
@@ -22,7 +22,10 @@ export async function generateMetadata({ params }: Props) {
 
 export default async function CrewPage({ params: _params }: Props) {
   const t = await getTranslations('crew')
-  const supabase = await createClient()
+  // Cookie-less client — reading cookies() here would force this page dynamic
+  // and silently defeat the `revalidate = 60` ISR cache above. Safe: this is
+  // public, read-only content (people.public_read RLS policy is unrestricted).
+  const supabase = createAdminClient()
 
   const { data: peopleData } = await supabase
     .from('people')

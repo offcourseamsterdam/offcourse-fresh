@@ -16,6 +16,10 @@ interface TicketStepProps {
    * and we skip the minimum party size gate — a solo add-on is fine.
    */
   hasExistingBookings?: boolean
+  /** From `cruise_listings.availability_filters.min_guests_override` — e.g. 1 to allow solo booking. Defaults to 2. */
+  minPartyOverride?: number | null
+  /** Overrides the displayed name for every ticket row — for a single-customer-type listing (e.g. Pride's "Single Ticket + open bar") where the raw FareHarbor customer type name reads oddly as a ticket label. */
+  ticketLabelOverride?: string
 }
 
 // Try to derive a human label from customer type data.
@@ -33,6 +37,8 @@ export function TicketStep({
   onUpdateCount,
   onConfirm: _onConfirm,
   hasExistingBookings = false,
+  minPartyOverride,
+  ticketLabelOverride,
 }: TicketStepProps) {
   const totalTickets = Object.values(ticketCounts).reduce((sum, c) => sum + c, 0)
 
@@ -43,7 +49,8 @@ export function TicketStep({
   //
   // Exception: if the slot already has other bookings (hasExistingBookings),
   // the cruise is already "happening" — a solo add-on is fine and we skip the gate.
-  const minParty = Math.max(...customerTypes.map(ct => ct.minimumParty ?? 1), 1)
+  const fhMinParty = Math.max(...customerTypes.map(ct => ct.minimumParty ?? 1), 1)
+  const minParty = !hasExistingBookings ? Math.max(fhMinParty, minPartyOverride ?? 2) : fhMinParty
   const enforceMinParty = !hasExistingBookings && minParty > 1
   const belowMinimum = enforceMinParty && totalTickets > 0 && totalTickets < minParty
 
@@ -51,15 +58,9 @@ export function TicketStep({
     <div className="space-y-3">
       <p className="text-xs text-zinc-500 mb-1">Select your tickets</p>
 
-      {enforceMinParty && (
-        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          This cruise requires a minimum of <strong>{minParty} tickets</strong> per booking.
-        </p>
-      )}
-
       {customerTypes.map((ct, index) => {
         const count = ticketCounts[ct.customerTypePk] || 0
-        const label = getCustomerTypeLabel(ct, index)
+        const label = ticketLabelOverride ?? getCustomerTypeLabel(ct, index)
         const remaining = maxCapacity - totalTickets + count
 
         return (

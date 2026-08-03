@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Loader2 } from 'lucide-react'
-import { fmtEuros } from '@/lib/utils'
+import { fmtEuros, toAmsDateStr } from '@/lib/utils'
 
 type PeriodKey = '30d' | '90d' | 'year' | 'all'
 
@@ -15,18 +15,18 @@ const PERIODS: { key: PeriodKey; label: string }[] = [
 
 function getDateRange(key: PeriodKey): { from: string; to: string } {
   const now = new Date()
-  const to = now.toISOString().slice(0, 10)
+  const to = toAmsDateStr(now)
 
   switch (key) {
     case '30d': {
       const d = new Date(now)
       d.setDate(d.getDate() - 30)
-      return { from: d.toISOString().slice(0, 10), to }
+      return { from: toAmsDateStr(d), to }
     }
     case '90d': {
       const d = new Date(now)
       d.setDate(d.getDate() - 90)
-      return { from: d.toISOString().slice(0, 10), to }
+      return { from: toAmsDateStr(d), to }
     }
     case 'year': {
       return { from: `${now.getFullYear()}-01-01`, to }

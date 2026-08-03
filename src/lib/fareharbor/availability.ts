@@ -18,6 +18,18 @@ export interface FilteredAvailabilityResult {
   reasonCode: ReasonCode
 }
 
+const LISTING_AVAILABILITY_COLUMNS = 'id, fareharbor_item_pk, allowed_resource_pks, allowed_customer_type_pks, availability_filters, booking_cutoff_hours, max_guests'
+
+interface AvailabilityListingRow {
+  id: string
+  fareharbor_item_pk: number
+  allowed_resource_pks: number[] | null
+  allowed_customer_type_pks: number[] | null
+  availability_filters: unknown
+  booking_cutoff_hours: number | null
+  max_guests: number | null
+}
+
 export async function getFilteredAvailability(
   listingId: string,
   date: string,
@@ -28,13 +40,53 @@ export async function getFilteredAvailability(
   // fareharbor_item_pk is stored directly on the listing — no join needed
   const { data: listing, error: listingError } = await supabase
     .from('cruise_listings')
-    .select('id, fareharbor_item_pk, allowed_resource_pks, allowed_customer_type_pks, availability_filters, booking_cutoff_hours, max_guests')
+    .select(LISTING_AVAILABILITY_COLUMNS)
     .eq('id', listingId)
     .single()
 
   if (listingError || !listing) {
     return { slots: [], reasonCode: 'NO_AVAILABILITIES' }
   }
+
+  return computeFilteredAvailability(listing, date, guests)
+}
+
+/**
+ * Same as getFilteredAvailability, but looks the listing up by slug (and
+ * enforces is_published) in the SAME query instead of the caller doing a
+ * separate slug→id lookup first — /api/search/slots previously did exactly
+ * that redundant round-trip.
+ */
+export async function getFilteredAvailabilityBySlug(
+  slug: string,
+  date: string,
+  guests: number
+): Promise<FilteredAvailabilityResult> {
+  const supabase = createAdminClient()
+
+  const { data: listing, error: listingError } = await supabase
+    .from('cruise_listings')
+    .select(LISTING_AVAILABILITY_COLUMNS)
+    .eq('slug', slug)
+    .eq('is_published', true)
+    .single()
+
+  // Distinct from NO_AVAILABILITIES (listing exists, no slots for this date) —
+  // the route maps this specific code to a 404, matching its prior behavior
+  // from when it did its own separate slug lookup before calling this.
+  if (listingError || !listing) {
+    return { slots: [], reasonCode: 'LISTING_NOT_FOUND' }
+  }
+
+  return computeFilteredAvailability(listing, date, guests)
+}
+
+async function computeFilteredAvailability(
+  listing: AvailabilityListingRow,
+  date: string,
+  guests: number
+): Promise<FilteredAvailabilityResult> {
+  const supabase = createAdminClient()
 
   // Load resource mapping + cutoff config from the FH item
   const { data: fhItem } = await supabase
@@ -105,51 +157,6 @@ export async function getFilteredAvailability(
   return { slots: slotsWithCutoff, reasonCode: null }
 }
 
-export async function getRawAvailabilities(
-  fhItemPk: number,
-  date: string
-): Promise<FHMinimalAvailability[]> {
-  const client = getFareHarborClient()
-  try {
-    return await client.getAvailabilities(fhItemPk, date)
-  } catch {
-    return []
-  }
-}
-
-export async function applyListingFilters(
-  rawAvailabilities: FHMinimalAvailability[],
-  filterConfig: ListingFilterConfig,
-  guests: number,
-  date: string,
-  typeMap: Map<number, CustomerTypeConfig>,
-  resourcePkToBoat: Map<number, string>
-): Promise<FilteredAvailabilityResult> {
-  if (rawAvailabilities.length === 0) {
-    return { slots: [], reasonCode: 'NO_AVAILABILITIES' }
-  }
-
-  const dateObj = new Date(date + 'T00:00:00')
-  const filtered = await applyAllFilters(
-    rawAvailabilities,
-    filterConfig,
-    guests,
-    dateObj,
-    typeMap,
-    resourcePkToBoat
-  )
-
-  const validSlots = getValidTimeSlots(filtered, guests, typeMap)
-
-  if (validSlots.length === 0) {
-    const reason = getReasonCode(filtered, guests, typeMap)
-    return { slots: [], reasonCode: reason }
-  }
-
-  const slots = validSlots.map(a => transformToSlot(a, typeMap))
-  return { slots, reasonCode: null }
-}
-
 // ── Booking cutoff ────────────────────────────────────────────────────────────
 
 /**
@@ -186,6 +193,14 @@ export function transformToSlot(
 ): AvailabilitySlot {
   const startTime = formatDisplayTime(availability.start_at)
 
+  // Most availabilities here are departure-time-only (end_at === start_at) — duration
+  // comes from which customer type/rate is picked (e.g. "Diana - 2 Hours"), parsed by
+  // name via typeMap. But some (e.g. fixed-schedule special events) have a real window,
+  // so prefer the availability's own start/end when it actually spans time.
+  const spanMinutes = Math.round(
+    (new Date(availability.end_at).getTime() - new Date(availability.start_at).getTime()) / 60_000
+  )
+
   const customerTypes: AvailabilityCustomerType[] = availability.customer_type_rates
     .map(rate => {
       const config = typeMap.get(rate.customer_type.pk)
@@ -200,7 +215,7 @@ export function transformToSlot(
         minimumParty: rate.minimum_party_size ?? 1,
         maximumParty: rate.maximum_party_size ?? (config?.maxGuests ?? 12),
         priceCents: rate.customer_prototype?.total_including_tax ?? rate.customer_prototype?.total ?? 0,
-        durationMinutes: config?.duration ?? 120,
+        durationMinutes: spanMinutes > 0 ? spanMinutes : (config?.duration ?? 120),
       }
     })
 

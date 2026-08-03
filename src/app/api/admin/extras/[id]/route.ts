@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { withRoute } from '@/lib/api/with-route'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -16,7 +17,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   return apiOk({ extra: data })
 }
 
-export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const PATCH = withRoute(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const denied = await requireAdmin()
   if (denied) return denied
   const { id } = await params
@@ -38,9 +39,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const { data, error } = await supabase.from('extras').update(patch).eq('id', id).select().single()
   if (error) return apiError(error.message)
   return apiOk({ extra: data })
-}
+})
 
-export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const DELETE = withRoute(async (_: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const denied = await requireAdmin()
   if (denied) return denied
   const { id } = await params
@@ -48,4 +49,4 @@ export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id:
   const { error } = await supabase.from('extras').delete().eq('id', id)
   if (error) return apiError(error.message)
   return apiOk({})
-}
+})

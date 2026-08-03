@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getPartnerIdFromRequest } from '@/lib/partner/get-partner-id'
+import { toAmsDateStr } from '@/lib/utils'
 
 /**
  * GET /api/partner/clicks?from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -123,11 +124,11 @@ export async function GET(request: NextRequest) {
 }
 
 function todayStr(): string {
-  return new Date().toISOString().slice(0, 10)
+  return toAmsDateStr()
 }
 
 function daysAgoStr(days: number, baseDate: string): string {
   const d = new Date(`${baseDate}T00:00:00`)
   d.setDate(d.getDate() - days)
-  return d.toISOString().slice(0, 10)
+  return toAmsDateStr(d)
 }

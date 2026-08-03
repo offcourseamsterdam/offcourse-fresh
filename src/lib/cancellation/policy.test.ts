@@ -186,6 +186,28 @@ describe('formatTierLines', () => {
     expect(lines).toHaveLength(1)
     expect(lines[0].label).toBe('Full refund')
   })
+
+  it('expresses a multi-week tier in weeks, not raw hours', () => {
+    // Fixed-date events (e.g. a one-off Pride/King's Day booking) use a
+    // "3 weeks out" cutoff instead of the usual 24h/48h short-notice tiers.
+    const tiers = normalizeTiers([
+      { hours_before: 504, refund_percent: 100 },
+      { hours_before: 0, refund_percent: 0 },
+    ])
+    const lines = formatTierLines(tiers)
+    expect(lines).toEqual([
+      { refundPercent: 100, label: 'Full refund', detail: 'up to 3 weeks before departure' },
+      { refundPercent: 0, label: 'No refund', detail: 'within 3 weeks of departure' },
+    ])
+  })
+
+  it('keeps short-notice tiers in hours (unchanged from before)', () => {
+    // 48h/24h must NOT start rendering as "2 days"/"1 day" — that would change
+    // display for every listing still on the default short-notice policy.
+    const lines = formatTierLines(DEFAULT_TIERS)
+    expect(lines[0].detail).toBe('up to 48 hours before departure')
+    expect(lines[2].detail).toBe('within 24 hours of departure')
+  })
 })
 
 describe('formatCutoffDateTime', () => {

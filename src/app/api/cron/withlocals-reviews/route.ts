@@ -1,4 +1,6 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
+import { requireCronSecret } from '@/lib/auth/require-cron-secret'
+import { alertCronFailure } from '@/lib/cron/alert'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { syncWithlocalsReviews } from '@/lib/withlocals/sync'
 
@@ -6,16 +8,12 @@ import { syncWithlocalsReviews } from '@/lib/withlocals/sync'
  * GET /api/cron/withlocals-reviews
  *
  * Scheduled weekly (Monday 08:00 Amsterdam time — see vercel.json).
- * Also callable manually from /admin/reviews via the "Sync Withlocals" button.
  *
  * Silently skips if withlocals_experience_short_id is not configured.
  */
-export async function GET(request: Request) {
-  // Protect against external callers in production
-  const authHeader = request.headers.get('authorization')
-  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+export async function GET(request: NextRequest) {
+  const denied = requireCronSecret(request)
+  if (denied) return denied
 
   const supabase = createAdminClient()
   const { data: config } = await supabase
@@ -33,8 +31,7 @@ export async function GET(request: Request) {
     const result = await syncWithlocalsReviews(shortId)
     return NextResponse.json({ ok: true, ...result })
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[cron/withlocals-reviews]', message)
-    return NextResponse.json({ ok: false, error: message }, { status: 500 })
+    await alertCronFailure('withlocals-reviews', err)
+    return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : String(err) }, { status: 500 })
   }
 }

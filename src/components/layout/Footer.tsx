@@ -2,14 +2,18 @@ import { Link } from '@/i18n/navigation'
 import { Logo } from '@/components/ui/Logo'
 import { WhatsAppLink } from '@/components/layout/WhatsAppLink'
 import { Mail, Phone, MapPin } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { sectionRootStyle, roleColor, type SectionStyle } from '@/lib/homepage/section-styles'
 
 export async function Footer() {
   const year = new Date().getFullYear()
 
   // Admin-managed footer background + text colour (the footer is site-wide).
-  const supabase = await createClient()
+  // Cookie-less client — the Footer renders on every public page, so a
+  // cookies() read here would force EVERY one of them dynamic, silently
+  // defeating their `revalidate` ISR cache regardless of what the page itself
+  // does. Public read-only content (unrestricted RLS policy).
+  const supabase = createAdminClient()
   const { data: styleRow } = await supabase
     .from('homepage_section_styles')
     .select('background, text_colors')

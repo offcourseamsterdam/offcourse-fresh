@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import { isValidExtrasToken } from '@/lib/booking/extras-token'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { filterCateringItems, type ExtrasLineItem } from '@/lib/catering/filter'
+import type { ExtrasLineItem } from '@/lib/catering/filter'
 import { formatAmsterdamTime } from '@/lib/utils'
 import ExtrasUpsellClient, { type UpsellExtra } from './ExtrasUpsellClient'
 
@@ -98,7 +98,7 @@ export default async function ExtrasUpsellPage({ params }: Props) {
               Want to add food or drinks?
             </h2>
             <p className="text-[var(--color-muted)] text-sm leading-relaxed">
-              Pick what you'd like and we'll have it ready on the boat. No payment needed now — you settle on the day.
+              Pick what you&apos;d like and we&apos;ll have it ready on the boat. No payment needed now — you settle on the day.
             </p>
           </div>
         )}

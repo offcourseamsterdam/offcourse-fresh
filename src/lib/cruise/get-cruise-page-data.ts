@@ -1,5 +1,4 @@
 import { cache } from 'react'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import { formatExtraPrice } from '@/lib/constants'
@@ -20,12 +19,37 @@ export interface CruiseImageItem extends CruiseImage {
   asset: ImageAsset | null
 }
 
+// Columns actually read anywhere downstream of this query (traced exhaustively
+// 2026-07 through getCruisePageData, [slug]/page.tsx incl. generateMetadata, and
+// CruiseContentSections). Excludes admin-editor-only fields (benefits,
+// inclusions, boat_id, allowed_resource_pks,
+// booking_cutoff_hours, cancellation_policy, required_partner_id, is_archived,
+// is_featured, created_at, updated_at) and is_published/display_order (used only
+// as query predicates, never projected). All 7 variants of each locale-suffixed
+// field group stay — which one is needed depends on the request's locale.
+// availability_filters is included despite being admin-editor data — [slug]/page.tsx
+// reads its min_guests_override to drive the solo-booking floor override.
+const LISTING_DETAIL_COLUMNS = `
+  id, slug, category, images, hero_image_asset_id, hero_image_url, video_url,
+  fareharbor_item_pk, allowed_customer_type_pks, availability_filters, highlights, price_display,
+  price_label, payment_mode, starting_price, max_guests, duration_display,
+  departure_location, google_maps_url,
+  title, title_de, title_es, title_fr, title_nl, title_pt, title_zh,
+  tagline, tagline_de, tagline_es, tagline_fr, tagline_nl, tagline_pt, tagline_zh,
+  description, description_de, description_es, description_fr, description_nl, description_pt, description_zh,
+  seo_title, seo_title_de, seo_title_es, seo_title_fr, seo_title_nl, seo_title_pt, seo_title_zh,
+  seo_meta_description, seo_meta_description_de, seo_meta_description_es, seo_meta_description_fr, seo_meta_description_nl, seo_meta_description_pt, seo_meta_description_zh,
+  faqs, faqs_de, faqs_es, faqs_fr, faqs_nl, faqs_pt, faqs_zh
+` as const
+
 // Deduplicate the listing fetch between generateMetadata and the page component
 export const getListingBySlug = cache(async (slug: string) => {
-  const supabase = await createClient()
+  // Cookie-less client — reading cookies() here would force this page dynamic
+  // and silently defeat the `revalidate = 60` ISR cache in [slug]/page.tsx.
+  const supabase = createAdminClient()
   const { data } = await supabase
     .from('cruise_listings')
-    .select('*')
+    .select(LISTING_DETAIL_COLUMNS)
     .eq('slug', slug)
     .eq('is_published', true)
     .single()
@@ -39,39 +63,37 @@ export const getListingBySlug = cache(async (slug: string) => {
 // (removing the old serial getCruiseOgImage query from generateMetadata).
 export const getCruisePageData = cache(async function getCruisePageData(listing: CruiseListing, locale: Locale) {
   const loc = locale
-  const supabase = await createClient()
-  // google_reviews_config holds OAuth tokens — we can't grant anon SELECT on the table.
-  // Use the service-role client server-side for the aggregate-stats query only.
-  const adminSupabase = createAdminClient()
+  // Cookie-less client for everything — reading cookies() would force this page
+  // dynamic and silently defeat the `revalidate = 60` ISR cache in [slug]/page.tsx.
+  // This also fixes the bug the old split used to work around: extras/listing_extras'
+  // RLS policies only grant SELECT to the `anon` role, so a logged-in admin/partner
+  // hitting this server-rendered page via the cookie-aware client (picking up the
+  // `authenticated` role) got 0 rows back — snacks/drinks silently invisible to
+  // logged-in users only. A single service-role client has no such gap.
+  const supabase = createAdminClient()
+  const adminSupabase = supabase
 
-  // Parallel queries.
-  //
-  // `extras` and `listing_extras` MUST use the admin client. Their RLS policies
-  // only grant SELECT to the `anon` role — when a logged-in user (admin/partner
-  // with a Supabase session cookie) hits this server-rendered page, the cookie-
-  // aware client picks up the `authenticated` role and the queries silently
-  // return 0 rows. Result: snacks/drinks invisible to logged-in users only.
-  // Same family as commit e752a9f for pricing_quotes.
-  // Image-asset ids come straight off `listing` (no dependency on the queries
-  // below), so the asset fetch joins this same parallel batch instead of running
-  // as a serial second round-trip.
+  // Parallel queries. Image-asset ids come straight off `listing` (no dependency
+  // on the queries below), so the asset fetch joins this same parallel batch
+  // instead of running as a serial second round-trip.
   const rawImages = (listing.images as CruiseImage[] | null) ?? []
   const assetIdsToFetch = [
     listing.hero_image_asset_id,
     ...rawImages.map(i => i.image_asset_id ?? null),
   ].filter((id): id is string => Boolean(id))
 
-  const [reviewsResult, reviewCountResult, allExtrasResult, listingExtrasResult, allBoatsResult, googleConfigResult, fhItemResult, assetsResult] = await Promise.all([
-    // Fetch the 20 most recent active reviews — enough for the ReviewSlider (3 at a time)
-    // and ReviewPopup (capped at 6). The GalleryModal fetches the full list on open via
-    // /api/reviews so it doesn't bloat the initial page RSC payload.
-    // Selecting only the columns we actually use (all 7 locale text columns + metadata)
-    // avoids fetching unused admin/internal fields and cuts JSON payload ~50-80%.
-    supabase.from('social_proof_reviews')
-      .select('id, reviewer_name, rating, source, author_photo_url, review_image_url, publish_time, review_text, review_text_nl, review_text_de, review_text_fr, review_text_es, review_text_pt, review_text_zh')
-      .eq('is_active', true)
-      .order('publish_time', { ascending: false, nullsFirst: false })
-      .limit(20),
+  // Columns needed by the ReviewSlider — 7 locale text columns + display metadata.
+  const REVIEW_COLS = 'id, reviewer_name, rating, source, author_photo_url, review_image_url, publish_time, review_text, review_text_nl, review_text_de, review_text_fr, review_text_es, review_text_pt, review_text_zh' as const
+
+  const [googleRvResult, taRvResult, wlRvResult, gygRvResult, reviewCountResult, allExtrasResult, listingExtrasResult, allBoatsResult, googleConfigResult, fhItemResult, assetsResult] = await Promise.all([
+    // Fetch 5 most recent per source so every platform appears in the slider tabs.
+    // A single date-sorted LIMIT 20 would exclude TripAdvisor entirely when newer
+    // platforms (Withlocals, GYG) have more recent reviews.
+    // The GalleryModal fetches the full list on open via /api/reviews.
+    supabase.from('social_proof_reviews').select(REVIEW_COLS).eq('is_active', true).eq('source', 'google').order('publish_time', { ascending: false, nullsFirst: false }).limit(5),
+    supabase.from('social_proof_reviews').select(REVIEW_COLS).eq('is_active', true).eq('source', 'tripadvisor').order('publish_time', { ascending: false, nullsFirst: false }).limit(5),
+    supabase.from('social_proof_reviews').select(REVIEW_COLS).eq('is_active', true).eq('source', 'withlocals').order('publish_time', { ascending: false, nullsFirst: false }).limit(5),
+    supabase.from('social_proof_reviews').select(REVIEW_COLS).eq('is_active', true).eq('source', 'getyourguide').order('publish_time', { ascending: false, nullsFirst: false }).limit(5),
     supabase.from('social_proof_reviews').select('*', { count: 'exact', head: true }).eq('is_active', true),
     adminSupabase.from('extras').select('*').eq('is_active', true).in('category', ['food', 'drinks']).order('sort_order', { ascending: true }),
     adminSupabase.from('listing_extras').select('extra_id, is_enabled').eq('listing_id', listing.id),
@@ -83,7 +105,18 @@ export const getCruisePageData = cache(async function getCruisePageData(listing:
       : Promise.resolve({ data: [] as ImageAsset[] }),
   ])
 
-  const reviews = reviewsResult.data
+  // Merge per-source results and re-sort by date so the slider stays chronological.
+  const reviews = [
+    ...(googleRvResult.data ?? []),
+    ...(taRvResult.data ?? []),
+    ...(wlRvResult.data ?? []),
+    ...(gygRvResult.data ?? []),
+  ].sort((a, b) => {
+    if (!a.publish_time && !b.publish_time) return 0
+    if (!a.publish_time) return 1
+    if (!b.publish_time) return -1
+    return new Date(b.publish_time).getTime() - new Date(a.publish_time).getTime()
+  })
   const reviewCount = reviewCountResult.count
   const googleConfig = googleConfigResult.data
   // Cancellation policy is owned by the parent FH item; falls back to DEFAULT_TIERS when null/invalid.
@@ -113,7 +146,11 @@ export const getCruisePageData = cache(async function getCruisePageData(listing:
 
   // Parse JSONB fields
   const highlights = (listing.highlights as Benefit[] | null) ?? []
-  const faqs = (listing.faqs as Faq[] | null) ?? []
+  // FAQs are a jsonb array, not a plain string, so they don't fit getLocalizedField
+  // (which only handles scalar text columns) — resolve the locale variant by hand,
+  // falling back to the English base column exactly like getLocalizedField does.
+  const localizedFaqs = loc === 'en' ? null : (listing as Record<string, unknown>)[`faqs_${loc}`] as Faq[] | null
+  const faqs = localizedFaqs ?? (listing.faqs as Faq[] | null) ?? []
   // Legacy short label used by the booking-panel "Free cancellation" badge.
   // Derived from the FH item's tiers so the badge hides if there's no full-refund tier.
   const topTier = cancellationTiers[0]
@@ -163,14 +200,16 @@ export const getCruisePageData = cache(async function getCruisePageData(listing:
   const serializedFood = foodAndDrinkExtras.filter((e) => e.category === 'food').map(serializeExtra)
   const serializedDrinks = foodAndDrinkExtras.filter((e) => e.category === 'drinks').map(serializeExtra)
 
-  // ── Combined review stats (Google + TripAdvisor) ──────────────────────────
-  // The public count is the COMBINED total across both sources (e.g. 49 + 48 = 97),
-  // so every "X reviews" display on the page matches the homepage.
+  // ── Combined review stats (all platforms) ─────────────────────────────────
+  // Google and TA use admin-configured counts (the real platform totals, even if not
+  // every review is imported). Withlocals and GYG are fully imported so reviewCount
+  // already includes them. We take whichever is larger so the number always reflects
+  // all platforms and grows automatically as new reviews are added.
   const googleTotal = googleConfig?.total_reviews ?? null
   const taTotal = googleConfig?.tripadvisor_total_reviews ?? null
-  const combinedConfigTotal =
-    googleTotal != null || taTotal != null ? (googleTotal ?? 0) + (taTotal ?? 0) : null
-  const totalReviews = combinedConfigTotal ?? reviewCount ?? reviews?.length ?? 0
+  const configPlatformTotal =
+    googleTotal != null || taTotal != null ? (googleTotal ?? 0) + (taTotal ?? 0) : 0
+  const totalReviews = Math.max(configPlatformTotal, reviewCount ?? 0) || (reviews?.length ?? 0)
 
   // Rating: weight each source's average by its review count when both exist;
   // otherwise fall back to whichever single rating we have, then to row average.

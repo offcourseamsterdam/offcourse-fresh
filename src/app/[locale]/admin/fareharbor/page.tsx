@@ -14,6 +14,8 @@ import type { Listing, Slot, Rate, Contact, PendingBooking } from '@/components/
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
 import { BOOKING_SOURCES } from '@/lib/constants'
 import type { BookingSource } from '@/lib/constants'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
+import { toAmsDateStr } from '@/lib/utils'
 
 // Declare gtag so TypeScript doesn't complain
 declare global {
@@ -25,7 +27,7 @@ declare global {
 // ── Page ───────────────────────────────────────────────────────────────────
 
 export default function BookingFlowPage() {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = toAmsDateStr()
 
   // Step state
   const [step, setStep] = useState(1)
@@ -42,6 +44,18 @@ export default function BookingFlowPage() {
   // You then create the booking manually in FareHarbor admin.
   const [overrideMinParty, setOverrideMinParty] = useState(false)
 
+  // "Invoice later" — admin picks an existing partner directly (no code needed,
+  // unlike the public Webikeamsterdam QR checkout). The suggested invoice
+  // amount is fetched from the server (uses an active campaign's commission %
+  // when one exists for this partner+listing) but is always editable.
+  const { data: partnersData, isLoading: partnersLoading } = useAdminFetch<{ partners: { id: string; name: string }[] }>(
+    bookingSource === 'invoice_later' ? '/api/admin/partners' : null
+  )
+  const partners = partnersData?.partners ?? []
+  const [selectedPartnerId, setSelectedPartnerId] = useState<string>('')
+  const [invoiceAmountInput, setInvoiceAmountInput] = useState('')
+  const [invoiceSuggestionNote, setInvoiceSuggestionNote] = useState<string | null>(null)
+
   // Step 1
   const [date, setDate] = useState(today)
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null)
@@ -50,6 +64,8 @@ export default function BookingFlowPage() {
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null)
   const [selectedRate, setSelectedRate] = useState<Rate | null>(null)
   const [guestCount, setGuestCount] = useState(2)
+  // For shared cruises: per-ticket-type counts (ratePk → count)
+  const [ticketCounts, setTicketCounts] = useState<Record<number, number>>({})
 
   // Step 3
   const [contact, setContact] = useState<Contact>({ name: '', email: '', phone: '', note: '' })
@@ -75,6 +91,7 @@ export default function BookingFlowPage() {
 
   const isInternal = bookingSource !== 'website'
   const isStripeRecovery = bookingSource === 'stripe_recovery'
+  const isInvoiceLater = bookingSource === 'invoice_later'
 
   // Sync deposit input when source changes
   useEffect(() => {
@@ -86,6 +103,12 @@ export default function BookingFlowPage() {
     if (bookingSource !== 'stripe_recovery') {
       setRecoveryAmountInput('')
       setRecoveryStripePiInput('')
+    }
+    // Reset invoice-later fields when leaving that source
+    if (bookingSource !== 'invoice_later') {
+      setSelectedPartnerId('')
+      setInvoiceAmountInput('')
+      setInvoiceSuggestionNote(null)
     }
   }, [bookingSource])
 
@@ -151,68 +174,149 @@ export default function BookingFlowPage() {
   function pickSlot(slot: Slot) {
     setSelectedSlot(slot)
     setSelectedRate(null)
+    setTicketCounts({})
   }
+
+  function handleTicketCountChange(ratePk: number, count: number) {
+    setTicketCounts(prev => ({ ...prev, [ratePk]: count }))
+  }
+
+  // For shared cruises, derive guestCount and selectedRate from ticketCounts.
+  // selectedRate stays null for shared — booking creation uses customerTypeRates instead.
+  const isSharedListing = selectedListing?.category === 'shared'
+  const effectiveGuestCount = isSharedListing
+    ? Object.values(ticketCounts).reduce((s, c) => s + c, 0)
+    : guestCount
+
+  // For shared: build the customerTypeRates array for the book endpoint
+  const customerTypeRates = isSharedListing && selectedSlot
+    ? selectedSlot.customer_type_rates
+        .filter(r => (ticketCounts[r.pk] ?? 0) > 0)
+        .map(r => ({ pk: r.pk, count: ticketCounts[r.pk] }))
+    : undefined
+
+  // For shared: primary rate = first non-zero ticket type (used for ExtrasStep baseAmount)
+  const primarySharedRate = isSharedListing && selectedSlot
+    ? selectedSlot.customer_type_rates.find(r => (ticketCounts[r.pk] ?? 0) > 0) ?? null
+    : null
+
+  // Base amount in cents for the booking
+  const sharedBaseAmountCents = isSharedListing && selectedSlot
+    ? selectedSlot.customer_type_rates.reduce((sum, r) => {
+        const count = ticketCounts[r.pk] ?? 0
+        const price = ratePrice(r) ?? 0
+        return sum + price * count
+      }, 0)
+    : null
+
+  // Suggested invoice amount — only fetched once a partner + listing are both
+  // known AND the admin hasn't already typed an amount (the `!invoiceAmountInput`
+  // guard below is what makes this "pre-fill only, never overwrite typed input":
+  // once invoiceAmountInput is set, the URL collapses to null and useAdminFetch
+  // stops fetching entirely, so it can never come back and clobber a manual edit).
+  const invoiceSuggestionActiveRate = isSharedListing ? primarySharedRate : selectedRate
+  const invoiceSuggestionBaseCents =
+    extrasStep?.calculation?.base_amount_cents ??
+    (isSharedListing
+      ? (sharedBaseAmountCents ?? 0)
+      : (invoiceSuggestionActiveRate ? ratePrice(invoiceSuggestionActiveRate) ?? 0 : 0))
+
+  const invoiceSuggestionUrl =
+    isInvoiceLater && step === 5 && selectedPartnerId && selectedListing && !invoiceAmountInput && invoiceSuggestionBaseCents > 0
+      ? `/api/admin/booking-flow/invoice-suggestion?partnerId=${selectedPartnerId}&listingId=${selectedListing.id}&baseAmountCents=${invoiceSuggestionBaseCents}`
+      : null
+
+  const { data: invoiceSuggestionData, isLoading: invoiceSuggestionLoading } = useAdminFetch<{
+    suggestedInvoiceCents: number
+    hasCampaign: boolean
+    commissionPercent: number | null
+  }>(invoiceSuggestionUrl)
+
+  // Layered on top of the hook: applying the fetched suggestion to form state
+  // isn't something the hook itself can do — it just fetches. The "don't
+  // overwrite" guard lives in invoiceSuggestionUrl above; this effect only
+  // runs the one time fresh data actually arrives.
+  useEffect(() => {
+    if (!invoiceSuggestionData) return
+    setInvoiceAmountInput((invoiceSuggestionData.suggestedInvoiceCents / 100).toFixed(2))
+    setInvoiceSuggestionNote(
+      invoiceSuggestionData.hasCampaign
+        ? `Suggested from an active ${invoiceSuggestionData.commissionPercent}% commission campaign — edit if needed.`
+        : 'No active campaign for this partner + listing — defaulted to the full amount. Edit if needed.'
+    )
+  }, [invoiceSuggestionData])
 
   // ── Step 4 → 5: Extras confirmed ────────────────────────────────────────
 
   async function handleExtrasContinue(selectedExtraIds: string[], calculation: ExtrasCalculation) {
-    if (!selectedSlot || !selectedRate || !selectedListing) return
+    const activeRate = isSharedListing ? primarySharedRate : selectedRate
+    if (!selectedSlot || !activeRate || !selectedListing) return
     setExtrasStep({ selectedExtraIds, calculation })
 
     if (bookingSource === 'payment_link') {
-      // Payment link booking: show price step, we'll create FH booking + Stripe session there
       setStep(5)
       return
     }
 
     if (isInternal) {
-      // Internal booking: skip Stripe, go straight to deposit step (or confirm for comp)
-      if (bookingSource === 'complimentary') {
-        // Complimentary: no deposit, confirm immediately
-        setStep(5)
-      } else {
-        // Platform booking: show deposit amount step
-        setStep(5)
-      }
+      setStep(5)
       return
     }
 
-    // Website booking: create Stripe PaymentIntent as before
+    // Website booking: create_intent requires a server-issued quoteId (same
+    // contract as the public checkout) — fetch that quote first, then charge it.
     setCreatingIntent(true)
     setIntentError(null)
 
-    const baseAmountCents = ratePrice(selectedRate)
-    if (!baseAmountCents) {
-      setIntentError('Price not available for this option')
-      setCreatingIntent(false)
-      return
-    }
+    const durationMinutes = Math.round(
+      (new Date(selectedSlot.end_at).getTime() - new Date(selectedSlot.start_at).getTime()) / 60_000
+    )
+    const extraQuantities = Object.fromEntries(
+      calculation.line_items.map(li => [li.extra_id, li.quantity])
+    )
 
     try {
+      const quoteRes = await fetch('/api/booking-flow/quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          listingId: selectedListing.id,
+          availPk: selectedSlot.pk,
+          customerTypeRatePk: activeRate.pk,
+          customerTypeRates,
+          guestCount: effectiveGuestCount,
+          category: selectedListing.category,
+          durationMinutes,
+          selectedExtraIds,
+          extraQuantities,
+        }),
+      })
+      const quoteJson = await quoteRes.json()
+      if (!quoteJson.ok) {
+        setIntentError(quoteJson.error ?? 'Could not generate price quote')
+        return
+      }
+
       const res = await fetch('/api/admin/booking-flow/create-intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          baseAmountCents,
-          listingId: selectedListing.id,
+          quoteId: quoteJson.data.quoteId,
           listingTitle: selectedListing.title,
-          availPk: selectedSlot.pk,
-          customerTypeRatePk: selectedRate.pk,
-          guestCount,
-          category: selectedListing.category,
           date,
+          startAt: selectedSlot.start_at,
+          endAt: selectedSlot.end_at,
           contact: {
             name: contact.name,
             email: contact.email,
             phone: contact.phone,
           },
-          selectedExtraIds,
         }),
       })
       const json = await res.json()
       if (json.ok) {
-        setClientSecret(json.clientSecret)
-        setGrandTotalCents(json.calculation?.grand_total_cents ?? null)
+        setClientSecret(json.data.clientSecret)
+        setGrandTotalCents(json.data.chargedCents ?? null)
         setStep(5)
       } else {
         setIntentError(json.error ?? 'Failed to initialise payment')
@@ -227,12 +331,13 @@ export default function BookingFlowPage() {
   // ── Internal: confirm booking directly (no Stripe) ──────────────────────
 
   async function handleInternalConfirm() {
-    if (!selectedSlot || !selectedRate || !selectedListing) return
+    const activeRate = isSharedListing ? primarySharedRate : selectedRate
+    if (!selectedSlot || !activeRate || !selectedListing) return
     const calc = extrasStep?.calculation ?? null
-    const baseAmountCents = ratePrice(selectedRate) ?? 0
+    const baseAmountCents = isSharedListing
+      ? (sharedBaseAmountCents ?? 0)
+      : (ratePrice(activeRate) ?? 0)
 
-    // For Stripe recovery: amount paid = admin-entered (defaults to computed total).
-    // For all other internal sources: amount is 0 (no Stripe charge).
     const recoveryCents = Math.round((parseFloat(recoveryAmountInput) || 0) * 100)
 
     setBookingLoading(true)
@@ -245,8 +350,9 @@ export default function BookingFlowPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           availPk: selectedSlot.pk,
-          customerTypeRatePk: selectedRate.pk,
-          guestCount,
+          customerTypeRatePk: activeRate.pk,
+          customerTypeRates,
+          guestCount: effectiveGuestCount,
           category: selectedListing.category,
           contact: {
             name: contact.name,
@@ -276,6 +382,12 @@ export default function BookingFlowPage() {
           // Skip FareHarbor booking creation and record revenue locally only.
           // Use when FH rejects due to minimum party size — create in FH admin manually.
           overrideMinParty: isStripeRecovery ? overrideMinParty : false,
+          // Invoice later only — which partner to invoice + the final (possibly
+          // admin-edited) amount. Server derives commission_amount_cents from it.
+          partnerId: isInvoiceLater ? selectedPartnerId : undefined,
+          invoiceAmountCents: isInvoiceLater
+            ? Math.round((parseFloat(invoiceAmountInput) || 0) * 100)
+            : undefined,
         }),
       })
       const json = await res.json()
@@ -294,16 +406,18 @@ export default function BookingFlowPage() {
   // ── Step 5 → 6: Create FH booking after Stripe payment succeeds ─────────
 
   async function handlePaymentSuccess(piId: string) {
-    if (!selectedSlot || !selectedRate || !selectedListing) return
+    const activeRate = isSharedListing ? primarySharedRate : selectedRate
+    if (!selectedSlot || !activeRate || !selectedListing) return
     await createFHBooking(piId, {
       availPk: selectedSlot.pk,
-      customerTypeRatePk: selectedRate.pk,
-      guestCount,
+      customerTypeRatePk: activeRate.pk,
+      customerTypeRates,
+      guestCount: effectiveGuestCount,
       category: selectedListing.category,
       contact,
       selectedListing,
       selectedSlot,
-      selectedRate,
+      selectedRate: activeRate,
       date,
       selectedExtraIds: extrasStep?.selectedExtraIds ?? [],
       extrasCalculation: extrasStep?.calculation ?? null,
@@ -329,6 +443,7 @@ export default function BookingFlowPage() {
         body: JSON.stringify({
           availPk: payload.availPk,
           customerTypeRatePk: payload.customerTypeRatePk,
+          customerTypeRates: payload.customerTypeRates,
           guestCount: payload.guestCount,
           category: payload.category,
           contact: {
@@ -381,6 +496,7 @@ export default function BookingFlowPage() {
     setSelectedListing(null)
     setSelectedSlot(null)
     setSelectedRate(null)
+    setTicketCounts({})
     setContact({ name: '', email: '', phone: '', note: '' })
     setExtrasStep(null)
     setClientSecret(null)
@@ -393,6 +509,9 @@ export default function BookingFlowPage() {
     setDepositAmountCents(0)
     setDepositInput('0')
     setOverrideMinParty(false)
+    setSelectedPartnerId('')
+    setInvoiceAmountInput('')
+    setInvoiceSuggestionNote(null)
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -408,7 +527,7 @@ export default function BookingFlowPage() {
       <div className="mb-6 flex items-center gap-3 flex-wrap">
         <span className="text-sm font-medium text-zinc-600">Booking source:</span>
         <div className="flex items-center gap-2 flex-wrap">
-          {BOOKING_SOURCES.map(src => (
+          {BOOKING_SOURCES.filter(src => src.adminSelectable).map(src => (
             <button
               key={src.value}
               onClick={() => setBookingSource(src.value)}
@@ -442,10 +561,12 @@ export default function BookingFlowPage() {
           selectedSlot={selectedSlot}
           selectedRate={selectedRate}
           guestCount={guestCount}
+          ticketCounts={ticketCounts}
           onBack={() => setStep(1)}
           onPickSlot={pickSlot}
           onPickRate={setSelectedRate}
           onGuestCountChange={setGuestCount}
+          onTicketCountChange={handleTicketCountChange}
           onContinue={() => setStep(3)}
         />
       )}
@@ -464,11 +585,11 @@ export default function BookingFlowPage() {
         />
       )}
 
-      {step === 4 && selectedListing && selectedRate && (
+      {step === 4 && selectedListing && (isSharedListing ? !!primarySharedRate : !!selectedRate) && (
         <ExtrasStepPanel
           listing={selectedListing}
-          rate={selectedRate}
-          guestCount={guestCount}
+          rate={(isSharedListing ? primarySharedRate : selectedRate)!}
+          guestCount={effectiveGuestCount}
           creatingIntent={creatingIntent}
           intentError={intentError}
           onContinue={handleExtrasContinue}
@@ -477,13 +598,13 @@ export default function BookingFlowPage() {
       )}
 
       {/* Step 5 — Website: Stripe payment */}
-      {step === 5 && !isInternal && clientSecret && selectedRate && selectedListing && selectedSlot && (
+      {step === 5 && !isInternal && clientSecret && (isSharedListing ? !!primarySharedRate : !!selectedRate) && selectedListing && selectedSlot && (
         <PaymentStep
           clientSecret={clientSecret}
           selectedListing={selectedListing}
           selectedSlot={selectedSlot}
-          selectedRate={selectedRate}
-          guestCount={guestCount}
+          selectedRate={(isSharedListing ? primarySharedRate : selectedRate)!}
+          guestCount={effectiveGuestCount}
           date={date}
           contact={contact}
           grandTotalCents={grandTotalCents}
@@ -524,11 +645,64 @@ export default function BookingFlowPage() {
             <div className="flex items-center gap-2">
               <span className="text-sm text-zinc-500">Source:</span>
               <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                isStripeRecovery ? 'bg-amber-100 text-amber-700' : 'bg-purple-100 text-purple-700'
+                isStripeRecovery
+                  ? 'bg-amber-100 text-amber-700'
+                  : isInvoiceLater
+                    ? 'bg-indigo-100 text-indigo-700'
+                    : 'bg-purple-100 text-purple-700'
               }`}>
                 {BOOKING_SOURCES.find(s => s.value === bookingSource)?.label ?? bookingSource}
               </span>
             </div>
+
+            {/* Invoice later — pick partner + confirm amount to invoice */}
+            {isInvoiceLater && (
+              <>
+                <div className="rounded-md bg-indigo-50 border border-indigo-200 px-4 py-3 text-xs text-indigo-900">
+                  No payment is taken now. Pick the partner this booking will be invoiced to —
+                  the suggested amount below comes from an active campaign&apos;s commission %, if
+                  one exists for this partner + listing, or defaults to the full price.
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-zinc-700">Partner</label>
+                  <select
+                    value={selectedPartnerId}
+                    onChange={e => {
+                      setSelectedPartnerId(e.target.value)
+                      setInvoiceAmountInput('') // let the suggestion effect re-fill for the new partner
+                    }}
+                    disabled={partnersLoading}
+                    className="block w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:opacity-50"
+                  >
+                    <option value="">{partnersLoading ? 'Loading partners…' : 'Select a partner…'}</option>
+                    {partners.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-zinc-700">Amount to invoice (€)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={invoiceAmountInput}
+                    onChange={e => setInvoiceAmountInput(e.target.value)}
+                    disabled={!selectedPartnerId}
+                    className="block w-48 rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:opacity-50"
+                    placeholder="0.00"
+                  />
+                  {invoiceSuggestionLoading && (
+                    <p className="text-xs text-zinc-400">Calculating suggested amount…</p>
+                  )}
+                  {!invoiceSuggestionLoading && invoiceSuggestionNote && (
+                    <p className="text-xs text-zinc-400">{invoiceSuggestionNote}</p>
+                  )}
+                </div>
+              </>
+            )}
 
             {/* Stripe recovery fields */}
             {isStripeRecovery && (
@@ -588,8 +762,8 @@ export default function BookingFlowPage() {
               </>
             )}
 
-            {/* Deposit amount field — hidden for complimentary and stripe_recovery */}
-            {bookingSource !== 'complimentary' && !isStripeRecovery && (
+            {/* Deposit amount field — hidden for complimentary, stripe_recovery, invoice_later */}
+            {bookingSource !== 'complimentary' && !isStripeRecovery && !isInvoiceLater && (
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-zinc-700">
                   Deposit amount (€)
@@ -638,10 +812,10 @@ export default function BookingFlowPage() {
             </button>
             <button
               onClick={handleInternalConfirm}
-              disabled={isStripeRecovery && !recoveryAmountInput}
+              disabled={(isStripeRecovery && !recoveryAmountInput) || (isInvoiceLater && (!selectedPartnerId || !invoiceAmountInput))}
               className="flex-1 px-4 py-2 rounded-lg bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {isStripeRecovery ? 'Confirm — already paid' : 'Confirm Booking'}
+              {isStripeRecovery ? 'Confirm — already paid' : isInvoiceLater ? 'Confirm — invoice later' : 'Confirm Booking'}
             </button>
           </div>
         </div>

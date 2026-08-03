@@ -19,6 +19,20 @@ One file per track or major feature. Written before every PR and kept up to date
 | Admin performance (cache + prefetch + parallel queries + images) | [admin-performance.md](admin-performance.md) | — | done |
 | Codebase refactoring plan | [codebase-refactoring-plan.md](codebase-refactoring-plan.md) | — | planned |
 | Headless WordPress blog (WP SEO AI) | [wordpress-blog.md](wordpress-blog.md) | — | done |
+| Payment flow hardening (iDEAL recovery, auto-refund, polling confirmation) | [payment-flow-hardening.md](payment-flow-hardening.md) | D | done |
+| Booking claim mutex (one payment → one FareHarbor booking) | [booking-claim-mutex.md](booking-claim-mutex.md) | D | done |
+| Synchronous-card self-collision fix (sync card/wallet false "PAID BUT NO BOOKING") | [sync-card-self-collision-fix.md](sync-card-self-collision-fix.md) | D | done |
+| VAT invoice PDF (auto-attached to confirmation email) | [vat-invoice-pdf.md](vat-invoice-pdf.md) | D | done |
+| Attribution & source tracking (cookies → PI → booking → Google Ads) | [attribution-source-tracking.md](attribution-source-tracking.md) | — | done |
+| Withlocals reviews sync (weekly import, dedup, admin tab, frontend) | [withlocals-reviews.md](withlocals-reviews.md) | — | done |
+| Shared-cruise multi-ticket pricing + adults-only extras | [shared-cruise-pricing.md](shared-cruise-pricing.md) | D | done |
+| Admin booking quoteId fix + FareHarbor webhook duplicate-row fix | [admin-booking-quoteid-and-webhook-dedup-fix.md](admin-booking-quoteid-and-webhook-dedup-fix.md) | — | done |
+| Catering order auto-send (7-day window) | [catering-auto-send.md](catering-auto-send.md) | — | done |
+| Partner-invoice auth gate fix (Webikeamsterdam checkout regression) | [partner-invoice-auth-gate-fix.md](partner-invoice-auth-gate-fix.md) | — | done |
+| "Invoice later" admin booking (pick a partner directly) | [invoice-later-admin-booking.md](invoice-later-admin-booking.md) | — | done |
+| Admin bookings search + Planning week view | [admin-bookings-search-and-planning.md](admin-bookings-search-and-planning.md) | — | done |
+| Special-event cruise listings (Pride Amsterdam 2026) | [special-event-listings.md](special-event-listings.md) | — | done |
+| Kasboek payout pipelines (Viator/GetYourGuide/BoatLocal/Withlocals/Click&Boat/GetMyBoat/Barqo/Revolut/Zettle/FareHarbor) + BTW dashboard | [kasboek-payout-pipelines.md](kasboek-payout-pipelines.md) | — | done |
 | Customer chat & unified inbox (webchat phase 1) | [customer-chat-inbox.md](customer-chat-inbox.md) | — | done |
 | Ghost shadow AI (proposals, ops drafters, cost meter) | [ghost-shadow-ai.md](ghost-shadow-ai.md) | — | done |
 | Ghost inbox co-pilot (P0: act from the inbox) | [ghost-inbox-copilot.md](ghost-inbox-copilot.md) | — | done |

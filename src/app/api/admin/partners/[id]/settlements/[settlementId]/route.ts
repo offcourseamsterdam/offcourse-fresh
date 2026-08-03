@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { withRoute } from '@/lib/api/with-route'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -9,7 +10,7 @@ interface RouteParams {
 
 // DELETE /api/admin/partners/[id]/settlements/[settlementId]
 // Undo a settlement (admin recovery).
-export async function DELETE(_req: NextRequest, { params }: RouteParams) {
+export const DELETE = withRoute(async (_req: NextRequest, { params }: RouteParams) => {
   const denied = await requireAdmin()
   if (denied) return denied
   const { id, settlementId } = await params
@@ -21,4 +22,4 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
     .eq('partner_id', id)
   if (error) return apiError(error.message)
   return apiOk({ deleted: true })
-}
+})

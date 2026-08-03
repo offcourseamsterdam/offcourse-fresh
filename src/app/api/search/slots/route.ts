@@ -1,8 +1,7 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { enforceRateLimit } from '@/lib/rate-limit'
-import { createClient } from '@/lib/supabase/server'
-import { getFilteredAvailability } from '@/lib/fareharbor/availability'
+import { getFilteredAvailabilityBySlug } from '@/lib/fareharbor/availability'
 
 // GET /api/search/slots?slug=...&date=YYYY-MM-DD&guests=N
 // Returns FareHarbor availability slots for a single cruise listing,
@@ -25,20 +24,13 @@ export async function GET(request: NextRequest) {
     return apiError('Invalid date format', 400)
   }
 
-  // Look up the listing id from the slug (public anon client — is_published enforced by RLS)
-  const supabase = await createClient()
-  const { data: listing } = await supabase
-    .from('cruise_listings')
-    .select('id')
-    .eq('slug', slug)
-    .eq('is_published', true)
-    .single()
+  // Looks the listing up by slug (enforcing is_published) AND fetches filter
+  // config in one query — no separate slug→id round-trip before this.
+  const { slots, reasonCode } = await getFilteredAvailabilityBySlug(slug, date, guests)
 
-  if (!listing) {
+  if (reasonCode === 'LISTING_NOT_FOUND') {
     return apiError('Listing not found', 404)
   }
-
-  const { slots, reasonCode } = await getFilteredAvailability(listing.id, date, guests)
 
   return apiOk({ slots, slug, date, guests, reasonCode })
 }

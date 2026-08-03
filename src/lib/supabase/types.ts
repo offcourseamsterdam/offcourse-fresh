@@ -257,6 +257,146 @@ export type Database = {
           },
         ]
       }
+      barqo_bookings: {
+        Row: {
+          boat_name: string | null
+          booking_number: string
+          created_at: string
+          guest_name: string | null
+          id: string
+          net_payout_cents: number | null
+          price_cents: number
+          revenue_vat_rate: number
+          trip_date: string | null
+          updated_at: string
+        }
+        Insert: {
+          boat_name?: string | null
+          booking_number: string
+          created_at?: string
+          guest_name?: string | null
+          id?: string
+          net_payout_cents?: number | null
+          price_cents: number
+          revenue_vat_rate?: number
+          trip_date?: string | null
+          updated_at?: string
+        }
+        Update: {
+          boat_name?: string | null
+          booking_number?: string
+          created_at?: string
+          guest_name?: string | null
+          id?: string
+          net_payout_cents?: number | null
+          price_cents?: number
+          revenue_vat_rate?: number
+          trip_date?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      boatlocal_payout_batches: {
+        Row: {
+          commission_ex_vat_cents: number | null
+          created_at: string
+          id: string
+          invoice_number: string
+          issue_date: string | null
+          operator_payout_cents: number | null
+          period_end: string | null
+          period_start: string | null
+          raw_filename: string | null
+          storage_path: string | null
+          total_sales_excl_vat_cents: number | null
+          total_sales_incl_vat_cents: number | null
+          total_withheld_cents: number | null
+          vat_21_cents: number | null
+          vat_9_in_payout_cents: number | null
+        }
+        Insert: {
+          commission_ex_vat_cents?: number | null
+          created_at?: string
+          id?: string
+          invoice_number: string
+          issue_date?: string | null
+          operator_payout_cents?: number | null
+          period_end?: string | null
+          period_start?: string | null
+          raw_filename?: string | null
+          storage_path?: string | null
+          total_sales_excl_vat_cents?: number | null
+          total_sales_incl_vat_cents?: number | null
+          total_withheld_cents?: number | null
+          vat_21_cents?: number | null
+          vat_9_in_payout_cents?: number | null
+        }
+        Update: {
+          commission_ex_vat_cents?: number | null
+          created_at?: string
+          id?: string
+          invoice_number?: string
+          issue_date?: string | null
+          operator_payout_cents?: number | null
+          period_end?: string | null
+          period_start?: string | null
+          raw_filename?: string | null
+          storage_path?: string | null
+          total_sales_excl_vat_cents?: number | null
+          total_sales_incl_vat_cents?: number | null
+          total_withheld_cents?: number | null
+          vat_21_cents?: number | null
+          vat_9_in_payout_cents?: number | null
+        }
+        Relationships: []
+      }
+      boatlocal_payout_lines: {
+        Row: {
+          batch_id: string
+          booking_date: string | null
+          created_at: string
+          cruise_name: string | null
+          ex_vat_cents: number | null
+          guest_count: number | null
+          guest_name: string | null
+          id: string
+          incl_vat_cents: number | null
+          total_cents: number | null
+        }
+        Insert: {
+          batch_id: string
+          booking_date?: string | null
+          created_at?: string
+          cruise_name?: string | null
+          ex_vat_cents?: number | null
+          guest_count?: number | null
+          guest_name?: string | null
+          id?: string
+          incl_vat_cents?: number | null
+          total_cents?: number | null
+        }
+        Update: {
+          batch_id?: string
+          booking_date?: string | null
+          created_at?: string
+          cruise_name?: string | null
+          ex_vat_cents?: number | null
+          guest_count?: number | null
+          guest_name?: string | null
+          id?: string
+          incl_vat_cents?: number | null
+          total_cents?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "boatlocal_payout_lines_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "boatlocal_payout_batches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       boats: {
         Row: {
           built_year: number | null
@@ -373,6 +513,7 @@ export type Database = {
           extras_vat_amount_cents: number | null
           fareharbor_availability_pk: number | null
           fareharbor_customer_type_rate_pk: number | null
+          fh_escalated_at: string | null
           gclid: string | null
           guest_count: number | null
           guest_note: string | null
@@ -392,6 +533,7 @@ export type Database = {
           start_time: string | null
           status: string | null
           stripe_amount: number | null
+          stripe_fee_cents: number | null
           stripe_payment_intent_id: string | null
           stripe_session_id: string | null
           total_vat_amount_cents: number | null
@@ -429,6 +571,7 @@ export type Database = {
           extras_vat_amount_cents?: number | null
           fareharbor_availability_pk?: number | null
           fareharbor_customer_type_rate_pk?: number | null
+          fh_escalated_at?: string | null
           gclid?: string | null
           guest_count?: number | null
           guest_note?: string | null
@@ -448,6 +591,7 @@ export type Database = {
           start_time?: string | null
           status?: string | null
           stripe_amount?: number | null
+          stripe_fee_cents?: number | null
           stripe_payment_intent_id?: string | null
           stripe_session_id?: string | null
           total_vat_amount_cents?: number | null
@@ -485,6 +629,7 @@ export type Database = {
           extras_vat_amount_cents?: number | null
           fareharbor_availability_pk?: number | null
           fareharbor_customer_type_rate_pk?: number | null
+          fh_escalated_at?: string | null
           gclid?: string | null
           guest_count?: number | null
           guest_note?: string | null
@@ -504,6 +649,7 @@ export type Database = {
           start_time?: string | null
           status?: string | null
           stripe_amount?: number | null
+          stripe_fee_cents?: number | null
           stripe_payment_intent_id?: string | null
           stripe_session_id?: string | null
           total_vat_amount_cents?: number | null
@@ -798,6 +944,57 @@ export type Database = {
         }
         Relationships: []
       }
+      clickandboat_bookings: {
+        Row: {
+          bank_transfer_date: string | null
+          charter_end_date: string | null
+          charter_number: string
+          charter_start_date: string | null
+          created_at: string
+          duration_days: number | null
+          gross_amount_cents: number | null
+          id: string
+          listing_title: string | null
+          location: string | null
+          net_amount_cents: number | null
+          raw_filename: string | null
+          revenue_vat_rate: number
+          updated_at: string
+        }
+        Insert: {
+          bank_transfer_date?: string | null
+          charter_end_date?: string | null
+          charter_number: string
+          charter_start_date?: string | null
+          created_at?: string
+          duration_days?: number | null
+          gross_amount_cents?: number | null
+          id?: string
+          listing_title?: string | null
+          location?: string | null
+          net_amount_cents?: number | null
+          raw_filename?: string | null
+          revenue_vat_rate?: number
+          updated_at?: string
+        }
+        Update: {
+          bank_transfer_date?: string | null
+          charter_end_date?: string | null
+          charter_number?: string
+          charter_start_date?: string | null
+          created_at?: string
+          duration_days?: number | null
+          gross_amount_cents?: number | null
+          id?: string
+          listing_title?: string | null
+          location?: string | null
+          net_amount_cents?: number | null
+          raw_filename?: string | null
+          revenue_vat_rate?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       contacts: {
         Row: {
           created_at: string
@@ -914,6 +1111,12 @@ export type Database = {
           display_order: number | null
           duration_display: string | null
           faqs: Json | null
+          faqs_de: Json | null
+          faqs_es: Json | null
+          faqs_fr: Json | null
+          faqs_nl: Json | null
+          faqs_pt: Json | null
+          faqs_zh: Json | null
           fareharbor_item_pk: number
           google_maps_url: string | null
           hero_image_asset_id: string | null
@@ -984,6 +1187,12 @@ export type Database = {
           display_order?: number | null
           duration_display?: string | null
           faqs?: Json | null
+          faqs_de?: Json | null
+          faqs_es?: Json | null
+          faqs_fr?: Json | null
+          faqs_nl?: Json | null
+          faqs_pt?: Json | null
+          faqs_zh?: Json | null
           fareharbor_item_pk: number
           google_maps_url?: string | null
           hero_image_asset_id?: string | null
@@ -1054,6 +1263,12 @@ export type Database = {
           display_order?: number | null
           duration_display?: string | null
           faqs?: Json | null
+          faqs_de?: Json | null
+          faqs_es?: Json | null
+          faqs_fr?: Json | null
+          faqs_nl?: Json | null
+          faqs_pt?: Json | null
+          faqs_zh?: Json | null
           fareharbor_item_pk?: number
           google_maps_url?: string | null
           hero_image_asset_id?: string | null
@@ -1584,6 +1799,159 @@ export type Database = {
         }
         Relationships: []
       }
+      fareharbor_payouts: {
+        Row: {
+          bank_note: string | null
+          bank_payout_date: string | null
+          created_at: string
+          gross_cents: number
+          id: string
+          line_count: number
+          net_cents: number
+          payout_date: string | null
+          payout_id: string
+          processing_fee_cents: number
+          subtotal_paid_cents: number
+          tax_paid_cents: number
+          updated_at: string
+          vat21_cents: number
+          vat9_cents: number
+        }
+        Insert: {
+          bank_note?: string | null
+          bank_payout_date?: string | null
+          created_at?: string
+          gross_cents: number
+          id?: string
+          line_count?: number
+          net_cents: number
+          payout_date?: string | null
+          payout_id: string
+          processing_fee_cents: number
+          subtotal_paid_cents: number
+          tax_paid_cents?: number
+          updated_at?: string
+          vat21_cents?: number
+          vat9_cents?: number
+        }
+        Update: {
+          bank_note?: string | null
+          bank_payout_date?: string | null
+          created_at?: string
+          gross_cents?: number
+          id?: string
+          line_count?: number
+          net_cents?: number
+          payout_date?: string | null
+          payout_id?: string
+          processing_fee_cents?: number
+          subtotal_paid_cents?: number
+          tax_paid_cents?: number
+          updated_at?: string
+          vat21_cents?: number
+          vat9_cents?: number
+        }
+        Relationships: []
+      }
+      finance_share_links: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          label: string | null
+          revoked_at: string | null
+          token: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label?: string | null
+          revoked_at?: string | null
+          token: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label?: string | null
+          revoked_at?: string | null
+          token?: string
+        }
+        Relationships: []
+      }
+      getmyboat_bookings: {
+        Row: {
+          booking_id: string
+          charter_date: string | null
+          created_at: string
+          guest_name: string | null
+          id: string
+          net_amount_cents: number
+          payout_date: string | null
+          revenue_vat_rate: number
+          updated_at: string
+        }
+        Insert: {
+          booking_id: string
+          charter_date?: string | null
+          created_at?: string
+          guest_name?: string | null
+          id?: string
+          net_amount_cents: number
+          payout_date?: string | null
+          revenue_vat_rate?: number
+          updated_at?: string
+        }
+        Update: {
+          booking_id?: string
+          charter_date?: string | null
+          created_at?: string
+          guest_name?: string | null
+          id?: string
+          net_amount_cents?: number
+          payout_date?: string | null
+          revenue_vat_rate?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      getyourguide_payments: {
+        Row: {
+          account_number: string | null
+          amount_cents: number | null
+          created_at: string
+          id: string
+          invoice_number: string | null
+          payment_number: string
+          payment_run_date: string | null
+          raw_filename: string | null
+          storage_path: string | null
+        }
+        Insert: {
+          account_number?: string | null
+          amount_cents?: number | null
+          created_at?: string
+          id?: string
+          invoice_number?: string | null
+          payment_number: string
+          payment_run_date?: string | null
+          raw_filename?: string | null
+          storage_path?: string | null
+        }
+        Update: {
+          account_number?: string | null
+          amount_cents?: number | null
+          created_at?: string
+          id?: string
+          invoice_number?: string | null
+          payment_number?: string
+          payment_run_date?: string | null
+          raw_filename?: string | null
+          storage_path?: string | null
+        }
+        Relationships: []
+      }
       ghost_knowledge: {
         Row: {
           answer: string
@@ -2108,6 +2476,93 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      kg_entities: {
+        Row: {
+          created_at: string
+          description: string | null
+          entity_type: string
+          facts: Json
+          id: string
+          is_published: boolean
+          name: string
+          schema_type: string | null
+          slug: string
+          sources: Json
+          summary: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          entity_type: string
+          facts?: Json
+          id?: string
+          is_published?: boolean
+          name: string
+          schema_type?: string | null
+          slug: string
+          sources?: Json
+          summary?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          entity_type?: string
+          facts?: Json
+          id?: string
+          is_published?: boolean
+          name?: string
+          schema_type?: string | null
+          slug?: string
+          sources?: Json
+          summary?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      kg_relationships: {
+        Row: {
+          created_at: string
+          facts: Json
+          from_entity_id: string
+          id: string
+          relation_type: string
+          to_entity_id: string
+        }
+        Insert: {
+          created_at?: string
+          facts?: Json
+          from_entity_id: string
+          id?: string
+          relation_type: string
+          to_entity_id: string
+        }
+        Update: {
+          created_at?: string
+          facts?: Json
+          from_entity_id?: string
+          id?: string
+          relation_type?: string
+          to_entity_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kg_relationships_from_entity_id_fkey"
+            columns: ["from_entity_id"]
+            isOneToOne: false
+            referencedRelation: "kg_entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kg_relationships_to_entity_id_fkey"
+            columns: ["to_entity_id"]
+            isOneToOne: false
+            referencedRelation: "kg_entities"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       listing_extras: {
         Row: {
@@ -2930,6 +3385,54 @@ export type Database = {
           },
         ]
       }
+      revolut_transactions: {
+        Row: {
+          created_at: string
+          customer_name: string | null
+          description: string | null
+          id: string
+          occurred_at: string | null
+          original_amount_cents: number
+          payout_date: string | null
+          processing_fee_cents: number
+          settlement_amount_cents: number
+          transaction_id: string
+          updated_at: string
+          vat21_gross_cents: number | null
+          vat9_gross_cents: number | null
+        }
+        Insert: {
+          created_at?: string
+          customer_name?: string | null
+          description?: string | null
+          id?: string
+          occurred_at?: string | null
+          original_amount_cents: number
+          payout_date?: string | null
+          processing_fee_cents?: number
+          settlement_amount_cents: number
+          transaction_id: string
+          updated_at?: string
+          vat21_gross_cents?: number | null
+          vat9_gross_cents?: number | null
+        }
+        Update: {
+          created_at?: string
+          customer_name?: string | null
+          description?: string | null
+          id?: string
+          occurred_at?: string | null
+          original_amount_cents?: number
+          payout_date?: string | null
+          processing_fee_cents?: number
+          settlement_amount_cents?: number
+          transaction_id?: string
+          updated_at?: string
+          vat21_gross_cents?: number | null
+          vat9_gross_cents?: number | null
+        }
+        Relationships: []
+      }
       shifts: {
         Row: {
           boat_id: string
@@ -3515,6 +4018,89 @@ export type Database = {
           },
         ]
       }
+      viator_payment_batches: {
+        Row: {
+          advice_date: string | null
+          created_at: string
+          document_number: string | null
+          id: string
+          raw_filename: string | null
+          storage_path: string | null
+          total_amount_cents: number | null
+        }
+        Insert: {
+          advice_date?: string | null
+          created_at?: string
+          document_number?: string | null
+          id?: string
+          raw_filename?: string | null
+          storage_path?: string | null
+          total_amount_cents?: number | null
+        }
+        Update: {
+          advice_date?: string | null
+          created_at?: string
+          document_number?: string | null
+          id?: string
+          raw_filename?: string | null
+          storage_path?: string | null
+          total_amount_cents?: number | null
+        }
+        Relationships: []
+      }
+      viator_payment_lines: {
+        Row: {
+          arrival_date: string | null
+          batch_id: string
+          converted_amount_cents: number
+          created_at: string
+          gross_amount: number | null
+          gross_currency: string | null
+          id: string
+          sale_date: string | null
+          tour_grade_code: string | null
+          tour_grade_title: string | null
+          vendor_reference: string | null
+          viator_reference: string
+        }
+        Insert: {
+          arrival_date?: string | null
+          batch_id: string
+          converted_amount_cents: number
+          created_at?: string
+          gross_amount?: number | null
+          gross_currency?: string | null
+          id?: string
+          sale_date?: string | null
+          tour_grade_code?: string | null
+          tour_grade_title?: string | null
+          vendor_reference?: string | null
+          viator_reference: string
+        }
+        Update: {
+          arrival_date?: string | null
+          batch_id?: string
+          converted_amount_cents?: number
+          created_at?: string
+          gross_amount?: number | null
+          gross_currency?: string | null
+          id?: string
+          sale_date?: string | null
+          tour_grade_code?: string | null
+          tour_grade_title?: string | null
+          vendor_reference?: string | null
+          viator_reference?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "viator_payment_lines_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "viator_payment_batches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       webhook_logs: {
         Row: {
           created_at: string | null
@@ -3656,6 +4242,141 @@ export type Database = {
           revenue_mode?: string
           updated_at?: string
           week_start_date?: string
+        }
+        Relationships: []
+      }
+      withlocals_bookings: {
+        Row: {
+          booking_id: string
+          created_at: string
+          guest_count: number | null
+          guest_name: string | null
+          id: string
+          invoice_date: string | null
+          invoice_number: string | null
+          net_payout_cents: number | null
+          payout_date: string | null
+          revenue_vat_rate: number
+          service_fee_ex_cents: number | null
+          service_fee_incl_cents: number | null
+          service_fee_vat_cents: number | null
+          storage_path: string | null
+          tour_name: string | null
+          tour_price_cents: number | null
+          trip_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          booking_id: string
+          created_at?: string
+          guest_count?: number | null
+          guest_name?: string | null
+          id?: string
+          invoice_date?: string | null
+          invoice_number?: string | null
+          net_payout_cents?: number | null
+          payout_date?: string | null
+          revenue_vat_rate?: number
+          service_fee_ex_cents?: number | null
+          service_fee_incl_cents?: number | null
+          service_fee_vat_cents?: number | null
+          storage_path?: string | null
+          tour_name?: string | null
+          tour_price_cents?: number | null
+          trip_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          booking_id?: string
+          created_at?: string
+          guest_count?: number | null
+          guest_name?: string | null
+          id?: string
+          invoice_date?: string | null
+          invoice_number?: string | null
+          net_payout_cents?: number | null
+          payout_date?: string | null
+          revenue_vat_rate?: number
+          service_fee_ex_cents?: number | null
+          service_fee_incl_cents?: number | null
+          service_fee_vat_cents?: number | null
+          storage_path?: string | null
+          tour_name?: string | null
+          tour_price_cents?: number | null
+          trip_at?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      zettle_monthly_sales: {
+        Row: {
+          card_gross_cents: number | null
+          card_net_cents: number | null
+          card_surcharge_cents: number | null
+          cash_counted_cents: number | null
+          cash_zettle_cents: number | null
+          created_at: string
+          id: string
+          month: string
+          notes: string | null
+          sale_count: number | null
+          total_excl_vat_cents: number | null
+          total_incl_vat_cents: number | null
+          total_vat_cents: number | null
+          updated_at: string
+          vat0_cents: number | null
+          vat21_excl_cents: number | null
+          vat21_incl_cents: number | null
+          vat21_vat_cents: number | null
+          vat9_excl_cents: number | null
+          vat9_incl_cents: number | null
+          vat9_vat_cents: number | null
+        }
+        Insert: {
+          card_gross_cents?: number | null
+          card_net_cents?: number | null
+          card_surcharge_cents?: number | null
+          cash_counted_cents?: number | null
+          cash_zettle_cents?: number | null
+          created_at?: string
+          id?: string
+          month: string
+          notes?: string | null
+          sale_count?: number | null
+          total_excl_vat_cents?: number | null
+          total_incl_vat_cents?: number | null
+          total_vat_cents?: number | null
+          updated_at?: string
+          vat0_cents?: number | null
+          vat21_excl_cents?: number | null
+          vat21_incl_cents?: number | null
+          vat21_vat_cents?: number | null
+          vat9_excl_cents?: number | null
+          vat9_incl_cents?: number | null
+          vat9_vat_cents?: number | null
+        }
+        Update: {
+          card_gross_cents?: number | null
+          card_net_cents?: number | null
+          card_surcharge_cents?: number | null
+          cash_counted_cents?: number | null
+          cash_zettle_cents?: number | null
+          created_at?: string
+          id?: string
+          month?: string
+          notes?: string | null
+          sale_count?: number | null
+          total_excl_vat_cents?: number | null
+          total_incl_vat_cents?: number | null
+          total_vat_cents?: number | null
+          updated_at?: string
+          vat0_cents?: number | null
+          vat21_excl_cents?: number | null
+          vat21_incl_cents?: number | null
+          vat21_vat_cents?: number | null
+          vat9_excl_cents?: number | null
+          vat9_incl_cents?: number | null
+          vat9_vat_cents?: number | null
         }
         Relationships: []
       }

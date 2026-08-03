@@ -46,7 +46,10 @@ export default async function CheckoutPage({ params, searchParams }: Props) {
 
   let partnerName: string | null = null
   if (paymentMode === 'partner_invoice' && listing.required_partner_id) {
-    const { data: partner } = await supabase
+    // Service-role client: `partners` has RLS enabled (migration 105) and is not
+    // anon-readable (it holds report_token). This read is a trusted server-side
+    // lookup of the partner's display name only.
+    const { data: partner } = await createAdminClient()
       .from('partners')
       .select('name')
       .eq('id', listing.required_partner_id)

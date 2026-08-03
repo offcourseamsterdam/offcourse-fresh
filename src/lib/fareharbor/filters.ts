@@ -12,6 +12,7 @@ export const AvailabilityFiltersSchema = z.object({
   sunset_offset_minutes: z.number().optional(), // -60 = start 60min before sunset
   sunset_window_minutes: z.number().optional(), // 120 = 2h window around offset
   max_guests_override: z.number().optional(),   // 2 for romantic cruise
+  min_guests_override: z.number().optional(),   // 1 to allow solo booking on an empty shared slot
   months: z.array(z.number()).optional(),        // [6,7,8] for summer only
   days_of_week: z.array(z.number()).optional(),  // [5,6] for weekends (0=Sun)
 }).passthrough()
@@ -32,6 +33,7 @@ export type ReasonCode =
   | 'NO_AVAILABILITIES'
   | 'PAST_DATE'
   | 'API_ERROR'
+  | 'LISTING_NOT_FOUND'
   | null
 
 export type BoatStatus = 'available' | 'sold_out' | 'too_many_guests' | 'unavailable'

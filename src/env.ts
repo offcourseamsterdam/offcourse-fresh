@@ -26,9 +26,20 @@ const envSchema = z.object({
   FAREHARBOR_API_BASE: z.string().url().default('https://fareharbor.com/api/v1'),
 
   // ── Stripe ────────────────────────────────────────────────────────────────
+  // Live keys — required everywhere (production + local live mode).
   STRIPE_SECRET_KEY: z.string().min(1),
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().min(1),
   STRIPE_WEBHOOK_SECRET: z.string().min(1),
+  // Mode toggle — 'test' uses the *_TEST keys below; 'live' (default) uses the keys above.
+  // Set both in .env.local when switching to test mode:
+  //   STRIPE_MODE=test
+  //   NEXT_PUBLIC_STRIPE_MODE=test
+  STRIPE_MODE: z.enum(['test', 'live']).default('live'),
+  NEXT_PUBLIC_STRIPE_MODE: z.enum(['test', 'live']).default('live'),
+  // Test keys — only needed locally when STRIPE_MODE=test. Never set in Vercel production.
+  STRIPE_SECRET_KEY_TEST: z.string().optional(),
+  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY_TEST: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET_TEST: z.string().optional(),
 
   // ── Site ──────────────────────────────────────────────────────────────────
   NEXT_PUBLIC_SITE_URL: z.string().url().default('http://localhost:3000'),

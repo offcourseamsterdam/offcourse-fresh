@@ -15,6 +15,10 @@ interface BoatDurationStepProps {
   allSlots?: AvailabilitySlot[]
   selectedSlot?: AvailabilitySlot | null
   onSelectSlot?: (slot: AvailabilitySlot) => void
+  /** Boat ids this listing actually offers. Omitted/empty = show every boat (default). */
+  offeredBoatIds?: string[]
+  /** Pride-only styling: boat card gets a smooth drifting rainbow gradient instead of its usual texture. */
+  rainbowBoatCard?: boolean
 }
 
 interface BoatOption {
@@ -47,6 +51,8 @@ export function BoatDurationStep({
   allSlots,
   selectedSlot,
   onSelectSlot,
+  offeredBoatIds,
+  rainbowBoatCard,
 }: BoatDurationStepProps) {
   const boats = useMemo<BoatOption[]>(() => {
     const boatMap = new Map<string, AvailabilityCustomerType[]>()
@@ -57,7 +63,11 @@ export function BoatDurationStep({
       boatMap.set(ct.boatId, existing)
     }
 
-    return BOATS
+    const eligibleBoats = offeredBoatIds && offeredBoatIds.length > 0
+      ? BOATS.filter(boat => offeredBoatIds.includes(boat.id))
+      : BOATS
+
+    return eligibleBoats
       .map(boat => {
         const durations = (boatMap.get(boat.id) || []).sort(
           (a, b) => a.durationMinutes - b.durationMinutes
@@ -80,7 +90,7 @@ export function BoatDurationStep({
         }
       })
       .filter(b => b.status !== 'too_many_guests')
-  }, [customerTypes, guests])
+  }, [customerTypes, guests, offeredBoatIds])
 
   if (boats.length === 0) {
     return (
@@ -97,7 +107,9 @@ export function BoatDurationStep({
       {boats.map((boat, index) => {
         const isSoldOut = boat.status === 'sold_out'
         const hasSelection = boat.durations.some(d => d.pk === selectedCustomerTypePk)
-        const bgClass = BOAT_BG[boat.id] ?? (index % 2 === 0 ? 'bg-texture-yellow' : 'bg-texture-sand')
+        const bgClass = rainbowBoatCard
+          ? 'bg-rainbow-smooth'
+          : BOAT_BG[boat.id] ?? (index % 2 === 0 ? 'bg-texture-yellow' : 'bg-texture-sand')
 
         return (
           <div

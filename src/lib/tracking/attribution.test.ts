@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resolveChannelSlug, parseUTMFromURL, hasUTMParams, generateId } from './attribution'
+import { resolveChannelSlug, parseUTMFromURL, hasUTMParams, generateId, parseAttribution } from './attribution'
 
 describe('resolveChannelSlug', () => {
   it('returns google-ads for CPC medium', () => {
@@ -101,6 +101,48 @@ describe('hasUTMParams', () => {
 
   it('returns false for empty UTM params', () => {
     expect(hasUTMParams({})).toBe(false)
+  })
+})
+
+describe('parseAttribution', () => {
+  it('extracts campaign_slug, campaign_id, and partner_id from a valid cookie', () => {
+    const raw = JSON.stringify({
+      campaign_slug: 'shared-hidden-gems-cruise',
+      campaign_id: 'camp-1',
+      partner_id: 'partner-1',
+      campaign_link_id: null,
+    })
+    expect(parseAttribution(raw)).toEqual({
+      campaign_slug: 'shared-hidden-gems-cruise',
+      campaign_id: 'camp-1',
+      partner_id: 'partner-1',
+    })
+  })
+
+  it('returns null for a missing/empty cookie', () => {
+    expect(parseAttribution(null)).toBeNull()
+    expect(parseAttribution(undefined)).toBeNull()
+    expect(parseAttribution('')).toBeNull()
+  })
+
+  it('returns null for malformed JSON', () => {
+    expect(parseAttribution('not-json')).toBeNull()
+  })
+
+  it('returns null for a JSON array or primitive (not an object)', () => {
+    expect(parseAttribution('[1,2,3]')).toBeNull()
+    expect(parseAttribution('"just a string"')).toBeNull()
+  })
+
+  it('drops a null partner_id rather than keeping a non-string value', () => {
+    // partner_id can legitimately be null (unattributed campaign) — the field is
+    // simply omitted, not kept as null, so callers fall back with `?? null`.
+    const raw = JSON.stringify({ campaign_slug: 'private-cruise-diana', campaign_id: 'camp-2', partner_id: null })
+    expect(parseAttribution(raw)).toEqual({ campaign_slug: 'private-cruise-diana', campaign_id: 'camp-2' })
+  })
+
+  it('ignores unrecognized fields and returns null when nothing recognized survives', () => {
+    expect(parseAttribution(JSON.stringify({ some_random_field: 'x' }))).toBeNull()
   })
 })
 

@@ -391,7 +391,7 @@ export async function updateCampaignBudget(
   campaignId: string,
   newDailyEuros: number,
 ): Promise<AdsCallResult> {
-  const { cust, customerId } = custIds()
+  const { customerId } = custIds()
 
   // Find the budget attached to this campaign.
   const q = `SELECT campaign.id, campaign_budget.resource_name FROM campaign WHERE campaign.id = ${Number(campaignId)}`

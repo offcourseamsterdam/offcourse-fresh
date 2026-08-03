@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react'
 import type { AvailabilitySlot, AvailabilityCustomerType } from '@/types'
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
 import type { CancellationTier } from '@/lib/cancellation/policy'
@@ -163,4 +162,33 @@ export interface BookingPanelProps {
    * we don't enforce the FareHarbor minimum party size gate.
    */
   maxGuests?: number | null
+  /**
+   * Boat ids ('diana' | 'curacao') this listing actually offers, derived from
+   * `cruise_listings.allowed_customer_type_pks` matched against `boats.fareharbor_customer_type_pks`.
+   * When set, BoatDurationStep omits cards for boats outside this list entirely
+   * (vs. "sold out") — for listings like a single-boat special event where the
+   * other boat was never part of the offering, not just unavailable today.
+   * Undefined/empty means "show every boat", preserving existing behavior.
+   */
+  offeredBoatIds?: string[]
+  /**
+   * Pride-only styling: drives the rainbow gradient treatment across the whole
+   * booking flow — the boat card's texture, the selected time slot, the fixed
+   * event-date card's border, and the mobile sticky CTA's fill.
+   */
+  rainbowBoatCard?: boolean
+  /**
+   * Special events only have real availability on one scheduled day (YYYY-MM-DD).
+   * When set, the date picker shows just that single day instead of a 14-day
+   * scroller + calendar — there's nothing else to pick.
+   */
+  fixedDate?: string
+  /**
+   * Overrides the default floor of 2 guests we enforce on an empty shared
+   * slot (see `minParty` in BookingPanelDesktop/BookingPanelSlider). From
+   * `cruise_listings.availability_filters.min_guests_override` — e.g. 1 for
+   * a listing where solo bookings should be allowed (Pride Amsterdam 2026).
+   * Undefined/null keeps the existing floor-of-2 behavior.
+   */
+  minPartyOverride?: number | null
 }

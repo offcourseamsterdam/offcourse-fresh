@@ -45,6 +45,10 @@ const nextConfig: NextConfig = {
   experimental: {
     turbopackFileSystemCacheForDev: false,
   },
+  // pdfjs-dist does its own dynamic worker-file resolution at runtime, which
+  // webpack's server bundle otherwise mangles — keep it untouched by webpack
+  // and let Node's native module resolution handle it directly.
+  serverExternalPackages: ['pdfjs-dist'],
   async headers() {
     return [
       {
@@ -68,6 +72,10 @@ const nextConfig: NextConfig = {
       {
         protocol: 'https',
         hostname: '*.offcourseamsterdam.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'withlocals-com-res.cloudinary.com',
       },
       {
         protocol: 'https',

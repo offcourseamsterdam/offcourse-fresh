@@ -1,46 +1,64 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 /**
- * create-intent.ts is the quote-trust / anti-tampering boundary: it decides
- * whether a card gets charged and for how much. Every gate here is the only thing
- * standing between a customer and a wrong/tampered charge, so each is pinned:
- *   - missing quoteId
- *   - quote not found
- *   - expired quote
- *   - already-consumed quote
- *   - recomputed total drift (server disagrees with the stored quote)
- *   - the €0.50 floor
- *   - the happy path (PI created against the recomputed total, quote consumed)
+ * Tests the quote-claim invariants in createPaymentIntent:
+ *   1. The claim is a single conditional UPDATE (consumed_at IS NULL) — a
+ *      request that loses the race gets "already been used", never a second
+ *      charge.
+ *   2. A failure AFTER the claim (Stripe outage, price drift) releases the
+ *      claim so the customer can retry.
+ *   3. The happy path records the PaymentIntent id on the quote.
  */
 
 const h = vi.hoisted(() => ({
-  quoteRow: null as Record<string, unknown> | null,
+  // Each from('pricing_quotes') call consumes the next queued result.
+  results: [] as Array<{ data: unknown; error: unknown }>,
+  updateArgs: [] as Array<Record<string, unknown>>,
   piCreate: vi.fn(),
   calculateQuote: vi.fn(),
-  consumeEq: vi.fn().mockResolvedValue({ error: null }),
+  fhValidate: vi.fn(),
 }))
 
+vi.mock('@/lib/supabase/admin', () => ({
+  createAdminClient: () => ({
+    from: () => {
+      const result = h.results.shift() ?? { data: null, error: null }
+      const chain: Record<string, unknown> = {}
+      chain.update = (args: Record<string, unknown>) => {
+        h.updateArgs.push(args)
+        return chain
+      }
+      chain.select = () => chain
+      chain.eq = () => chain
+      chain.is = () => chain
+      chain.maybeSingle = () => Promise.resolve(result)
+      // The release/consumed_intent_id updates are awaited directly (thenable)
+      chain.then = (onFulfilled: (v: unknown) => unknown) =>
+        Promise.resolve(result).then(onFulfilled)
+      return chain
+    },
+  }),
+}))
 vi.mock('@/lib/stripe/server', () => ({
   getStripe: () => ({ paymentIntents: { create: h.piCreate } }),
 }))
-vi.mock('@/lib/supabase/admin', () => ({
-  createAdminClient: () => ({
-    from: () => ({
-      select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: h.quoteRow, error: null }) }) }),
-      update: () => ({ eq: h.consumeEq }),
-    }),
-  }),
-}))
 vi.mock('@/lib/booking/calculate-quote', () => ({ calculateQuote: h.calculateQuote }))
+vi.mock('@/lib/fareharbor/client', () => ({
+  getFareHarborClient: () => ({ validateBooking: h.fhValidate }),
+}))
 
 import { createPaymentIntent } from './create-intent'
 
-function makeQuoteRow(over: Record<string, unknown> = {}) {
+const FUTURE = new Date(Date.now() + 10 * 60 * 1000).toISOString()
+
+function makeQuoteRow(overrides: object = {}) {
   return {
-    id: 'quote_1',
-    listing_id: 'listing_1',
-    avail_pk: 111,
-    customer_type_rate_pk: 222,
+    id: 'quote-1',
+    expires_at: FUTURE,
+    consumed_at: null,
+    listing_id: 'listing-1',
+    avail_pk: 1001,
+    customer_type_rate_pk: 2002,
     guest_count: 2,
     category: 'private',
     duration_minutes: 90,
@@ -49,94 +67,154 @@ function makeQuoteRow(over: Record<string, unknown> = {}) {
     promo_code_id: null,
     discount_amount_cents: 0,
     total_cents: 16500,
-    expires_at: new Date(Date.now() + 600_000).toISOString(), // 10 min in the future
-    consumed_at: null,
-    ...over,
+    ...overrides,
   }
 }
 
-function makeRecomputed(totalCents: number) {
+function makeRecomputed() {
   return {
-    totalCents,
+    totalCents: 16500,
     serverBaseAmount: 15000,
-    customerTypeName: 'Diana - 1.5 Hours',
     cityTaxCents: 520,
     discountAmountCents: 0,
+    customerTypeName: 'Diana 1.5h',
     extrasCalculation: {
       line_items: [],
       extras_amount_cents: 0,
-      base_vat_amount_cents: 1239,
+      base_vat_amount_cents: 1238,
       extras_vat_amount_cents: 0,
-      total_vat_amount_cents: 1239,
+      total_vat_amount_cents: 1238,
     },
   }
 }
 
-const baseInput = {
-  quoteId: 'quote_1',
-  listingTitle: 'Hidden Gems Private Boat Tour',
-  date: '2026-07-01',
-  contact: { name: 'Test Guest', email: 'guest@example.com', phone: '+31600000000' },
+const INPUT = {
+  quoteId: 'quote-1',
+  listingTitle: 'Canal Cruise',
+  date: '2026-06-20',
+  contact: { name: 'Finn Test', email: 'finn@example.com' },
 }
 
-beforeEach(() => {
-  vi.clearAllMocks()
-  h.quoteRow = makeQuoteRow()
-  h.piCreate.mockResolvedValue({ id: 'pi_123', client_secret: 'cs_123' })
-  h.calculateQuote.mockResolvedValue(makeRecomputed(16500))
-})
+describe('createPaymentIntent — atomic quote claim', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    h.results.length = 0
+    h.updateArgs.length = 0
+    h.calculateQuote.mockResolvedValue(makeRecomputed())
+    h.piCreate.mockResolvedValue({ id: 'pi_new', client_secret: 'pi_new_secret', amount: 16500 })
+    // Validate-before-charge: default to bookable so the happy paths proceed.
+    h.fhValidate.mockResolvedValue({ is_bookable: true })
+  })
 
-describe('createPaymentIntent — anti-tampering gates', () => {
-  it('rejects a missing quoteId without touching Stripe', async () => {
-    await expect(createPaymentIntent({ ...baseInput, quoteId: '' })).rejects.toThrow(/Missing quoteId/)
+  it('validates with FareHarbor BEFORE charging — never creates a PI for a gone slot', async () => {
+    h.results.push(
+      { data: makeQuoteRow(), error: null },   // claim succeeds
+      { data: null, error: null },             // release update
+    )
+    h.fhValidate.mockResolvedValue({ is_bookable: false, error: 'Sold out' })
+
+    await expect(createPaymentIntent(INPUT)).rejects.toThrow(/Sold out|no longer available/)
+    expect(h.piCreate).not.toHaveBeenCalled()
+    // The claim is released so the customer can re-quote and retry
+    expect(h.updateArgs[1]).toMatchObject({ consumed_at: null })
+  })
+
+  it('rejects the loser of a double-tap race with "already been used"', async () => {
+    h.results.push(
+      { data: null, error: null },                                      // claim: no row won
+      { data: { id: 'quote-1', consumed_at: FUTURE }, error: null },    // lookup: already consumed
+    )
+
+    await expect(createPaymentIntent(INPUT)).rejects.toThrow(/already been used/)
     expect(h.piCreate).not.toHaveBeenCalled()
   })
 
-  it('rejects when the quote cannot be found', async () => {
-    h.quoteRow = null
-    await expect(createPaymentIntent(baseInput)).rejects.toThrow(/could not be found/)
+  it('rejects an unknown quote with "could not be found"', async () => {
+    h.results.push(
+      { data: null, error: null },   // claim fails
+      { data: null, error: null },   // lookup: no such quote
+    )
+
+    await expect(createPaymentIntent(INPUT)).rejects.toThrow(/could not be found/)
     expect(h.piCreate).not.toHaveBeenCalled()
   })
 
-  it('rejects an expired quote', async () => {
-    h.quoteRow = makeQuoteRow({ expires_at: new Date(Date.now() - 1_000).toISOString() })
-    await expect(createPaymentIntent(baseInput)).rejects.toThrow(/expired/)
+  it('rejects an expired quote after claiming it', async () => {
+    const past = new Date(Date.now() - 60 * 1000).toISOString()
+    h.results.push({ data: makeQuoteRow({ expires_at: past }), error: null })
+
+    await expect(createPaymentIntent(INPUT)).rejects.toThrow(/expired/)
     expect(h.piCreate).not.toHaveBeenCalled()
   })
 
-  it('rejects a quote that was already consumed', async () => {
-    h.quoteRow = makeQuoteRow({ consumed_at: new Date().toISOString() })
-    await expect(createPaymentIntent(baseInput)).rejects.toThrow(/already been used/)
-    expect(h.piCreate).not.toHaveBeenCalled()
+  it('releases the claim when Stripe fails, so the customer can retry', async () => {
+    h.results.push(
+      { data: makeQuoteRow(), error: null },   // claim succeeds
+      { data: null, error: null },             // release update
+    )
+    h.piCreate.mockRejectedValue(new Error('stripe is down'))
+
+    await expect(createPaymentIntent(INPUT)).rejects.toThrow('stripe is down')
+
+    // First update = the claim; second = the release back to unclaimed
+    expect(h.updateArgs[0]).toMatchObject({ consumed_at: expect.any(String) })
+    expect(h.updateArgs[1]).toMatchObject({ consumed_at: null })
   })
 
-  it('refuses to charge when the recomputed total drifts from the stored quote', async () => {
-    // The stored quote says 16500 but a fresh server compute says 17000 — something
-    // changed (price, deactivated extra). NEVER charge the stale amount.
-    h.quoteRow = makeQuoteRow({ total_cents: 16500 })
-    h.calculateQuote.mockResolvedValue(makeRecomputed(17000))
-    await expect(createPaymentIntent(baseInput)).rejects.toThrow(/price changed/)
-    expect(h.piCreate).not.toHaveBeenCalled()
-  })
+  it('charges the recomputed total and records the consuming PI on success', async () => {
+    h.results.push(
+      { data: makeQuoteRow(), error: null },   // claim succeeds
+      { data: null, error: null },             // consumed_intent_id update
+    )
 
-  it('rejects an amount below the €0.50 Stripe floor', async () => {
-    h.quoteRow = makeQuoteRow({ total_cents: 40 })
-    h.calculateQuote.mockResolvedValue(makeRecomputed(40))
-    await expect(createPaymentIntent(baseInput)).rejects.toThrow(/at least €0.50/)
-    expect(h.piCreate).not.toHaveBeenCalled()
-  })
+    const result = await createPaymentIntent(INPUT)
 
-  it('creates the PaymentIntent against the recomputed total and returns its client secret', async () => {
-    const result = await createPaymentIntent(baseInput)
-
-    expect(h.piCreate).toHaveBeenCalledTimes(1)
-    const args = h.piCreate.mock.calls[0][0]
-    expect(args.amount).toBe(16500)
-    expect(args.currency).toBe('eur')
-    expect(args.payment_method_types).toEqual(['card', 'ideal', 'link'])
-    expect(result.clientSecret).toBe('cs_123')
+    expect(result.clientSecret).toBe('pi_new_secret')
     expect(result.chargedCents).toBe(16500)
-    // Quote is marked consumed so it can't be replayed.
-    expect(h.consumeEq).toHaveBeenCalledTimes(1)
+    expect(h.piCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 16500, currency: 'eur' }),
+    )
+    expect(h.updateArgs[0]).toMatchObject({ consumed_at: expect.any(String) })
+    expect(h.updateArgs[1]).toMatchObject({ consumed_intent_id: 'pi_new' })
+  })
+
+  it('carries campaignId/partnerId into PI metadata when the visitor came via a tracking link', async () => {
+    h.results.push(
+      { data: makeQuoteRow(), error: null },   // claim succeeds
+      { data: null, error: null },             // consumed_intent_id update
+    )
+
+    await createPaymentIntent({ ...INPUT, campaignId: 'camp-1', partnerId: 'partner-1' })
+
+    expect(h.piCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ campaign_id: 'camp-1', partner_id: 'partner-1' }),
+      }),
+    )
+  })
+
+  it('omits campaign_id/partner_id from PI metadata for organic bookings (no attribution)', async () => {
+    h.results.push(
+      { data: makeQuoteRow(), error: null },
+      { data: null, error: null },
+    )
+
+    await createPaymentIntent(INPUT)
+
+    const metadata = h.piCreate.mock.calls[0][0].metadata
+    expect(metadata).not.toHaveProperty('campaign_id')
+    expect(metadata).not.toHaveProperty('partner_id')
+  })
+
+  it('refuses when the recomputed total drifts from the stored quote', async () => {
+    h.results.push(
+      { data: makeQuoteRow({ total_cents: 14000 }), error: null },   // stored ≠ recomputed
+      { data: null, error: null },                                   // release update
+    )
+
+    await expect(createPaymentIntent(INPUT)).rejects.toThrow(/price changed/)
+    expect(h.piCreate).not.toHaveBeenCalled()
+    // The claim must be released so the customer can re-quote and retry
+    expect(h.updateArgs[1]).toMatchObject({ consumed_at: null })
   })
 })

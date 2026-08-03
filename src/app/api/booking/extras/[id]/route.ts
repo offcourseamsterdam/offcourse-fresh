@@ -4,10 +4,11 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { isValidExtrasToken } from '@/lib/booking/extras-token'
 import { buildFHBookingNote } from '@/lib/catering/build-fh-note'
 import { buildCateringEmailText, buildCateringEmailSubject } from '@/lib/catering/email-template'
-import { filterCateringItems, type ExtrasLineItem } from '@/lib/catering/filter'
+import { filterFoodItems, type ExtrasLineItem } from '@/lib/catering/filter'
 import { calculateExtras } from '@/lib/extras/calculate'
 import type { Extra } from '@/lib/extras/calculate'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
+import { countAdultsFromFHCustomers } from '@/lib/booking/adult-count'
 import { postSlackText } from '@/lib/slack/send-notification'
 import { Resend } from 'resend'
 
@@ -134,12 +135,32 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (ms > 0) durationMinutes = Math.round(ms / 60000)
   }
 
+  // adults_only extras (e.g. Unlimited Drinks) must be priced for adults only — a
+  // child can't take unlimited alcohol. The booking row doesn't store the adult/child
+  // split, so reconstruct it from the FareHarbor booking (source of truth) ONLY when it
+  // matters: a shared cruise with an adults_only extra selected. Private cruises have no
+  // child concept (adults = guests); failures fall back to guest_count (never under-charge).
+  const guestCount = booking.guest_count ?? 2
+  let adultCount = guestCount
+  const needsAdultSplit = booking.category === 'shared'
+    && (extrasData as Extra[]).some(e => e.adults_only)
+  if (needsAdultSplit && booking.booking_uuid) {
+    try {
+      const fhBooking = await getFareHarborClient().getBooking(booking.booking_uuid)
+      const fhCustomers = fhBooking.customers ?? []
+      if (fhCustomers.length > 0) adultCount = countAdultsFromFHCustomers(fhCustomers)
+    } catch (err) {
+      console.error('[extras-upsell] adult-count derivation failed; using guest_count', err)
+    }
+  }
+
   const calc = calculateExtras(
     booking.base_amount_cents ?? 0,
-    booking.guest_count ?? 2,
+    guestCount,
     extrasData as Extra[],
     durationMinutes,
     quantities,
+    adultCount,
   )
 
   const newItems: ExtrasLineItem[] = calc.line_items.map(li => ({
@@ -156,7 +177,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const newExtrasAmountCents = (booking.extras_amount_cents ?? 0) + calc.extras_amount_cents
   const newExtrasVatCents = (booking.extras_vat_amount_cents ?? 0) + calc.extras_vat_amount_cents
   const newTotalVatCents = (booking.total_vat_amount_cents ?? 0) + calc.extras_vat_amount_cents
-  const cateringItems = filterCateringItems(mergedExtras)
+  // Food only — this supplier doesn't handle drinks (those are stocked on the boat).
+  const cateringItems = filterFoodItems(mergedExtras)
   const hasCatering = cateringItems.length > 0
 
   // Save extras + stamp catering timestamp atomically
@@ -222,12 +244,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
     }
 
-    // Slack notification
-    const itemSummary = newItems.map(i => `${i.name} ×${i.quantity}`).join(', ')
-    const cruiseDateStr = new Date(bookingSnapshot.booking_date ?? '').toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', timeZone: 'Europe/Amsterdam' })
-    await postSlackText(
-      `🍽️ *New catering pre-order* — ${bookingSnapshot.listing_title ?? 'cruise'} on ${cruiseDateStr}\n*Guest:* ${bookingSnapshot.customer_name}\n*Items:* ${itemSummary}`
-    ).catch(() => {})
+    // Slack notification — food only. Drinks-only pre-orders (e.g. "Unlimited
+    // Drinks" on a shared cruise) must stay silent here too, matching the
+    // supplier-email gate above: only food is a "catering order".
+    if (hasCatering) {
+      const itemSummary = newItems.map(i => `${i.name} ×${i.quantity}`).join(', ')
+      const cruiseDateStr = new Date(bookingSnapshot.booking_date ?? '').toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', timeZone: 'Europe/Amsterdam' })
+      await postSlackText(
+        `🍽️ *New catering pre-order* — ${bookingSnapshot.listing_title ?? 'cruise'} on ${cruiseDateStr}\n*Guest:* ${bookingSnapshot.customer_name}\n*Items:* ${itemSummary}`
+      ).catch(() => {})
+    }
   })
 
   return apiOk({ ordered: true, items: newItems.length })

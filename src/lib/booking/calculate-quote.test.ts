@@ -16,6 +16,7 @@ vi.mock('@/lib/fareharbor/client', () => ({
 }))
 
 import { calculateQuote } from './calculate-quote'
+import type { PromoCodeRow } from '@/lib/promo-codes/validate'
 
 const baseInput = {
   listingId: 'listing-1',
@@ -26,6 +27,26 @@ const baseInput = {
   durationMinutes: 120,
   selectedExtraIds: [],
   extraQuantities: {},
+}
+
+/** A valid promo row with sensible defaults; override per test. */
+function makePromo(over: Partial<PromoCodeRow> = {}): PromoCodeRow {
+  return {
+    id: 'promo-1',
+    code: 'TEST-CODE',
+    label: 'Test',
+    discount_type: 'percentage',
+    discount_value: 10,
+    fixed_discount_cents: null,
+    max_uses: null,
+    uses_count: 0,
+    valid_from: null,
+    valid_until: null,
+    is_active: true,
+    campaign_id: null,
+    discount_scope: 'all',
+    ...over,
+  }
 }
 
 const noExtrasFromDb = {
@@ -113,6 +134,122 @@ describe('calculateQuote — city tax', () => {
     // private: flat 40000 + 1040 city tax = 41040
     expect(result.cityTaxCents).toBe(1040)
     expect(result.totalCents).toBe(41040)
+  })
+})
+
+// ── Multi-rate shared cruises (Gertjan's adult + child case) ───────────────
+
+describe('calculateQuote — customerTypeRates (mixed ticket types)', () => {
+  // Two distinct RATE pks on the availability — adult €35, child €20.
+  const adultRatePk = 8495737075
+  const childRatePk = 8719714190
+
+  beforeEach(() => {
+    getAvailabilityDetail.mockResolvedValue({
+      customer_type_rates: [
+        { pk: adultRatePk, customer_type: { singular: 'Adult (13+)' }, customer_prototype: { total_including_tax: 3500 } },
+        { pk: childRatePk, customer_type: { singular: 'Child (0-12)' }, customer_prototype: { total_including_tax: 2000 } },
+      ],
+    })
+  })
+
+  it('prices each ticket type at its own rate — child is NOT charged as adult (regression: WhatsApp €15 jump)', async () => {
+    const result = await calculateQuote({
+      ...baseInput,
+      category: 'shared',
+      guestCount: 2,
+      customerTypeRatePk: adultRatePk,
+      customerTypeRates: [
+        { pk: adultRatePk, count: 1 },
+        { pk: childRatePk, count: 1 },
+      ],
+    })
+
+    // base = 3500 (adult) + 2000 (child) = 5500 — NOT 2 × 3500
+    expect(result.basePriceCents).toBe(5500)
+    // city tax = 2 guests × 260 = 520
+    expect(result.cityTaxCents).toBe(520)
+    expect(result.totalCents).toBe(6020) // €60.20 — matches the displayed quote
+  })
+
+  it('multiplies by per-type count (2 adults + 1 child)', async () => {
+    const result = await calculateQuote({
+      ...baseInput,
+      category: 'shared',
+      guestCount: 3,
+      customerTypeRatePk: adultRatePk,
+      customerTypeRates: [
+        { pk: adultRatePk, count: 2 },
+        { pk: childRatePk, count: 1 },
+      ],
+    })
+
+    // base = 2 × 3500 + 1 × 2000 = 9000; city tax = 3 × 260 = 780
+    expect(result.basePriceCents).toBe(9000)
+    expect(result.totalCents).toBe(9780)
+  })
+
+  it('snapshots the primary rate name from customerTypeRatePk', async () => {
+    const result = await calculateQuote({
+      ...baseInput,
+      category: 'shared',
+      guestCount: 2,
+      customerTypeRatePk: childRatePk, // primary = child here
+      customerTypeRates: [
+        { pk: adultRatePk, count: 1 },
+        { pk: childRatePk, count: 1 },
+      ],
+    })
+
+    expect(result.customerTypeName).toBe('Child (0-12)')
+  })
+
+  it('throws when a rate pk is not on the availability (the error Gertjan saw with a type pk)', async () => {
+    await expect(calculateQuote({
+      ...baseInput,
+      category: 'shared',
+      guestCount: 1,
+      customerTypeRatePk: 393287, // a customer_TYPE pk, not a rate pk
+      customerTypeRates: [{ pk: 393287, count: 1 }],
+    })).rejects.toThrow(/Could not find customer type rate 393287/)
+  })
+
+  it('prices adults_only extras (Unlimited Drinks) for adults only, derived from rate names', async () => {
+    const unlimitedDrinks = {
+      id: 'drinks-id',
+      name: 'Unlimited Drinks',
+      category: 'drinks',
+      price_type: 'per_person_per_hour_cents',
+      price_value: 1000, // €10/person/hour
+      vat_rate: 21,
+      is_required: false,
+      quantity_mode: 'toggle',
+      adults_only: true,
+    }
+    supabaseFrom.mockReturnValue({
+      select: () => ({
+        in: () => ({ eq: () => Promise.resolve({ data: [unlimitedDrinks] }) }),
+      }),
+    })
+
+    // 1 adult + 1 child, 1.5h cruise, Unlimited Drinks selected
+    const result = await calculateQuote({
+      ...baseInput,
+      category: 'shared',
+      guestCount: 2,
+      durationMinutes: 90,
+      customerTypeRatePk: adultRatePk,
+      customerTypeRates: [
+        { pk: adultRatePk, count: 1 },
+        { pk: childRatePk, count: 1 },
+      ],
+      selectedExtraIds: ['drinks-id'],
+      extraQuantities: { 'drinks-id': 1 },
+    })
+
+    // base = 5500; drinks = 1 adult × €10 × 1.5h = 1500 (NOT 2 × = 3000); city tax = 520
+    expect(result.extrasCalculation.extras_amount_cents).toBe(1500)
+    expect(result.totalCents).toBe(5500 + 1500 + 520)
   })
 })
 
@@ -204,7 +341,7 @@ describe('calculateQuote — Unlimited Bar drift scenario', () => {
   })
 })
 
-// ── Promo discount ─────────────────────────────────────────────────────────
+// ── Promo discount (server-derived — never trusts a client amount) ──────────
 
 describe('calculateQuote — promo discount', () => {
   beforeEach(() => {
@@ -214,27 +351,46 @@ describe('calculateQuote — promo discount', () => {
       ],
     })
   })
+  // total before discount = base 10000 + city tax (2 × 260) 520 = 10520
 
-  it('caps the discount at the pre-discount total', async () => {
-    const result = await calculateQuote({
-      ...baseInput,
-      discountAmountCents: 999_999,        // absurdly large
-    })
+  it('SECURITY: a forged client discount with no promo code has zero effect', async () => {
+    // The old exploit posted a huge discountAmountCents to book for €0.50. That field
+    // no longer exists on QuoteInput; even smuggled in, it must be ignored entirely.
+    const forged = { ...baseInput, discountAmountCents: 999_999 } as unknown as Parameters<typeof calculateQuote>[0]
+    const result = await calculateQuote(forged)
 
-    // total before discount = 10000 + 520 = 10520. Discount can't exceed that.
+    expect(result.discountAmountCents).toBe(0)
+    expect(result.totalCents).toBe(10520) // full price
+  })
+
+  it('derives a percentage discount from the validated promo code', async () => {
+    const result = await calculateQuote(
+      { ...baseInput, promoCodeId: 'promo-1' },
+      { validatePromo: async () => ({ ok: true, code: makePromo({ discount_type: 'percentage', discount_value: 20, discount_scope: 'all' }) }) },
+    )
+
+    // 20% of 10520 = 2104
+    expect(result.discountAmountCents).toBe(2104)
+    expect(result.totalCents).toBe(8416)
+  })
+
+  it('applies a full (100%) discount and floors at the Stripe minimum', async () => {
+    const result = await calculateQuote(
+      { ...baseInput, promoCodeId: 'promo-full' },
+      { validatePromo: async () => ({ ok: true, code: makePromo({ discount_type: 'full', discount_scope: 'all' }) }) },
+    )
+
     expect(result.discountAmountCents).toBe(10520)
-    // Floor at €0.50
     expect(result.totalCents).toBe(50)
   })
 
-  it('applies a normal discount cleanly', async () => {
-    const result = await calculateQuote({
-      ...baseInput,
-      discountAmountCents: 2000,
-    })
+  it('gives no discount when the promo fails validation (expired / exhausted / wrong cruise)', async () => {
+    const result = await calculateQuote(
+      { ...baseInput, promoCodeId: 'promo-bad' },
+      { validatePromo: async () => ({ ok: false, reason: 'expired', message: 'This code has expired.' }) },
+    )
 
-    // 10000 + 520 - 2000 = 8520
-    expect(result.discountAmountCents).toBe(2000)
-    expect(result.totalCents).toBe(8520)
+    expect(result.discountAmountCents).toBe(0)
+    expect(result.totalCents).toBe(10520)
   })
 })

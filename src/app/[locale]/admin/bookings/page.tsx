@@ -3,19 +3,28 @@
 import { useState, Fragment } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Loader2, RefreshCw, ChevronDown, ChevronUp, Plus, ArrowUp, ArrowDown } from 'lucide-react'
+import { Loader2, RefreshCw, ChevronDown, ChevronUp, Plus, ArrowUp, ArrowDown, Search, X, CalendarRange } from 'lucide-react'
 import { BookingDetailRow } from '@/components/admin/BookingDetailRow'
 import { BookingStatusBadge } from '@/components/admin/BookingStatusBadge'
 import { BookingSourceBadge } from '@/components/admin/BookingSourceBadge'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
+import { useBookingsChangedSignal } from '@/hooks/useBookingsChangedSignal'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { fmtAdminDate, fmtAdminTime, fmtAdminAmountRounded, fmtAdminDateCreated } from '@/lib/admin/format'
 import { dateCreatedThreshold, type DateCreatedFilter } from '@/lib/admin/date-filter'
+import { matchesBookingSearch } from '@/lib/admin/booking-search'
 import type { AdminBooking } from '@/lib/admin/types'
 
 type SourceFilter = 'all' | 'website' | 'internal'
 type SortField = 'booking_date' | 'created_at'
 type SortDir = 'asc' | 'desc'
+
+function SortIcon({ field, sortField, sortDir }: { field: SortField; sortField: SortField; sortDir: SortDir }) {
+  if (sortField !== field) return <ArrowDown className="w-3 h-3 opacity-30" />
+  return sortDir === 'asc'
+    ? <ArrowUp className="w-3 h-3 text-zinc-900" />
+    : <ArrowDown className="w-3 h-3 text-zinc-900" />
+}
 
 // ── Page ───────────────────────────────────────────────────────────────────
 
@@ -25,11 +34,16 @@ export default function BookingsPage() {
   const router = useRouter()
   const { data: bookings, isLoading: loading, error, refresh: fetchBookings } =
     useAdminFetch<AdminBooking[]>('/api/admin/bookings/local')
+  // Event-based, not polling: the server pings this channel the moment a booking
+  // is actually written (webhook, admin action, cron sweep) — see
+  // notify-bookings-changed.ts for every trigger point.
+  useBookingsChangedSignal(fetchBookings)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
   const [dateCreatedFilter, setDateCreatedFilter] = useState<DateCreatedFilter>('all')
   const [sortField, setSortField] = useState<SortField>('created_at')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [search, setSearch] = useState('')
 
   function toggleRow(id: string) {
     setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
@@ -50,6 +64,7 @@ export default function BookingsPage() {
     if (sourceFilter === 'website' && b.booking_source && b.booking_source !== 'website') return false
     if (sourceFilter === 'internal' && (!b.booking_source || b.booking_source === 'website')) return false
     if (threshold && b.created_at && new Date(b.created_at) < threshold) return false
+    if (!matchesBookingSearch(b, search)) return false
     return true
   })
 
@@ -75,13 +90,6 @@ export default function BookingsPage() {
     year: 'This year',
   }
 
-  function SortIcon({ field }: { field: SortField }) {
-    if (sortField !== field) return <ArrowDown className="w-3 h-3 opacity-30" />
-    return sortDir === 'asc'
-      ? <ArrowUp className="w-3 h-3 text-zinc-900" />
-      : <ArrowDown className="w-3 h-3 text-zinc-900" />
-  }
-
   return (
     <div className="p-8 max-w-none space-y-6">
       {/* Header */}
@@ -91,6 +99,10 @@ export default function BookingsPage() {
           <p className="text-sm text-zinc-500 mt-1">From our booking flow · stored in Supabase</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => router.push(`/${locale}/admin/planning`)}>
+            <CalendarRange className="w-3.5 h-3.5" />
+            Week view
+          </Button>
           <Button variant="outline" size="sm" onClick={fetchBookings} disabled={loading}>
             {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
             Refresh
@@ -114,21 +126,43 @@ export default function BookingsPage() {
               <span><span className="font-semibold text-emerald-700">{confirmed}</span> confirmed</span>
               <span className="font-semibold text-zinc-900">{fmtAdminAmountRounded(totalRevenue)}</span>
             </div>
-            {/* Source filter */}
-            <div className="flex items-center gap-1.5">
-              {(['all', 'website', 'internal'] as SourceFilter[]).map(f => (
-                <button
-                  key={f}
-                  onClick={() => setSourceFilter(f)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                    sourceFilter === f
-                      ? 'bg-zinc-900 text-white'
-                      : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200'
-                  }`}
-                >
-                  {f === 'all' ? 'All' : f === 'website' ? 'Regular' : 'Internal'}
-                </button>
-              ))}
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Search */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search name, email, cruise…"
+                  className="pl-8 pr-7 py-1.5 rounded-lg text-xs bg-zinc-100 border border-transparent focus:bg-white focus:border-zinc-300 focus:outline-none transition-colors w-56"
+                />
+                {search && (
+                  <button
+                    onClick={() => setSearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+                    aria-label="Clear search"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              {/* Source filter */}
+              <div className="flex items-center gap-1.5">
+                {(['all', 'website', 'internal'] as SourceFilter[]).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setSourceFilter(f)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      sourceFilter === f
+                        ? 'bg-zinc-900 text-white'
+                        : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200'
+                    }`}
+                  >
+                    {f === 'all' ? 'All' : f === 'website' ? 'Regular' : 'Internal'}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -178,7 +212,7 @@ export default function BookingsPage() {
                       onClick={() => handleSortClick('booking_date')}
                       className="flex items-center gap-1 hover:text-zinc-900 transition-colors"
                     >
-                      Date <SortIcon field="booking_date" />
+                      Date <SortIcon field="booking_date" sortField={sortField} sortDir={sortDir} />
                     </button>
                   </th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider min-w-[120px]">
@@ -186,7 +220,7 @@ export default function BookingsPage() {
                       onClick={() => handleSortClick('created_at')}
                       className="flex items-center gap-1 hover:text-zinc-900 transition-colors"
                     >
-                      Created <SortIcon field="created_at" />
+                      Created <SortIcon field="created_at" sortField={sortField} sortDir={sortDir} />
                     </button>
                   </th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider min-w-[110px]">Time</th>

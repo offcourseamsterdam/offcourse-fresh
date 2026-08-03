@@ -62,11 +62,14 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
   //    'reseller' → partner_invoice direction (partner collected, owes us)
   //    'affiliate' → affiliate direction (we collected, owe partner)
   //  - Fallback (no campaign on the booking): use booking_source as the legacy signal.
+  //    invoice_later (admin-picked partner, no campaign) is the same direction
+  //    as partner_invoice (the QR-code flow) — partner owes us either way.
   function directionFor(b: { booking_source: string | null; campaigns: { settlement_model?: string } | null }): 'partner_invoice' | 'affiliate' {
     const campaignModel = b.campaigns?.settlement_model
     if (campaignModel === 'reseller') return 'partner_invoice'
     if (campaignModel === 'affiliate') return 'affiliate'
-    return b.booking_source === 'partner_invoice' ? 'partner_invoice' : 'affiliate'
+    return (b.booking_source === 'partner_invoice' || b.booking_source === 'invoice_later')
+      ? 'partner_invoice' : 'affiliate'
   }
 
   const CITY_TAX_CENTS_PER_GUEST = 260 // €2.60 per guest — municipal pass-through

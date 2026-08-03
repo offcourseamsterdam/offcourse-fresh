@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { createPaymentIntent } from '@/lib/booking/create-intent'
 import { deriveTrafficSource, parseFirstTouch } from '@/lib/tracking/traffic-source'
+import { parseAttribution } from '@/lib/tracking/attribution'
 
 /**
  * POST /api/booking-flow/create-intent
@@ -30,13 +31,12 @@ export async function POST(request: NextRequest) {
     const marketingConsent = request.cookies.get('oc_consent')?.value === 'yes'
 
     // Traffic source: gclid > campaign link (oc_attr) > first-touch (oc_src) > direct.
-    let campaignSlug: string | null = null
-    try {
-      const attrRaw = request.cookies.get('oc_attr')?.value
-      if (attrRaw) campaignSlug = (JSON.parse(attrRaw) as { campaign_slug?: string }).campaign_slug ?? null
-    } catch {
-      // malformed cookie — ignore
-    }
+    // The oc_attr cookie also carries WHICH campaign/partner sent this visitor —
+    // needed so the webhook (which has no cookie access) can attribute the
+    // resulting booking to that partner. It travels via PI metadata, same as
+    // gclid/session_id below.
+    const attribution = parseAttribution(request.cookies.get('oc_attr')?.value)
+    const campaignSlug = attribution?.campaign_slug ?? null
     const traffic = deriveTrafficSource({
       gclid,
       campaignSlug,
@@ -58,12 +58,21 @@ export async function POST(request: NextRequest) {
       // Cookie session (consented) takes priority; else the client-sent stable
       // anon session id from sessionStorage.
       sessionId: request.cookies.get('oc_sid')?.value ?? (sessionId ? String(sessionId) : null),
+      campaignId: attribution?.campaign_id ?? null,
+      partnerId: attribution?.partner_id ?? null,
     })
 
     return apiOk(result)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
-    console.error('[create-intent route] error', message)
+    const code = (err as { code?: string })?.code
+    console.error('[create-intent route] error', code ?? '', message)
+    // Pre-charge availability failures are expected, customer-facing, and not 500s:
+    // the slot is gone, or FareHarbor was unreachable. Return 400 so the UI shows the
+    // friendly message and the customer can retry — no PaymentIntent was created.
+    if (code === 'FH_NOT_BOOKABLE' || code === 'FH_VALIDATE_UNAVAILABLE') {
+      return apiError(message, 400)
+    }
     return apiError(message)
   }
 }

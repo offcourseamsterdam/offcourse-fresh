@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { apiOk, apiError } from '@/lib/api/response'
+import { withRoute } from '@/lib/api/with-route'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { locales } from '@/lib/i18n/config'
@@ -25,18 +26,23 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/admin/cruise-listings/[id]
-export async function DELETE(_req: NextRequest, { params }: RouteParams) {
+export const DELETE = withRoute(async (_req: NextRequest, { params }: RouteParams) => {
   const denied = await requireAdmin()
   if (denied) return denied
   const { id } = await params
   const supabase = createAdminClient()
 
-  // Safety check: refuse if there are any confirmed/booked/pending bookings
+  // Safety check: refuse if there are any active bookings — live (confirmed/booked),
+  // awaiting payment, or already paid but not yet confirmed in FareHarbor. The
+  // filter previously included 'pending', a value nothing ever writes (the real
+  // value is 'pending_payment'), and omitted paid_pending_fh/fh_in_progress
+  // entirely — silently allowing deletion of a listing with money already in
+  // flight. Fixed 2026-07 alongside BOOKING_STATUSES (src/lib/booking/constants.ts).
   const { count } = await supabase
     .from('bookings')
     .select('id', { count: 'exact', head: true })
     .eq('listing_id', id)
-    .in('status', ['confirmed', 'booked', 'pending'])
+    .in('status', ['confirmed', 'booked', 'pending_payment', 'paid_pending_fh', 'fh_in_progress'])
 
   if (count && count > 0) {
     return apiError(`Cannot delete — ${count} active booking${count === 1 ? '' : 's'} linked to this listing.`, 409)
@@ -45,10 +51,10 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
   const { error } = await supabase.from('cruise_listings').delete().eq('id', id)
   if (error) return apiError(error.message)
   return apiOk({ deleted: true })
-}
+})
 
 // PATCH /api/admin/cruise-listings/[id]
-export async function PATCH(req: NextRequest, { params }: RouteParams) {
+export const PATCH = withRoute(async (req: NextRequest, { params }: RouteParams) => {
   const denied = await requireAdmin()
   if (denied) return denied
   const { id } = await params
@@ -110,4 +116,4 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   }
 
   return apiOk(data)
-}
+})

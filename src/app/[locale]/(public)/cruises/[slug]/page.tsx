@@ -2,11 +2,14 @@ import { notFound } from 'next/navigation'
 import { getTranslations } from 'next-intl/server'
 import { Clock, Users, Umbrella } from 'lucide-react'
 import { BookingPanel } from '@/components/booking/BookingPanel'
+import { PrideEventWhatsAppCard } from '@/components/booking/PrideEventWhatsAppCard'
 import { ImageGallery } from '@/components/cruise/ImageGallery'
 import { StickyBookingHeader } from '@/components/cruise/StickyBookingHeader'
 import { MobileBookingCTA } from '@/components/cruise/MobileBookingCTA'
+import { RainbowCursorTrail } from '@/components/cruise/RainbowCursorTrail'
 import { CruiseContentSections } from '@/components/cruise/CruiseContentSections'
 import { getListingBySlug, getCruisePageData } from '@/lib/cruise/get-cruise-page-data'
+import { AvailabilityFiltersSchema } from '@/lib/fareharbor/filters'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import { TrackPageView } from '@/components/tracking/TrackPageView'
 import type { Locale } from '@/lib/i18n/config'
@@ -76,41 +79,117 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
     provider: { '@type': 'LocalBusiness', name: 'Off Course Amsterdam' },
   }
 
-  // Section header shared by mobile inline + desktop sidebar — pulls pills + price out of the card
-  const renderStartCruisingHeader = () => (
-    <div className="flex items-end justify-between gap-4 mb-4 sm:mb-6">
-      <div className="flex-1 min-w-0">
-        <h2 className="font-briston text-[28px] sm:text-[36px] text-[var(--color-accent)] uppercase leading-none">
-          Start Cruising
-        </h2>
-        <div className="flex flex-wrap gap-1.5 mt-3">
-          {listing.duration_display && (
-            <span className="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] bg-[var(--color-sand)] px-2.5 py-1 rounded-full">
-              <Clock className="w-3 h-3" />
-              {listing.duration_display}
-            </span>
-          )}
-          {listing.max_guests && (
-            <span className="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] bg-[var(--color-sand)] px-2.5 py-1 rounded-full">
-              <Users className="w-3 h-3" />
-              Up to {listing.max_guests} guests
-            </span>
-          )}
-          {/* Rain reassurance pill — all Off Course boats have a covered canopy */}
-          <span className="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] bg-[var(--color-sand)] px-2.5 py-1 rounded-full">
-            <Umbrella className="w-3 h-3" />
-            Covered canopy
-          </span>
-        </div>
-      </div>
-      {listing.starting_price != null && (
-        <div className="text-right flex-shrink-0">
-          <p className="text-xs text-[var(--color-muted)] leading-none mb-1">starting from</p>
-          <p className="font-palmore text-3xl text-[var(--color-primary)] leading-none">€{listing.starting_price}</p>
-        </div>
-      )}
+  // FAQPage JSON-LD — lets AI answer engines and Google lift these Q&As
+  // directly into generated answers. Omitted entirely when a listing has no
+  // FAQs rather than emitting an empty (invalid) FAQPage block.
+  const faqJsonLd = data.faqs.length > 0 ? {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: data.faqs.map(faq => ({
+      '@type': 'Question',
+      name: faq.question,
+      acceptedAnswer: { '@type': 'Answer', text: faq.answer },
+    })),
+  } : null
+
+  // Fixed-date special events (this item only has real availability on their one
+  // scheduled day) get a distinct, simplified presentation throughout: they
+  // default straight to that day instead of "today" (which would otherwise
+  // always show as fully-booked), skip the multi-day date scroller entirely,
+  // and pick up the rainbow theme across headings/boat card/time button.
+  // One config object per event rather than several parallel lookup maps.
+  const SPECIAL_EVENTS: Record<string, { date: string; mapCoords: string }> = {
+    'pride-amsterdam-2026': { date: '2026-08-01', mapCoords: '52.369684,4.910362' },
+  }
+  const specialEvent = SPECIAL_EVENTS[listing.slug]
+  const isSpecialEvent = Boolean(specialEvent)
+  const specialEventDate = specialEvent?.date
+  // Whole-boat total only applies to a PRIVATE special event (a single
+  // fixed-price charter) — the headline number is the boat price (per-person
+  // rate × capacity), not a "starting from". A SHARED special event (e.g.
+  // Pride Amsterdam 2026 — Pride Party Boat) sells per-person tickets off a
+  // shared pool, same pricing shape as any other shared listing, so there's
+  // no "whole boat" total to show.
+  const fullBoatPrice = specialEvent && listing.category === 'private' && listing.starting_price != null && listing.max_guests
+    ? listing.starting_price * listing.max_guests
+    : null
+
+  // One tidy icon + label row — replaces the chunky stacked pills for a cleaner
+  // vertical rhythm on the narrow booking sidebar.
+  const metaRow = (icon: React.ReactNode, label: React.ReactNode) => (
+    <div className="flex items-center gap-2 text-sm text-[var(--color-muted)]">
+      <span className="flex-shrink-0 text-[var(--color-primary)]">{icon}</span>
+      <span>{label}</span>
     </div>
   )
+
+  const cruisingMeta = (
+    <div className="flex flex-col gap-2">
+      {listing.duration_display && metaRow(<Clock className="w-4 h-4" />, listing.duration_display)}
+      {listing.max_guests && metaRow(<Users className="w-4 h-4" />, `Up to ${listing.max_guests} guests`)}
+      {metaRow(<Umbrella className="w-4 h-4" />, 'Covered canopy')}
+    </div>
+  )
+
+  // Section header shared by mobile inline + desktop sidebar.
+  const renderStartCruisingHeader = () =>
+    isSpecialEvent ? (
+      // Special event: heading on its own row (so "CRUISING" never gets clipped
+      // by a competing price column), price leading (whole-boat total for a
+      // private charter, straight per-person for a shared one), open-bar
+      // accent, then the clean meta list.
+      <div className="mb-4 sm:mb-6">
+        <h2 className="font-briston text-[28px] sm:text-[36px] uppercase leading-none text-rainbow-gradient">
+          Start Cruising
+        </h2>
+        {fullBoatPrice != null ? (
+          <div className="mt-4">
+            <div className="flex items-baseline gap-2">
+              <p className="font-palmore text-4xl text-[var(--color-primary)] leading-none">
+                €{fullBoatPrice.toLocaleString('en-US')}
+              </p>
+              <span className="text-sm text-[var(--color-muted)]">whole boat</span>
+            </div>
+            <p className="text-sm text-[var(--color-ink)] mt-1.5">
+              €{listing.starting_price} per person
+            </p>
+            <span className="inline-flex items-center gap-1 mt-2.5 text-xs font-semibold text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2.5 py-1 rounded-full">
+              🥂 Open bar included
+            </span>
+          </div>
+        ) : listing.starting_price != null && (
+          <div className="mt-4">
+            <div className="flex items-baseline gap-2">
+              <p className="font-palmore text-4xl text-[var(--color-primary)] leading-none">
+                €{listing.starting_price}
+              </p>
+              <span className="text-sm text-[var(--color-muted)]">per person</span>
+            </div>
+            <span className="inline-flex items-center gap-1 mt-2.5 text-xs font-semibold text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2.5 py-1 rounded-full">
+              🥂 Open bar included
+            </span>
+          </div>
+        )}
+        <div className="mt-4">{cruisingMeta}</div>
+      </div>
+    ) : (
+      // Standard listing: price varies by boat/duration, so "starting from" is
+      // correct. Two-column layout unchanged.
+      <div className="flex items-end justify-between gap-4 mb-4 sm:mb-6">
+        <div className="flex-1 min-w-0">
+          <h2 className="font-briston text-[28px] sm:text-[36px] uppercase leading-none text-[var(--color-accent)]">
+            Start Cruising
+          </h2>
+          <div className="mt-3">{cruisingMeta}</div>
+        </div>
+        {listing.starting_price != null && (
+          <div className="text-right flex-shrink-0">
+            <p className="text-xs text-[var(--color-muted)] leading-none mb-1">starting from</p>
+            <p className="font-palmore text-3xl text-[var(--color-primary)] leading-none">€{listing.starting_price}</p>
+          </div>
+        )}
+      </div>
+    )
 
   // Shared booking panel props
   // Default the booking widget to today (Amsterdam tz) for direct landings, so the
@@ -118,19 +197,36 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
   // date picker. Search arrivals (?date=) keep their chosen date. en-CA → YYYY-MM-DD.
   const amsterdamToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Amsterdam' }).format(new Date())
 
+  // Which boats this listing actually offers (vs. just unavailable today) — lets
+  // BoatDurationStep omit a boat card entirely rather than show it as "sold out".
+  const offeredBoatIds = data.listingBoats
+    .map(b => (b.name.toLowerCase().includes('diana') ? 'diana' : 'curacao'))
+
+  const parsedAvailabilityFilters = AvailabilityFiltersSchema.safeParse(listing.availability_filters)
+  const minPartyOverride = parsedAvailabilityFilters.success
+    ? parsedAvailabilityFilters.data.min_guests_override ?? null
+    : null
+
   const bookingPanelProps = {
     listingId: listing.id,
     listingSlug: listing.slug,
     listingTitle: data.title,
     listingHeroImageUrl: data.heroUrl,
     category: listing.category as 'private' | 'shared',
-    initialDate: date ?? amsterdamToday,
+    initialDate: date ?? specialEventDate ?? amsterdamToday,
     initialGuests: guests ? Number(guests) : undefined,
     initialTime: time,
-    cancellationPolicy: data.cancellationPolicy,
+    // Pride's real policy (full refund up to 3 weeks out, then none) is shown
+    // in full via the Cancellation Policy card — the blanket "Free cancellation"
+    // sidebar badge reads as a looser promise than that, so it's dropped here.
+    cancellationPolicy: isSpecialEvent ? null : data.cancellationPolicy,
     cancellationTiers: data.cancellationTiers,
     startingPrice: listing.starting_price ?? null,
     maxGuests: listing.max_guests ?? null,
+    minPartyOverride,
+    offeredBoatIds,
+    rainbowBoatCard: isSpecialEvent,
+    fixedDate: specialEventDate,
     infoPills: [
       ...(listing.duration_display ? [{ icon: 'duration' as const, label: listing.duration_display }] : []),
       ...(listing.max_guests ? [{ icon: 'guests' as const, label: `Up to ${listing.max_guests} guests` }] : []),
@@ -147,6 +243,9 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
     <>
       <TrackPageView event="view_cruise_detail" metadata={{ slug, category: listing.category }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      {faqJsonLd && (
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
+      )}
       {/* LCP preload: tells the browser to fetch the hero AVIF before parsing the rest of the HTML.
           Typically saves 200-500ms on Largest Contentful Paint. React 19 hoists <link> to <head>. */}
       {heroPreload && (
@@ -164,14 +263,16 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
       )}
 
       <StickyBookingHeader title={data.title} priceDisplay={listing.price_display} />
-      <MobileBookingCTA />
+      <MobileBookingCTA rainbowTheme={isSpecialEvent} />
+      {/* Pride-only easter egg: a rainbow ribbon trails the cursor on this one listing. */}
+      {slug === 'pride-amsterdam-2026' && <RainbowCursorTrail />}
 
       <div className="min-h-screen bg-texture-sand pb-32 lg:pb-0">
 
         {/* ── Hero ── */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 sm:pt-20 pb-4">
           <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">{listing.category}</span>
-          <h1 className="text-2xl sm:text-4xl font-black text-[var(--color-primary)] mt-2 uppercase">{data.title}</h1>
+          <h1 className={`text-2xl sm:text-4xl font-black mt-2 uppercase ${isSpecialEvent ? 'text-rainbow-gradient' : 'text-[var(--color-primary)]'}`}>{data.title}</h1>
           {data.tagline && <p className="text-[var(--color-muted)] mt-1 text-sm sm:text-base">{data.tagline}</p>}
 
           {data.avgRating && data.totalReviews > 0 && (() => {
@@ -206,6 +307,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
         <div id="booking" className="lg:hidden max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-8">
           {renderStartCruisingHeader()}
           <BookingPanel {...bookingPanelProps} layout="inline" />
+          {isSpecialEvent && <PrideEventWhatsAppCard />}
         </div>
 
         {/* ── Content + desktop sidebar ── */}
@@ -224,6 +326,8 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
               faqs={data.faqs}
               loc={data.loc}
               faqLabel={t('faq')}
+              isSpecialEvent={isSpecialEvent}
+              mapCoords={specialEvent?.mapCoords}
             />
 
             {/* Desktop sidebar — date/guests card scrolls with the page;
@@ -235,6 +339,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
                 layout="sidebar"
                 sidebarHeader={renderStartCruisingHeader()}
               />
+              {isSpecialEvent && <PrideEventWhatsAppCard />}
             </div>
           </div>
         </div>

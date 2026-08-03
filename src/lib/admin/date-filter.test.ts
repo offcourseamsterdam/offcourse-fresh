@@ -36,6 +36,19 @@ describe('dateCreatedThreshold', () => {
     expect(new Date('2025-05-04T21:00:00Z') >= result).toBe(false)
   })
 
+  it('"week" is a valid date when "today" is early in the month (day - daysBack goes negative)', () => {
+    // Wednesday 1 July 2026, 10:00 UTC (= 12:00 AMS) — dow=3, daysBack=2, day-daysBack = -1.
+    // Regression: building the threshold from an ISO string here used to silently produce
+    // an Invalid Date, which made every `createdAt < threshold` comparison false — so the
+    // "This week" filter showed everything instead of just this week.
+    const wed = new Date('2026-07-01T10:00:00Z')
+    const result = dateCreatedThreshold('week', wed)!
+    expect(result.getTime()).not.toBeNaN()
+    // Week should start Monday 29 June 2026 00:00 AMS (CEST, UTC+2) = 2026-06-28T22:00:00Z
+    expect(new Date('2026-06-28T23:00:00Z') >= result).toBe(true)  // Mon 29 Jun 01:00 AMS
+    expect(new Date('2026-06-28T21:00:00Z') >= result).toBe(false) // Sun 28 Jun 23:00 AMS
+  })
+
   it('"month" returns start of May 2025', () => {
     const result = dateCreatedThreshold('month', REF)!
     expect(result).not.toBeNull()

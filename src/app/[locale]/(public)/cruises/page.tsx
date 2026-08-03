@@ -1,7 +1,7 @@
 import Image from 'next/image'
 import { Link } from '@/i18n/navigation'
 import { getTranslations } from 'next-intl/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import type { Locale } from '@/lib/i18n/config'
 import type { Database } from '@/lib/supabase/types'
@@ -27,11 +27,20 @@ export async function generateMetadata({ params }: Props) {
 export default async function CruisesPage({ params }: Props) {
   const { locale } = await params
   const t = await getTranslations('cruises')
-  const supabase = await createClient()
+  // Cookie-less client — reading cookies() here would force this page dynamic
+  // and silently defeat the `revalidate = 60` ISR cache above.
+  const supabase = createAdminClient()
 
+  // Narrowed from select('*') — this page only ever renders these columns (see
+  // CruiseCard below). All 7 locale variants of title/tagline stay: which one
+  // is needed depends on the request's locale, so none is statically prunable.
   const { data } = await supabase
     .from('cruise_listings')
-    .select('*')
+    .select(`
+      id, slug, category, hero_image_url, price_display, price_label,
+      title, title_de, title_es, title_fr, title_nl, title_pt, title_zh,
+      tagline, tagline_de, tagline_es, tagline_fr, tagline_nl, tagline_pt, tagline_zh
+    `)
     .eq('is_published', true)
     .order('display_order', { ascending: true })
 

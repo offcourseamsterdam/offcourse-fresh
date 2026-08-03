@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { Loader2, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -51,6 +52,15 @@ export function CancelBookingModal({
         setLoading(false)
         return
       }
+      const refundNote =
+        isWebsiteBooking && totalAmountCents
+          ? refundOption === 'full'
+            ? `Full refund issued (€${(totalAmountCents / 100).toFixed(0)})`
+            : refundOption === 'partial'
+              ? `Partial refund issued (€${partialInput})`
+              : 'Cancelled without refund'
+          : undefined
+      toast.success('Booking cancelled', refundNote ? { description: refundNote } : undefined)
       onSuccess()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')

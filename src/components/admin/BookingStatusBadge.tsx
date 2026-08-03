@@ -7,10 +7,12 @@ const STATUS_VARIANT: Record<string, 'success' | 'destructive' | 'secondary' | '
   booked: 'success',
   cancelled: 'destructive',
   pending_payment: 'warning',
+  paid_pending_fh: 'warning',
 }
 
 const STATUS_LABEL: Record<string, string> = {
   pending_payment: 'awaiting payment',
+  paid_pending_fh: 'paid — booking FareHarbor…',
 }
 
 export function BookingStatusBadge({ status }: { status: string | null }) {

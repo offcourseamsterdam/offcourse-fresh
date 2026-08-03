@@ -354,6 +354,7 @@ export default function CateringPage() {
               <tbody className="divide-y divide-zinc-100 bg-white">
                 {bookings.map(b => {
                   const isSent = !!b.catering_email_sent_at
+                  const isCancelled = b.status === 'cancelled'
                   const isSending = sending[b.id]
                   const sendError = sendErrors[b.id]
                   const isExpanded = !!expanded[b.id]
@@ -364,7 +365,7 @@ export default function CateringPage() {
                   return (
                     <Fragment key={b.id}>
                       <tr
-                        className="hover:bg-zinc-50 transition-colors cursor-pointer"
+                        className={`hover:bg-zinc-50 transition-colors cursor-pointer${isCancelled ? ' bg-red-50 hover:bg-red-50' : ''}`}
                         onClick={() => toggleRow(b.id)}
                       >
                         <td className="px-4 py-3 text-zinc-900 whitespace-nowrap">
@@ -419,7 +420,11 @@ export default function CateringPage() {
                         </td>
 
                         <td className="px-4 py-3 whitespace-nowrap">
-                          {isSent ? (
+                          {isCancelled ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-red-700 bg-red-100 px-2 py-1 rounded-full">
+                              Booking cancelled
+                            </span>
+                          ) : isSent ? (
                             <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full">
                               <CheckCircle2 className="w-3 h-3" />
                               Sent
@@ -437,22 +442,28 @@ export default function CateringPage() {
                         </td>
 
                         <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                          {sendError && (
-                            <p className="text-xs text-red-600 mb-1">{sendError}</p>
+                          {isCancelled ? (
+                            <p className="text-xs text-red-600 font-medium">Notify supplier to cancel order</p>
+                          ) : (
+                            <>
+                              {sendError && (
+                                <p className="text-xs text-red-600 mb-1">{sendError}</p>
+                              )}
+                              <Button
+                                variant={isSent ? 'outline' : 'primary'}
+                                size="sm"
+                                onClick={() => setConfirmingBooking(b)}
+                                disabled={isSending}
+                                className="text-xs gap-1"
+                              >
+                                {isSending
+                                  ? <Loader2 className="w-3 h-3 animate-spin" />
+                                  : <Send className="w-3 h-3" />
+                                }
+                                {isSending ? 'Sending…' : isSent ? 'Resend' : 'Send to supplier'}
+                              </Button>
+                            </>
                           )}
-                          <Button
-                            variant={isSent ? 'outline' : 'primary'}
-                            size="sm"
-                            onClick={() => setConfirmingBooking(b)}
-                            disabled={isSending}
-                            className="text-xs gap-1"
-                          >
-                            {isSending
-                              ? <Loader2 className="w-3 h-3 animate-spin" />
-                              : <Send className="w-3 h-3" />
-                            }
-                            {isSending ? 'Sending…' : isSent ? 'Resend' : 'Send to supplier'}
-                          </Button>
                         </td>
 
                         <td className="px-4 py-3 text-zinc-400">

@@ -251,6 +251,9 @@ export default function PartnerDashboardPage() {
 
   useEffect(() => {
     if (openSection === 'traffic') {
+      // fetchClicks's setLoadingClicks(true) runs synchronously here — this is a
+      // conditional refetch keyed on section+date-range, not a plain mount fetch.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchClicks(dateRange)
     }
   }, [openSection, dateRange, fetchClicks])

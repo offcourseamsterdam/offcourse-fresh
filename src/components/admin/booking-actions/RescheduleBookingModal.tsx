@@ -1,9 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { toast } from 'sonner'
 import { Loader2, CalendarDays } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { fmtAdminTime } from '@/lib/admin/format'
+import { toAmsDateStr } from '@/lib/utils'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -51,7 +53,7 @@ export function RescheduleBookingModal({
 }: RescheduleBookingModalProps) {
   const tomorrow = new Date()
   tomorrow.setDate(tomorrow.getDate() + 1)
-  const tomorrowStr = tomorrow.toISOString().slice(0, 10)
+  const tomorrowStr = toAmsDateStr(tomorrow)
 
   const [date, setDate] = useState(tomorrowStr)
   const [slots, setSlots] = useState<Slot[]>([])
@@ -163,6 +165,9 @@ export function RescheduleBookingModal({
       })
       const json = await res.json()
       if (!json.ok) throw new Error(json.error ?? 'Rebook failed')
+      toast.success('Booking rescheduled', {
+        description: `${date} at ${fmtAdminTime(selectedSlot.start_at)} · ${sendEmail ? 'confirmation email sent' : 'no email sent'}`,
+      })
       onSuccess()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')

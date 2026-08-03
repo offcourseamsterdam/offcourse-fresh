@@ -64,7 +64,10 @@ export function extractVat(amountInclVat: number, rate: number): number {
  * - Percentage extras calculate on the subtotal BEFORE themselves (never on themselves)
  * - City tax guestCount is the actual number of guests — NOT the FareHarbor quantity
  *   (private cruises always use quantity=1 for FareHarbor, but city tax uses actual guests)
- * - per_person_per_hour: price_value × guestCount × (durationMinutes / 60)
+ * - per_person_per_hour: price_value × headcount × (durationMinutes / 60)
+ * - adults_only extras use adultCount as their headcount (a child can't take unlimited
+ *   drinks); all other per-person extras use the full guestCount. adultCount defaults to
+ *   guestCount, so callers without an adult/child split behave exactly as before.
  * - All prices are INCLUSIVE of VAT; VAT is back-calculated
  * - Base cruise VAT rate is always 9% (hard-coded)
  * - Counter-mode extras: amount is multiplied by quantity
@@ -75,9 +78,13 @@ export function calculateExtras(
   selectedExtras: Extra[],
   durationMinutes = 90,
   quantities: Map<string, number> = new Map(),
+  adultCount?: number,
 ): ExtrasCalculation {
   const BASE_VAT_RATE = 9
   const baseVat = extractVat(baseAmountCents, BASE_VAT_RATE)
+  // adults_only per-person extras bill by adults; everything else by total guests.
+  const adults = adultCount ?? guestCount
+  const headcountFor = (extra: Extra) => (extra.adults_only ? adults : guestCount)
 
   // Informational extras have no price impact — exclude from all calculations
   const priced = selectedExtras.filter(e => e.price_type !== 'informational')
@@ -103,9 +110,11 @@ export function calculateExtras(
   for (const extra of priced.filter(e => e.price_type === 'per_person_cents')) {
     const qty = getQty(extra)
     const isPerPersonPick = extra.min_people != null && extra.min_people > 0
+    // Legacy "applies to all guests" items bill by headcount (adults only when adults_only).
+    const headcount = headcountFor(extra)
     const amount = isPerPersonPick
       ? extra.price_value * qty
-      : Math.round(extra.price_value * guestCount) * qty
+      : Math.round(extra.price_value * headcount) * qty
     const vat = extractVat(amount, extra.vat_rate)
     lineItems.push({
       extra_id: extra.id,
@@ -114,7 +123,7 @@ export function calculateExtras(
       price_type: extra.price_type,
       price_value: extra.price_value,
       vat_rate: extra.vat_rate,
-      guest_count: isPerPersonPick ? qty : guestCount,
+      guest_count: isPerPersonPick ? qty : headcount,
       quantity: qty,
       amount_cents: amount,
       vat_amount_cents: vat,
@@ -123,11 +132,12 @@ export function calculateExtras(
     subtotal += amount
   }
 
-  // 2. Per-person-per-hour extras (unlimited drinks)
+  // 2. Per-person-per-hour extras (unlimited drinks) — adults_only bills adults only
   for (const extra of priced.filter(e => e.price_type === 'per_person_per_hour_cents')) {
     const qty = getQty(extra)
     const hours = durationMinutes / 60
-    const unitAmount = Math.round(extra.price_value * guestCount * hours)
+    const headcount = headcountFor(extra)
+    const unitAmount = Math.round(extra.price_value * headcount * hours)
     const amount = unitAmount * qty
     const vat = extractVat(amount, extra.vat_rate)
     lineItems.push({
@@ -137,7 +147,7 @@ export function calculateExtras(
       price_type: extra.price_type,
       price_value: extra.price_value,
       vat_rate: extra.vat_rate,
-      guest_count: guestCount,
+      guest_count: headcount,
       quantity: qty,
       amount_cents: amount,
       vat_amount_cents: vat,

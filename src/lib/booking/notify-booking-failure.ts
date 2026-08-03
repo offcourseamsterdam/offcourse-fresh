@@ -109,7 +109,7 @@ export async function notifyBookingFailure(ctx: BookingFailureContext): Promise<
   if (paid) {
     lines.push(
       '',
-      '_Action: manually recreate via Admin → FareHarbor flow with "Stripe recovery" source, or refund the PI._',
+      '_Action: first check the bookings table (filter by Stripe PI) and FareHarbor — if a booking exists, this alert is a false alarm (do NOT refund or recreate). Only if no booking found: recreate via Admin → FareHarbor flow with "Stripe recovery" source, or refund the PI._',
     )
   }
 

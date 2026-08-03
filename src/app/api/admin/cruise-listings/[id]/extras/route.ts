@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
+import { withRoute } from '@/lib/api/with-route'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -63,7 +64,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
  *
  * Creates or updates a listing_extras override/link record.
  */
-export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const PATCH = withRoute(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const denied = await requireAdmin()
   if (denied) return denied
   const { id } = await params
@@ -82,4 +83,4 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   if (error) return apiError(error.message)
   return apiOk({})
-}
+})

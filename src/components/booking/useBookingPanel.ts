@@ -6,6 +6,7 @@ import type { ExtrasCalculation } from '@/lib/extras/calculate'
 import { formatDuration, fmtEuros } from '@/lib/utils'
 import { trackEvent } from '@/lib/tracking/client'
 import { reducer, initialState, type BookingPanelProps, type Step } from './booking-state'
+import { isChildLabel } from '@/lib/booking/adult-count'
 
 export function useBookingPanel({
   listingId,
@@ -182,13 +183,10 @@ export function useBookingPanel({
   const cityTaxCents = guestCount * 260
   const durationMinutes = state.selectedCustomerType?.durationMinutes
 
-  // Adult-count: used to cap extras flagged adults_only (e.g. Unlimited Drinks).
+  // Adult-count: used to cap (and price) extras flagged adults_only (e.g. Unlimited Drinks).
   // Private cruises don't distinguish children — treat all guests as adults.
   // Shared cruises: sum tickets whose customer-type name doesn't read as a child rate.
-  function isChildLabel(name: string): boolean {
-    const lower = (name ?? '').toLowerCase()
-    return lower.includes('child') || lower.includes('(0-')
-  }
+  // isChildLabel is shared with the server pricing so the two can't drift.
   const adultCount = category === 'private'
     ? state.guests
     : state.selectedSlot

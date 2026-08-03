@@ -43,8 +43,9 @@ export function ExtraListItem({
       : guestCount < (extra.min_people ?? 1)
   )
 
-  // Base price label: rate-only for per-person-pick; otherwise the existing total label
-  const priceLabel = formatPriceLabel(extra, guestCount, baseAmountCents, durationMinutes)
+  // Base price label: rate-only for per-person-pick; otherwise the existing total label.
+  // adults_only items (e.g. Unlimited Drinks) advertise the adult-only price.
+  const priceLabel = formatPriceLabel(extra, guestCount, baseAmountCents, durationMinutes, adults)
   const runningTotal = perPersonPick && quantity > 0
     ? fmtEuros(extra.price_value * quantity)
     : null
@@ -94,7 +95,14 @@ export function ExtraListItem({
 
       {/* Name + price */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-zinc-800 truncate">{extra.name}</p>
+        <p className="text-sm font-semibold text-zinc-800 truncate">
+          {extra.name}
+          {extra.adults_only && (
+            <span className="text-xs font-normal text-zinc-400 ml-1.5">
+              · for {adults} adult{adults !== 1 ? 's' : ''}
+            </span>
+          )}
+        </p>
         <p className="text-xs font-medium text-[var(--color-primary)]">
           {runningTotal
             ? <>{runningTotal} <span className="text-zinc-400 font-normal">· {quantity} × {fmtEuros(extra.price_value)}</span></>

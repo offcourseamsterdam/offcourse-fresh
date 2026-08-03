@@ -79,10 +79,11 @@ export default function HomepageAdminPage() {
   const priorityFileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
   // ── Load data ────────────────────────────────────────────────────────────
+  // Both fns only touch setters + the stable supabase client; intentionally mount-only.
   useEffect(() => {
     loadSlides()
     loadPriorityCards()
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadSlides() {
     setLoadingSlides(true)

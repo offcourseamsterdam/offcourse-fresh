@@ -127,7 +127,7 @@ export function HeroSection({ slides = DEFAULT_SLIDES, reviewCount, sectionStyle
         {/* Social proof — sits just under the search bar */}
         <div className="mt-4 flex items-center justify-center gap-2 font-avenir text-sm text-white/85">
           <span className="text-[#fec200] tracking-tight" aria-hidden>★★★★★</span>
-          <span>{reviewCount && reviewCount > 0 ? `${reviewCount}+` : '97+'} verified reviews</span>
+          <span>{reviewCount && reviewCount > 0 ? `${reviewCount}+` : '133+'} verified reviews</span>
         </div>
       </div>
 

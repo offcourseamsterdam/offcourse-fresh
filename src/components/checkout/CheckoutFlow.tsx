@@ -2,65 +2,43 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { loadStripe } from '@stripe/stripe-js'
-import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
+import { Elements } from '@stripe/react-stripe-js'
 import { Loader2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { GuestInfoForm } from './GuestInfoForm'
 import { BookingSummary } from './BookingSummary'
 import { CancellationCutoff } from './CancellationCutoff'
+import { CheckoutProgress } from './CheckoutProgress'
+import { PromoCodeInput } from './PromoCodeInput'
+import { PaymentStep } from './PaymentStep'
+import type { BookingData, ServerQuote, PromoResult } from './types'
 import { trackEvent, getSessionId } from '@/lib/tracking/client'
 import { BOATS } from '@/lib/fareharbor/config'
 import { SESSION_BOOKING_KEY, SESSION_CONTACT_KEY } from '@/lib/constants'
-import { getErrorMessage, fmtEuros } from '@/lib/utils'
-import type { CustomerDetails, AvailabilitySlot, AvailabilityCustomerType } from '@/types'
-import type { ExtrasCalculation } from '@/lib/extras/calculate'
+import { getErrorMessage } from '@/lib/utils'
+import type { CustomerDetails } from '@/types'
 import type { CancellationTier } from '@/lib/cancellation/policy'
 
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
+import { stripePublishableKey, stripeIsTestMode } from '@/lib/stripe/keys'
 
-// ── Booking data shape (from sessionStorage) ────────────────────────────────
+const stripePromise = loadStripe(stripePublishableKey)
 
-interface BookingData {
-  listingId: string
-  listingSlug: string
-  listingTitle: string
-  listingHeroImageUrl: string | null
-  category: 'private' | 'shared'
-  date: string
-  guests: number
-  selectedSlot: AvailabilitySlot
-  selectedBoat: string | null
-  selectedCustomerType: AvailabilityCustomerType | null
-  ticketCounts: Record<number, number>
-  totalTickets: number
-  selectedExtraIds: string[]
-  extrasCalculation: ExtrasCalculation | null
-  extraQuantities: Record<string, number>
-  basePriceCents: number
-  cityTaxCents: number
-  durationMinutes?: number
-}
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Server-canonical quote response from /api/booking-flow/quote */
-interface ServerQuote {
-  quoteId: string
-  expiresAt: string
-  basePriceCents: number
-  serverBaseAmountCents: number
-  extrasCalculation: ExtrasCalculation
-  cityTaxCents: number
-  discountAmountCents: number
-  totalCents: number
-  durationMinutes: number
-}
-
-interface PromoResult {
-  promoCodeId: string
-  label: string
-  discountType: 'percentage' | 'fixed_amount' | 'full'
-  discountAmountCents: number
-  newTotalCents: number
-  isFull: boolean
+function buildCustomerTypeRates(data: BookingData) {
+  // NOTE the two distinct PKs on AvailabilityCustomerType:
+  //   ct.pk            = the customer_type_RATE pk (what FareHarbor availability is keyed by)
+  //   ct.customerTypePk = the customer_TYPE pk (what ticketCounts is keyed by, see TicketStep)
+  // The server + FH booking need the RATE pk, so we send ct.pk while reading counts by customerTypePk.
+  const customerTypeRates = data.category === 'shared'
+    ? data.selectedSlot.customerTypes
+        .filter(ct => (data.ticketCounts?.[ct.customerTypePk] ?? 0) > 0)
+        .map(ct => ({ pk: ct.pk, count: data.ticketCounts[ct.customerTypePk] }))
+    : undefined
+  const customerTypeRatePk = data.category === 'private'
+    ? data.selectedCustomerType?.pk
+    : (customerTypeRates?.[0]?.pk ?? data.selectedSlot.customerTypes[0]?.pk)
+  return { customerTypeRates, customerTypeRatePk }
 }
 
 // ── Props ────────────────────────────────────────────────────────────────────
@@ -74,258 +52,6 @@ interface CheckoutFlowProps {
   partnerName?: string | null
 }
 
-// ── Progress indicator ───────────────────────────────────────────────────────
-
-function CheckoutProgress({ step, hidePayment = false }: { step: 'details' | 'payment'; hidePayment?: boolean }) {
-  const steps = hidePayment
-    ? [{ key: 'cruise', label: 'Cruise' }, { key: 'details', label: 'Details' }] as const
-    : [{ key: 'cruise', label: 'Cruise' }, { key: 'details', label: 'Details' }, { key: 'payment', label: 'Payment' }] as const
-
-  const activeIndex = step === 'details' ? 1 : 2
-
-  return (
-    <div className="flex items-center gap-0 mb-8">
-      {steps.map((s, i) => {
-        const isDone = i < activeIndex
-        const isActive = i === activeIndex
-        return (
-          <div key={s.key} className="flex items-center gap-0 flex-1 last:flex-none">
-            <div className="flex flex-col items-center gap-1">
-              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors
-                ${isDone ? 'bg-[var(--color-primary)] text-white' : isActive ? 'bg-[var(--color-primary)] text-white ring-4 ring-[var(--color-primary)]/20' : 'bg-zinc-100 text-zinc-400'}`}>
-                {isDone ? (
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path d="M5 13l4 4L19 7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                ) : (
-                  i + 1
-                )}
-              </div>
-              <span className={`text-[10px] font-medium whitespace-nowrap ${isActive ? 'text-zinc-900' : isDone ? 'text-[var(--color-primary)]' : 'text-zinc-400'}`}>
-                {s.label}
-              </span>
-            </div>
-            {i < steps.length - 1 && (
-              <div className={`h-px flex-1 mx-2 mb-4 transition-colors ${isDone ? 'bg-[var(--color-primary)]' : 'bg-zinc-200'}`} />
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-// ── Promo code input ─────────────────────────────────────────────────────────
-
-function PromoCodeInput({
-  grandTotalCents,
-  baseAmountCents,
-  cityTaxCents,
-  initialCode,
-  onApplied,
-  onRemoved,
-  applied,
-  required,
-  listingId,
-}: {
-  grandTotalCents: number
-  /** Cruise base (no extras). Used so promos discount cruise + city tax only, not extras. */
-  baseAmountCents: number
-  cityTaxCents: number
-  initialCode?: string
-  onApplied: (result: PromoResult) => void
-  onRemoved: () => void
-  applied: PromoResult | null
-  required?: boolean
-  /** When provided, the server uses this to reject codes scoped to a different cruise. */
-  listingId?: string | null
-}) {
-  const [open, setOpen] = useState(!!initialCode || !!required)
-  const [value, setValue] = useState(initialCode ?? '')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  // Auto-validate URL-provided code on mount
-  useEffect(() => {
-    if (initialCode && !applied) {
-      handleApply(initialCode)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  async function handleApply(code?: string) {
-    const codeToApply = (code ?? value).trim()
-    if (!codeToApply) return
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/promo/validate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: codeToApply,
-          amountCents: grandTotalCents,
-          baseAmountCents,
-          cityTaxCents,
-          listingId,
-        }),
-      })
-      const json = await res.json()
-      if (!json.ok) {
-        setError(json.error ?? 'Invalid code.')
-      } else {
-        onApplied(json.data)
-        setError(null)
-      }
-    } catch {
-      setError('Could not validate code. Please try again.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  if (applied) {
-    return (
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm text-emerald-800">
-          <svg className="w-4 h-4 shrink-0 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path d="M5 13l4 4L19 7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span>
-            <span className="font-semibold">{applied.label}</span>
-            {applied.isFull
-              ? ' — your cruise is included, no payment needed'
-              : ` — ${fmtEuros(applied.discountAmountCents)} off`}
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={onRemoved}
-          className="text-xs text-emerald-600 hover:text-emerald-800 underline shrink-0"
-        >
-          Remove
-        </button>
-      </div>
-    )
-  }
-
-  return (
-    <div>
-      {required && !applied && (
-        <p className="text-sm font-medium text-zinc-700 mb-2">Enter your booking code to proceed</p>
-      )}
-      {!open && !required ? (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="text-sm text-zinc-400 hover:text-zinc-600 underline underline-offset-2 transition-colors"
-        >
-          Have a promo code?
-        </button>
-      ) : (
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={value}
-            onChange={e => setValue(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleApply()}
-            placeholder="XXXX"
-            autoFocus
-            spellCheck={false}
-            autoComplete="off"
-            className={`flex-1 px-4 py-2.5 rounded-xl border text-sm uppercase tracking-widest font-mono transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20 focus:border-[var(--color-primary)] ${
-              error ? 'border-red-400' : 'border-zinc-200'
-            }`}
-          />
-          <button
-            type="button"
-            onClick={() => handleApply()}
-            disabled={loading || !value.trim()}
-            className="px-4 py-2.5 rounded-xl bg-zinc-900 text-white text-sm font-medium hover:bg-zinc-700 transition-colors disabled:opacity-40"
-          >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Apply'}
-          </button>
-        </div>
-      )}
-      {error && <p className="text-xs text-red-500 mt-1.5">{error}</p>}
-    </div>
-  )
-}
-
-// ── Payment inner form (needs to be inside <Elements>) ──────────────────────
-
-function PaymentForm({
-  amountCents,
-  onSuccess,
-  bookingData,
-}: {
-  amountCents: number
-  onSuccess: (paymentIntentId: string) => void
-  bookingData: BookingData
-}) {
-  const stripe = useStripe()
-  const elements = useElements()
-  const [paying, setPaying] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function handlePay(e: React.FormEvent) {
-    e.preventDefault()
-    if (!stripe || !elements) return
-    setPaying(true)
-    setError(null)
-
-    // Save booking state for iDEAL redirect recovery
-    sessionStorage.setItem(SESSION_BOOKING_KEY, JSON.stringify(bookingData))
-
-    const result = await stripe.confirmPayment({
-      elements,
-      confirmParams: {
-        return_url: window.location.href.split('?')[0],
-      },
-      redirect: 'if_required',
-    })
-
-    if (result.error) {
-      setError(result.error.message ?? 'Payment failed. Please try again.')
-      setPaying(false)
-    } else if (result.paymentIntent?.status === 'succeeded') {
-      sessionStorage.removeItem(SESSION_BOOKING_KEY)
-      onSuccess(result.paymentIntent.id)
-    }
-  }
-
-  return (
-    <form onSubmit={handlePay} className="space-y-4">
-      <h2 className="text-lg font-bold text-zinc-900">Payment</h2>
-      <PaymentElement options={{ wallets: { applePay: 'auto', googlePay: 'auto' } }} />
-
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
-      <button
-        type="submit"
-        disabled={!stripe || !elements || paying}
-        className="w-full py-3.5 rounded-xl bg-[var(--color-accent)] text-white text-sm font-bold hover:bg-[var(--color-accent-dark)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {paying ? (
-          <span className="flex items-center justify-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" /> Processing...
-          </span>
-        ) : (
-          `Confirm & Pay ${fmtEuros(amountCents)}`
-        )}
-      </button>
-
-      <p className="text-[10px] text-zinc-400 text-center">
-        By confirming, you agree to our cancellation policy and terms of service.
-      </p>
-    </form>
-  )
-}
-
 // ── Main checkout flow ──────────────────────────────────────────────────────
 
 export function CheckoutFlow({
@@ -337,11 +63,14 @@ export function CheckoutFlow({
 }: CheckoutFlowProps) {
   const isPartnerInvoice = paymentMode === 'partner_invoice'
   const [bookingData, setBookingData] = useState<BookingData | null>(null)
-  const [contact, setContact] = useState<CustomerDetails | null>(null)
+  const [, setContact] = useState<CustomerDetails | null>(null)
   const [clientSecret, setClientSecret] = useState<string | null>(null)
   const [creatingIntent, setCreatingIntent] = useState(false)
   const [submittingPartnerBooking, _setSubmittingPartnerBooking] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // True while completing an iDEAL booking after the bank redirect — renders a
+  // blocking "finalising your payment" screen instead of the checkout form.
+  const [recovering, setRecovering] = useState(false)
   const [promoResult, setPromoResult] = useState<PromoResult | null>(null)
   // Server-canonical price quote — single source of truth for what's displayed and charged
   const [quote, setQuote] = useState<ServerQuote | null>(null)
@@ -353,8 +82,9 @@ export function CheckoutFlow({
     const params = new URLSearchParams(window.location.search)
     const paymentIntent = params.get('payment_intent')
     const redirectStatus = params.get('redirect_status')
-    const isIdealReturn = !!(paymentIntent && redirectStatus === 'succeeded')
-    const isIdealProcessing = !!(paymentIntent && redirectStatus === 'processing')
+    // 'processing' counts too: iDEAL banks can send the customer back before
+    // Stripe has settled the payment — the recovery endpoint handles both.
+    const isIdealReturn = !!(paymentIntent && (redirectStatus === 'succeeded' || redirectStatus === 'processing'))
     const isIdealFailed = !!(paymentIntent && redirectStatus === 'requires_payment_method')
 
     const stored = sessionStorage.getItem(SESSION_BOOKING_KEY)
@@ -379,13 +109,14 @@ export function CheckoutFlow({
     // iDEAL redirect returned with a non-success status — show the right message.
     if (isIdealFailed) {
       setError('Your bank declined the payment. Please try again with a different payment method.')
-    } else if (isIdealProcessing) {
-      setError('Your payment is still being processed by your bank. You will receive a confirmation email once it completes.')
     }
 
-    // Handle iDEAL redirect return
+    // Handle iDEAL redirect return — show a full-screen "finalising" state so
+    // the customer can't interact with (or re-submit) the checkout form while
+    // the booking is being completed in the background.
     if (isIdealReturn) {
-      handlePaymentSuccess(paymentIntent!)
+      setRecovering(true)
+      handlePaymentSuccess(paymentIntent!).finally(() => setRecovering(false))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -409,9 +140,7 @@ export function CheckoutFlow({
     const controller = new AbortController()
     fetchQuoteRef.current = controller
 
-    const customerTypeRatePk = data.category === 'private'
-      ? data.selectedCustomerType?.pk
-      : data.selectedSlot.customerTypes[0]?.pk
+    const { customerTypeRates, customerTypeRatePk } = buildCustomerTypeRates(data)
 
     if (!customerTypeRatePk) {
       setQuoteError('Booking is missing a customer type — please go back and re-select.')
@@ -429,6 +158,7 @@ export function CheckoutFlow({
           listingId: data.listingId,
           availPk: data.selectedSlot.pk,
           customerTypeRatePk,
+          customerTypeRates,
           guestCount: data.guests,
           category: data.category,
           durationMinutes: data.durationMinutes ?? data.selectedCustomerType?.durationMinutes ?? 90,
@@ -540,16 +270,17 @@ export function CheckoutFlow({
     }
   }
 
-  // Full-discount: no Stripe, call book API directly
-  async function handleFullDiscountBooking(details: CustomerDetails, bookingSource: 'partner' | 'partner_invoice' = 'partner') {
+  // Full-discount: no Stripe, call book API directly. 'complimentary' matches the
+  // canonical BOOKING_SOURCES value (not an ad-hoc 'partner' string) — the server
+  // independently re-validates the promo code is a genuine discount_type:'full'
+  // comp code before authorizing without an admin session (2026-07 fix).
+  async function handleFullDiscountBooking(details: CustomerDetails, bookingSource: 'complimentary' | 'partner_invoice' = 'complimentary') {
     if (!bookingData || !promoResult) return
     setCreatingIntent(true)
     setError(null)
     try {
       const fresh = await refreshQuote(bookingData, promoResult)
-      const customerTypeRatePk = bookingData.category === 'private'
-        ? bookingData.selectedCustomerType?.pk
-        : bookingData.selectedSlot.customerTypes[0]?.pk
+      const { customerTypeRates, customerTypeRatePk } = buildCustomerTypeRates(bookingData)
 
       const extrasTotalCents = fresh?.extrasCalculation.extras_amount_cents
         ?? bookingData.extrasCalculation?.extras_amount_cents
@@ -561,6 +292,7 @@ export function CheckoutFlow({
         body: JSON.stringify({
           availPk: bookingData.selectedSlot.pk,
           customerTypeRatePk,
+          customerTypeRates,
           guestCount: bookingData.guests,
           category: bookingData.category,
           contact: details,
@@ -601,104 +333,43 @@ export function CheckoutFlow({
     }
   }
 
-  // After Stripe payment success, create the FareHarbor booking
+  // After Stripe payment succeeds, hand off to the polling confirmation page.
+  // The Stripe webhook is the SOLE finalizer now — the browser no longer creates the
+  // booking, so there's no /book or /recover race to run. This is identical for card
+  // and iDEAL/Link: the confirmation page polls until the webhook writes + confirms
+  // the booking (or, after a minute, shows a reassuring "your payment is safe" note).
   async function handlePaymentSuccess(paymentIntentId: string) {
-    // Read booking data from sessionStorage FIRST — React state (bookingData) is not
-    // yet populated when this is called from the mount useEffect after an iDEAL redirect.
+    // Resolve the listing slug from sessionStorage (survives a card payment) or React
+    // state, falling back to the prop if both were cleared by the iDEAL bank redirect.
+    let slug = listingSlug
     const stored = sessionStorage.getItem(SESSION_BOOKING_KEY)
-    const data: BookingData | null = stored ? JSON.parse(stored) : bookingData
-    if (!data || !data.selectedSlot) {
-      // sessionStorage was cleared during the iDEAL bank redirect (cross-origin).
-      // Recover server-side from PI metadata + stored pricing quote — no data loss.
-      try {
-        setError(null)
-        const res = await fetch('/api/booking-flow/recover', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ paymentIntentId }),
-        })
-        const result = await res.json()
-        if (result.ok && result.listingSlug) {
-          sessionStorage.removeItem(SESSION_BOOKING_KEY)
-          sessionStorage.removeItem(SESSION_CONTACT_KEY)
-          window.location.href = `/book/${result.listingSlug}/confirmation?payment_intent=${paymentIntentId}`
-          return
-        }
-      } catch {
-        // fall through to the error below
-      }
-      setError('We received your payment but could not complete the booking automatically. A confirmation email is on its way — if it doesn\'t arrive within a few minutes, please contact us at cruise@offcourseamsterdam.com')
-      return
+    if (stored) {
+      try { slug = (JSON.parse(stored) as BookingData).listingSlug ?? listingSlug } catch { /* ignore */ }
+    } else if (bookingData?.listingSlug) {
+      slug = bookingData.listingSlug
     }
+    trackEvent('booking_completed', { listing: slug, payment_intent: paymentIntentId })
+    sessionStorage.removeItem(SESSION_BOOKING_KEY)
+    sessionStorage.removeItem(SESSION_CONTACT_KEY)
+    window.location.href = `/book/${slug}/confirmation?payment_intent=${paymentIntentId}`
+  }
 
-    // Recover contact from sessionStorage (survives iDEAL redirect where React state is lost)
-    let contactData = contact
-    if (!contactData) {
-      const storedContact = sessionStorage.getItem(SESSION_CONTACT_KEY)
-      if (storedContact) {
-        try { contactData = JSON.parse(storedContact) } catch { /* ignore */ }
-      }
-    }
-
-    if (!contactData?.name || !contactData?.email) {
-      setError('Contact information was lost. Please go back and try again.')
-      return
-    }
-
-    try {
-      const customerTypeRatePk = data.category === 'private'
-        ? data.selectedCustomerType?.pk
-        : data.selectedSlot.customerTypes[0]?.pk
-
-      const extrasTotalCents = data.extrasCalculation
-        ? data.extrasCalculation.line_items.reduce((s, li) => s + li.amount_cents, 0)
-        : 0
-      // Prefer the canonical quote total (matches what Stripe actually charged);
-      // fall back to base + extras + cityTax if the quote isn't in memory
-      // (e.g. iDEAL redirect that re-mounted the component before /quote returned).
-      const totalAmount = quote?.totalCents
-        ?? (data.basePriceCents + extrasTotalCents + (data.cityTaxCents ?? 0))
-
-      const res = await fetch('/api/booking-flow/book', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          availPk: data.selectedSlot.pk,
-          customerTypeRatePk,
-          guestCount: data.guests,
-          category: data.category,
-          contact: contactData,
-          note: contactData.specialRequests || undefined,
-          listingId: data.listingId,
-          listingTitle: data.listingTitle,
-          date: data.date,
-          startAt: data.selectedSlot.startAt,
-          endAt: data.selectedSlot.endAt,
-          amountCents: totalAmount,
-          stripePaymentIntentId: paymentIntentId,
-          baseAmountCents: data.basePriceCents,
-          selectedExtraIds: data.selectedExtraIds,
-          extrasSelected: data.extrasCalculation?.line_items ?? [],
-          extrasAmountCents: extrasTotalCents,
-          sessionId: getSessionId(),
-          promoCodeId: promoResult?.promoCodeId,
-          discountAmountCents: promoResult?.discountAmountCents ?? 0,
-        }),
-      })
-
-      const bookingResult = await res.json()
-      if (!bookingResult.ok) {
-        setError('Booking could not be completed. Your payment was received — please contact us at info@offcourseamsterdam.com')
-        return
-      }
-
-      trackEvent('booking_completed', { listing: data.listingSlug, payment_intent: paymentIntentId })
-      sessionStorage.removeItem(SESSION_BOOKING_KEY)
-      sessionStorage.removeItem(SESSION_CONTACT_KEY)
-      window.location.href = `/book/${data.listingSlug}/confirmation?payment_intent=${paymentIntentId}`
-    } catch {
-      setError('Something went wrong creating your booking. Your payment was received — please contact us at info@offcourseamsterdam.com')
-    }
+  // iDEAL return: block the whole checkout UI while the booking is finalised in
+  // the background — otherwise the customer briefly sees the payment form again
+  // and could try to pay twice.
+  if (recovering) {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-20 sm:py-24 text-center">
+        <div className="bg-white rounded-2xl shadow-lg p-8 sm:p-10">
+          <Loader2 className="w-8 h-8 animate-spin text-[var(--color-primary)] mx-auto mb-4" />
+          <h2 className="text-lg font-bold text-zinc-900 mb-2">Finalising your payment…</h2>
+          <p className="text-sm text-zinc-500">
+            We&apos;re confirming your booking with the bank. This usually takes a few
+            seconds — please don&apos;t close this page.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   // Error state
@@ -723,6 +394,18 @@ export function CheckoutFlow({
 
   const boat = BOATS.find(b => b.id === bookingData.selectedBoat)
   const boatName = boat?.name ?? null
+
+  // Per-type ticket breakdown for the checkout summary (adult × N, child × N).
+  // Plain derivation — must stay below the early returns above, so NOT a hook.
+  const ticketBreakdown = bookingData.category === 'shared' && bookingData.selectedSlot
+    ? bookingData.selectedSlot.customerTypes
+        .filter(ct => (bookingData.ticketCounts?.[ct.customerTypePk] ?? 0) > 0)
+        .map(ct => ({
+          label: ct.name || 'Adult',
+          count: bookingData.ticketCounts[ct.customerTypePk],
+          priceCents: ct.priceCents,
+        }))
+    : undefined
   // Prefer the hero image chosen on the virtual listing (what the customer
   // actually browsed), falling back to the boat's stock photo only if unset.
   const boatImageUrl = bookingData.listingHeroImageUrl ?? boat?.imageUrl ?? null
@@ -758,6 +441,13 @@ export function CheckoutFlow({
 
       {/* White card container */}
       <div className="bg-white rounded-2xl shadow-lg p-6 sm:p-8">
+        {/* Test-mode banner — visible only when NEXT_PUBLIC_STRIPE_MODE=test */}
+        {stripeIsTestMode && (
+          <div className="mb-6 rounded-lg bg-yellow-50 border border-yellow-200 px-4 py-2.5 text-sm text-yellow-800 font-medium flex items-center gap-2">
+            🧪 <span><strong>Stripe test mode</strong> — use card <code className="font-mono bg-yellow-100 px-1 rounded">4242 4242 4242 4242</code>, any future expiry, any CVC. No real charges.</span>
+          </div>
+        )}
+
         {/* Progress indicator */}
         <CheckoutProgress step={currentStep} hidePayment={isPartnerInvoice || (promoResult?.isFull ?? false)} />
 
@@ -825,7 +515,7 @@ export function CheckoutFlow({
                   transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
                 >
                   <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'stripe' } }}>
-                    <PaymentForm
+                    <PaymentStep
                       amountCents={totalAmountCents}
                       onSuccess={handlePaymentSuccess}
                       bookingData={bookingData}
@@ -859,6 +549,7 @@ export function CheckoutFlow({
                 cityTaxCents={cityTaxCents > 0 ? cityTaxCents : undefined}
                 cruiseLabel={cruiseLabel}
                 discountAmountCents={discountAmountCents > 0 ? discountAmountCents : undefined}
+                ticketBreakdown={ticketBreakdown}
               />
               {/* Cancellation cutoff card — only shown when there's a useful upcoming deadline (full or 50% refund). */}
               {cancellationTiers && cancellationTiers.length > 0 && bookingData.selectedSlot.startAt && (

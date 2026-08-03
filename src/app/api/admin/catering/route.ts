@@ -20,7 +20,7 @@ export async function GET() {
           stripe_amount, deposit_amount_cents, catering_email_sent_at,
           created_at, fareharbor_customer_type_rate_pk, customer_type_name
         `)
-        .in('status', ['confirmed', 'booked'])
+        .in('status', ['confirmed', 'booked', 'cancelled'])
         .order('booking_date', { ascending: false }),
       supabase
         .from('fareharbor_items')
@@ -38,9 +38,12 @@ export async function GET() {
       }
     }
 
-    // Filter to bookings that have at least one food item (drinks-only excluded)
+    // Filter to bookings that have at least one food item (drinks-only excluded).
+    // Include cancelled bookings only if a catering email was already sent —
+    // those need to appear so the team knows to notify the supplier.
     const cateringBookings = (bookingsResult.data ?? []).filter(b =>
-      hasFood(b.extras_selected as never)
+      hasFood(b.extras_selected as never) &&
+      (b.status !== 'cancelled' || !!b.catering_email_sent_at)
     )
 
     const totalRevenueCents = cateringBookings.reduce(

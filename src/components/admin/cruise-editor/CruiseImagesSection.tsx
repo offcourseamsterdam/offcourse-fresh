@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useMemo } from 'react'
 import { Loader2, GripVertical, Copy, ChevronDown, Check } from 'lucide-react'
 import { TabSaveButton } from './TabSaveButton'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 import {
   DndContext,
   closestCenter,
@@ -142,20 +143,16 @@ export function CruiseImagesSection({ listing, onSave }: CruiseTabProps) {
   const inputRef = useRef<HTMLInputElement>(null)
 
   // Copy-from-listing state
-  const [otherListings, setOtherListings] = useState<OtherListing[]>([])
   const [copyDropdownOpen, setCopyDropdownOpen] = useState(false)
   const [copying, setCopying] = useState(false)
   const [copySuccess, setCopySuccess] = useState(false)
 
-  useEffect(() => {
-    fetch('/api/admin/cruise-listings')
-      .then(r => r.json())
-      .then(json => {
-        const all: OtherListing[] = json.data?.listings ?? json.data ?? []
-        setOtherListings(all.filter(l => l.id !== listing.id && Array.isArray(l.images) && l.images.length > 0))
-      })
-      .catch(() => {})
-  }, [listing.id])
+  const { data: cruiseListingsData } = useAdminFetch<unknown>('/api/admin/cruise-listings')
+  const otherListings = useMemo(() => {
+    const raw = cruiseListingsData as { listings?: OtherListing[] } | OtherListing[] | undefined
+    const all: OtherListing[] = Array.isArray(raw) ? raw : raw?.listings ?? []
+    return all.filter(l => l.id !== listing.id && Array.isArray(l.images) && l.images.length > 0)
+  }, [cruiseListingsData, listing.id])
 
   // Require 8px movement before dragging starts — prevents accidental drags on click
   const sensors = useSensors(

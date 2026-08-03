@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
+import { locales, defaultLocale } from '@/lib/i18n/config'
 
-const DEFAULT_LOCALE = 'en'
-const LOCALE_RE = /^\/(en|nl|de|fr|es|pt|zh)(\/|$)/
+// Built from the canonical locales list (src/lib/i18n/config.ts) — proxy.ts is
+// the routing gate, so a hardcoded copy here that drifts from that list would
+// silently break locale routing for any locale added later.
+const LOCALE_RE = new RegExp(`^/(${locales.join('|')})(/|$)`)
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -33,7 +36,7 @@ export async function proxy(request: NextRequest) {
   const match = pathname.match(LOCALE_RE)
   if (!match) {
     const url = request.nextUrl.clone()
-    url.pathname = `/${DEFAULT_LOCALE}${pathname}`
+    url.pathname = `/${defaultLocale}${pathname}`
     return NextResponse.redirect(url)
   }
 
