@@ -3,6 +3,7 @@ import { Footer } from '@/components/layout/Footer'
 import { WhatsAppButton } from '@/components/layout/WhatsAppButton'
 import { CookieBanner } from '@/components/tracking/CookieBanner'
 import { GoogleTag } from '@/components/tracking/GoogleTag'
+import { ClarityTag } from '@/components/tracking/ClarityTag'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://offcourseamsterdam.com'
@@ -50,6 +51,7 @@ export default async function PublicLayout({ children }: { children: React.React
       <WhatsAppButton />
       <CookieBanner />
       <GoogleTag />
+      <ClarityTag />
     </>
   )
 }
