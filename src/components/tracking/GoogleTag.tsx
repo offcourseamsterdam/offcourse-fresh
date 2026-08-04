@@ -63,7 +63,8 @@ export function GoogleTag() {
               ad_personalization:   'denied',
               wait_for_update:      500,
             });
-            // Consent update helper — called by CookieBanner when user chooses
+            // Consent update helper — called by CookieBanner when user chooses.
+            // Fans out to every tracking script present, not just this one.
             window.ocUpdateConsent = function(granted) {
               var state = granted ? 'granted' : 'denied';
               gtag('consent', 'update', {
@@ -72,6 +73,9 @@ export function GoogleTag() {
                 ad_user_data:         state,
                 ad_personalization:   state,
               });
+              if (window.clarity) {
+                window.clarity('consentv2', { ad_Storage: state, analytics_Storage: state });
+              }
             };
           `,
         }}
