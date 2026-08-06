@@ -1,12 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Ghost, Loader2, X } from 'lucide-react'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { ConversationList, type StatusFilter } from './ConversationList'
 import { ThreadPane } from './ThreadPane'
 import { ContextPane } from './ContextPane'
+import { CallButton } from './CallButton'
 import type { InboxConversationDetail, InboxListItem } from './types'
 
 /**
@@ -23,6 +24,9 @@ export default function AdminInboxPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   // "Use this draft" in the Ghost co-pilot drops text into the thread composer.
   const [composerPrefill, setComposerPrefill] = useState<string | null>(null)
+  // Below xl, the customer/Ghost pane isn't docked beside the thread — it opens
+  // as a bottom drawer instead, so it's still reachable on tablet/mobile widths.
+  const [mobileContextOpen, setMobileContextOpen] = useState(false)
 
   const list = useAdminFetch<{ conversations: InboxListItem[] }>(
     `/api/admin/inbox/conversations?status=${statusFilter}`,
@@ -34,17 +38,33 @@ export default function AdminInboxPage() {
   )
 
   const conversations = list.data?.conversations ?? []
+  const ghost = detail.data?.ghost
+  const hasGhostAction = !!(
+    ghost?.replyDraft ||
+    ghost?.bookingProposal ||
+    ghost?.bookingCorrection ||
+    ghost?.otaAvailability ||
+    ghost?.otaBookingReady
+  )
 
   function refreshAll() {
     detail.refresh()
     list.refresh()
   }
 
+  function selectConversation(id: string | null) {
+    setSelectedId(id)
+    setMobileContextOpen(false)
+  }
+
   return (
     <div className="p-4 sm:p-6 h-[calc(100vh-0px)] flex flex-col">
-      <div className="mb-4">
-        <h1 className="text-2xl font-semibold text-zinc-900">Inbox</h1>
-        <p className="text-sm text-zinc-500 mt-1">Every customer conversation, one place.</p>
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-zinc-900">Inbox</h1>
+          <p className="text-sm text-zinc-500 mt-1">Every customer conversation, one place.</p>
+        </div>
+        <CallButton />
       </div>
 
       <AdminErrorBanner error={list.error ?? detail.error} />
@@ -65,11 +85,12 @@ export default function AdminInboxPage() {
               conversations={conversations}
               selectedId={selectedId}
               statusFilter={statusFilter}
-              onSelect={setSelectedId}
+              onSelect={selectConversation}
               onFilterChange={f => {
                 setStatusFilter(f)
-                setSelectedId(null)
+                selectConversation(null)
               }}
+              onStatusChanged={refreshAll}
             />
           </div>
 
@@ -85,19 +106,52 @@ export default function AdminInboxPage() {
               <ThreadPane
                 detail={detail.data}
                 onSent={refreshAll}
-                onBack={() => setSelectedId(null)}
+                onBack={() => selectConversation(null)}
                 prefill={composerPrefill}
                 onPrefillConsumed={() => setComposerPrefill(null)}
+                onOpenContext={() => setMobileContextOpen(true)}
+                contextHasAction={hasGhostAction}
               />
             )}
           </div>
 
-          {/* Right — customer context (desktop only; xl) */}
+          {/* Right — customer context, docked from xl up */}
           {selectedId && detail.data && (
             <div className="hidden xl:block w-72 border-l border-zinc-100 shrink-0">
               <ContextPane detail={detail.data} onChanged={refreshAll} onUseDraft={setComposerPrefill} />
             </div>
           )}
+        </div>
+      )}
+
+      {/* Below xl, the same pane opens as a bottom drawer instead of being docked. */}
+      {mobileContextOpen && selectedId && detail.data && (
+        <div className="xl:hidden fixed inset-0 z-50 flex flex-col justify-end">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setMobileContextOpen(false)} />
+          <div className="relative bg-white rounded-t-2xl shadow-xl max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100 shrink-0">
+              <p className="text-sm font-semibold text-zinc-900 flex items-center gap-1.5">
+                <Ghost className="w-4 h-4 text-violet-500" /> Details
+              </p>
+              <button
+                onClick={() => setMobileContextOpen(false)}
+                aria-label="Close"
+                className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <ContextPane
+                detail={detail.data}
+                onChanged={refreshAll}
+                onUseDraft={text => {
+                  setComposerPrefill(text)
+                  setMobileContextOpen(false)
+                }}
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>

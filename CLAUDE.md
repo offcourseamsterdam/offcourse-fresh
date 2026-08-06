@@ -304,6 +304,35 @@ Use clear headings, short paragraphs, and code snippets where helpful. Write for
 
 The Ghost is the shadow-mode AI layer (see `docs/plans/ai-operations-vision.md` §8-B2 and `/admin/ghost`). It reads the database (never the UI), drafts what it *would* do as rows in `agent_proposals` with status `'shadow'`, and never executes anything. Current kinds: `reply_draft` (per inbound chat message), `schedule_day` + `catering_order` (daily `/api/cron/ghost-ops`).
 
+### The direction this branch is building toward (read before starting new Ghost work)
+
+The end goal is a single AI operations agent that runs day-to-day operations
+itself — not a pile of separate one-off automations. Each domain (booking,
+scheduling, catering, inbox, stock) keeps its own responsibility and its own
+agent, but the domains must **hand off to each other directly**, the way a
+real ops team would, instead of each one working in isolation:
+
+- A booking comes in → the catering agent checks if an order needs to go out
+  → the scheduling agent checks if a captain needs assigning for that slot.
+- A captain gets assigned and told **at the right moment** — not the instant
+  the AI decides, but when it's actually useful to hear it (e.g. the day
+  before), because telling someone too early just means telling them again
+  later as the schedule shifts.
+- The system should be able to say, in one place, both **what already
+  happened** (bookings confirmed, captains assigned, questions answered) and
+  **what's coming** (tomorrow's schedule, who's not yet confirmed, what's
+  still open in the inbox) — a single operational picture, not five separate
+  dashboards that don't talk to each other.
+
+This is being built incrementally, one real handoff at a time, not delivered
+as one big system. The proactive captain-scheduling work (assign
+automatically from a booking → hold the notification → send it only once
+Beer confirms, so a captain isn't told prematurely and then corrected) is the
+first concrete piece of this: a booking event triggering a scheduling
+decision, with timing treated as a first-class part of the decision, not an
+afterthought. Whenever you build the next piece, ask: what upstream event
+should trigger this, and what downstream agent needs to know once it's done?
+
 The Ghost is organized as **agents** (one per operation domain — registry in `src/lib/ghost/agents.ts`; inbox/booking/catering/scheduling active, maintenance/storage planned). Agentic runs use the Anthropic tool-use loop in `src/lib/ghost/agent-runtime.ts` with read-only tools from `src/lib/ghost/tools.ts`; the agent's terminal `submit_*` tool call IS the proposal (no JSON parsing).
 
 ### When adding ANY new operational feature or admin action, answer two questions:

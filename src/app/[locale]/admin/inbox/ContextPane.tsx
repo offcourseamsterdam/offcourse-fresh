@@ -1,9 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { CalendarDays, CalendarPlus, Check, Ghost, Globe, Languages, Loader2, Mail, Phone, Sparkles } from 'lucide-react'
+import { useParams, useRouter } from 'next/navigation'
+import { CalendarDays, CalendarPlus, Check, CheckCircle2, Download, Ghost, Globe, Languages, Loader2, Mail, Phone, Plus, Sparkles, XCircle } from 'lucide-react'
 import { adminMutate } from '@/hooks/useAdminSave'
 import { replySimilarity } from '@/lib/ghost/similarity'
+import { fmtAdminDate, fmtAdminTime } from '@/lib/admin/format'
+import { OTA_PLATFORM_NAME } from '@/lib/ota/detect'
+import { pickCheapestPrivateOption } from '@/lib/ota/availability-shape'
 import type { InboxConversationDetail, InboxGhostProposal } from './types'
 
 const NL_EN = /^(english|dutch|en|nl)$/i
@@ -35,6 +39,14 @@ export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
   const { conversation, bookings, ghost } = detail
   const contact = conversation.contact
   const [saving, setSaving] = useState(false)
+  // The booking Ghost found by name/date when the contact's own email doesn't
+  // match what's on file (a typo) — so it's absent from the email-matched
+  // `bookings` list above. Don't show it twice if it's already in there.
+  const correctionBookingId = ghost?.bookingCorrection?.payload.correction?.booking_id
+  const foundCorrectionBooking =
+    correctionBookingId && !bookings.some(b => b.id === correctionBookingId)
+      ? ghost?.bookingCorrection?.payload.correction
+      : undefined
 
   async function setStatus(status: (typeof STATUS_OPTIONS)[number]) {
     if (status === conversation.status || saving) return
@@ -50,7 +62,7 @@ export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
   return (
     <div className="h-full overflow-y-auto p-4 space-y-5">
       {/* Ghost co-pilot — act on what the agent suggests, where the work happens */}
-      {(ghost?.replyDraft || ghost?.bookingProposal) && (
+      {(ghost?.replyDraft || ghost?.bookingProposal || ghost?.bookingCorrection || ghost?.otaAvailability || ghost?.otaBookingReady || ghost?.fhImportReady) && (
         <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-3">
           <p className="text-[10px] font-semibold tracking-widest uppercase text-violet-500 mb-2 inline-flex items-center gap-1.5">
             <Ghost className="w-3.5 h-3.5" /> Ghost co-pilot
@@ -59,6 +71,10 @@ export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
             <SuggestedReply proposal={ghost.replyDraft} onUseDraft={onUseDraft} onChanged={onChanged} />
           )}
           {ghost.bookingProposal && <BookingApproval proposal={ghost.bookingProposal} onChanged={onChanged} />}
+          {ghost.bookingCorrection && <BookingCorrectionApproval proposal={ghost.bookingCorrection} onChanged={onChanged} />}
+          {ghost.otaAvailability && <OtaAvailabilityCard proposal={ghost.otaAvailability} />}
+          {ghost.otaBookingReady && <OtaBookingReadyCard proposal={ghost.otaBookingReady} />}
+          {ghost.fhImportReady && <FhImportReadyCard proposal={ghost.fhImportReady} onChanged={onChanged} />}
           {ghost.history.length > 0 && <LearningTrail history={ghost.history} />}
         </div>
       )}
@@ -116,11 +132,30 @@ export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
         )}
       </div>
 
-      {/* Bookings */}
+      {/* Bookings — matched by contact email, plus any Ghost found by name/date
+          when the contact's email doesn't match what's on the booking (a typo). */}
       <div>
         <p className="text-[10px] font-semibold tracking-widest uppercase text-zinc-400 mb-2">Bookings</p>
-        {bookings.length === 0 && <p className="text-xs text-zinc-400">No bookings found for this customer.</p>}
+        {bookings.length === 0 && !foundCorrectionBooking && (
+          <p className="text-xs text-zinc-400">No bookings found for this customer.</p>
+        )}
         <div className="space-y-2">
+          {foundCorrectionBooking && (
+            <div className="rounded-lg border border-violet-200 bg-violet-50/40 px-3 py-2">
+              <p className="text-[9px] font-semibold uppercase tracking-wide text-violet-500 mb-1 inline-flex items-center gap-1">
+                <Ghost className="w-3 h-3" /> Found by Ghost — email on file differs
+              </p>
+              <p className="text-xs font-semibold text-zinc-800 flex items-center gap-1.5">
+                <CalendarDays className="w-3 h-3 text-zinc-400" />
+                {fmtAdminDate(foundCorrectionBooking.booking_date ?? null)}
+                {foundCorrectionBooking.start_time ? ` · ${fmtAdminTime(foundCorrectionBooking.start_time)}` : ''}
+              </p>
+              <p className="text-xs text-zinc-500 mt-0.5 truncate">{foundCorrectionBooking.listing_title ?? 'Cruise'}</p>
+              {foundCorrectionBooking.guest_count && (
+                <p className="text-[11px] text-zinc-400 mt-0.5">{foundCorrectionBooking.guest_count} guests</p>
+              )}
+            </div>
+          )}
           {bookings.map(b => (
             <div key={b.id} className="rounded-lg border border-zinc-200 px-3 py-2">
               <p className="text-xs font-semibold text-zinc-800 flex items-center gap-1.5">
@@ -202,6 +237,194 @@ function SuggestedReply({
   )
 }
 
+/**
+ * A new OTA booking request — read-only. There is no "reply" to send
+ * (Withlocals/GetMyBoat handle all guest communication themselves), so
+ * unlike SuggestedReply/BookingApproval this card has no action button —
+ * just the facts, plus the real availability-check result driven by the
+ * actual tool call, not AI prose. See lib/ota/handle-message.ts.
+ */
+function OtaAvailabilityCard({ proposal }: { proposal: InboxGhostProposal }) {
+  const p = proposal.payload
+  const platform = p.platform ? (OTA_PLATFORM_NAME[p.platform as keyof typeof OTA_PLATFORM_NAME] ?? p.platform) : 'OTA'
+  const req = p.requested
+  const { bookable: hasBookable, cheapest } = pickCheapestPrivateOption(p.availability?.listings)
+  const bookable = p.checked ? hasBookable : null
+
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 mb-1">
+        {platform} booking request{p.booking_ref ? ` · ref ${p.booking_ref}` : ''}
+      </p>
+      <div className="rounded-lg bg-white border border-violet-100 px-3 py-2 text-xs text-zinc-700 space-y-1">
+        {req && (
+          <p className="flex items-center gap-1.5">
+            <CalendarDays className="w-3 h-3 text-zinc-400 shrink-0" />
+            {req.date ?? 'date unclear'}
+            {req.time ? ` · ${req.time}` : ''}
+            {req.guests ? ` · ${req.guests} guests` : ''}
+          </p>
+        )}
+        <p className="flex items-center gap-1.5">
+          {bookable === true && <CheckCircle2 className="w-3.5 h-3.5 text-green-600 shrink-0" />}
+          {bookable === false && <XCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />}
+          {bookable === true && (
+            <span className="text-green-700">
+              Bookable{cheapest ? ` — ${cheapest.name}, from €${cheapest.price_eur}` : ''}
+            </span>
+          )}
+          {bookable === false && <span className="text-red-600">Not available as a private cruise at this time</span>}
+          {bookable === null && <span className="text-zinc-400">Availability could not be checked</span>}
+        </p>
+      </div>
+      <p className="mt-1.5 text-[11px] text-zinc-400">
+        This is a platform notification, not a customer message — respond/confirm on {platform}&apos;s own site.
+      </p>
+    </div>
+  )
+}
+
+/**
+ * The guest already paid on the OTA's platform, and this booking doesn't
+ * exist in FareHarbor yet — the boat's capacity for this slot isn't actually
+ * reserved until someone creates it. "Create booking" deep-links into the
+ * normal admin booking tool with the known details pre-filled; it deliberately
+ * does not auto-construct the FareHarbor booking itself (no reliable way yet
+ * to resolve the OTA's stated experience name to an exact listing/rate pk
+ * without a human's eyes on it).
+ */
+function OtaBookingReadyCard({ proposal }: { proposal: InboxGhostProposal }) {
+  const params = useParams()
+  const locale = params.locale as string
+  const router = useRouter()
+  const p = proposal.payload
+  const platform = p.platform ? (OTA_PLATFORM_NAME[p.platform as keyof typeof OTA_PLATFORM_NAME] ?? p.platform) : 'OTA'
+  const parsed = p.parsed
+
+  // Pre-fills the manual booking tool with what the OTA's own confirmation
+  // email already gave us (date, guest count, guest's first name, a note with
+  // the OTA reference) — not a one-click auto-book. Picking the actual
+  // FareHarbor listing/time slot and entering payment (Withlocals is already
+  // an admin-selectable booking source, so no capacity gets double-charged)
+  // still happens by hand on that page, same as any other booking; this just
+  // saves re-typing what's already known. See BOOKING_SOURCES in constants.ts.
+  function createBooking() {
+    const query = new URLSearchParams()
+    query.set('otaPlatform', p.platform ?? 'other')
+    if (parsed?.dateISO) query.set('date', parsed.dateISO)
+    if (parsed?.guests) query.set('guests', String(parsed.guests))
+    if (p.guest_name) query.set('guestName', p.guest_name)
+    if (p.booking_ref) query.set('otaRef', p.booking_ref)
+    router.push(`/${locale}/admin/fareharbor?${query.toString()}`)
+  }
+
+  return (
+    <div className="mt-2 pt-2 border-t border-violet-100">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 mb-1">
+        {platform} booking confirmed{p.booking_ref ? ` · ref ${p.booking_ref}` : ''}
+      </p>
+      <div className="rounded-lg bg-white border border-emerald-100 px-3 py-2 text-xs text-zinc-700 space-y-1">
+        <p className="flex items-center gap-1.5 text-emerald-700 font-semibold">
+          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> Guest already paid on {platform}
+        </p>
+        {parsed && (
+          <p className="flex items-center gap-1.5 text-zinc-600">
+            <CalendarDays className="w-3 h-3 text-zinc-400 shrink-0" />
+            {parsed.date ?? 'date unclear'}
+            {parsed.time ? ` · ${parsed.time}` : ''}
+            {parsed.guests ? ` · ${parsed.guests} guests` : ''}
+          </p>
+        )}
+      </div>
+      <button
+        onClick={createBooking}
+        className="mt-1.5 w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 text-xs font-semibold transition-colors"
+      >
+        <Plus className="w-3.5 h-3.5" /> Create booking
+      </button>
+      <p className="mt-1.5 text-[11px] text-zinc-400">
+        Opens the booking tool with the date, guest count, and name pre-filled — pick the real FareHarbor slot and
+        confirm there. This guest paid on {platform}, not through us, so no payment is collected again.
+      </p>
+    </div>
+  )
+}
+
+/**
+ * A 3rd-party API (so far: GetYourGuide) already created this booking
+ * directly inside FareHarbor — no reply to send, and nothing to create
+ * either (unlike OtaBookingReadyCard above, where nothing exists in
+ * FareHarbor yet). The gap here is one level down: it just hasn't been
+ * pulled into our own database, so Bookings/Scheduling/Planning don't know
+ * about it. "Import booking" re-fetches it live from FareHarbor and inserts
+ * the matching row — see lib/fareharbor/import-booking.ts.
+ */
+function FhImportReadyCard({ proposal, onChanged }: { proposal: InboxGhostProposal; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const p = proposal.payload
+  const platform = p.platform ? (OTA_PLATFORM_NAME[p.platform as keyof typeof OTA_PLATFORM_NAME] ?? p.platform) : 'FareHarbor'
+  const parsed = p.parsed
+  const executed = proposal.status === 'executed'
+
+  async function importBooking() {
+    setBusy(true)
+    setError(null)
+    try {
+      await adminMutate(`/api/admin/ghost/proposals/${proposal.id}`, 'POST', { action: 'import_fh_booking' })
+      onChanged()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not import this booking')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mt-2 pt-2 border-t border-violet-100">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 mb-1">
+        {platform} booking · already in FareHarbor{p.booking_ref ? ` · #${p.booking_ref}` : ''}
+      </p>
+      <div className="rounded-lg bg-white border border-amber-100 px-3 py-2 text-xs text-zinc-700 space-y-1">
+        <p className="flex items-center gap-1.5 text-amber-700 font-semibold">
+          <Download className="w-3.5 h-3.5 shrink-0" /> Not yet in our database
+        </p>
+        {parsed && (
+          <p className="flex items-center gap-1.5 text-zinc-600">
+            <CalendarDays className="w-3 h-3 text-zinc-400 shrink-0" />
+            {parsed.date ?? 'date unclear'}
+            {parsed.time ? ` · ${parsed.time}` : ''}
+            {parsed.guests ? ` · ${parsed.guests} guests` : ''}
+            {parsed.experienceName ? ` · ${parsed.experienceName}` : ''}
+          </p>
+        )}
+      </div>
+
+      {executed ? (
+        <p className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
+          <Check className="w-3.5 h-3.5" /> Imported from {platform}
+        </p>
+      ) : (
+        <button
+          onClick={importBooking}
+          disabled={busy}
+          className="mt-1.5 w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white px-3 py-2 text-xs font-semibold transition-colors disabled:opacity-50"
+        >
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />} Import booking
+        </button>
+      )}
+      <p className="mt-1.5 text-[11px] text-zinc-400">
+        Pulls the real details from FareHarbor and adds it to Bookings, Scheduling and Planning. {platform} already collected
+        payment — no charge happens here.
+      </p>
+      {/* Only ever meaningful before success — a stale error from a rejected
+          double-click must not linger once the first request's own response
+          comes back and flips this to executed. */}
+      {!executed && error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+    </div>
+  )
+}
+
 /** The per-conversation learning trail: past drafts vs what you actually sent. */
 function LearningTrail({ history }: { history: InboxGhostProposal[] }) {
   const [open, setOpen] = useState(false)
@@ -234,14 +457,28 @@ function LearningTrail({ history }: { history: InboxGhostProposal[] }) {
   )
 }
 
-/** The two-step "this creates a REAL booking" confirm, shared by the primary + each alternative. */
-function ConfirmCreate({ onYes, onCancel, busy }: { onYes: () => void; onCancel: () => void; busy: boolean }) {
+/** The two-step "this touches a REAL booking" confirm, shared by the primary + each alternative. */
+function ConfirmCreate({
+  onYes,
+  onCancel,
+  busy,
+  message = (
+    <>
+      This creates a <span className="font-semibold">real FareHarbor booking</span> (recorded as complimentary — no
+      payment taken) and sends the customer a confirmation email. Continue?
+    </>
+  ),
+  confirmLabel = 'Yes, create it',
+}: {
+  onYes: () => void
+  onCancel: () => void
+  busy: boolean
+  message?: React.ReactNode
+  confirmLabel?: string
+}) {
   return (
     <div className="mt-1.5">
-      <p className="text-[11px] text-zinc-500 mb-1.5">
-        This creates a <span className="font-semibold">real FareHarbor booking</span> (recorded as complimentary — no
-        payment taken) and sends the customer a confirmation email. Continue?
-      </p>
+      <p className="text-[11px] text-zinc-500 mb-1.5">{message}</p>
       <div className="flex items-center gap-2">
         <button
           onClick={onYes}
@@ -249,7 +486,7 @@ function ConfirmCreate({ onYes, onCancel, busy }: { onYes: () => void; onCancel:
           className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50"
         >
           {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CalendarPlus className="w-3.5 h-3.5" />}
-          Yes, create it
+          {confirmLabel}
         </button>
         <button onClick={onCancel} disabled={busy} className="text-xs text-zinc-500 hover:text-zinc-700">
           Cancel
@@ -347,6 +584,76 @@ function BookingApproval({ proposal, onChanged }: { proposal: InboxGhostProposal
             ))}
           </div>
         </div>
+      )}
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+    </div>
+  )
+}
+
+const CORRECTION_FIELD_LABEL: Record<string, string> = {
+  customer_email: 'email address',
+}
+
+/**
+ * The contact-fix action: approve a booking_correction → patch the matched
+ * booking's contact field and resend its confirmation email. Never creates
+ * or cancels a booking — same atomic-claim shape as BookingApproval above,
+ * just a narrower blast radius (one column on one existing row).
+ */
+function BookingCorrectionApproval({ proposal, onChanged }: { proposal: InboxGhostProposal; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState(false)
+  const c = proposal.payload.correction
+  const executed = proposal.status === 'executed'
+  if (!c?.new_value) return null
+  const fieldLabel = (c.field && CORRECTION_FIELD_LABEL[c.field]) ?? c.field ?? 'contact detail'
+
+  async function apply() {
+    setBusy(true)
+    setError(null)
+    try {
+      await adminMutate(`/api/admin/ghost/proposals/${proposal.id}`, 'POST', { action: 'correct_booking' })
+      onChanged()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not apply the correction')
+      setConfirming(false)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mt-2 pt-2 border-t border-violet-100">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 mb-1">Found their real booking</p>
+      <div className="rounded-lg bg-white border border-indigo-100 px-3 py-2 text-xs text-indigo-900">
+        Correct the {fieldLabel} on their booking to <span className="font-semibold">{c.new_value}</span>
+      </div>
+
+      {executed ? (
+        <p className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
+          <Check className="w-3.5 h-3.5" /> Corrected &amp; confirmation resent
+        </p>
+      ) : confirming ? (
+        <ConfirmCreate
+          onYes={apply}
+          onCancel={() => setConfirming(false)}
+          busy={busy}
+          message={
+            <>
+              This updates the {fieldLabel} on their <span className="font-semibold">existing booking</span> and
+              resends the confirmation email. Continue?
+            </>
+          }
+          confirmLabel="Yes, apply it"
+        />
+      ) : (
+        <button
+          onClick={() => setConfirming(true)}
+          className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-indigo-700"
+        >
+          <CalendarPlus className="w-3.5 h-3.5" /> Approve &amp; resend confirmation
+        </button>
       )}
       {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
     </div>

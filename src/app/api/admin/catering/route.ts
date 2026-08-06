@@ -17,7 +17,7 @@ export async function GET() {
           customer_name, customer_email, booking_date, start_time,
           guest_count, category, status, booking_source,
           extras_selected, base_amount_cents, extras_amount_cents,
-          stripe_amount, deposit_amount_cents, catering_email_sent_at,
+          stripe_amount, deposit_amount_cents, catering_email_sent_at, catering_confirmed_at,
           created_at, fareharbor_customer_type_rate_pk, customer_type_name
         `)
         .in('status', ['confirmed', 'booked', 'cancelled'])

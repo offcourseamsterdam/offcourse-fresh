@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { alertCronFailure } from './alert'
-import { postSlackText } from '@/lib/slack/send-notification'
+import { postSlackText, postSlackDM } from '@/lib/slack/send-notification'
 
 vi.mock('@/lib/slack/send-notification', () => ({
   postSlackText: vi.fn().mockResolvedValue(undefined),
+  postSlackDM: vi.fn().mockResolvedValue(true),
 }))
 
 describe('alertCronFailure', () => {
@@ -33,5 +34,18 @@ describe('alertCronFailure', () => {
     const err = new Error('boom')
     await alertCronFailure('ads-guardrail', err)
     expect(console.error).toHaveBeenCalledWith('[cron/ads-guardrail] FAILED:', err)
+  })
+
+  it('sends to Beer\'s DM instead of the shared channel when dmOnly is set, with no channel fallback', async () => {
+    await alertCronFailure('gmail-inbox-sync', new Error('fetch failed'), undefined, { dmOnly: true })
+    expect(postSlackDM).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(postSlackDM).mock.calls[0][0]).toContain('gmail-inbox-sync')
+    expect(postSlackText).not.toHaveBeenCalled()
+  })
+
+  it('posts to the shared channel (not the DM) when dmOnly is not set', async () => {
+    await alertCronFailure('payment-reminders', new Error('boom'))
+    expect(postSlackText).toHaveBeenCalledTimes(1)
+    expect(postSlackDM).not.toHaveBeenCalled()
   })
 })

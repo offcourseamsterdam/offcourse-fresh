@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { normalizePhoneE164 } from '@/lib/phone/normalize'
 
 // Enhanced conversions: hashed first-party identifiers attached to a conversion
 // so Google can match the sale to an ad click even when the gclid is missing
@@ -32,21 +33,6 @@ export function normalizeEmail(raw: string): string | null {
   }
   if (!local) return null
   return `${local}@${domain}`
-}
-
-/**
- * Best-effort E.164 normalization. Defaults unknown numbers to NL (+31), since
- * that's most of the customer base; foreign numbers entered in local format
- * simply won't match (harmless — Google ignores non-matches).
- */
-export function normalizePhoneE164(raw: string, defaultCountry = '31'): string | null {
-  const cleaned = raw.replace(/[^\d+]/g, '')
-  if (!cleaned || cleaned.replace(/\D/g, '').length < 6) return null
-  if (cleaned.startsWith('+')) return cleaned
-  if (cleaned.startsWith('00')) return `+${cleaned.slice(2)}`
-  if (cleaned.startsWith('0')) return `+${defaultCountry}${cleaned.slice(1)}`
-  if (cleaned.startsWith(defaultCountry)) return `+${cleaned}`
-  return `+${defaultCountry}${cleaned}`
 }
 
 /** Build the hashed userIdentifiers array from whatever first-party data we have. */

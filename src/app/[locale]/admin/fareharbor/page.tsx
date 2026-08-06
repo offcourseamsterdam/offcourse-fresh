@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { ratePrice } from '@/components/admin/fareharbor/helpers'
 import { StepBar } from '@/components/admin/fareharbor/StepBar'
 import { DateListingsStep } from '@/components/admin/fareharbor/DateListingsStep'
@@ -28,6 +29,7 @@ declare global {
 
 export default function BookingFlowPage() {
   const today = toAmsDateStr()
+  const searchParams = useSearchParams()
 
   // Step state
   const [step, setStep] = useState(1)
@@ -111,6 +113,36 @@ export default function BookingFlowPage() {
       setInvoiceSuggestionNote(null)
     }
   }, [bookingSource])
+
+  // Pre-fill from an OTA "create booking" link (ContextPane's OtaBookingReadyCard)
+  // — a Withlocals/GetMyBoat guest already paid on the platform, so this is
+  // just saving Beer from re-typing what the confirmation email already gave
+  // us. Deliberately does NOT touch the listing/slot/rate selection (step 1-2)
+  // — that still requires picking the real FareHarbor availability by hand,
+  // same as any other booking. Runs once on mount only (an intentionally
+  // empty dependency array): this is a one-time deep-link prefill, not a
+  // live sync with the URL — the admin should be free to edit any field
+  // afterward without it snapping back.
+  useEffect(() => {
+    const otaPlatform = searchParams.get('otaPlatform')
+    if (!otaPlatform) return
+    const otaSource = otaPlatform === 'withlocals' ? 'withlocals' : 'complimentary'
+    setBookingSource(otaSource)
+    const date = searchParams.get('date')
+    if (date) setDate(date)
+    const guests = Number(searchParams.get('guests'))
+    if (guests > 0) setGuestCount(guests)
+    const guestName = searchParams.get('guestName')
+    const otaRef = searchParams.get('otaRef')
+    setContact(c => ({
+      ...c,
+      name: guestName ?? c.name,
+      note: otaRef
+        ? `${otaPlatform} booking ref ${otaRef} — guest already paid on the platform, no direct contact details available.`
+        : c.note,
+    }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Pre-fill recovery amount with the calculated grand total when entering step 5
   useEffect(() => {

@@ -146,6 +146,77 @@ shadow→approve pattern as booking alternatives). Tests: `extraPriceLabel` +
 `compactExtras` in `src/lib/ghost/tools.test.ts`; the DB query path verified
 against live data.
 
+## Booking correction ("I already booked, but my email has a typo")
+
+A recurring failure mode: a customer emails from an address that isn't on
+their booking (a typo, a different inbox). `get_customer_bookings` matches by
+the *contact's* email, so it comes back empty — the old behavior was to tell
+the customer "no booking found," which is both wrong and a bad experience for
+someone who already paid.
+
+- **Finding the real booking** — `search_bookings_by_details` (`src/lib/ghost/tools.ts`)
+  is a new read-only tool: fuzzy `ilike` on `customer_name` (+ optional exact
+  `date` / `ilike` `boat`), returns up to 5 candidates newest-first including
+  `email_on_booking` so the agent can compare it against what the customer
+  typed. A RULES line in `shadow-drafter.ts` tells the agent: if the customer
+  claims an existing paid booking but their own email draws a blank, call this
+  tool with their name before concluding nothing exists — and if it returns
+  more than one plausible match or a weak match, ask the customer to confirm
+  rather than guess on a stranger's paid booking.
+- **Proposing the fix** — a new submit-tool, `submit_booking_correction`
+  (alongside `submit_reply_draft` / `submit_booking`), used only after exactly
+  one confident match. It carries the reply text plus a `correction` object:
+  `booking_id` (must come from the tool, never invented), `field` (currently
+  only `customer_email`), `new_value`, and — so the human doesn't have to look
+  the booking up again to recognize it — `booking_date`, `start_time`,
+  `listing_title`, `guest_count` copied straight from the tool result. This
+  becomes an `agent_proposals` row with `kind: 'booking_correction'`,
+  registered in `src/lib/ghost/agents.ts` at a permanent `AUTONOMY_CEILING` of
+  `'ask'` (same reasoning as `booking_proposal`: it touches someone's paid
+  record and a confirmation email goes out, so it never graduates to
+  autonomous).
+- **Applying it** — a new `correct_booking` action on
+  `src/app/api/admin/ghost/proposals/[id]/route.ts`, same shape as `book`:
+  runtime autonomy guard, atomic claim (`shadow`→`booking`, so a double-click
+  can't apply it twice), validates the email format, patches
+  `bookings.customer_email`, calls the existing `sendConfirmationEmail` (no
+  forked confirmation logic), marks `executed`, releases the claim back to
+  `shadow` on any failure so it can be retried. Never creates, cancels, or
+  reschedules a booking — the blast radius is one column on one existing row.
+- **In the inbox UI** — `ContextPane.tsx` gets a `BookingCorrectionApproval`
+  card (mirrors `BookingApproval`'s two-step confirm) in the Ghost co-pilot
+  box, and the found booking *also* surfaces in the **Bookings** section under
+  Customer — labeled "Found by Ghost — email on file differs" — since it won't
+  appear in the normal email-matched bookings list (that's the whole point of
+  the typo). Dates/times are formatted with the same `fmtAdminDate` /
+  `fmtAdminTime` helpers the rest of admin uses, not the raw
+  `YYYY-MM-DDTHH:mm:ss+00:00` the DB stores.
+- Tests: `validateSubmission`'s correction handling in
+  `src/lib/chat/shadow-drafter.test.ts`; the full `correct_booking` state
+  machine (happy path, autonomy guard, wrong kind, already executed, invalid/
+  missing correction payload, lost atomic claim, booking-no-longer-exists,
+  email-send failure → release) in `route.test.ts`. `search_bookings_by_details`
+  itself isn't unit-tested — like every other tool `run()` in `tools.ts`, it's
+  a thin Supabase query covered by the live path, not mocks.
+
+## Mobile: the co-pilot pane as a bottom drawer
+
+`ContextPane` (customer info, bookings, the Ghost co-pilot) was `hidden` below
+the `xl` breakpoint (1280px) — invisible on tablet and phone, so there was no
+way to approve a proposal from anything but a wide desktop window.
+
+- Below `xl`, `ThreadPane`'s header now shows a small details button (a
+  `PanelRightOpen` icon) with a violet dot badge when Ghost has something to
+  act on (`hasGhostAction` in `page.tsx` — true whenever `replyDraft`,
+  `bookingProposal`, or `bookingCorrection` is present).
+- Tapping it opens `ContextPane` as a bottom sheet: a backdrop + a
+  `rounded-t-2xl` panel capped at `max-h-[80vh]` with its own scroll, sharing
+  the exact same `ContextPane` component the desktop rail uses (no fork, no
+  duplicated approval logic). Selecting a different conversation or using a
+  draft closes the drawer.
+- `xl:` and up is unchanged — the pane stays docked beside the thread exactly
+  as before; the drawer is purely additive for narrower widths.
+
 ## How to extend
 
 Next phases (see the plan): P1 floating collapsible panel, P2 in-panel co-pilot

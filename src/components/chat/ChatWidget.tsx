@@ -5,6 +5,8 @@ import { usePathname } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
 import { ChevronDown, MessageCircle, Sailboat, Send } from 'lucide-react'
 import { Linkify } from './Linkify'
+import { WhatsAppIcon } from './WhatsAppIcon'
+import { WhatsAppLink } from '@/components/layout/WhatsAppLink'
 
 interface ChatMessage {
   id: string
@@ -28,6 +30,12 @@ export function ChatWidget() {
   const pathname = usePathname()
 
   const [open, setOpen] = useState(false)
+  // Which channel the customer is looking at — Trengo-style tab row at the
+  // bottom of the panel. Doesn't change how the webchat conversation itself
+  // works; the WhatsApp tab is just a clearly-labeled door to the same
+  // WhatsApp number already used elsewhere on the site (WhatsAppLink), so a
+  // guest who'd rather text isn't stuck typing into a webchat box.
+  const [activeTab, setActiveTab] = useState<'chat' | 'whatsapp'>('chat')
   const [token, setToken] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
@@ -162,7 +170,28 @@ export function ChatWidget() {
             <path d="M0 0 H380 V4 C 290 24, 90 24, 0 4 Z" fill="white" />
           </svg>
 
-          {!token ? (
+          {activeTab === 'whatsapp' ? (
+            // WhatsApp tab — a clear door to the same number used elsewhere
+            // on the site, not a second chat implementation.
+            <div className="px-5 pb-5 pt-2 space-y-3 overflow-y-auto">
+              <div className="flex items-start gap-2.5">
+                <div className="w-9 h-9 rounded-full bg-primary text-white flex items-center justify-center shrink-0 shadow-sm">
+                  <Sailboat className="w-4.5 h-4.5" />
+                </div>
+                <div className="bg-white rounded-2xl rounded-tl-md shadow-sm px-4 py-3 text-sm text-zinc-700">
+                  {t('whatsappIntro')}
+                </div>
+              </div>
+              <WhatsAppLink
+                source="chat_widget"
+                message={t('whatsappPrefill')}
+                className="flex items-center justify-center gap-2 w-full rounded-full bg-emerald-600 text-white py-3 text-sm font-semibold hover:bg-emerald-700 min-h-[44px] shadow-sm transition-colors"
+              >
+                <WhatsAppIcon className="w-4 h-4" />
+                {t('openWhatsapp')}
+              </WhatsAppLink>
+            </div>
+          ) : !token ? (
             // First contact: name + email + message
             <form onSubmit={startChat} className="px-5 pb-5 pt-2 space-y-3 overflow-y-auto">
               <div className="flex items-start gap-2.5">
@@ -264,6 +293,30 @@ export function ChatWidget() {
               </form>
             </>
           )}
+
+          {/* Channel tabs — Trengo-style: pick a channel, don't guess which one the guest wants */}
+          <div className="flex items-center justify-center gap-1 border-t border-zinc-100 bg-white py-2 shrink-0">
+            <button
+              onClick={() => setActiveTab('chat')}
+              aria-label={t('chatTabLabel')}
+              aria-pressed={activeTab === 'chat'}
+              className={`p-2 rounded-full transition-colors ${
+                activeTab === 'chat' ? 'bg-primary/10 text-primary' : 'text-zinc-400 hover:text-zinc-600'
+              }`}
+            >
+              <MessageCircle className="w-4.5 h-4.5" />
+            </button>
+            <button
+              onClick={() => setActiveTab('whatsapp')}
+              aria-label={t('whatsappTabLabel')}
+              aria-pressed={activeTab === 'whatsapp'}
+              className={`p-2 rounded-full transition-colors ${
+                activeTab === 'whatsapp' ? 'bg-emerald-50 text-emerald-600' : 'text-zinc-400 hover:text-zinc-600'
+              }`}
+            >
+              <WhatsAppIcon className="w-4.5 h-4.5" />
+            </button>
+          </div>
         </div>
       )}
     </>

@@ -12,6 +12,11 @@
     "send": "Enviar",
     "sent": "Respondemos aqui mesmo — volte quando quiser.",
     "error": "Algo deu errado — tentar de novo?",
-    "online": "Online"
+    "online": "Online",
+    "chatTabLabel": "Chat",
+    "whatsappTabLabel": "WhatsApp",
+    "whatsappIntro": "Prefere WhatsApp? Lá somos igual de tagarelas.",
+    "whatsappPrefill": "Oi! Tenho uma pergunta sobre um passeio de barco.",
+    "openWhatsapp": "Abrir WhatsApp"
   }
 }

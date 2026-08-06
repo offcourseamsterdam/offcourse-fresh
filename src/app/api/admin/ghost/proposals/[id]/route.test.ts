@@ -18,11 +18,32 @@ vi.mock('@/lib/ghost/compare', () => ({ analyzeDifference: vi.fn() }))
 vi.mock('@/lib/chat/translate', () => ({ translateToEnglish: vi.fn() }))
 vi.mock('@/lib/maintenance/send-email', () => ({ sendMaintenanceEmail: vi.fn() }))
 vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: vi.fn() }))
+vi.mock('@/lib/booking/send-confirmation-email', () => ({ sendConfirmationEmail: vi.fn() }))
+vi.mock('@/lib/ops/events', () => ({ emitOpsEvent: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@/lib/fareharbor/import-booking', () => ({ importFareharborBooking: vi.fn() }))
+vi.mock('@/lib/scheduling/sync-shifts', () => ({ syncShiftsForRange: vi.fn().mockResolvedValue(undefined) }))
+// after() requires a real Next.js request scope, absent when calling POST
+// directly in a unit test — run the callback inline instead (fire-and-forget → forget-now).
+vi.mock('next/server', async importOriginal => {
+  const actual = await importOriginal<typeof import('next/server')>()
+  return { ...actual, after: (cb: () => unknown) => cb() }
+})
+// Only autonomyForKind is stubbed (default-returns 'ask', overridable per test) —
+// levelRank stays real so the guard's actual ranking logic is exercised.
+vi.mock('@/lib/ghost/agents', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/lib/ghost/agents')>()
+  return { ...actual, autonomyForKind: vi.fn(() => 'ask') }
+})
 
 import { POST } from './route'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { prepareInboxBookingBody } from '@/lib/ghost/book-from-proposal'
 import { sendMaintenanceEmail } from '@/lib/maintenance/send-email'
+import { sendConfirmationEmail } from '@/lib/booking/send-confirmation-email'
+import { emitOpsEvent } from '@/lib/ops/events'
+import { autonomyForKind } from '@/lib/ghost/agents'
+import { importFareharborBooking } from '@/lib/fareharbor/import-booking'
+import { syncShiftsForRange } from '@/lib/scheduling/sync-shifts'
 
 const PREP_BODY = { listingSlug: 'private-hidden-gems-cruise', availabilityPk: 9001, bookingSource: 'complimentary' }
 
@@ -425,5 +446,355 @@ describe('POST send action — stock reorder supplier email', () => {
     expect(res.status).toBe(503)
     expect(sb.updates.map(u => u.status)).toEqual(['sending', 'shadow']) // claimed then released
     expect(sb.updates.some(u => 'last_reordered_at' in u)).toBe(false) // items not stamped
+  })
+})
+
+// ── correct_booking action — patch a typo'd contact field + resend confirmation ──
+
+/**
+ * correct_booking touches TWO tables (agent_proposals for the claim/state
+ * machine, bookings for the actual patch), unlike book/send which only touch
+ * agent_proposals — so this needs its own table-aware stub instead of the
+ * shared makeSupabase() above.
+ */
+function makeCorrectionSupabase({
+  proposal,
+  claimed,
+  booking,
+}: {
+  proposal: unknown
+  claimed: unknown[]
+  booking?: unknown
+}) {
+  const updates: { agent_proposals: Array<Record<string, unknown>>; bookings: Array<Record<string, unknown>> } = {
+    agent_proposals: [],
+    bookings: [],
+  }
+
+  function agentProposalsBuilder() {
+    let pending: Record<string, unknown> | null = null
+    const builder: Record<string, unknown> = {
+      select: () => builder,
+      eq: () => builder,
+      single: async () => ({ data: proposal }),
+      update: (payload: Record<string, unknown>) => {
+        pending = payload
+        updates.agent_proposals.push(payload)
+        return builder
+      },
+      then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) => {
+        const isClaim = pending?.status === 'booking'
+        const result = isClaim ? { data: claimed } : { data: null, error: null }
+        return Promise.resolve(result).then(resolve, reject)
+      },
+    }
+    return builder
+  }
+
+  function bookingsBuilder() {
+    const builder: Record<string, unknown> = {
+      select: () => builder,
+      eq: () => builder,
+      single: async () => ({ data: booking ?? null }),
+      update: (payload: Record<string, unknown>) => {
+        updates.bookings.push(payload)
+        return builder
+      },
+      then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
+        Promise.resolve({ data: null, error: null }).then(resolve, reject),
+    }
+    return builder
+  }
+
+  const from = vi.fn((table: string) => (table === 'bookings' ? bookingsBuilder() : agentProposalsBuilder()))
+  return { client: { from }, updates }
+}
+
+const correctionProposal = {
+  id: 'c1',
+  kind: 'booking_correction',
+  status: 'shadow',
+  payload: { correction: { booking_id: 'bk-1', field: 'customer_email', new_value: 'suha@gmx.net' } },
+}
+
+const matchedBooking = {
+  id: 'bk-1',
+  booking_uuid: 'fh-uuid-1',
+  customer_name: 'Susanne Hartmann',
+  customer_email: 'typo@gmx.net',
+  customer_phone: '+31600000000',
+  listing_title: 'Private Hidden Gems Cruise',
+  booking_date: '2026-08-10',
+  start_time: '2026-08-10T13:00:00+00:00',
+  end_time: '2026-08-10T15:00:00+00:00',
+  guest_count: 2,
+  category: 'private',
+  extras_selected: [],
+  stripe_amount: 20000,
+  fareharbor_customer_type_rate_pk: 1,
+  stripe_payment_intent_id: 'pi_1',
+  base_amount_cents: 20000,
+  discount_amount_cents: 0,
+}
+
+describe('POST correct_booking action — happy path', () => {
+  it('claims, patches the email, resends the confirmation, marks executed', async () => {
+    const sb = makeCorrectionSupabase({ proposal: correctionProposal, claimed: [{ id: 'c1' }], booking: matchedBooking })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(sendConfirmationEmail).mockResolvedValue(true)
+
+    const res = await POST(makeReq({ action: 'correct_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, data: { booking_id: 'bk-1', new_email: 'suha@gmx.net' } })
+
+    // The booking's email got patched — nothing else on the row.
+    expect(sb.updates.bookings).toEqual([{ customer_email: 'suha@gmx.net' }])
+
+    // Confirmation resent to the CORRECTED address, with the real booking's details.
+    expect(sendConfirmationEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contact: expect.objectContaining({ name: 'Susanne Hartmann', email: 'suha@gmx.net' }),
+        listingTitle: 'Private Hidden Gems Cruise',
+        guestCount: 2,
+      }),
+    )
+
+    // State machine: shadow→booking (claim) then →executed; never left mid-flight.
+    expect(sb.updates.agent_proposals[0].status).toBe('booking')
+    expect(sb.updates.agent_proposals[sb.updates.agent_proposals.length - 1].status).toBe('executed')
+    expect(emitOpsEvent).toHaveBeenCalledWith(expect.objectContaining({ eventType: 'recommendation_approved' }))
+  })
+})
+
+describe('POST correct_booking action — guards (no real change fires)', () => {
+  it('returns 403 and touches nothing when the kind is below the ask level', async () => {
+    vi.mocked(autonomyForKind).mockReturnValueOnce('propose')
+    const sb = makeCorrectionSupabase({ proposal: correctionProposal, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'correct_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(res.status).toBe(403)
+    expect(sb.updates.agent_proposals).toHaveLength(0)
+    expect(sendConfirmationEmail).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 for a non-correction proposal', async () => {
+    const sb = makeCorrectionSupabase({ proposal: { ...correctionProposal, kind: 'reply_draft' }, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'correct_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(res.status).toBe(400)
+    expect(sendConfirmationEmail).not.toHaveBeenCalled()
+  })
+
+  it('returns 409 and never re-applies an already-executed correction', async () => {
+    const sb = makeCorrectionSupabase({ proposal: { ...correctionProposal, status: 'executed' }, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'correct_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(res.status).toBe(409)
+    expect(sb.updates.agent_proposals).toHaveLength(0) // no claim attempted
+  })
+
+  it('returns 422 (no claim) when the stored correction is missing required fields', async () => {
+    const sb = makeCorrectionSupabase({
+      proposal: { ...correctionProposal, payload: { correction: { booking_id: 'bk-1', field: 'customer_email' } } },
+      claimed: [],
+    })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'correct_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(res.status).toBe(422)
+    expect(sb.updates.agent_proposals).toHaveLength(0)
+  })
+
+  it('returns 422 (no claim) when the corrected email address looks invalid', async () => {
+    const sb = makeCorrectionSupabase({
+      proposal: {
+        ...correctionProposal,
+        payload: { correction: { booking_id: 'bk-1', field: 'customer_email', new_value: 'not-an-email' } },
+      },
+      claimed: [],
+    })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'correct_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(res.status).toBe(422)
+    expect(sb.updates.agent_proposals).toHaveLength(0)
+  })
+
+  it('returns 409 and applies nothing when the atomic claim matches zero rows (concurrent click)', async () => {
+    // The booking itself is valid — this test is specifically about losing the
+    // claim race, which only happens once validation (booking exists, not
+    // cancelled) has already passed.
+    const sb = makeCorrectionSupabase({ proposal: correctionProposal, claimed: [], booking: matchedBooking })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'correct_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(res.status).toBe(409)
+    expect(sb.updates.agent_proposals[0].status).toBe('booking') // claim was attempted (and lost)
+    expect(sendConfirmationEmail).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 without ever claiming when the matched booking no longer exists', async () => {
+    // Booking validation now happens BEFORE the atomic claim (same ordering
+    // as the `book` action) — a missing booking is a pure read failure, so
+    // there's no claim to take or release.
+    const sb = makeCorrectionSupabase({ proposal: correctionProposal, claimed: [{ id: 'c1' }], booking: null })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'correct_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(res.status).toBe(404)
+    expect(sb.updates.agent_proposals).toHaveLength(0)
+    expect(sendConfirmationEmail).not.toHaveBeenCalled()
+  })
+})
+
+describe('POST correct_booking action — failure releases the claim for retry', () => {
+  it('releases shadow and 500s when the confirmation email fails to send', async () => {
+    // sendConfirmationEmail never rejects in production (RESEND_API_KEY missing,
+    // Resend down, etc. all resolve to false) — this is the real shape a
+    // failure takes, not a thrown error.
+    const sb = makeCorrectionSupabase({ proposal: correctionProposal, claimed: [{ id: 'c1' }], booking: matchedBooking })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(sendConfirmationEmail).mockResolvedValue(false)
+
+    const res = await POST(makeReq({ action: 'correct_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(res.status).toBe(500)
+    // claimed 'booking', then released back to 'shadow'; the email patch itself
+    // already went through (the code doesn't roll that back on email failure).
+    expect(sb.updates.agent_proposals.map(u => u.status)).toEqual(['booking', 'shadow'])
+    expect(sb.updates.agent_proposals.some(u => u.status === 'executed')).toBe(false)
+  })
+
+  it('returns 409 without ever claiming, patching, or emailing when the matched booking is cancelled', async () => {
+    // Same pre-claim-validation ordering as the missing-booking case above.
+    const sb = makeCorrectionSupabase({
+      proposal: correctionProposal,
+      claimed: [{ id: 'c1' }],
+      booking: { ...matchedBooking, status: 'cancelled' },
+    })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'correct_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(res.status).toBe(409)
+    expect(sb.updates.agent_proposals).toHaveLength(0)
+    expect(sb.updates.bookings).toHaveLength(0)
+    expect(sendConfirmationEmail).not.toHaveBeenCalled()
+  })
+})
+
+// ── import_fh_booking action — pull an already-real FareHarbor booking into our own database ──
+
+const importProposal = {
+  id: 'i1',
+  kind: 'fh_booking_import_ready',
+  status: 'shadow',
+  conversation_id: 'conv-1',
+  payload: {
+    platform: 'getyourguide',
+    bookingRef: '369057638',
+    guestName: 'shoshana mccallum',
+    guestEmail: 'customer-xzxhygwncrx37du3@reply.getyourguide.com',
+    guestPhone: '+64 21 248 0388',
+    endTime: '18:30',
+    parsed: { dateISO: '2026-08-05', time: '17:00', guests: 2, experienceName: 'Shared Cruise' },
+  },
+}
+
+describe('POST import_fh_booking action — happy path', () => {
+  it('claims, imports via FareHarbor, marks executed, and syncs shifts for that date', async () => {
+    const sb = makeSupabase({ proposal: importProposal, claimed: [{ id: 'i1' }] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(importFareharborBooking).mockResolvedValue({ ok: true, bookingId: 'bk-99', date: '2026-08-05' })
+
+    const res = await POST(makeReq({ action: 'import_fh_booking' }), { params: Promise.resolve({ id: 'i1' }) })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, data: { booking_id: 'bk-99' } })
+
+    // Built straight from the proposal's own payload — pk parsed from
+    // bookingRef, everything else passed through as-is.
+    expect(importFareharborBooking).toHaveBeenCalledWith(sb.client, {
+      bookingPk: 369057638,
+      bookingSource: 'getyourguide',
+      guestName: 'shoshana mccallum',
+      guestEmail: 'customer-xzxhygwncrx37du3@reply.getyourguide.com',
+      guestPhone: '+64 21 248 0388',
+      dateISO: '2026-08-05',
+      time: '17:00',
+      endTime: '18:30',
+      guests: 2,
+      experienceName: 'Shared Cruise',
+    })
+
+    // Newly-imported booking flows into Scheduling immediately, same hook every
+    // other booking-confirmation path uses.
+    expect(syncShiftsForRange).toHaveBeenCalledWith(sb.client, '2026-08-05', '2026-08-05')
+
+    // State machine: shadow→booking (claim) then →executed; never left mid-flight.
+    expect(sb.updates[0].status).toBe('booking')
+    expect(sb.updates[1].status).toBe('executed')
+    expect(emitOpsEvent).toHaveBeenCalledWith(expect.objectContaining({ eventType: 'recommendation_approved' }))
+
+    // The conversation itself flips too — not just the proposal — so the
+    // inbox list and thread header stop showing "Not in our database" the
+    // moment this resolves, without waiting on any other process.
+    expect(sb.updates[2]).toEqual({
+      ota_status: 'imported',
+      status: 'resolved',
+      ai_summary: 'Imported — booking #369057638 now in Bookings, Scheduling and Planning.',
+    })
+  })
+})
+
+describe('POST import_fh_booking action — guards (no import fires)', () => {
+  it('returns 400 for a non-import proposal', async () => {
+    const sb = makeSupabase({ proposal: { ...importProposal, kind: 'ota_booking_ready' }, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'import_fh_booking' }), { params: Promise.resolve({ id: 'i1' }) })
+    expect(res.status).toBe(400)
+    expect(importFareharborBooking).not.toHaveBeenCalled()
+  })
+
+  it('returns 409 and never re-imports an already-executed proposal', async () => {
+    const sb = makeSupabase({ proposal: { ...importProposal, status: 'executed' }, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'import_fh_booking' }), { params: Promise.resolve({ id: 'i1' }) })
+    expect(res.status).toBe(409)
+    expect(importFareharborBooking).not.toHaveBeenCalled()
+  })
+
+  it('returns 409 on a double-click race — second request finds zero rows to claim', async () => {
+    const sb = makeSupabase({ proposal: importProposal, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'import_fh_booking' }), { params: Promise.resolve({ id: 'i1' }) })
+    expect(res.status).toBe(409)
+    expect(importFareharborBooking).not.toHaveBeenCalled()
+  })
+
+  it('returns 422 for a proposal with no valid FareHarbor booking number', async () => {
+    const sb = makeSupabase({ proposal: { ...importProposal, payload: { ...importProposal.payload, bookingRef: undefined } }, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'import_fh_booking' }), { params: Promise.resolve({ id: 'i1' }) })
+    expect(res.status).toBe(422)
+    expect(importFareharborBooking).not.toHaveBeenCalled()
+  })
+})
+
+describe('POST import_fh_booking action — failure releases the claim for retry', () => {
+  it('releases shadow and reports the reason when FareHarbor has no matching booking', async () => {
+    const sb = makeSupabase({ proposal: importProposal, claimed: [{ id: 'i1' }] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(importFareharborBooking).mockResolvedValue({ ok: false, error: 'Booking #369057638 was not found in FareHarbor on 2026-08-05.' })
+
+    const res = await POST(makeReq({ action: 'import_fh_booking' }), { params: Promise.resolve({ id: 'i1' }) })
+    expect(res.status).toBe(422)
+    expect((await res.json()).error).toContain('was not found in FareHarbor')
+    expect(sb.updates.map(u => u.status)).toEqual(['booking', 'shadow'])
+    expect(syncShiftsForRange).not.toHaveBeenCalled()
   })
 })

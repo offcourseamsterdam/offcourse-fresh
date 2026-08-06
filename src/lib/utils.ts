@@ -174,3 +174,38 @@ export function formatAmsterdamTime(value: string | number | Date | null | undef
     timeZone: 'Europe/Amsterdam',
   })
 }
+
+/**
+ * The reverse of formatAmsterdamTime: a wall-clock date + time as experienced
+ * in Amsterdam (e.g. "2026-08-05" + "17:00" — exactly what a human-readable
+ * notification email gives us) → the correct UTC ISO timestamp, accounting
+ * for Amsterdam's +1/+2h DST offset. Nothing else in this file needed this
+ * direction before now — every other code path gets its times FROM
+ * FareHarbor's own API, which already returns proper UTC-offset timestamps.
+ *
+ * Works by asking what Amsterdam wall-clock a naive guess (the target time,
+ * misread as UTC) would display as, then correcting by the difference — one
+ * pass is enough since Amsterdam only ever holds two offsets, and this is
+ * never called near the 1am/3am instant where the offset itself flips.
+ */
+export function amsterdamTimeToUtcIso(dateISO: string, time: string): string {
+  const [hh, mm] = time.split(':').map(Number)
+  const [y, mo, d] = dateISO.split('-').map(Number)
+  const naiveUtc = new Date(Date.UTC(y, mo - 1, d, hh, mm))
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Amsterdam',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(naiveUtc)
+  const get = (type: string) => Number(parts.find(p => p.type === type)?.value)
+  const displayedAsUtcMs = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'))
+  const targetAsUtcMs = Date.UTC(y, mo - 1, d, hh, mm)
+  const offsetMs = displayedAsUtcMs - targetAsUtcMs
+
+  return new Date(naiveUtc.getTime() - offsetMs).toISOString()
+}

@@ -12,6 +12,11 @@
     "send": "Senden",
     "sent": "Wir antworten genau hier — schau gern später wieder vorbei.",
     "error": "Da ist etwas schiefgelaufen — nochmal versuchen?",
-    "online": "Online"
+    "online": "Online",
+    "chatTabLabel": "Chat",
+    "whatsappTabLabel": "WhatsApp",
+    "whatsappIntro": "Lieber WhatsApp? Da sind wir genauso gesprächig.",
+    "whatsappPrefill": "Hallo! Ich habe eine Frage zu einer Tour.",
+    "openWhatsapp": "WhatsApp öffnen"
   }
 }

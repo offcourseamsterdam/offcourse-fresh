@@ -8,6 +8,13 @@ vi.mock('@/lib/catering/filter', () => ({
   hasCatering: vi.fn(),
   filterCateringItems: vi.fn(),
 }))
+// Default to the non-auto rung so the pre-existing shadow-propose tests below
+// need no changes; auto-path tests override this per-test.
+vi.mock('@/lib/ghost/agents', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/lib/ghost/agents')>()
+  return { ...actual, autonomyForKind: vi.fn(() => 'ask') }
+})
+vi.mock('@/lib/scheduling/apply-assignments', () => ({ applyScheduleAssignments: vi.fn() }))
 // Freeze "today" so target_date / dedupe / horizon assertions never drift by day.
 vi.mock('@/lib/utils', async importOriginal => {
   const actual = (await importOriginal()) as Record<string, unknown>
@@ -21,10 +28,12 @@ vi.mock('@/lib/utils', async importOriginal => {
   }
 })
 
-import { draftCateringOrders, draftTomorrowSchedule } from './ops-drafters'
+import { draftCateringOrders, draftOrAssignSchedule } from './ops-drafters'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { meteredMessage } from '@/lib/ai/usage'
 import { hasCatering, filterCateringItems } from '@/lib/catering/filter'
+import { autonomyForKind } from './agents'
+import { applyScheduleAssignments } from '@/lib/scheduling/apply-assignments'
 
 const TODAY = '2026-06-13'
 const TOMORROW = '2026-06-14'
@@ -35,7 +44,10 @@ const TOMORROW = '2026-06-14'
  * off that table's queue. `.insert()` is captured (not queued) so we can assert
  * exactly what the drafter persists.
  */
-function makeSupabase(queues: Record<string, Array<{ data: unknown }>> = {}) {
+function makeSupabase(
+  queues: Record<string, Array<{ data: unknown }>> = {},
+  opts: { insertError?: { message: string } } = {},
+) {
   const inserts: Array<{ table: string; row: Record<string, unknown> }> = []
   const from = vi.fn((table: string) => {
     const builder: Record<string, unknown> = {
@@ -49,7 +61,7 @@ function makeSupabase(queues: Record<string, Array<{ data: unknown }>> = {}) {
       limit: () => builder,
       insert: (row: Record<string, unknown>) => {
         inserts.push({ table, row })
-        return Promise.resolve({ data: null, error: null })
+        return Promise.resolve(opts.insertError ? { data: null, error: opts.insertError } : { data: null, error: null })
       },
       then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) => {
         const q = queues[table]
@@ -157,19 +169,47 @@ describe('draftCateringOrders', () => {
     })
     await expect(draftCateringOrders()).resolves.toBe('skipped')
   })
+
+  it('returns "skipped" — not a false-positive "drafted" — when saving the proposal fails', async () => {
+    // Before this was fixed, a failed insert here fell through silently and
+    // the function still returned 'drafted', even though nothing was saved.
+    const sb = makeSupabase(
+      {
+        agent_proposals: [{ data: [] }],
+        bookings: [{ data: [{ id: 'b1', booking_date: TOMORROW, start_time: '17:00', listing_title: 'Sunset Cruise', guest_count: 8, extras_selected: [{ name: 'Cheese plate' }], catering_email_sent_at: null }] }],
+      },
+      { insertError: { message: 'row-level security violation' } },
+    )
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(hasCatering).mockReturnValue(true)
+    vi.mocked(filterCateringItems).mockReturnValue([{ name: 'Cheese plate', quantity: 2 }] as never)
+    vi.mocked(meteredMessage).mockResolvedValue(
+      claudeJson({ orders: [{ date: TOMORROW, items: [{ name: 'Cheese plate', quantity: 2 }] }], summary: 'Order 2 cheese plates.' }) as never,
+    )
+
+    expect(await draftCateringOrders()).toBe('skipped')
+    expect(console.error).toHaveBeenCalledWith('[ghost/catering_order] failed:', expect.stringContaining('row-level security violation'))
+  })
 })
 
 // ── schedule_day (captain assignments) ───────────────────────────────────────
 
-describe('draftTomorrowSchedule', () => {
+describe('draftOrAssignSchedule', () => {
   const openShift = { id: 's1', date: TOMORROW, start_at: '2026-06-14T15:00:00Z', end_at: '2026-06-14T17:00:00Z', status: 'open', staff_id: null, boats: { name: 'Diana' }, bookings: { listing_title: 'Sunset', guest_count: 6 } }
-  const activeStaff = { id: 'cap1', name: 'Sanne', role: 'captain', max_shifts_per_week: 5, is_active: true }
+  // 2h at €25/h — used throughout to check cost_cents is real math (5000), never the model's.
+  const activeStaff = { id: 'cap1', name: 'Sanne', role: 'captain', max_shifts_per_week: 5, is_active: true, hourly_rate_cents: 2500 }
 
-  it('skips (no Claude call) when a schedule proposal already exists for tomorrow', async () => {
+  // Non-auto by default so the existing shadow-propose tests below are unchanged;
+  // auto-path tests override this explicitly.
+  beforeEach(() => {
+    vi.mocked(autonomyForKind).mockReturnValue('ask')
+  })
+
+  it('skips (no Claude call) when a schedule proposal already exists for the target date', async () => {
     const sb = makeSupabase({ agent_proposals: [{ data: [{ id: 'existing' }] }] })
     vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
 
-    expect(await draftTomorrowSchedule()).toBe('skipped')
+    expect(await draftOrAssignSchedule(TOMORROW)).toBe('skipped')
     expect(meteredMessage).not.toHaveBeenCalled()
     expect(sb.inserts).toHaveLength(0)
   })
@@ -181,7 +221,7 @@ describe('draftTomorrowSchedule', () => {
     })
     vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
 
-    expect(await draftTomorrowSchedule()).toBe('skipped')
+    expect(await draftOrAssignSchedule(TOMORROW)).toBe('skipped')
     expect(meteredMessage).not.toHaveBeenCalled()
     expect(sb.inserts).toHaveLength(0)
   })
@@ -194,15 +234,15 @@ describe('draftTomorrowSchedule', () => {
     })
     vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
 
-    expect(await draftTomorrowSchedule()).toBe('skipped')
+    expect(await draftOrAssignSchedule(TOMORROW)).toBe('skipped')
     expect(meteredMessage).not.toHaveBeenCalled()
     expect(sb.inserts).toHaveLength(0)
   })
 
-  it('drafts a shadow schedule_day proposal for tomorrow on the happy path', async () => {
+  it('drafts a shadow schedule_day proposal when not at auto autonomy (the review-first fallback)', async () => {
     const sb = makeSupabase({
       agent_proposals: [{ data: [] }],
-      shifts: [{ data: [openShift] }, { data: [] }], // tomorrow's shifts, then recent-workload query
+      shifts: [{ data: [openShift] }, { data: [] }], // target date's shifts, then recent-workload query
       staff: [{ data: [activeStaff] }],
       staff_availability: [{ data: [{ staff_id: 'cap1', status: 'available', note: null }] }],
     })
@@ -211,7 +251,8 @@ describe('draftTomorrowSchedule', () => {
       claudeJson({ assignments: [{ shift_id: 's1', staff_id: 'cap1', staff_name: 'Sanne', reason: 'Available and rested.' }], summary: 'Sanne takes the only open shift.' }) as never,
     )
 
-    expect(await draftTomorrowSchedule()).toBe('drafted')
+    expect(await draftOrAssignSchedule(TOMORROW)).toBe('drafted')
+    expect(applyScheduleAssignments).not.toHaveBeenCalled()
 
     expect(sb.inserts).toHaveLength(1)
     const { row } = sb.inserts[0]
@@ -219,7 +260,7 @@ describe('draftTomorrowSchedule', () => {
     expect(row.status).toBe('shadow')
     expect((row.payload as { target_date: string }).target_date).toBe(TOMORROW)
     expect((row.payload as { assignments: unknown[] }).assignments).toEqual([
-      { shift_id: 's1', staff_id: 'cap1', staff_name: 'Sanne', reason: 'Available and rested.' },
+      { shift_id: 's1', staff_id: 'cap1', staff_name: 'Sanne', reason: 'Available and rested.', cost_cents: 5000 },
     ])
     expect(row.reasoning).toContain('Sanne')
   })
@@ -234,7 +275,7 @@ describe('draftTomorrowSchedule', () => {
     vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
     vi.mocked(meteredMessage).mockResolvedValue(claudeJson({ summary: 'no assignments key' }) as never)
 
-    expect(await draftTomorrowSchedule()).toBe('skipped')
+    expect(await draftOrAssignSchedule(TOMORROW)).toBe('skipped')
     expect(sb.inserts).toHaveLength(0)
   })
 
@@ -242,6 +283,144 @@ describe('draftTomorrowSchedule', () => {
     vi.mocked(createAdminClient).mockImplementation(() => {
       throw new Error('DB exploded')
     })
-    await expect(draftTomorrowSchedule()).resolves.toBe('skipped')
+    await expect(draftOrAssignSchedule(TOMORROW)).resolves.toBe('skipped')
+  })
+
+  it('returns "skipped" — not a false-positive "drafted" — when saving the shadow proposal fails', async () => {
+    const sb = makeSupabase(
+      {
+        agent_proposals: [{ data: [] }],
+        shifts: [{ data: [openShift] }, { data: [] }],
+        staff: [{ data: [activeStaff] }],
+        staff_availability: [{ data: [{ staff_id: 'cap1', status: 'available', note: null }] }],
+      },
+      { insertError: { message: 'row-level security violation' } },
+    )
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(meteredMessage).mockResolvedValue(
+      claudeJson({ assignments: [{ shift_id: 's1', staff_id: 'cap1', staff_name: 'Sanne', reason: 'Available and rested.' }], summary: 'Sanne takes the only open shift.' }) as never,
+    )
+
+    expect(await draftOrAssignSchedule(TOMORROW)).toBe('skipped')
+    expect(console.error).toHaveBeenCalledWith('[ghost/schedule_day] failed:', expect.stringContaining('row-level security violation'))
+  })
+
+  describe('at auto autonomy (owner-approved 2026-08-06 proactive auto-assign)', () => {
+    beforeEach(() => {
+      vi.mocked(autonomyForKind).mockReturnValue('auto')
+    })
+
+    it('assigns for real via applyScheduleAssignments — no shadow proposal', async () => {
+      const sb = makeSupabase({
+        shifts: [{ data: [openShift] }, { data: [] }],
+        staff: [{ data: [activeStaff] }],
+        staff_availability: [{ data: [{ staff_id: 'cap1', status: 'available', note: null }] }],
+      })
+      vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+      vi.mocked(meteredMessage).mockResolvedValue(
+        claudeJson({ assignments: [{ shift_id: 's1', staff_id: 'cap1', staff_name: 'Sanne', reason: 'Available and rested.' }], summary: 'Sanne takes the only open shift.' }) as never,
+      )
+      vi.mocked(applyScheduleAssignments).mockResolvedValue({ applied: [{ shift_id: 's1', staff_name: 'Sanne' }], skipped: [] })
+
+      expect(await draftOrAssignSchedule(TOMORROW)).toBe('assigned')
+
+      expect(applyScheduleAssignments).toHaveBeenCalledWith(
+        sb.client,
+        [{ shift_id: 's1', staff_id: 'cap1', staff_name: 'Sanne', reason: 'Available and rested.', cost_cents: 5000 }],
+        expect.objectContaining({ actorType: 'agent', actorId: 'ops_optimizer', source: 'ghost/schedule_day:auto' }),
+        { notify: false },
+      )
+
+      // Still logs an audit-trail row, but already 'executed' — nothing left to approve.
+      expect(sb.inserts).toHaveLength(1)
+      const { row } = sb.inserts[0]
+      expect(row.kind).toBe('schedule_day')
+      expect(row.status).toBe('executed')
+      expect(row.outcome).toBeTruthy()
+    })
+
+    it('does not dedupe on target_date — a fresh booking can still open a new shift on an already-scanned date', async () => {
+      const sb = makeSupabase({
+        agent_proposals: [{ data: [{ id: 'already-scanned-earlier-today' }] }], // would block the shadow path (see first test above)
+        shifts: [{ data: [openShift] }, { data: [] }],
+        staff: [{ data: [activeStaff] }],
+        staff_availability: [{ data: [{ staff_id: 'cap1', status: 'available', note: null }] }],
+      })
+      vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+      vi.mocked(meteredMessage).mockResolvedValue(
+        claudeJson({ assignments: [{ shift_id: 's1', staff_id: 'cap1', staff_name: 'Sanne' }], summary: 'ok' }) as never,
+      )
+      vi.mocked(applyScheduleAssignments).mockResolvedValue({ applied: [{ shift_id: 's1', staff_name: 'Sanne' }], skipped: [] })
+
+      expect(await draftOrAssignSchedule(TOMORROW)).toBe('assigned')
+      expect(meteredMessage).toHaveBeenCalled() // proves it did NOT early-return on the existing proposal
+    })
+
+    it('still reports "assigned" if the audit-log insert fails afterward — the real assignment already landed', async () => {
+      const sb = makeSupabase(
+        {
+          shifts: [{ data: [openShift] }, { data: [] }],
+          staff: [{ data: [activeStaff] }],
+          staff_availability: [{ data: [{ staff_id: 'cap1', status: 'available', note: null }] }],
+        },
+        { insertError: { message: 'row-level security violation' } },
+      )
+      vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+      vi.mocked(meteredMessage).mockResolvedValue(
+        claudeJson({ assignments: [{ shift_id: 's1', staff_id: 'cap1', staff_name: 'Sanne' }], summary: 'ok' }) as never,
+      )
+      vi.mocked(applyScheduleAssignments).mockResolvedValue({ applied: [{ shift_id: 's1', staff_name: 'Sanne' }], skipped: [] })
+
+      expect(await draftOrAssignSchedule(TOMORROW)).toBe('assigned')
+      expect(console.error).toHaveBeenCalledWith('[ghost/schedule_day] auto-assigned but failed to log proposal:', 'row-level security violation')
+    })
+
+    it('rejects (safety net) an assignment to someone marked unavailable, even though the model proposed it', async () => {
+      const sb = makeSupabase({
+        shifts: [{ data: [openShift] }, { data: [] }],
+        staff: [{ data: [activeStaff] }],
+        staff_availability: [{ data: [{ staff_id: 'cap1', status: 'unavailable', note: 'sick' }] }],
+      })
+      vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+      vi.mocked(meteredMessage).mockResolvedValue(
+        claudeJson({ assignments: [{ shift_id: 's1', staff_id: 'cap1', staff_name: 'Sanne' }], summary: 'ok' }) as never,
+      )
+
+      expect(await draftOrAssignSchedule(TOMORROW)).toBe('skipped')
+      expect(applyScheduleAssignments).not.toHaveBeenCalled()
+    })
+
+    it('rejects (safety net) an assignment that would double-book a captain against an existing overlapping shift', async () => {
+      // 16:00–18:00, overlapping openShift's 15:00–17:00 by an hour.
+      const alreadyAssignedOverlap = { id: 's-existing', date: TOMORROW, start_at: '2026-06-14T16:00:00Z', end_at: '2026-06-14T18:00:00Z', status: 'assigned', staff_id: 'cap1', boats: { name: 'Curaçao' }, bookings: null }
+      const sb = makeSupabase({
+        shifts: [{ data: [openShift, alreadyAssignedOverlap] }, { data: [] }],
+        staff: [{ data: [activeStaff] }],
+        staff_availability: [{ data: [{ staff_id: 'cap1', status: 'available', note: null }] }],
+      })
+      vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+      vi.mocked(meteredMessage).mockResolvedValue(
+        claudeJson({ assignments: [{ shift_id: 's1', staff_id: 'cap1', staff_name: 'Sanne' }], summary: 'ok' }) as never,
+      )
+
+      expect(await draftOrAssignSchedule(TOMORROW)).toBe('skipped')
+      expect(applyScheduleAssignments).not.toHaveBeenCalled()
+    })
+
+    it('skips (no applyScheduleAssignments call) when applying finds nothing left open (a manual change already won)', async () => {
+      const sb = makeSupabase({
+        shifts: [{ data: [openShift] }, { data: [] }],
+        staff: [{ data: [activeStaff] }],
+        staff_availability: [{ data: [{ staff_id: 'cap1', status: 'available', note: null }] }],
+      })
+      vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+      vi.mocked(meteredMessage).mockResolvedValue(
+        claudeJson({ assignments: [{ shift_id: 's1', staff_id: 'cap1', staff_name: 'Sanne' }], summary: 'ok' }) as never,
+      )
+      vi.mocked(applyScheduleAssignments).mockResolvedValue({ applied: [], skipped: [{ shift_id: 's1', reason: 'no longer open (manual change wins)' }] })
+
+      expect(await draftOrAssignSchedule(TOMORROW)).toBe('skipped')
+      expect(sb.inserts).toHaveLength(0) // nothing applied = nothing worth logging
+    })
   })
 })

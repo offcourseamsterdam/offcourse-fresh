@@ -27,6 +27,7 @@ import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
 import { CITY_TAX_CENTS_PER_GUEST, CRUISE_VAT_RATE, EXTRAS_VAT_RATE } from '@/lib/booking/constants'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { draftGuestMoveForNewBooking } from '@/lib/ghost/guest-move-drafter'
+import { syncAndScheduleShifts } from '@/lib/scheduling/proactive-scheduling'
 import type { Json } from '@/lib/supabase/types'
 
 // VAT rates: use the shared constants (src/lib/booking/constants.ts) — every
@@ -442,6 +443,17 @@ export async function POST(request: NextRequest) {
         after(() =>
           draftGuestMoveForNewBooking(String(date)).catch(err =>
             console.error('[book] guest-move check failed:', err),
+          ),
+        )
+        // Keep the shift roster in sync the moment a booking becomes real, and
+        // try to auto-assign its captain — covers admin-created bookings,
+        // complimentary/partner-invoice bookings, and Ghost's OTA-approved
+        // `book` action (which reuses this exact route, see
+        // proposals/[id]/route.ts). Idempotent: safe even if this date
+        // already synced/scheduled today.
+        after(() =>
+          syncAndScheduleShifts(createAdminClient(), String(date)).catch(err =>
+            console.error('[book] shift sync failed:', err),
           ),
         )
       }

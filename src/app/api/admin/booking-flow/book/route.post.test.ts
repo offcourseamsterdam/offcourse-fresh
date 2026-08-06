@@ -80,6 +80,7 @@ vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText
 // existing assertion on h.insert being the booking row stays valid.
 vi.mock('@/lib/ops/events', () => ({ emitOpsEvent: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/ghost/guest-move-drafter', () => ({ draftGuestMoveForNewBooking: vi.fn().mockResolvedValue('skipped') }))
+vi.mock('@/lib/scheduling/sync-shifts', () => ({ syncShiftsForRange: vi.fn().mockResolvedValue({ created: 0, updated: 0, skipped: [] }) }))
 // after() requires a real Next.js request scope, absent when calling POST directly
 // in a unit test — run the callback inline instead (fire-and-forget → forget-now).
 vi.mock('next/server', async importOriginal => {
@@ -88,6 +89,7 @@ vi.mock('next/server', async importOriginal => {
 })
 
 import { POST } from './route'
+import { syncShiftsForRange } from '@/lib/scheduling/sync-shifts'
 
 function mockReq(body: object): NextRequest {
   return {
@@ -144,6 +146,11 @@ describe('POST /book — finalize (no claim mutex)', () => {
     expect(h.insert).toHaveBeenCalledTimes(1)
     // No extras on this booking — nothing to auto-send to the supplier.
     expect(h.sendCateringOrderEmailForBooking).not.toHaveBeenCalled()
+  })
+
+  it('syncs the shift roster for the booking date so it shows up on the Shifts tab immediately', async () => {
+    await POST(mockReq(WEBSITE_BODY))
+    expect(syncShiftsForRange).toHaveBeenCalledWith(expect.anything(), '2026-06-22', '2026-06-22')
   })
 
   // ── Website payment gate (2026-07 security fix) ─────────────────────────────

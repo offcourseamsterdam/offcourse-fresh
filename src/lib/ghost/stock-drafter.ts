@@ -149,6 +149,11 @@ Return JSON only:
         },
       })
       if (error) {
+        // Already correctly counted as skipped rather than drafted (unlike the
+        // other drafters this was compared against) — this just makes WHY
+        // visible, instead of an insert failure looking identical to a
+        // dedupe/malformed-JSON skip in the returned counts.
+        console.error(`[ghost/stock_reorder] could not save proposal for supplier "${key}":`, error.message)
         skipped++
         continue
       }

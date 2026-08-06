@@ -3,7 +3,15 @@ import { verifySlackSignature } from '@/lib/slack/verify-request'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { performClock } from '@/lib/scheduling/perform-clock'
 
+/**
+ * `/in` and `/out` are the ones captains actually type — short enough to fire
+ * off one-handed while stepping onto a boat. `/checkin` and `/checkout` stay
+ * registered as aliases so anyone with the old muscle memory (or an old
+ * bookmark) still works.
+ */
 const COMMAND_ACTION: Record<string, 'in' | 'out'> = {
+  '/in': 'in',
+  '/out': 'out',
   '/checkin': 'in',
   '/checkout': 'out',
 }

@@ -51,6 +51,11 @@ export const BOOKING_SOURCES = [
   { value: 'clickandboat', label: 'Click&Boat', adminSelectable: true },
   { value: 'getyourguide', label: 'GetYourGuide', adminSelectable: true },
   { value: 'tripadvisor', label: 'TripAdvisor', adminSelectable: true },
+  { value: 'boatlocal', label: 'Boat Local', adminSelectable: true },
+  // A phone call or walk-in someone typed straight into the FareHarbor
+  // dashboard — never touched our own checkout, so it needs an honest label
+  // instead of being lumped in with real website bookings.
+  { value: 'phone_walkin', label: 'Phone / walk-in', adminSelectable: true },
   // Public-only: the Webikeamsterdam QR checkout (customer types a partner code,
   // no admin session). Not admin-selectable — an admin has no code to enter and
   // this flow is validated entirely by resolvePartnerInvoiceContext(). Admins who

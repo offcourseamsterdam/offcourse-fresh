@@ -78,12 +78,43 @@ const SUBMIT_BOOKING = {
   },
 }
 
+const SUBMIT_BOOKING_CORRECTION = {
+  name: 'submit_booking_correction',
+  description:
+    'Finish with a correction when the customer says they already have a paid booking but their contact details on file are wrong (e.g. a typo\'d email) — use ONLY after search_bookings_by_details found exactly one confident match. Includes the reply you would send plus the correction for the team to approve; the team\'s one click both fixes the record and resends the confirmation. Never use this to create a new booking — only to fix an existing one you found.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      reply: { type: 'string', description: "The reply you would send, in the customer's language (confirming you found their booking and are fixing it)." },
+      language: { type: 'string', description: 'Language of the reply, in English' },
+      reasoning: { type: 'string', description: '1-2 sentences in English: why this is the right booking and correction' },
+      correction: {
+        type: 'object',
+        description: 'The correction the team would approve — booking_id must come from search_bookings_by_details, never invented.',
+        properties: {
+          booking_id: { type: 'string', description: 'The exact booking_id returned by search_bookings_by_details' },
+          field: { type: 'string', enum: ['customer_email'], description: 'Which field is being corrected' },
+          new_value: { type: 'string', description: 'The corrected value, as given by the customer' },
+          booking_date: { type: 'string', description: 'The booking\'s date, from search_bookings_by_details — so the team can see which booking this is without looking it up' },
+          start_time: { type: 'string', description: 'The booking\'s start time, from search_bookings_by_details' },
+          listing_title: { type: 'string', description: 'The booking\'s cruise name, from search_bookings_by_details' },
+          guest_count: { type: 'number', description: 'The booking\'s guest count, from search_bookings_by_details' },
+        },
+        required: ['booking_id', 'field', 'new_value'],
+      },
+      open_question: { type: ['string', 'null'], description: 'ONE question for the team if the match is uncertain. null otherwise.' },
+    },
+    required: ['reply', 'language', 'reasoning', 'correction'],
+  },
+}
+
 export interface ReplySubmission {
   reply: string
   language: string
   reasoning: string
   open_question: string | null
   booking?: Record<string, unknown>
+  correction?: Record<string, unknown>
 }
 
 /** Validate + normalize a submit-tool input (schemas constrain shape, not sanity). */
@@ -98,10 +129,23 @@ export function validateSubmission(input: Record<string, unknown>): ReplySubmiss
       typeof input.open_question === 'string' && input.open_question.trim() ? input.open_question.trim() : null,
     booking:
       input.booking && typeof input.booking === 'object' ? (input.booking as Record<string, unknown>) : undefined,
+    correction:
+      input.correction && typeof input.correction === 'object'
+        ? (input.correction as Record<string, unknown>)
+        : undefined,
   }
 }
 
-export async function draftShadowReply(conversationId: string, triggerMessageId: string | null): Promise<void> {
+export interface ShadowReplyResult {
+  kind: 'reply_draft' | 'booking_proposal' | 'booking_correction'
+  /** 1-2 sentences, English — for anything that wants a quick gist of what Ghost decided (e.g. the inbox list's AI summary). */
+  reasoning: string
+}
+
+export async function draftShadowReply(
+  conversationId: string,
+  triggerMessageId: string | null,
+): Promise<ShadowReplyResult | null> {
   try {
     const supabase = createAdminClient()
 
@@ -111,7 +155,7 @@ export async function draftShadowReply(conversationId: string, triggerMessageId:
       .select('id, channel, subject, status, contact:contacts(id, name, email, phone_e164, locale, notes)')
       .eq('id', conversationId)
       .single()
-    if (!convo?.contact) return
+    if (!convo?.contact) return null
 
     const { data: messages } = await supabase
       .from('messages')
@@ -120,7 +164,7 @@ export async function draftShadowReply(conversationId: string, triggerMessageId:
       .in('direction', ['in', 'out'])
       .order('created_at', { ascending: true })
       .limit(30)
-    if (!messages?.length || messages[messages.length - 1].direction !== 'in') return
+    if (!messages?.length || messages[messages.length - 1].direction !== 'in') return null
 
     const contact = convo.contact
 
@@ -175,9 +219,9 @@ export async function draftShadowReply(conversationId: string, triggerMessageId:
       // The inbox agent reasons about replies + bookings, not staffing — give it
       // exactly those tools (an explicit allow-list, so a new tool can't leak in).
       tools: buildGhostTools().filter(t =>
-        ['search_availability', 'get_customer_bookings', 'check_booking', 'list_extras'].includes(t.name),
+        ['search_availability', 'get_customer_bookings', 'search_bookings_by_details', 'check_booking', 'list_extras'].includes(t.name),
       ),
-      submitTools: [SUBMIT_REPLY, SUBMIT_BOOKING],
+      submitTools: [SUBMIT_REPLY, SUBMIT_BOOKING, SUBMIT_BOOKING_CORRECTION],
       prompt: `You are the shadow inbox agent for Off Course Amsterdam. A customer sent a chat message; investigate what you need (tools), then submit the reply you WOULD send. This is SHADOW mode: nothing is sent or booked — the team compares your work against what a human actually does.
 
 ${knowledgeBlock}${correctionsBlock}CUSTOMER
@@ -200,15 +244,17 @@ RULES
 - If check_booking comes back NOT bookable, it returns up to 3 already-validated alternatives (nearest time, the other boat, or another day). Warmly explain the asked slot is gone and offer those — in the customer's words. Never invent an option it didn't return.
 - When alternatives exist: if the customer clearly wants the nearest fit AND you have their details, you may submit_booking_proposal onto the best alternative; otherwise prefer submit_reply_draft offering the options (with times + prices) and asking them to pick. Don't book a slot the customer never chose.
 - A booking_proposal MUST be unambiguous: include the exact option (boat + duration, e.g. "Diana 2h") in booking.option, taken from search_availability. If the customer hasn't said which duration/boat and several fit, do NOT guess — submit_reply_draft asking them to pick, with the options + prices.
-- A real booking needs the customer's name + email. If you're ready to book but don't have their email, ask for it (open_question) before promising it's done.`,
+- A real booking needs the customer's name + email. If you're ready to book but don't have their email, ask for it (open_question) before promising it's done.
+- If the customer says they ALREADY booked/paid but get_customer_bookings found nothing for their email, their contact details on file are probably wrong (a typo, a different address) — do NOT tell them no booking exists. Call search_bookings_by_details with their name (+ date/boat if given). If it returns exactly one confident match, submit_booking_correction with that booking_id. If it returns multiple candidates or a weak match, submit_reply_draft asking them to confirm which booking (date/boat) rather than guessing — never assume which stranger's paid booking is theirs.`,
     })
-    if (!result) return
+    if (!result) return null
 
     const parsed = validateSubmission(result.submission)
-    if (!parsed) return
+    if (!parsed) return null
 
     const isBooking = result.submittedVia === 'submit_booking_proposal' && parsed.booking
-    const kind = isBooking ? 'booking_proposal' : 'reply_draft'
+    const isCorrection = result.submittedVia === 'submit_booking_correction' && parsed.correction
+    const kind = isBooking ? 'booking_proposal' : isCorrection ? 'booking_correction' : 'reply_draft'
 
     // The team reads English + Dutch — translate any other-language draft so it
     // can actually be read and approved. Off the hot path (after()); metered.
@@ -217,7 +263,7 @@ RULES
       : null
 
     // ── Write the proposal — shadow status, nothing visible to customers ─
-    const { data: inserted } = await supabase
+    const { data: inserted, error: insertError } = await supabase
       .from('agent_proposals')
       .insert({
         kind,
@@ -232,6 +278,7 @@ RULES
             language: parsed.language,
             open_question: parsed.open_question,
             ...(isBooking ? { booking: parsed.booking } : {}),
+            ...(isCorrection ? { correction: parsed.correction } : {}),
             steps: result.steps,
           }),
         ),
@@ -242,14 +289,28 @@ RULES
       .select('id')
       .single()
 
+    // Without this check, a failed write here fell through silently: `inserted`
+    // stays null, the dry-run below is skipped, and the function still returns
+    // a "success" { kind, reasoning } as if a proposal had been saved — the
+    // caller (e.g. gmail/sync.ts) then reports "Ghost drafted a reply" in the
+    // AI summary while no agent_proposals row, and no reviewable card, ever
+    // existed. Throwing routes this into the catch below instead: still
+    // "never breaks the customer flow" (returns null, same as any other
+    // failure here), but now actually logged instead of masquerading as a
+    // successful draft.
+    if (insertError) throw new Error(`Could not create ${kind} proposal: ${insertError.message}`)
+
     // Dry-run the booking proposal IF the kind's autonomy reaches dry_run:
     // validate it against FareHarbor (no booking, no email) and attach a
     // verdict. Best-effort — never blocks or breaks the shadow write.
     if (isBooking && inserted && levelRank(autonomyForKind(kind)) >= levelRank('dry_run')) {
       await dryRunBookingProposal(inserted.id)
     }
+
+    return { kind, reasoning: parsed.reasoning }
   } catch (err) {
     // Shadow work is best-effort by definition.
     console.error('[shadow-drafter] failed:', err instanceof Error ? err.message : err)
+    return null
   }
 }

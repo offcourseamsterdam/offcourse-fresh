@@ -13,7 +13,11 @@ import { postSlackText } from '@/lib/slack/send-notification'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { autonomyForKind, levelRank } from '@/lib/ghost/agents'
 import { revalidateStoredMove } from '@/lib/ghost/guest-move-drafter'
-import { notifyShiftAssigned } from '@/lib/scheduling/notify-assignment'
+import { applyScheduleAssignments } from '@/lib/scheduling/apply-assignments'
+import { sendConfirmationEmail, type ConfirmationEmailInput } from '@/lib/booking/send-confirmation-email'
+import { importFareharborBooking } from '@/lib/fareharbor/import-booking'
+import { syncAndScheduleShifts } from '@/lib/scheduling/proactive-scheduling'
+import type { BookingSource } from '@/lib/constants'
 import type { BookingProposalInput, AltSlot } from '@/lib/ghost/dry-run'
 
 /**
@@ -32,7 +36,19 @@ import type { BookingProposalInput, AltSlot } from '@/lib/ghost/dry-run'
  *   - send:    the human approves a maintenance_task → send the drafted
  *              technician quote-request email (Resend). Atomic claim + release,
  *              same shape as `book`; fires only on an explicit human click.
- * Everything except `book` and `send` is read-only toward the outside world.
+ *   - correct_booking: the human approves a booking_correction → patch the
+ *              matched booking's contact field and resend its confirmation
+ *              email. Never creates or cancels a booking, only corrects
+ *              contact info on an existing one — same atomic-claim shape as
+ *              `book`; fires only on an explicit human click.
+ *   - import_fh_booking: the human approves a fh_booking_import_ready
+ *              proposal → re-fetch the booking live from FareHarbor (it
+ *              already exists there, created by a 3rd-party API) and insert
+ *              the matching row into our own `bookings` table. Never creates
+ *              or charges anything in FareHarbor — same atomic-claim shape as
+ *              `book`; fires only on an explicit human click.
+ * Everything except `book`, `send`, `correct_booking` and `import_fh_booking`
+ * is read-only toward the outside world.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const denied = await requireAdmin()
@@ -176,6 +192,211 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       } catch (bookErr) {
         await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
         throw bookErr
+      }
+    }
+
+    if (body.action === 'correct_booking') {
+      // Runtime autonomy guard, same shape as apply_schedule: refuse when the
+      // kind hasn't been granted the 'ask' level.
+      if (levelRank(autonomyForKind('booking_correction')) < levelRank('ask')) {
+        return apiError('booking_correction is not at the ask level', 403)
+      }
+
+      const { data: p } = await supabase
+        .from('agent_proposals')
+        .select('id, kind, status, payload')
+        .eq('id', id)
+        .single()
+      if (!p || p.kind !== 'booking_correction') return apiError('Not a booking correction', 400)
+      if (p.status === 'executed') return apiError('This correction was already applied.', 409)
+
+      const correction = (p.payload as { correction?: { booking_id?: string; field?: string; new_value?: string } } | null)
+        ?.correction
+      if (!correction?.booking_id || correction.field !== 'customer_email' || !correction.new_value) {
+        return apiError('This proposal has no valid correction to apply.', 422)
+      }
+      const newEmail = correction.new_value.trim()
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+        return apiError('The corrected email address looks invalid.', 422)
+      }
+
+      // Validate the target booking BEFORE claiming — same ordering as `book`
+      // above: all validation runs first (pure reads, safe to repeat on a
+      // concurrent request), and the atomic claim only guards the actual side
+      // effect that follows, so there's no claim to manually release on a
+      // validation failure.
+      const { data: booking } = await supabase
+        .from('bookings')
+        .select(`
+          id, booking_uuid, customer_name, customer_email, customer_phone,
+          listing_title, booking_date, start_time, end_time, guest_count,
+          category, extras_selected, stripe_amount, fareharbor_customer_type_rate_pk,
+          stripe_payment_intent_id, base_amount_cents, discount_amount_cents, status
+        `)
+        .eq('id', correction.booking_id)
+        .single()
+      if (!booking) return apiError('The matched booking no longer exists.', 404)
+      if (booking.status === 'cancelled') return apiError('This booking was cancelled — the correction was not applied.', 409)
+
+      // ATOMIC CLAIM before touching the booking: 'shadow' → 'booking'
+      // (transient), same double-click guard as `book`/`apply_schedule`.
+      const { data: claimed } = await supabase
+        .from('agent_proposals')
+        .update({ status: 'booking' })
+        .eq('id', id)
+        .eq('status', 'shadow')
+        .select('id')
+      if (!claimed?.length) return apiError('This correction is already being applied (or was applied).', 409)
+
+      try {
+        const { error: updateErr } = await supabase
+          .from('bookings')
+          .update({ customer_email: newEmail })
+          .eq('id', booking.id)
+        if (updateErr) throw new Error(`Could not update booking ${booking.id}: ${updateErr.message}`)
+
+        // sendConfirmationEmail never throws (its own best-effort contract for
+        // the money-path callers that fire it via Promise.allSettled) — it
+        // returns whether the send actually succeeded instead. Here, on an
+        // explicit admin click to resend, a false must be treated as a real
+        // failure: falling through to 'executed' would tell the admin the
+        // customer was notified of their corrected email when they weren't.
+        const emailSent = await sendConfirmationEmail({
+          contact: { name: booking.customer_name ?? '', email: newEmail, phone: booking.customer_phone ?? undefined },
+          listingTitle: booking.listing_title ?? '',
+          date: booking.booking_date ?? '',
+          startAt: booking.start_time,
+          endAt: booking.end_time,
+          guestCount: booking.guest_count ?? 1,
+          amountCents: booking.stripe_amount ?? 0,
+          extrasSelected: (booking.extras_selected ?? []) as ConfirmationEmailInput['extrasSelected'],
+          fhBookingUuid: booking.booking_uuid ?? undefined,
+          category: booking.category,
+          fareharborCustomerTypeRatePk: booking.fareharbor_customer_type_rate_pk,
+          stripePaymentIntentId: booking.stripe_payment_intent_id,
+          baseAmountCents: booking.base_amount_cents,
+          discountAmountCents: booking.discount_amount_cents,
+        })
+        if (!emailSent) throw new Error('The confirmation email failed to send — the correction was not marked as applied.')
+
+        await supabase
+          .from('agent_proposals')
+          .update({
+            status: 'executed',
+            outcome: JSON.parse(JSON.stringify({ corrected_at: new Date().toISOString(), booking_id: booking.id, new_email: newEmail })),
+          })
+          .eq('id', id)
+
+        await emitOpsEvent({
+          eventType: 'recommendation_approved',
+          actorType: 'human',
+          proposalId: id,
+          source: 'admin/ghost/proposals/[id]:correct_booking',
+          payload: { booking_id: booking.id },
+        })
+
+        return apiOk({ booking_id: booking.id, new_email: newEmail })
+      } catch (correctErr) {
+        await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
+        throw correctErr
+      }
+    }
+
+    if (body.action === 'import_fh_booking') {
+      const { data: p } = await supabase
+        .from('agent_proposals')
+        .select('id, kind, status, payload, conversation_id')
+        .eq('id', id)
+        .single()
+      if (!p || p.kind !== 'fh_booking_import_ready') return apiError('Not a FareHarbor import proposal', 400)
+      if (p.status === 'executed') return apiError('This booking was already imported.', 409)
+
+      const payload =
+        (p.payload as {
+          platform?: string
+          bookingRef?: string
+          guestName?: string | null
+          guestEmail?: string | null
+          guestPhone?: string | null
+          endTime?: string | null
+          parsed?: { dateISO?: string | null; time?: string | null; guests?: number | null; experienceName?: string | null }
+        } | null) ?? {}
+      const pk = payload.bookingRef ? parseInt(payload.bookingRef, 10) : NaN
+      if (!Number.isFinite(pk)) return apiError('This proposal has no valid FareHarbor booking number.', 422)
+
+      // ATOMIC CLAIM before touching Supabase: 'shadow' → 'booking' (transient),
+      // same double-click guard as `book`/`correct_booking`.
+      const { data: claimed } = await supabase
+        .from('agent_proposals')
+        .update({ status: 'booking' })
+        .eq('id', id)
+        .eq('status', 'shadow')
+        .select('id')
+      if (!claimed?.length) return apiError('This booking is already being imported (or was imported).', 409)
+
+      try {
+        const result = await importFareharborBooking(supabase, {
+          bookingPk: pk,
+          bookingSource: (payload.platform as BookingSource) ?? 'website',
+          guestName: payload.guestName ?? null,
+          guestEmail: payload.guestEmail ?? null,
+          guestPhone: payload.guestPhone ?? null,
+          dateISO: payload.parsed?.dateISO ?? null,
+          time: payload.parsed?.time ?? null,
+          endTime: payload.endTime ?? null,
+          guests: payload.parsed?.guests ?? null,
+          experienceName: payload.parsed?.experienceName ?? null,
+        })
+        if (!result.ok) {
+          // Release the claim so the human can retry after fixing the cause.
+          await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
+          return apiError(result.error, 422)
+        }
+
+        await supabase
+          .from('agent_proposals')
+          .update({
+            status: 'executed',
+            outcome: JSON.parse(JSON.stringify({ imported_at: new Date().toISOString(), booking_id: result.bookingId })),
+          })
+          .eq('id', id)
+
+        // Flip the conversation itself, not just the proposal — the inbox
+        // list label and thread header both read ota_status directly, so
+        // without this they'd keep showing "Not in our database" forever
+        // even after a successful import (the proposal is a detail only the
+        // co-pilot card looks at). ai_summary is refreshed too — otherwise
+        // the list's snippet line stays frozen on the pre-import wording
+        // ("needs import to system") even though the title above it updates.
+        if (p.conversation_id) {
+          await supabase
+            .from('conversations')
+            .update({
+              ota_status: 'imported',
+              status: 'resolved',
+              ai_summary: `Imported — booking #${payload.bookingRef ?? 'unknown'} now in Bookings, Scheduling and Planning.`,
+            })
+            .eq('id', p.conversation_id)
+        }
+
+        // Best-effort: get the newly-imported booking into Scheduling (and try
+        // to auto-assign its captain) right away, same fire-and-forget hook
+        // every other booking-confirmation path uses (see
+        // docs/features/ota-notifications.md).
+        after(() => syncAndScheduleShifts(supabase, result.date).catch(err => console.error('[import_fh_booking] shift sync failed:', err)))
+
+        await emitOpsEvent({
+          eventType: 'recommendation_approved',
+          actorType: 'human',
+          proposalId: id,
+          source: 'admin/ghost/proposals/[id]:import_fh_booking',
+          payload: { booking_id: result.bookingId },
+        })
+
+        return apiOk({ booking_id: result.bookingId })
+      } catch (importErr) {
+        await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
+        throw importErr
       }
     }
 
@@ -326,34 +547,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (!claimed?.length) return apiError('This schedule is already being applied (or was applied).', 409)
 
       try {
-        const applied: { shift_id: string; staff_name?: string }[] = []
-        const skippedShifts: { shift_id: string; reason: string }[] = []
-
-        for (const a of assignments) {
-          // A manual assignment made AFTER the draft always wins: only shifts
-          // that are still OPEN get the proposed captain.
-          const { data: updated } = await supabase
-            .from('shifts')
-            .update({ staff_id: a.staff_id, status: 'assigned' })
-            .eq('id', a.shift_id!)
-            .eq('status', 'open')
-            .is('staff_id', null)
-            .select('id')
-          if (updated?.length) {
-            applied.push({ shift_id: a.shift_id!, staff_name: a.staff_name })
-            await notifyShiftAssigned(supabase, a.shift_id!)
-            await emitOpsEvent({
-              eventType: 'shift_assigned',
-              actorType: 'human',
-              shiftId: a.shift_id!,
-              staffId: a.staff_id ?? null,
-              proposalId: id,
-              source: 'admin/ghost/proposals/[id]:apply_schedule',
-            })
-          } else {
-            skippedShifts.push({ shift_id: a.shift_id!, reason: 'no longer open (manual change wins)' })
-          }
-        }
+        const { applied, skipped: skippedShifts } = await applyScheduleAssignments(
+          supabase,
+          assignments as { shift_id: string; staff_id: string; staff_name?: string }[],
+          { actorType: 'human', proposalId: id, source: 'admin/ghost/proposals/[id]:apply_schedule' },
+        )
 
         await supabase
           .from('agent_proposals')

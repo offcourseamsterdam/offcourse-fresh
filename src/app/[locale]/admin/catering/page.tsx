@@ -24,6 +24,7 @@ interface CateringBooking {
   customer_type_name: string | null
   extras_selected: AdminExtraLineItem[] | null
   catering_email_sent_at: string | null
+  catering_confirmed_at: string | null
   cateringItems: AdminExtraLineItem[]
   cateringAmountCents: number
 }
@@ -354,6 +355,7 @@ export default function CateringPage() {
               <tbody className="divide-y divide-zinc-100 bg-white">
                 {bookings.map(b => {
                   const isSent = !!b.catering_email_sent_at
+                  const isConfirmed = !!b.catering_confirmed_at
                   const isCancelled = b.status === 'cancelled'
                   const isSending = sending[b.id]
                   const sendError = sendErrors[b.id]
@@ -424,6 +426,14 @@ export default function CateringPage() {
                             <span className="inline-flex items-center gap-1 text-xs font-medium text-red-700 bg-red-100 px-2 py-1 rounded-full">
                               Booking cancelled
                             </span>
+                          ) : isConfirmed ? (
+                            <span
+                              title="Supplier replied confirming the order (auto-detected)"
+                              className="inline-flex items-center gap-1 text-xs font-medium text-violet-700 bg-violet-50 px-2 py-1 rounded-full"
+                            >
+                              <CheckCircle2 className="w-3 h-3" />
+                              Confirmed
+                            </span>
                           ) : isSent ? (
                             <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full">
                               <CheckCircle2 className="w-3 h-3" />
@@ -434,10 +444,17 @@ export default function CateringPage() {
                               Pending
                             </span>
                           )}
-                          {isSent && b.catering_email_sent_at && (
+                          {isConfirmed && b.catering_confirmed_at ? (
                             <p className="text-[10px] text-zinc-400 mt-0.5">
-                              {fmtAdminDate(b.catering_email_sent_at.split('T')[0])}
+                              {fmtAdminDate(b.catering_confirmed_at.split('T')[0])}
                             </p>
+                          ) : (
+                            isSent &&
+                            b.catering_email_sent_at && (
+                              <p className="text-[10px] text-zinc-400 mt-0.5">
+                                {fmtAdminDate(b.catering_email_sent_at.split('T')[0])}
+                              </p>
+                            )
                           )}
                         </td>
 

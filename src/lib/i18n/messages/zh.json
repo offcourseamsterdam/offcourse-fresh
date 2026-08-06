@@ -12,6 +12,11 @@
     "send": "发送",
     "sent": "我们会在这里回复——欢迎稍后再来看看。",
     "error": "出了点问题——再试一次？",
-    "online": "在线"
+    "online": "在线",
+    "chatTabLabel": "聊天",
+    "whatsappTabLabel": "WhatsApp",
+    "whatsappIntro": "更喜欢用 WhatsApp？我们在那边聊天也一样起劲。",
+    "whatsappPrefill": "你好！我想咨询一下游船的问题。",
+    "openWhatsapp": "打开 WhatsApp"
   }
 }

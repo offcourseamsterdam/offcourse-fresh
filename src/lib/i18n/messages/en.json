@@ -165,6 +165,11 @@
     "send": "Send",
     "sent": "We'll reply right here — feel free to check back later.",
     "error": "Something went wrong — try again?",
-    "online": "Online"
+    "online": "Online",
+    "chatTabLabel": "Chat",
+    "whatsappTabLabel": "WhatsApp",
+    "whatsappIntro": "Prefer WhatsApp? We're just as chatty over there.",
+    "whatsappPrefill": "Hi! I have a question about a cruise.",
+    "openWhatsapp": "Open WhatsApp"
   }
 }

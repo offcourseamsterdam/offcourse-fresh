@@ -495,7 +495,9 @@ export type Database = {
           booking_uuid: string | null
           campaign_id: string | null
           category: string | null
+          catering_confirmed_at: string | null
           catering_email_sent_at: string | null
+          catering_thread_id: string | null
           commission_amount_cents: number | null
           created_at: string | null
           currency: string | null
@@ -553,7 +555,9 @@ export type Database = {
           booking_uuid?: string | null
           campaign_id?: string | null
           category?: string | null
+          catering_confirmed_at?: string | null
           catering_email_sent_at?: string | null
+          catering_thread_id?: string | null
           commission_amount_cents?: number | null
           created_at?: string | null
           currency?: string | null
@@ -611,7 +615,9 @@ export type Database = {
           booking_uuid?: string | null
           campaign_id?: string | null
           category?: string | null
+          catering_confirmed_at?: string | null
           catering_email_sent_at?: string | null
+          catering_thread_id?: string | null
           commission_amount_cents?: number | null
           created_at?: string | null
           currency?: string | null
@@ -1027,6 +1033,7 @@ export type Database = {
       }
       conversations: {
         Row: {
+          ai_summary: string | null
           assignee_profile_id: string | null
           booking_id: string | null
           channel: string
@@ -1034,12 +1041,20 @@ export type Database = {
           created_at: string
           id: string
           last_message_at: string
+          ota_available: boolean | null
+          ota_booking_ref: string | null
+          ota_guest_name: string | null
+          ota_source: string | null
+          ota_status: string | null
+          provider_thread_id: string | null
           status: string
           subject: string | null
           unread_count: number
+          wa_window_expires_at: string | null
           webchat_token: string
         }
         Insert: {
+          ai_summary?: string | null
           assignee_profile_id?: string | null
           booking_id?: string | null
           channel: string
@@ -1047,12 +1062,20 @@ export type Database = {
           created_at?: string
           id?: string
           last_message_at?: string
+          ota_available?: boolean | null
+          ota_booking_ref?: string | null
+          ota_guest_name?: string | null
+          ota_source?: string | null
+          ota_status?: string | null
+          provider_thread_id?: string | null
           status?: string
           subject?: string | null
           unread_count?: number
+          wa_window_expires_at?: string | null
           webchat_token?: string
         }
         Update: {
+          ai_summary?: string | null
           assignee_profile_id?: string | null
           booking_id?: string | null
           channel?: string
@@ -1060,9 +1083,16 @@ export type Database = {
           created_at?: string
           id?: string
           last_message_at?: string
+          ota_available?: boolean | null
+          ota_booking_ref?: string | null
+          ota_guest_name?: string | null
+          ota_source?: string | null
+          ota_status?: string | null
+          provider_thread_id?: string | null
           status?: string
           subject?: string | null
           unread_count?: number
+          wa_window_expires_at?: string | null
           webchat_token?: string
         }
         Relationships: [
@@ -2763,6 +2793,7 @@ export type Database = {
         Row: {
           author_name: string | null
           body: string
+          body_html: string | null
           conversation_id: string
           created_at: string
           direction: string
@@ -2770,11 +2801,13 @@ export type Database = {
           id: string
           provider: string
           provider_message_id: string | null
+          recording_url: string | null
           status: string
         }
         Insert: {
           author_name?: string | null
           body: string
+          body_html?: string | null
           conversation_id: string
           created_at?: string
           direction: string
@@ -2782,11 +2815,13 @@ export type Database = {
           id?: string
           provider?: string
           provider_message_id?: string | null
+          recording_url?: string | null
           status?: string
         }
         Update: {
           author_name?: string | null
           body?: string
+          body_html?: string | null
           conversation_id?: string
           created_at?: string
           direction?: string
@@ -2794,6 +2829,7 @@ export type Database = {
           id?: string
           provider?: string
           provider_message_id?: string | null
+          recording_url?: string | null
           status?: string
         }
         Relationships: [
@@ -3443,6 +3479,7 @@ export type Database = {
           fareharbor_availability_pk: number | null
           id: string
           notes: string | null
+          notified_at: string | null
           reminder_sent_at: string | null
           staff_id: string | null
           start_at: string
@@ -3458,6 +3495,7 @@ export type Database = {
           fareharbor_availability_pk?: number | null
           id?: string
           notes?: string | null
+          notified_at?: string | null
           reminder_sent_at?: string | null
           staff_id?: string | null
           start_at: string
@@ -3473,6 +3511,7 @@ export type Database = {
           fareharbor_availability_pk?: number | null
           id?: string
           notes?: string | null
+          notified_at?: string | null
           reminder_sent_at?: string | null
           staff_id?: string | null
           start_at?: string

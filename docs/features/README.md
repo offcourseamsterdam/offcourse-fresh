@@ -42,3 +42,8 @@ One file per track or major feature. Written before every PR and kept up to date
 | Booking double-create guard (PaymentIntent claim) | [booking-double-create-guard.md](booking-double-create-guard.md) | — | done |
 | Observability hardening + money-path tests | [observability-hardening.md](observability-hardening.md) | — | done |
 | AI Operations Engine — fase 1 + gastcontact (ops_events, profiles, operations optimizer, auto shift-sync, guest move requests) | [ai-operations-engine.md](ai-operations-engine.md) | — | done |
+| Gmail inbox integration (email as a Ghost-drafted channel, poll + threaded send, catering supplier auto-confirmation) | [gmail-inbox-integration.md](gmail-inbox-integration.md) | — | done |
+| WhatsApp inbox channel (Twilio Sandbox, webhook ingestion, Ghost drafting, outbound send) | [whatsapp-twilio-integration.md](whatsapp-twilio-integration.md) | — | sandbox (pending Meta verification) |
+| Voice inbox channel (Twilio: ring browser softphone + phone simultaneously, voicemail + transcription, outbound calling) | [voice-twilio-integration.md](voice-twilio-integration.md) | — | done |
+| OTA notification emails (Withlocals/GetMyBoat: booking-ref grouping, availability check, Chat/OTA sidebar filter, co-pilot cards) | [ota-notifications.md](ota-notifications.md) | — | done (one-click auto-booking from a confirmed OTA email not built yet) |
+| Inbox AI summaries (Haiku one-line email summaries + real availability icon) | [inbox-ai-summaries.md](inbox-ai-summaries.md) | — | done |

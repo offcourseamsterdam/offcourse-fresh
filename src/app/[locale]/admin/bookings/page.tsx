@@ -40,6 +40,7 @@ export default function BookingsPage() {
   useBookingsChangedSignal(fetchBookings)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
+  const [reconciliationOnly, setReconciliationOnly] = useState(false)
   const [dateCreatedFilter, setDateCreatedFilter] = useState<DateCreatedFilter>('all')
   const [sortField, setSortField] = useState<SortField>('created_at')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
@@ -63,6 +64,7 @@ export default function BookingsPage() {
   const filtered = (bookings ?? []).filter(b => {
     if (sourceFilter === 'website' && b.booking_source && b.booking_source !== 'website') return false
     if (sourceFilter === 'internal' && (!b.booking_source || b.booking_source === 'website')) return false
+    if (reconciliationOnly && b.payment_status !== 'needs_reconciliation') return false
     if (threshold && b.created_at && new Date(b.created_at) < threshold) return false
     if (!matchesBookingSearch(b, search)) return false
     return true
@@ -80,6 +82,7 @@ export default function BookingsPage() {
   const totalRevenue = bookings
     ?.filter(b => (b.status === 'confirmed' || b.status === 'booked') && b.booking_source === 'website')
     .reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0) ?? 0
+  const needsReconciliationCount = bookings?.filter(b => b.payment_status === 'needs_reconciliation').length ?? 0
 
   const DATE_CREATED_LABELS: Record<DateCreatedFilter, string> = {
     all: 'All time',
@@ -125,6 +128,9 @@ export default function BookingsPage() {
               <span><span className="font-semibold text-zinc-900">{bookings.length}</span> total</span>
               <span><span className="font-semibold text-emerald-700">{confirmed}</span> confirmed</span>
               <span className="font-semibold text-zinc-900">{fmtAdminAmountRounded(totalRevenue)}</span>
+              {needsReconciliationCount > 0 && (
+                <span><span className="font-semibold text-amber-700">{needsReconciliationCount}</span> need reconciliation</span>
+              )}
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               {/* Search */}
@@ -162,6 +168,18 @@ export default function BookingsPage() {
                     {f === 'all' ? 'All' : f === 'website' ? 'Regular' : 'Internal'}
                   </button>
                 ))}
+                {needsReconciliationCount > 0 && (
+                  <button
+                    onClick={() => setReconciliationOnly(v => !v)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      reconciliationOnly
+                        ? 'bg-amber-600 text-white'
+                        : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                    }`}
+                  >
+                    Needs reconciliation ({needsReconciliationCount})
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -265,7 +283,7 @@ export default function BookingsPage() {
                         {b.guest_count ?? '—'}
                       </td>
                       <td className="px-4 py-3 text-zinc-900 font-medium whitespace-nowrap">
-                        {b.booking_source === 'website' || b.booking_source === 'payment_link' || !b.booking_source
+                        {b.booking_source === 'website' || b.booking_source === 'payment_link' || b.booking_source === 'phone_walkin' || !b.booking_source
                           ? fmtAdminAmountRounded(b.stripe_amount)
                           : (b.deposit_amount_cents != null ? `€${(b.deposit_amount_cents / 100).toFixed(0)}` : '—')
                         }
@@ -276,7 +294,19 @@ export default function BookingsPage() {
                           <p className="text-xs text-zinc-400 mt-0.5">{b.partner_name}</p>
                         )}
                       </td>
-                      <td className="px-4 py-3"><BookingStatusBadge status={b.status} /></td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col items-start gap-1">
+                          <BookingStatusBadge status={b.status} />
+                          {b.payment_status === 'needs_reconciliation' && (
+                            <span
+                              title="Imported from the 2026 FareHarbor reconciliation — guest identity or amount unconfirmed. See the note below."
+                              className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700"
+                            >
+                              needs reconciliation
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-4 py-3 text-zinc-400">
                         {expanded[b.id]
                           ? <ChevronUp className="w-4 h-4" />

@@ -95,6 +95,7 @@ vi.mock('@/lib/booking/pi-metadata', () => ({
 vi.mock('@/lib/webhooks/log', () => ({ logWebhookEvent: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/ops/events', () => ({ emitOpsEvent: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/ghost/guest-move-drafter', () => ({ draftGuestMoveForNewBooking: vi.fn().mockResolvedValue('skipped') }))
+vi.mock('@/lib/scheduling/sync-shifts', () => ({ syncShiftsForRange: vi.fn().mockResolvedValue({ created: 0, updated: 0, skipped: [] }) }))
 // after() requires a real Next.js request scope, absent when calling POST directly
 // in a unit test — run the callback inline instead (fire-and-forget → forget-now).
 vi.mock('next/server', async importOriginal => {
@@ -103,6 +104,7 @@ vi.mock('next/server', async importOriginal => {
 })
 
 import { POST } from './route'
+import { syncShiftsForRange } from '@/lib/scheduling/sync-shifts'
 
 function mockReq(): NextRequest {
   return {
@@ -171,6 +173,8 @@ describe('stripe webhook — payment_intent.succeeded (single finalizer)', () =>
     expect(h.sendCateringOrderEmailForBooking).not.toHaveBeenCalled()
     // The whole point: never refunds.
     expect(h.refundsCreate).not.toHaveBeenCalled()
+    // Keeps the Shifts tab in sync the moment a website payment confirms.
+    expect(syncShiftsForRange).toHaveBeenCalledWith(expect.anything(), '2026-06-20', '2026-06-20')
   })
 
   it('stores the resolved Stripe fee on the booking, best-effort', async () => {
@@ -439,6 +443,8 @@ describe('stripe webhook — checkout.session.completed', () => {
     expect(h.sendConfirmationEmail).toHaveBeenCalledWith(
       expect.objectContaining({ contact: expect.objectContaining({ phone: undefined }) }),
     )
+    // Keeps the Shifts tab in sync the moment a payment-link booking confirms.
+    expect(syncShiftsForRange).toHaveBeenCalledWith(expect.anything(), '2026-06-10', '2026-06-10')
   })
 
   it('skips when booking is already confirmed (idempotency)', async () => {

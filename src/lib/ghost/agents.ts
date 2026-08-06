@@ -41,26 +41,54 @@ export const IRREVERSIBLE_KINDS = ['booking_proposal'] as const
 export const AUTONOMY_CEILING: Record<string, AutonomyLevel> = {
   reply_draft: 'ask',
   booking_proposal: 'dry_run', // irreversible — validate only, never create
+  // Correcting an existing paid booking's contact info + resending its
+  // confirmation IS reversible (unlike creating a booking/consuming a real FH
+  // slot) — a human click performing the real action is the right ceiling,
+  // same as catering_order/maintenance_task. Never auto: it touches a paying
+  // customer's record and sends them an email.
+  booking_correction: 'ask',
   catering_order: 'ask',
   catering_upsell: 'ask', // guest-facing email — always a human click
-  schedule_day: 'ask',
+  // Owner-approved 2026-08-06 (Beer, explicit): proactive auto-assign.
+  // Raised from 'ask' so schedule_day can reach 'auto' below. Still fully
+  // reversible — an auto-assigned shift is a normal 'assigned' row a human
+  // can reassign in Planning like any other, it just never sat waiting for
+  // an Approve click. Never touches a shift a human (or an earlier proposal)
+  // already assigned; see applyScheduleAssignments's open+unassigned guard.
+  schedule_day: 'auto',
   maintenance_task: 'ask',
   stock_reorder: 'ask',
   ops_review: 'ask', // may one day get an Apply button; never auto — it moves boats and people
   guest_move_request: 'ask', // contacting a guest is ALWAYS a human click; never auto
+  // Read-only fact blocks — no action button exists yet for either, so there's
+  // nothing an autonomy climb would even mean. Raise this ceiling only once a
+  // real one-click action (e.g. auto-creating the FareHarbor booking) is built.
+  ota_availability: 'propose',
+  ota_booking_ready: 'propose',
 }
 
 /** The kind's CURRENT operating level (must be ≤ its ceiling). */
 export const AUTONOMY_LEVEL: Record<string, AutonomyLevel> = {
   reply_draft: 'propose',
   booking_proposal: 'dry_run', // validates each proposal against FareHarbor
+  // Starts directly at its ceiling, same precedent as schedule_day: the whole
+  // point is a one-click "Confirm & resend" action from day one, not a
+  // shadow-only note nobody can act on.
+  booking_correction: 'ask',
   catering_order: 'propose',
   catering_upsell: 'propose', // draft only; the send button is the 'ask' rung
-  schedule_day: 'ask', // owner-approved 2026-07-04: Approve assigns the captains (one click, reversible)
+  // Owner-approved 2026-08-06: was 'ask' (2026-07-04's one-click Approve) —
+  // now assigns automatically, DMs the captain the shift + crew-call time +
+  // pay, and only falls back to a shadow proposal a human must approve when
+  // the AI can't confidently fill every open shift on the target date (see
+  // draftOrAssignSchedule in ops-drafters.ts).
+  schedule_day: 'auto',
   maintenance_task: 'propose',
   stock_reorder: 'propose',
   ops_review: 'propose', // shadow-only until its outcome history earns a climb
   guest_move_request: 'dry_run', // every ask is FH-validated before draft AND re-validated before send
+  ota_availability: 'propose',
+  ota_booking_ready: 'propose',
 }
 
 export function autonomyForKind(kind: string): AutonomyLevel {
@@ -115,13 +143,22 @@ export const GHOST_AGENTS: GhostAgent[] = [
     trigger: 'daily ops cron (15:00 UTC)',
   },
   {
+    key: 'booking_correction',
+    name: 'Booking correction agent',
+    description:
+      'When a customer says they already booked and paid but their contact details on file are wrong (a typo, a different address), looks up the real booking by name/date instead of exact contact match, and proposes correcting it plus resending the confirmation.',
+    status: 'active',
+    kinds: ['booking_correction'],
+    trigger: 'booking correction intent detected in a conversation',
+  },
+  {
     key: 'scheduling',
     name: 'Scheduling agent',
     description:
-      "Proposes captains for tomorrow's open shifts using availability, overlap checks and 7-day workload fairness.",
+      "Assigns captains to open shifts automatically — availability, overlap checks, 7-day workload fairness, and cost all weighed per candidate — and DMs the captain their shift. Falls back to a shadow proposal for a human to approve when it can't confidently fill a shift.",
     status: 'active',
     kinds: ['schedule_day'],
-    trigger: 'daily ops cron (15:00 UTC)',
+    trigger: 'daily horizon scan (14 days, 15:00 UTC) + immediately when a new booking opens a shift',
   },
   {
     key: 'maintenance',
@@ -149,6 +186,15 @@ export const GHOST_AGENTS: GhostAgent[] = [
     status: 'active',
     kinds: ['ops_review', 'guest_move_request'],
     trigger: 'daily ops cron (15:00 UTC)',
+  },
+  {
+    key: 'ota',
+    name: 'OTA agent',
+    description:
+      'Recognizes Withlocals/GetMyBoat notification emails and checks real availability for a new request, or flags a confirmed booking for the team to create manually — never drafts a customer reply, since these platforms handle guest communication themselves.',
+    status: 'active',
+    kinds: ['ota_availability', 'ota_booking_ready'],
+    trigger: 'every inbound OTA notification email',
   },
 ]
 

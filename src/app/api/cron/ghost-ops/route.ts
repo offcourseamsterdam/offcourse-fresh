@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireCronSecret } from '@/lib/auth/require-cron-secret'
-import { draftCateringOrders, draftCateringUpsells, draftTomorrowSchedule } from '@/lib/ghost/ops-drafters'
+import { draftCateringOrders, draftCateringUpsells } from '@/lib/ghost/ops-drafters'
 import { draftOpsReview } from '@/lib/ghost/ops-review'
 import { draftGuestMoveRequest, expireStaleGuestMoves, OPTIMIZE_HORIZON_DAYS } from '@/lib/ghost/guest-move-drafter'
 import { evaluateExpiredProposals } from '@/lib/ghost/evaluate'
 import { syncShiftsForRange } from '@/lib/scheduling/sync-shifts'
+import { runProactiveScheduling } from '@/lib/scheduling/proactive-scheduling'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { amsterdamToday } from '@/lib/utils'
 import { alertCronFailure } from '@/lib/cron/alert'
@@ -17,9 +18,11 @@ import { alertCronFailure } from '@/lib/cron/alert'
  * below never reason over a stale roster — a booking that landed an hour ago
  * already has its shift by the time the optimizer looks, also two weeks out.
  *
- * Step 2: shadow-draft tomorrow's captain schedule, the upcoming catering
- * order, and the operations review. All status 'shadow': logged on
- * /admin/ghost, never executed, deduped per target date (a re-run is a no-op).
+ * Step 2: sweep the same horizon for captain assignments (auto-assigns and
+ * DMs the captain when confident, else leaves a shadow proposal), shadow-draft
+ * the upcoming catering order, and the operations review. Catering/ops stay
+ * status 'shadow' — logged on /admin/ghost, never executed, deduped per
+ * target date (a re-run is a no-op).
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const denied = requireCronSecret(req)
@@ -37,7 +40,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const evaluated = await evaluateExpiredProposals()
 
     const [schedule, catering, cateringUpsell, opsReview, expiredMoves] = await Promise.all([
-      draftTomorrowSchedule(),
+      runProactiveScheduling(),
       draftCateringOrders(),
       draftCateringUpsells(),
       draftOpsReview(),

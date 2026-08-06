@@ -62,6 +62,19 @@ const envSchema = z.object({
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
 
+  // Gmail inbox integration — reuses GOOGLE_OAUTH_CLIENT_ID/SECRET above with a
+  // separately-consented refresh token (gmail.readonly + gmail.send scopes).
+  GMAIL_REFRESH_TOKEN: z.string().optional(),
+  // The actual authenticated Google account (OAuth `userId`) — may be a shared
+  // mailbox, not necessarily the customer-facing address.
+  GMAIL_USER: z.string().optional(),
+  // The customer-facing address, if different from GMAIL_USER (e.g. an alias
+  // like cruise@ delivering into a shared info@ mailbox). Scopes ingestion to
+  // only mail addressed here — required whenever GMAIL_USER's inbox also
+  // receives unrelated mail — and is the From address on replies. Falls back
+  // to GMAIL_USER when unset (i.e. the mailbox IS the customer-facing address).
+  GMAIL_SUPPORT_ADDRESS: z.string().optional(),
+
   // Outscraper — reviews scraping (Google Maps + TripAdvisor). Same key verifies webhook HMAC.
   OUTSCRAPER_API_KEY: z.string().optional(),
 

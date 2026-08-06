@@ -49,8 +49,22 @@ export async function postToChannel(channel: string, text: string, opts?: SlackS
   await slackCall('chat.postMessage', { channel, text })
 }
 
-/** Open a DM with a Slack member ID and send a message. */
-export async function postDm(slackMemberId: string, text: string, opts?: SlackSendOpts): Promise<void> {
+/**
+ * Send a direct message. Returns whether it actually sent — slackCall swallows
+ * the real Slack error (missing SLACK_BOT_TOKEN, revoked auth, unknown user)
+ * and logs it, but a caller whose only channel IS this DM (no separate
+ * fallback) needs to know it didn't land rather than assume
+ * best-effort-and-forget.
+ *
+ * Accepts EITHER form of id, because Slack's UI hands out both and they are
+ * easy to confuse when pasting one into an admin field:
+ *   U… (user id)    → open a DM with that person first, then post
+ *   D… (DM channel) → already a conversation; post straight to it
+ * Passing a D… id to conversations.open fails with `user_not_found`, which
+ * previously made the whole DM silently fall back to the shared team channel —
+ * the exact opposite of what a DM is for.
+ */
+export async function postDm(slackMemberId: string, text: string, opts?: SlackSendOpts): Promise<boolean> {
   void logSlackMessage({
     notificationType: opts?.type,
     direction: 'outbound',
@@ -59,10 +73,16 @@ export async function postDm(slackMemberId: string, text: string, opts?: SlackSe
     messagePreview: text,
     triggeredBy: opts?.triggeredBy,
   })
-  const opened = await slackCall('conversations.open', { users: slackMemberId })
-  const channelId = (opened?.channel as { id?: string } | undefined)?.id
-  if (!channelId) return
-  await slackCall('chat.postMessage', { channel: channelId, text })
+  let channelId: string | undefined
+  if (slackMemberId.startsWith('D')) {
+    channelId = slackMemberId
+  } else {
+    const opened = await slackCall('conversations.open', { users: slackMemberId })
+    channelId = (opened?.channel as { id?: string } | undefined)?.id
+  }
+  if (!channelId) return false
+  const sent = await slackCall('chat.postMessage', { channel: channelId, text })
+  return !!sent
 }
 
 /** Resolve a Slack member ID to a human display name (or null on any failure). */

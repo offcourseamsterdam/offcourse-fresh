@@ -170,7 +170,7 @@ export function trackEvent(
 }
 
 /** Where a WhatsApp click came from — kept in the event's metadata.source. */
-export type WhatsAppSource = 'floating_button' | 'footer' | 'chat_to_book' | 'pride_booking_panel'
+export type WhatsAppSource = 'floating_button' | 'footer' | 'chat_to_book' | 'pride_booking_panel' | 'chat_widget'
 
 /**
  * Track a tap on any WhatsApp button. Counted once per session per source

@@ -31,13 +31,15 @@ export const UPSELL_LEAD_DAYS = 2
 
 // ── Shared prompt blocks (imported by the drafters) ─────────────────────────
 
-export const SCHEDULE_DAY_PROMPT = `You are the shadow scheduling assistant for Off Course Amsterdam (electric canal boats). Propose a captain for each OPEN shift on the target date below. This is a SHADOW proposal — it is logged for comparison against what the human scheduler actually does; nothing is assigned until a human approves.
+export const SCHEDULE_DAY_PROMPT = `You are the scheduling assistant for Off Course Amsterdam (electric canal boats). Propose a captain for each OPEN shift on the target date below. When you can confidently fill a shift this assigns the captain for real and DMs them the details — there is no human review step first, so follow the rules exactly rather than leaving a borderline call for someone else to catch.
 
 RULES
 - Never propose someone whose availability is 'unavailable'.
 - Treat 'prefer_not' as a last resort and say so in the reason.
 - One person cannot be on two overlapping shifts.
-- Prefer spreading work fairly (look at shifts last 7 days).`
+- Prefer spreading work fairly (look at shifts last 7 days).
+- Each candidate's hourly rate is shown. When two candidates are equally fair and available, prefer the lower rate — but never sacrifice fairness or availability just to save a few euros.
+- If you are not confident a shift can be filled correctly (nobody clearly available, or a genuine tie you can't break), leave it out of "assignments" rather than guessing — an unfilled shift falls back to a human, which is safe; a wrong assignment is not.`
 
 export const SCHEDULE_DAY_JSON = `Return JSON only:
 {"assignments": [{"shift_id": "<id>", "staff_id": "<id>", "staff_name": "<name>", "reason": "<short why>"}], "summary": "<1-2 sentences in English on the overall reasoning, including anything you could not solve>"}`
@@ -106,16 +108,17 @@ export const RULEBOOK: RulebookEntry[] = [
   {
     kind: 'schedule_day',
     agentKey: 'scheduling',
-    title: 'Captain schedule for tomorrow',
+    title: 'Proactive captain scheduling',
     hardRules: [
-      { rule: 'Draft only — approving assigns captains via one human click; nothing assigns itself.', enforcedIn: 'src/lib/ghost/agents.ts (autonomy: ask)' },
-      { rule: 'Apply only touches shifts that are still OPEN — a manual assignment made after the draft always wins.', enforcedIn: 'src/app/api/admin/ghost/proposals/[id]/route.ts' },
-      { rule: 'One proposal per target date; re-running the cron never doubles up.', enforcedIn: 'src/lib/ghost/ops-drafters.ts (dedupe)' },
-      { rule: 'After the date passes unapproved, the draft is scored against what the human actually did (the learning signal).', enforcedIn: 'src/lib/ghost/evaluate.ts' },
+      { rule: 'Auto-assigns when the AI can confidently fill every open shift on the target date — the captain gets DM\'d the shift + crew-call time + pay immediately, no click needed. Falls back to a shadow proposal a human approves when it can\'t (e.g. nobody available).', enforcedIn: 'src/lib/ghost/agents.ts (autonomy: auto) + src/lib/ghost/ops-drafters.ts (draftOrAssignSchedule)' },
+      { rule: 'Only ever touches a shift that is still OPEN with no captain — a manual assignment always wins, whether made before or after the AI runs.', enforcedIn: 'src/lib/scheduling/apply-assignments.ts' },
+      { rule: 'Runs on the daily horizon scan (14 days out) AND immediately whenever a new booking opens a shift — never waits for the next cron tick.', enforcedIn: 'src/lib/scheduling/proactive-scheduling.ts' },
+      { rule: 'The shadow-proposal fallback still dedupes one-per-target-date; the auto path relies on each shift only ever being assigned once (open → assigned), so it safely re-scans a date as new bookings add shifts to it.', enforcedIn: 'src/lib/ghost/ops-drafters.ts (dedupe)' },
+      { rule: 'A shadow proposal left unapproved past its date is scored against what the human actually did (the learning signal) — auto-assigned days are excluded since there is no separate human choice to compare against.', enforcedIn: 'src/lib/ghost/evaluate.ts' },
     ],
     prompt: `${SCHEDULE_DAY_PROMPT}\n\n${SCHEDULE_DAY_JSON}`,
     promptShared: true,
-    dataInjected: ['target date', 'staff list + availability + 7-day workload', "the date's shifts (boat, time, cruise, status)", 'last 5 evaluated drafts vs what the human actually assigned'],
+    dataInjected: ['target date', 'staff list + availability + 7-day workload + hourly rate', "the date's shifts (boat, time, cruise, status) + cost per candidate", 'last 5 evaluated drafts vs what the human actually assigned'],
   },
   {
     kind: 'catering_order',

@@ -24,6 +24,7 @@ import { formatAmsterdamTime } from '@/lib/utils'
 import { logWebhookEvent } from '@/lib/webhooks/log'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { draftGuestMoveForNewBooking } from '@/lib/ghost/guest-move-drafter'
+import { syncAndScheduleShifts } from '@/lib/scheduling/proactive-scheduling'
 import type Stripe from 'stripe'
 
 // The payment_intent.succeeded handler may spend up to ~40s retrying a transient
@@ -136,6 +137,11 @@ export async function POST(request: NextRequest) {
         after(() =>
           draftGuestMoveForNewBooking(booking.booking_date as string).catch(err =>
             console.error('[stripe-webhook] guest-move check failed:', err),
+          ),
+        )
+        after(() =>
+          syncAndScheduleShifts(createAdminClient(), booking.booking_date as string).catch(err =>
+            console.error('[stripe-webhook] shift sync failed:', err),
           ),
         )
       }
@@ -425,6 +431,11 @@ export async function POST(request: NextRequest) {
         after(() =>
           draftGuestMoveForNewBooking(meta.date as string).catch(err =>
             console.error('[stripe-webhook] guest-move check failed:', err),
+          ),
+        )
+        after(() =>
+          syncAndScheduleShifts(createAdminClient(), meta.date as string).catch(err =>
+            console.error('[stripe-webhook] shift sync failed:', err),
           ),
         )
       }

@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import {
   sha256Hex,
   normalizeEmail,
-  normalizePhoneE164,
   buildUserIdentifiers,
 } from './user-identifiers'
 
@@ -43,25 +42,8 @@ describe('normalizeEmail', () => {
   })
 })
 
-// ── normalizePhoneE164 ──────────────────────────────────────────────────────
-
-describe('normalizePhoneE164', () => {
-  it('keeps an existing + prefix, stripping separators', () => {
-    expect(normalizePhoneE164('+31 6 1234 5678')).toBe('+31612345678')
-  })
-
-  it('converts 00 / 0 / bare NL formats to E.164', () => {
-    expect(normalizePhoneE164('0031612345678')).toBe('+31612345678')
-    expect(normalizePhoneE164('06-12345678')).toBe('+31612345678')
-    expect(normalizePhoneE164('31612345678')).toBe('+31612345678')
-    expect(normalizePhoneE164('612345678')).toBe('+31612345678')
-  })
-
-  it('returns null for empty / too-short input', () => {
-    expect(normalizePhoneE164('')).toBeNull()
-    expect(normalizePhoneE164('123')).toBeNull()
-  })
-})
+// normalizePhoneE164 now lives in src/lib/phone/normalize.ts (dependency-free,
+// so it's importable from client code too) — see normalize.test.ts.
 
 // ── buildUserIdentifiers ────────────────────────────────────────────────────
 

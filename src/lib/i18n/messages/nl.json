@@ -12,6 +12,11 @@
     "send": "Versturen",
     "sent": "We reageren hier — kom gerust later even terug.",
     "error": "Er ging iets mis — probeer het nog eens?",
-    "online": "Online"
+    "online": "Online",
+    "chatTabLabel": "Chat",
+    "whatsappTabLabel": "WhatsApp",
+    "whatsappIntro": "Liever WhatsApp? Daar zijn we net zo kletsgraag.",
+    "whatsappPrefill": "Hoi! Ik heb een vraag over een cruise.",
+    "openWhatsapp": "Open WhatsApp"
   }
 }

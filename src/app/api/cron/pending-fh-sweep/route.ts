@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { requireCronSecret } from '@/lib/auth/require-cron-secret'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { syncAndScheduleShifts } from '@/lib/scheduling/proactive-scheduling'
 import { getStripe } from '@/lib/stripe/server'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { buildFhBookingPlan } from '@/lib/booking/finalize-booking'
@@ -159,6 +160,18 @@ export async function GET(request: NextRequest) {
       .update({ status: 'confirmed', booking_uuid: fhBookingUuid ?? null, updated_at: nowIso })
       .eq('id', claimed.id)
     await notifyBookingsChanged()
+
+    // Same "keep the shift roster in sync the moment a booking becomes real"
+    // rule as the webhook/admin paths — this recovery path is the one place
+    // that previously never triggered it, even though it's just as real a
+    // "new booking" moment.
+    if (claimed.booking_date) {
+      after(() =>
+        syncAndScheduleShifts(supabase, claimed.booking_date as string).catch(err =>
+          console.error('[pending-fh-sweep] shift sync failed:', err),
+        ),
+      )
+    }
 
     // R6 — send the notifications the parked webhook never sent: email AND catering.
     const guestCount = Number(claimed.guest_count ?? 1)

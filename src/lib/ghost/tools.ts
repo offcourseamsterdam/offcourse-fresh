@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { escapeLikePattern } from '@/lib/supabase/escape-like'
 import { fetchSearchResults } from '@/lib/search/fetch-search-results'
 import { amsterdamToday, fmtEuros } from '@/lib/utils'
 import { checkBookingViability } from './dry-run'
@@ -143,6 +144,47 @@ export function buildGhostTools(): AgentTool[] {
             extras: Array.isArray(b.extras_selected)
               ? (b.extras_selected as { name?: string }[]).map(e => e.name).filter(Boolean)
               : [],
+          })),
+        }
+      },
+    },
+    {
+      name: 'search_bookings_by_details',
+      description:
+        'Find a booking by name/date/boat when the customer says "I already booked" but get_customer_bookings found nothing — this happens when their contact email does not match what is stored on the actual booking (a typo, a different address). Use whatever details the customer gave: name, approximate date, boat. Returns up to 5 candidates ranked newest-first, each including the email actually on file for that booking — compare it against what the customer told you. If more than one plausible match comes back, or the name match is weak, do NOT assume which one is right — ask the customer to confirm rather than guessing on someone else\'s paid booking.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          customer_name: { type: 'string', description: "The name the customer gave you in the conversation (not necessarily their contact record's name)" },
+          date: { ...DATE_SCHEMA, description: 'Date in YYYY-MM-DD format, if the customer gave one' },
+          boat: { type: 'string', description: 'Boat name if mentioned, e.g. "Diana" or "Curaçao"' },
+        },
+        required: ['customer_name'],
+      },
+      run: async input => {
+        const name = String(input.customer_name ?? '').trim()
+        if (!name) throw new Error('customer_name is required')
+        const supabase = createAdminClient()
+        let query = supabase
+          .from('bookings')
+          .select('id, customer_name, customer_email, booking_date, start_time, listing_title, guest_count, status')
+          .ilike('customer_name', `%${escapeLikePattern(name)}%`)
+          .order('booking_date', { ascending: false })
+          .limit(5)
+        if (input.date) query = query.eq('booking_date', String(input.date))
+        if (input.boat) query = query.ilike('listing_title', `%${escapeLikePattern(String(input.boat))}%`)
+        const { data } = await query
+        if (!data?.length) return { bookings: [], note: 'No bookings found matching those details.' }
+        return {
+          bookings: data.map(b => ({
+            booking_id: b.id,
+            name_on_booking: b.customer_name,
+            email_on_booking: b.customer_email,
+            date: b.booking_date,
+            time: b.start_time,
+            cruise: b.listing_title,
+            guests: b.guest_count,
+            status: b.status,
           })),
         }
       },

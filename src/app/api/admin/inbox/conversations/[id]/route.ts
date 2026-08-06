@@ -25,7 +25,8 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     const { data: conversation, error } = await supabase
       .from('conversations')
       .select(
-        `id, channel, status, subject, unread_count, last_message_at, created_at, booking_id,
+        `id, channel, status, subject, unread_count, last_message_at, created_at, booking_id, wa_window_expires_at,
+         ota_source, ota_status, ota_booking_ref, ota_guest_name,
          contact:contacts(id, name, email, phone_e164, locale, notes)`,
       )
       .eq('id', id)
@@ -36,12 +37,12 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     const [{ data: messages, error: msgError }, bookings, ghost] = await Promise.all([
       supabase
         .from('messages')
-        .select('id, direction, body, author_name, status, error, created_at')
+        .select('id, direction, body, body_html, author_name, status, error, created_at, recording_url')
         .eq('conversation_id', id)
         .order('created_at', { ascending: true })
         .limit(500),
       loadContactBookings(supabase, conversation.contact),
-      loadGhostProposals(supabase, id),
+      loadGhostProposals(supabase, id, !!conversation.ota_source),
     ])
     if (msgError) return apiError(msgError.message)
 
@@ -80,7 +81,7 @@ async function loadContactBookings(
 /** The narrowed columns we pull per proposal — never the whole payload/outcome. */
 interface NarrowedGhostRow {
   id: string
-  kind: 'reply_draft' | 'booking_proposal'
+  kind: 'reply_draft' | 'booking_proposal' | 'booking_correction' | 'ota_availability' | 'ota_booking_ready' | 'fh_booking_import_ready'
   status: string
   reasoning: string | null
   created_at: string
@@ -89,8 +90,16 @@ interface NarrowedGhostRow {
   language: string | null
   booking: Record<string, unknown> | null
   verdict: Record<string, unknown> | null
+  correction: Record<string, unknown> | null
   human_reply: string | null
   comparison: Record<string, unknown> | null
+  ota_platform: string | null
+  ota_booking_ref: string | null
+  ota_guest_name: string | null
+  ota_requested: Record<string, unknown> | null
+  ota_parsed: Record<string, unknown> | null
+  ota_checked: string | null
+  ota_availability_data: Record<string, unknown> | null
 }
 
 /**
@@ -106,17 +115,20 @@ interface NarrowedGhostRow {
  * re-nested below into the exact payload/outcome shape the inbox already expects,
  * so the API contract (and InboxGhostProposal) is unchanged.
  */
-async function loadGhostProposals(supabase: ReturnType<typeof createAdminClient>, conversationId: string) {
+async function loadGhostProposals(supabase: ReturnType<typeof createAdminClient>, conversationId: string, isOta: boolean) {
   const { data } = await supabase
     .from('agent_proposals')
     .select(
       `id, kind, status, reasoning, created_at,
        reply:payload->>reply, reply_en:payload->>reply_en, language:payload->>language,
-       booking:payload->booking, verdict:payload->verdict,
-       human_reply:outcome->>human_reply, comparison:outcome->comparison`,
+       booking:payload->booking, verdict:payload->verdict, correction:payload->correction,
+       human_reply:outcome->>human_reply, comparison:outcome->comparison,
+       ota_platform:payload->>platform, ota_booking_ref:payload->>bookingRef, ota_guest_name:payload->>guestName,
+       ota_requested:payload->requested, ota_parsed:payload->parsed, ota_checked:payload->>checked,
+       ota_availability_data:payload->availability`,
     )
     .eq('conversation_id', conversationId)
-    .in('kind', ['reply_draft', 'booking_proposal'])
+    .in('kind', ['reply_draft', 'booking_proposal', 'booking_correction', 'ota_availability', 'ota_booking_ready', 'fh_booking_import_ready'])
     .order('created_at', { ascending: false })
     .limit(20)
 
@@ -133,6 +145,14 @@ async function loadGhostProposals(supabase: ReturnType<typeof createAdminClient>
       language: r.language ?? undefined,
       booking: r.booking ?? undefined,
       verdict: r.verdict ?? undefined,
+      correction: r.correction ?? undefined,
+      platform: r.ota_platform ?? undefined,
+      booking_ref: r.ota_booking_ref ?? undefined,
+      guest_name: r.ota_guest_name ?? undefined,
+      requested: r.ota_requested ?? undefined,
+      parsed: r.ota_parsed ?? undefined,
+      checked: r.ota_checked === 'true' ? true : r.ota_checked === 'false' ? false : undefined,
+      availability: r.ota_availability_data ?? undefined,
     },
     outcome:
       r.human_reply || r.comparison
@@ -141,9 +161,17 @@ async function loadGhostProposals(supabase: ReturnType<typeof createAdminClient>
   }))
 
   return {
-    // The current things to act on:
-    replyDraft: rows.find(r => r.kind === 'reply_draft') ?? null,
-    bookingProposal: rows.find(r => r.kind === 'booking_proposal') ?? null,
+    // The current things to act on. reply_draft/booking_proposal/booking_correction
+    // are ONLY ever meaningful for a real customer conversation — an OTA
+    // notification conversation never gets one going forward (see
+    // gmail/sync.ts), so any such row here is stale data from before that
+    // fix and must not resurface as if it were current.
+    replyDraft: isOta ? null : rows.find(r => r.kind === 'reply_draft') ?? null,
+    bookingProposal: isOta ? null : rows.find(r => r.kind === 'booking_proposal') ?? null,
+    bookingCorrection: isOta ? null : rows.find(r => r.kind === 'booking_correction') ?? null,
+    otaAvailability: rows.find(r => r.kind === 'ota_availability') ?? null,
+    otaBookingReady: rows.find(r => r.kind === 'ota_booking_ready') ?? null,
+    fhImportReady: rows.find(r => r.kind === 'fh_booking_import_ready') ?? null,
     // The learning trail: past drafts the human already replied to — draft vs
     // what was actually sent, so the feedback loop is visible in the inbox.
     history: rows.filter(r => r.outcome?.human_reply),

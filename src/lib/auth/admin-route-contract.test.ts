@@ -170,8 +170,10 @@ describe('admin route auth contract', () => {
     // 116 = 114 + /api/admin/finance/share-links + /share-links/[id] (issue
     // and revoke temporary accountant tokens for the Finance tab — migration
     // 107, src/lib/auth/finance-share.ts).
+    // 139 = 138 + /api/admin/voice/token (Twilio Voice Access Token for the
+    // admin browser softphone).
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`138`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`142`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {

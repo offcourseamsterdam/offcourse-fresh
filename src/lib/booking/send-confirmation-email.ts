@@ -103,15 +103,23 @@ export interface ConfirmationEmailInput {
   cityTaxCents?: number | null
 }
 
-export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<void> {
+/**
+ * Returns whether the email actually sent. Every existing caller fires this
+ * best-effort inside Promise.allSettled alongside a Slack post and doesn't
+ * inspect the resolved value — this never throws, so those callers are
+ * unaffected. Callers that DO need to know (e.g. a booking-correction flow
+ * that resends this on an admin's explicit click) can check the result and
+ * treat a false as a real failure instead of a silent no-op.
+ */
+export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<boolean> {
   // Local/test escape hatch: when set, never send a real confirmation email. Used
   // while exercising the booking flow against the unlisted test cruises so test
   // bookings don't email anyone. Production leaves this unset.
   if (process.env.SUPPRESS_CONFIRMATION_EMAILS === 'true') {
     console.log('[email] SUPPRESS_CONFIRMATION_EMAILS=true — skipping confirmation email for', p.contact.email)
-    return
+    return true
   }
-  if (!process.env.RESEND_API_KEY) return
+  if (!process.env.RESEND_API_KEY) return false
 
   const resend = getResend()
   const location = esc(p.departureLocation ?? 'Brouwersgracht 29, Amsterdam')
@@ -359,8 +367,10 @@ export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<
         }],
       } : {}),
     })
+    return true
   } catch (err) {
     console.error('[sendConfirmationEmail] error:', err)
+    return false
   }
 }
 

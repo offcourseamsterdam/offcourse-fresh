@@ -3,8 +3,11 @@
 import { useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Loader2, RefreshCw, ChevronLeft, ChevronRight, List, Plus, X } from 'lucide-react'
+import { Loader2, RefreshCw, ChevronLeft, ChevronRight, List, Plus, X, Ghost, Search } from 'lucide-react'
+import { adminMutate } from '@/hooks/useAdminSave'
 import { BookingDetailRow } from '@/components/admin/BookingDetailRow'
+import { GhostActivityPanel } from './GhostActivityPanel'
+import type { GhostActivityItem } from '@/app/api/admin/planning/ghost-activity/route'
 import { BookingStatusBadge } from '@/components/admin/BookingStatusBadge'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { useBookingsChangedSignal } from '@/hooks/useBookingsChangedSignal'
@@ -44,15 +47,24 @@ function timeRangeLabel(startTime: string | null, endTime: string | null): strin
  *  data straight from FareHarbor; `boatGuess` is an inferred hint (capacity
  *  math, not a real resource ID — FareHarbor doesn't expose one), so it
  *  renders muted and clearly separate from the real number. */
-function DepartureBlock({ group, onSelectBooking, compact = false, capacity }: { group: PlanningGroup; onSelectBooking: (id: string) => void; compact?: boolean; capacity?: SharedCapacityResult }) {
+function DepartureBlock({ group, onSelectBooking, compact = false, capacity, captainByBookingId }: { group: PlanningGroup; onSelectBooking: (id: string) => void; compact?: boolean; capacity?: SharedCapacityResult; captainByBookingId?: Map<string, { name: string; startAt: string; endAt: string }> }) {
   const first = group.bookings[0]
   const isMulti = group.bookings.length > 1
+  // Any booking in this departure resolves the same shift/captain — a shared
+  // cruise's several bookings all ride the same boat with the same captain.
+  const captain = group.bookings.map(b => captainByBookingId?.get(b.id)).find(Boolean)
+  const crewCall = captain ? fmtAdminTime(new Date(new Date(captain.startAt).getTime() - 60 * 60_000).toISOString()) : null
   return (
     <div className="rounded-md border border-zinc-200 bg-white h-full overflow-hidden shadow-sm">
       <div className={`px-2.5 border-b border-zinc-100 bg-zinc-50/60 ${compact ? 'py-1' : 'pt-2 pb-1.5'}`}>
         <p className="font-semibold text-zinc-900 text-xs">
           {compact ? fmtAdminTime(first.start_time) : timeRangeLabel(first.start_time, first.end_time)}
         </p>
+        {captain && (
+          <p className={`truncate font-medium text-teal-700 ${compact ? 'text-[10px]' : 'text-[11px]'}`} title={`Crew call ${crewCall}`}>
+            🧑‍✈️ {compact ? captain.name.split(' ')[0] : `${captain.name} · from ${crewCall}`}
+          </p>
+        )}
         {!compact && (
           <>
             <p className="truncate text-zinc-700 text-xs">
@@ -130,6 +142,47 @@ function GridLines() {
   )
 }
 
+interface CaptainWindow {
+  name: string
+  startIso: string
+  endIso: string
+}
+
+/** One working-time span per captain active in this column: from 1h before
+ *  their earliest departure that day (crew call) to 45min after their
+ *  latest cruise returns (wrap-up) — spans every cruise they're on, not just
+ *  the first, so a captain running 3 back-to-back cruises gets one
+ *  continuous bar instead of 3 overlapping ones. Two different captains
+ *  splitting the same boat/day (one morning, one afternoon) get two
+ *  separate, non-overlapping bars. */
+function computeCaptainWindows(
+  groups: PlanningGroup[],
+  captainByBookingId?: Map<string, { name: string; startAt: string; endAt: string }>,
+): CaptainWindow[] {
+  if (!captainByBookingId) return []
+  const byCaptain = new Map<string, { startMs: number; endMs: number }>()
+  for (const group of groups) {
+    for (const b of group.bookings) {
+      const captain = captainByBookingId.get(b.id)
+      if (!captain) continue
+      const startMs = new Date(captain.startAt).getTime()
+      const endMs = new Date(captain.endAt).getTime()
+      const existing = byCaptain.get(captain.name)
+      if (existing) {
+        existing.startMs = Math.min(existing.startMs, startMs)
+        existing.endMs = Math.max(existing.endMs, endMs)
+      } else {
+        byCaptain.set(captain.name, { startMs, endMs })
+      }
+    }
+  }
+  return Array.from(byCaptain.entries()).map(([name, { startMs, endMs }]) => ({
+    name,
+    startIso: new Date(startMs - 60 * 60_000).toISOString(),
+    endIso: new Date(endMs + 45 * 60_000).toISOString(),
+  }))
+}
+
 /**
  * One time-axis column (a whole day when it isn't split by boat, or one boat
  * sub-column when it is). Fixed height spanning the full 09:00–00:00 window;
@@ -146,10 +199,19 @@ function GridLines() {
  * whether it has a label, or its hours would drift out of sync with the
  * shared hour rail and every other (unlabeled) day column.
  */
-function TimeGridColumn({ groups, onSelectBooking, boatLabel, compact = false, sharedCapacity }: { groups: PlanningGroup[]; onSelectBooking: (id: string) => void; boatLabel?: string; compact?: boolean; sharedCapacity?: Record<number, SharedCapacityResult> }) {
+function TimeGridColumn({ groups, onSelectBooking, boatLabel, compact = false, sharedCapacity, captainByBookingId }: { groups: PlanningGroup[]; onSelectBooking: (id: string) => void; boatLabel?: string; compact?: boolean; sharedCapacity?: Record<number, SharedCapacityResult>; captainByBookingId?: Map<string, { name: string; startAt: string; endAt: string }> }) {
+  const captainWindows = useMemo(() => computeCaptainWindows(groups, captainByBookingId), [groups, captainByBookingId])
   return (
     <div className="relative" style={{ height: GRID_HEIGHT_PX }}>
       <GridLines />
+      {captainWindows.map(w => (
+        <div
+          key={w.name}
+          className="absolute left-0 right-0 z-[1] bg-emerald-100/70 border-y border-emerald-200 pointer-events-none"
+          style={{ top: topPx(w.startIso), height: blockMinHeightPx(w.startIso, w.endIso) }}
+          title={`${w.name} working ${fmtAdminTime(w.startIso)}–${fmtAdminTime(w.endIso)}`}
+        />
+      ))}
       {boatLabel && (
         <p className="absolute top-0.5 left-1 z-20 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 bg-white/90 px-1 rounded pointer-events-none">
           {boatLabel}
@@ -178,6 +240,7 @@ function TimeGridColumn({ groups, onSelectBooking, boatLabel, compact = false, s
                 onSelectBooking={onSelectBooking}
                 compact={compact}
                 capacity={first.category === 'shared' && first.fareharbor_availability_pk ? sharedCapacity?.[first.fareharbor_availability_pk] : undefined}
+                captainByBookingId={captainByBookingId}
               />
             </div>
           </div>
@@ -198,6 +261,9 @@ export default function PlanningPage() {
 
   const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()))
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [showGhostActivity, setShowGhostActivity] = useState(false)
+  const [findingCaptains, setFindingCaptains] = useState(false)
+  const [findCaptainsResult, setFindCaptainsResult] = useState<string | null>(null)
   const selectedBooking = bookings?.find(b => b.id === expandedId) ?? null
 
   const todayStr = useMemo(() => amsDateString(new Date()), [])
@@ -253,6 +319,72 @@ export default function PlanningPage() {
 
   const { data: sharedCapacity } = useAdminFetch<Record<number, SharedCapacityResult>>(sharedSlotsUrl)
 
+  // Same source and derivation the Scheduling tab's "Available" row uses
+  // (ShiftsTab.tsx) — reused as-is rather than duplicated, so both pages
+  // stay in sync automatically if the availability model ever changes.
+  const { data: staffData, refresh: refreshStaffData } = useAdminFetch<{
+    staff: { id: string; name: string }[]
+    availability: { staff_id: string; date: string; status: string }[]
+    shifts: { staff_id: string | null; booking_id: string | null; start_at: string; end_at: string; staff: { name: string } | null }[]
+  }>(`/api/admin/scheduling/shifts?from=${days[0]}&to=${days[days.length - 1]}`)
+
+  const availableStaffByDate = useMemo(() => {
+    const statusByKey = new Map<string, string>()
+    for (const a of staffData?.availability ?? []) statusByKey.set(`${a.staff_id}:${a.date}`, a.status)
+    const map: Record<string, string[]> = {}
+    for (const s of staffData?.staff ?? []) {
+      for (const d of days) {
+        if (statusByKey.get(`${s.id}:${d}`) === 'available') (map[d] ??= []).push(s.name)
+      }
+    }
+    return map
+  }, [staffData, days])
+
+  // Overlay data for the tour blocks: which captain is on a given booking's
+  // shift, and their crew-call time (1h before departure — the same "arrive
+  // by" moment notifyShiftAssigned DMs them). Only assigned shifts (a real
+  // staff_id) produce a badge — an open shift shows nothing, same as today.
+  const captainByBookingId = useMemo(() => {
+    const map = new Map<string, { name: string; startAt: string; endAt: string }>()
+    for (const s of staffData?.shifts ?? []) {
+      if (!s.staff_id || !s.booking_id || !s.staff) continue
+      map.set(s.booking_id, { name: s.staff.name, startAt: s.start_at, endAt: s.end_at })
+    }
+    return map
+  }, [staffData])
+
+  // Captains the proactive scheduler has actually assigned this week (auto
+  // autonomy, no human click) — see docs/plans/2026-08-06 scheduling plan.
+  const { data: ghostActivity, isLoading: ghostActivityLoading, refresh: refreshGhostActivity } = useAdminFetch<GhostActivityItem[]>(
+    `/api/admin/planning/ghost-activity?from=${days[0]}&to=${days[days.length - 1]}`,
+  )
+
+  // On-demand version of the nightly proactive-scheduling cron — "check
+  // right now" instead of waiting for 15:00 UTC. Never DMs a captain by
+  // itself (assign-now/notify-later); it only fills in who's assigned,
+  // visible immediately via the overlay + Ghost Activity panel refresh.
+  async function findCaptains() {
+    setFindingCaptains(true)
+    setFindCaptainsResult(null)
+    try {
+      const { summary } = await adminMutate<{ summary: { assigned: number; drafted: number; skipped: number } }>(
+        '/api/admin/planning/find-captains',
+        'POST',
+      )
+      setFindCaptainsResult(
+        summary.assigned || summary.drafted
+          ? `Assigned ${summary.assigned} shift${summary.assigned === 1 ? '' : 's'}${summary.drafted ? `, left ${summary.drafted} for review` : ''}.`
+          : 'Nothing to assign — every open shift already has a captain or nobody is confidently available.',
+      )
+      refreshGhostActivity()
+      refreshStaffData()
+    } catch (err) {
+      setFindCaptainsResult(err instanceof Error ? err.message : 'Could not run the check — try again.')
+    } finally {
+      setFindingCaptains(false)
+    }
+  }
+
   return (
     <div className="p-8 max-w-none space-y-6">
       {/* Header */}
@@ -262,6 +394,19 @@ export default function PlanningPage() {
           <p className="text-sm text-zinc-500 mt-1">Week view · {weekTotal} booking{weekTotal !== 1 ? 's' : ''} this week</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={findCaptains} disabled={findingCaptains}>
+            {findingCaptains ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+            {findingCaptains ? 'Checking…' : 'Find captains'}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setShowGhostActivity(true)} className="relative">
+            <Ghost className="w-3.5 h-3.5" />
+            Ghost activity
+            {(ghostActivity?.length ?? 0) > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-violet-600 text-white text-[10px] font-semibold flex items-center justify-center">
+                {ghostActivity!.length}
+              </span>
+            )}
+          </Button>
           <Button variant="outline" size="sm" onClick={() => router.push(`/${locale}/admin/bookings`)}>
             <List className="w-3.5 h-3.5" />
             List view
@@ -278,6 +423,15 @@ export default function PlanningPage() {
       </div>
 
       <AdminErrorBanner error={error} />
+
+      {findCaptainsResult && (
+        <div className="flex items-center justify-between gap-3 text-sm text-zinc-700 bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2.5">
+          <span>{findCaptainsResult}</span>
+          <button onClick={() => setFindCaptainsResult(null)} className="text-zinc-400 hover:text-zinc-600 shrink-0">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Week navigation */}
       <div className="flex items-center justify-between gap-4">
@@ -333,10 +487,17 @@ export default function PlanningPage() {
             <div className="p-2">
               <div className="relative" style={{ height: GRID_HEIGHT_PX }}>
                 {hourMarks().map(m => (
+                  // Fixed height + flex-centered content, not line-height-based
+                  // text centering: `-translate-y-1/2` shifts by half of
+                  // WHATEVER the box renders at, and a 10px font's default
+                  // 1.5 line-height renders a 15px box — so the glyph itself
+                  // sits 7.5px above the gridline it's meant to label. Giving
+                  // the box an explicit small height makes the 50% shift (and
+                  // the glyph's position within it) exact, not font-metric-dependent.
                   <div
                     key={m.hour}
-                    className="absolute right-0 text-[10px] text-zinc-400 -translate-y-1/2"
-                    style={{ top: m.topPx, width: RAIL_WIDTH_PX }}
+                    className="absolute right-0 flex items-center justify-end text-[10px] text-zinc-400 -translate-y-1/2"
+                    style={{ top: m.topPx, width: RAIL_WIDTH_PX, height: 12 }}
                   >
                     {m.label}
                   </div>
@@ -367,16 +528,29 @@ export default function PlanningPage() {
                     <p className={`text-sm font-medium ${isToday ? 'text-indigo-900' : 'text-zinc-900'}`}>
                       {dateObj.getDate()} {dateObj.toLocaleDateString('en-GB', { month: 'short', timeZone: 'Europe/Amsterdam' })}
                     </p>
+                    {(availableStaffByDate[day] ?? []).length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {availableStaffByDate[day].map(name => (
+                          <span
+                            key={name}
+                            title={`${name} — available`}
+                            className="text-[10px] leading-tight px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium truncate max-w-full"
+                          >
+                            {name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="p-2">
                     {!isSplit && (
-                      <TimeGridColumn groups={dayGroups} onSelectBooking={setExpandedId} sharedCapacity={sharedCapacity} />
+                      <TimeGridColumn groups={dayGroups} onSelectBooking={setExpandedId} sharedCapacity={sharedCapacity} captainByBookingId={captainByBookingId} />
                     )}
                     {isSplit && (
                       <div className="flex gap-2 divide-x divide-zinc-100">
                         {boatColumns.map(col => (
                           <div key={col.boat} className="flex-1 min-w-0 pl-2 first:pl-0">
-                            <TimeGridColumn groups={col.groups} onSelectBooking={setExpandedId} boatLabel={col.boat} compact sharedCapacity={sharedCapacity} />
+                            <TimeGridColumn groups={col.groups} onSelectBooking={setExpandedId} boatLabel={col.boat} compact sharedCapacity={sharedCapacity} captainByBookingId={captainByBookingId} />
                           </div>
                         ))}
                       </div>
@@ -453,6 +627,16 @@ export default function PlanningPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {showGhostActivity && (
+        <GhostActivityPanel
+          items={ghostActivity ?? []}
+          isLoading={ghostActivityLoading}
+          weekLabel={formatWeekRangeLabel(weekStart)}
+          onClose={() => setShowGhostActivity(false)}
+          onConfirmed={refreshGhostActivity}
+        />
       )}
     </div>
   )

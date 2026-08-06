@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatPrice, formatDate, formatShortDate, formatDuration, categorizeListings, slugify, amsterdamToday, formatAmsterdamTime, timeAgoShort, fmtEuros, fmtEurosRounded, toAmsDateStr, formatReviewMonthYear } from './utils'
+import { formatPrice, formatDate, formatShortDate, formatDuration, categorizeListings, slugify, amsterdamToday, formatAmsterdamTime, amsterdamTimeToUtcIso, timeAgoShort, fmtEuros, fmtEurosRounded, toAmsDateStr, formatReviewMonthYear } from './utils'
 
 // ── fmtEuros / fmtEurosRounded ───────────────────────────────────────────────
 
@@ -232,6 +232,28 @@ describe('formatAmsterdamTime', () => {
   it('returns an em dash for null/undefined', () => {
     expect(formatAmsterdamTime(null)).toBe('—')
     expect(formatAmsterdamTime(undefined)).toBe('—')
+  })
+})
+
+describe('amsterdamTimeToUtcIso', () => {
+  it('converts a summer (CEST, UTC+2) wall-clock time to UTC — round-trips with formatAmsterdamTime', () => {
+    const utcIso = amsterdamTimeToUtcIso('2026-06-12', '14:00')
+    expect(utcIso).toBe('2026-06-12T12:00:00.000Z')
+    expect(formatAmsterdamTime(utcIso)).toBe('14:00')
+  })
+
+  it('converts a winter (CET, UTC+1) wall-clock time to UTC', () => {
+    // DST ends 2026-10-25 — 2026-12-05 is safely in winter (CET, UTC+1).
+    const utcIso = amsterdamTimeToUtcIso('2026-12-05', '17:00')
+    expect(utcIso).toBe('2026-12-05T16:00:00.000Z')
+    expect(formatAmsterdamTime(utcIso)).toBe('17:00')
+  })
+
+  it('picks the correct side of the DST boundary just before and after the switch', () => {
+    // Clocks fall back on the morning of 2026-10-25 — 2026-10-24 evening is
+    // still CEST (UTC+2); 2026-10-26 evening is already CET (UTC+1).
+    expect(amsterdamTimeToUtcIso('2026-10-24', '20:00')).toBe('2026-10-24T18:00:00.000Z')
+    expect(amsterdamTimeToUtcIso('2026-10-26', '20:00')).toBe('2026-10-26T19:00:00.000Z')
   })
 })
 

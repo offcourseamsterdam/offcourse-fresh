@@ -1,10 +1,14 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, CalendarSearch, Languages, Loader2, Send, StickyNote } from 'lucide-react'
+import { ArrowLeft, CalendarSearch, CheckCircle2, Clock, Languages, Loader2, PanelRightOpen, Send, StickyNote } from 'lucide-react'
 import { adminMutate } from '@/hooks/useAdminSave'
 import { formatAmsterdamTime } from '@/lib/utils'
+import { formatWindowRemaining } from '@/lib/whatsapp/window'
 import { Linkify } from '@/components/chat/Linkify'
+import { SafeEmailHtml } from '@/components/admin/SafeEmailHtml'
+import { WhatsAppIcon } from '@/components/chat/WhatsAppIcon'
+import { OTA_PLATFORM_NAME } from '@/lib/ota/detect'
 import { AvailabilityFinder } from './AvailabilityFinder'
 import type { InboxConversationDetail, InboxMessage } from './types'
 
@@ -16,6 +20,10 @@ interface Props {
   /** Text pushed in from the Ghost co-pilot's "Use this draft". */
   prefill?: string | null
   onPrefillConsumed?: () => void
+  /** Below xl the customer/Ghost pane isn't docked beside the thread — this opens it as a bottom drawer. */
+  onOpenContext?: () => void
+  /** Show a dot on the context trigger when Ghost has something to act on. */
+  contextHasAction?: boolean
 }
 
 interface Translation {
@@ -24,7 +32,7 @@ interface Translation {
 }
 
 /** Middle pane — the thread, chronological, plus the Reply/Note composer. */
-export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed }: Props) {
+export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed, onOpenContext, contextHasAction }: Props) {
   const { conversation, messages } = detail
   const [mode, setMode] = useState<'out' | 'note'>('out')
   const [draft, setDraft] = useState('')
@@ -44,6 +52,18 @@ export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed 
   const [translating, setTranslating] = useState<Record<string, boolean>>({})
   const [showFinder, setShowFinder] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  // WhatsApp's 24h reply window, ticking down live rather than only surfacing
+  // when a send actually fails — a minute of drift is fine, so a 30s tick is
+  // plenty; no need to re-poll the API just to keep a clock moving.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (conversation.channel !== 'whatsapp' || !conversation.wa_window_expires_at) return
+    const interval = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(interval)
+  }, [conversation.channel, conversation.wa_window_expires_at])
+  const windowStatus =
+    conversation.channel === 'whatsapp' ? formatWindowRemaining(conversation.wa_window_expires_at, now) : null
 
   async function translate(msgId: string) {
     setTranslating(prev => ({ ...prev, [msgId]: true }))
@@ -99,10 +119,40 @@ export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed 
         <div className="min-w-0">
           <p className="text-sm font-semibold text-zinc-900 truncate">
             {conversation.contact?.name ?? 'Unknown'}
-            <span className="ml-2 text-xs font-normal text-zinc-400 capitalize">{conversation.channel}</span>
+            <span className="ml-2 inline-flex items-center gap-1 text-xs font-normal text-zinc-400 capitalize">
+              {conversation.channel === 'whatsapp' && <WhatsAppIcon className="w-3 h-3" />}
+              {conversation.channel}
+            </span>
           </p>
-          {conversation.subject && <p className="text-xs text-zinc-400 truncate">{conversation.subject}</p>}
+          {conversation.ota_status === 'imported' ? (
+            <p className="text-xs text-emerald-600 font-medium truncate flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3 shrink-0" />
+              Imported from {conversation.ota_source ? (OTA_PLATFORM_NAME[conversation.ota_source as keyof typeof OTA_PLATFORM_NAME] ?? conversation.ota_source) : 'the platform'}
+            </p>
+          ) : (
+            conversation.subject && <p className="text-xs text-zinc-400 truncate">{conversation.subject}</p>
+          )}
         </div>
+        {windowStatus && (
+          <span
+            title="WhatsApp only allows free-form replies within 24h of the customer's last message; after that, only an approved template works."
+            className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-full whitespace-nowrap ${
+              windowStatus.closed ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'
+            }`}
+          >
+            <Clock className="w-3 h-3" /> {windowStatus.label}
+          </span>
+        )}
+        {onOpenContext && (
+          <button
+            onClick={onOpenContext}
+            aria-label="Customer details"
+            className="xl:hidden ml-auto relative p-2 rounded-lg hover:bg-zinc-100 text-zinc-500"
+          >
+            <PanelRightOpen className="w-4 h-4" />
+            {contextHasAction && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-violet-500" />}
+          </button>
+        )}
       </div>
 
       {/* Messages */}
@@ -111,6 +161,7 @@ export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed 
           <MessageBubble
             key={m.id}
             message={m}
+            channel={conversation.channel}
             translation={translations[m.id]}
             translating={!!translating[m.id]}
             onTranslate={() => translate(m.id)}
@@ -195,11 +246,13 @@ export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed 
 
 function MessageBubble({
   message: m,
+  channel,
   translation,
   translating,
   onTranslate,
 }: {
   message: InboxMessage
+  channel: InboxConversationDetail['conversation']['channel']
   translation?: Translation
   translating?: boolean
   onTranslate?: () => void
@@ -214,15 +267,28 @@ function MessageBubble({
     )
   }
   const inbound = m.direction === 'in'
+  // Email is read, not chatted — a narrow speech-bubble with a tail corner
+  // (right for WhatsApp/webchat's actual back-and-forth texting) just cramps
+  // longer email prose. Wider, plain-cornered card instead; still aligned
+  // and colored by direction so who-said-what stays obvious at a glance.
+  const isEmail = channel === 'email'
+  // Only ever set on an inbound email that actually had an HTML part (see
+  // gmail/client.ts) — our own outbound replies are always plain text.
+  const showHtml = inbound && isEmail && !!m.body_html
   return (
     <div className={`flex ${inbound ? 'justify-start' : 'justify-end'} group`}>
-      <div className="max-w-[75%] space-y-1">
+      <div className={`${isEmail ? 'max-w-[92%]' : 'max-w-[75%]'} space-y-1`}>
         <div
-          className={`rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap ${
-            inbound ? 'bg-white border border-zinc-200 text-zinc-800 rounded-bl-sm' : 'bg-primary text-white rounded-br-sm'
+          className={`px-3 py-2 text-sm ${showHtml ? '' : 'whitespace-pre-wrap'} ${isEmail ? 'rounded-lg' : 'rounded-2xl'} ${
+            inbound
+              ? `bg-white border border-zinc-200 text-zinc-800 ${isEmail ? '' : 'rounded-bl-sm'}`
+              : `bg-primary text-white ${isEmail ? '' : 'rounded-br-sm'}`
           }`}
         >
-          <Linkify text={m.body} />
+          {showHtml ? <SafeEmailHtml html={m.body_html!} /> : <Linkify text={m.body} />}
+          {m.recording_url && (
+            <audio controls src={m.recording_url} className="mt-2 h-8 w-full max-w-[220px]" />
+          )}
           <span className={`block text-[10px] mt-1 ${inbound ? 'text-zinc-400' : 'text-white/60'}`}>
             {!inbound && m.author_name ? `${m.author_name} · ` : ''}
             {formatAmsterdamTime(m.created_at)}

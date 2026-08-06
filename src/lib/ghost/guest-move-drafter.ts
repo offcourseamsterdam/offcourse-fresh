@@ -518,7 +518,7 @@ Return JSON only:
   if (!smsText || !emailSubject || !emailBody) return 'skipped'
   if (!smsText.includes('{{link}}') || !emailBody.includes('{{link}}')) return 'skipped'
 
-  const { data: inserted } = await supabase
+  const { data: inserted, error: insertError } = await supabase
     .from('agent_proposals')
     .insert({
       kind: 'guest_move_request',
@@ -558,6 +558,14 @@ Return JSON only:
     })
     .select('id')
     .single()
+
+  // Without this check, a failed write here fell through silently — inserted
+  // stays undefined, emitOpsEvent still fires with proposalId: null, and the
+  // function still returns 'drafted' as if a guest-move proposal had been
+  // saved. Both callers (draftGuestMoveRequest, draftGuestMoveForNewBooking)
+  // already wrap this in their own try/catch, so throwing here still resolves
+  // to the correct 'skipped' outcome instead of a false-positive 'drafted'.
+  if (insertError) throw new Error(`Could not create guest_move_request proposal: ${insertError.message}`)
 
   await emitOpsEvent({
     eventType: 'recommendation_created',

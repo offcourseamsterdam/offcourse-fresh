@@ -31,6 +31,7 @@ const h = vi.hoisted(() => ({
   requireCronSecret: vi.fn().mockReturnValue(null),
   getExtrasFromQuote: vi.fn().mockResolvedValue([]),
   buildFhBookingPlan: vi.fn().mockReturnValue({ availPk: 1, body: {}, date: '2026-08-01' }),
+  syncShiftsForRange: vi.fn().mockResolvedValue({ created: 0, updated: 0, skipped: [] }),
 }))
 
 vi.mock('@/lib/auth/require-cron-secret', () => ({ requireCronSecret: h.requireCronSecret }))
@@ -87,6 +88,13 @@ vi.mock('@/lib/catering/send-catering-email', () => ({ sendCateringOrderEmailFor
 vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText, postSlackCritical: h.postSlackCritical }))
 vi.mock('@/lib/realtime/notify-bookings-changed', () => ({ notifyBookingsChanged: h.notifyBookingsChanged }))
 vi.mock('@/lib/stripe/payment-method-label', () => ({ resolvePaymentMethodLabel: h.resolvePaymentMethodLabel }))
+vi.mock('@/lib/scheduling/sync-shifts', () => ({ syncShiftsForRange: h.syncShiftsForRange }))
+// after() requires a real Next.js request scope, absent when calling GET directly
+// in a unit test — run the callback inline instead (fire-and-forget → forget-now).
+vi.mock('next/server', async importOriginal => {
+  const actual = await importOriginal<typeof import('next/server')>()
+  return { ...actual, after: (cb: () => unknown) => cb() }
+})
 
 import { GET } from './route'
 
@@ -154,6 +162,9 @@ describe('GET /api/cron/pending-fh-sweep', () => {
     expect(h.createBookingIdempotent).toHaveBeenCalledTimes(1)
     expect(updateSpy).toHaveBeenCalledWith(expect.objectContaining({ status: 'confirmed' }))
     expect(h.notifyBookingsChanged).toHaveBeenCalled()
+    // A booking recovered by the sweep is just as real as one confirmed by the
+    // webhook — it must also refresh the Shifts tab for its date.
+    expect(h.syncShiftsForRange).toHaveBeenCalledWith(expect.anything(), '2026-08-01', '2026-08-01')
   })
 
   it('cancels (never books) when the payment was already refunded', async () => {

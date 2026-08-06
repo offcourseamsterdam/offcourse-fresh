@@ -3,6 +3,8 @@ import ProtectedLayout from '@/components/auth/ProtectedLayout'
 import DashboardSidebar from '@/components/layout/DashboardSidebar'
 import type { NavSection } from '@/components/layout/DashboardSidebar'
 import { AdminDataPreloader } from '@/components/admin/AdminDataPreloader'
+import { VoiceProvider } from '@/components/admin/VoiceProvider'
+import { VoicePhone } from '@/components/admin/VoicePhone'
 
 interface Props {
   children: React.ReactNode
@@ -76,12 +78,15 @@ export default async function AdminLayout({ children, params }: Props) {
   return (
     <ProtectedLayout allowedRoles={['admin']} locale={locale}>
       {(profile) => (
-        <div data-admin className="flex min-h-screen bg-zinc-50 font-sans">
-          <AdminDataPreloader />
-          <DashboardSidebar locale={locale} profile={profile} portalName="Admin Panel" navSections={navSections} />
-          <main className="flex-1 overflow-auto">{children}</main>
-          <Toaster richColors position="bottom-right" />
-        </div>
+        <VoiceProvider>
+          <div data-admin className="flex h-screen overflow-hidden bg-zinc-50 font-sans">
+            <AdminDataPreloader />
+            <DashboardSidebar locale={locale} profile={profile} portalName="Admin Panel" navSections={navSections} />
+            <main className="flex-1 overflow-auto">{children}</main>
+            <VoicePhone />
+            <Toaster richColors position="bottom-right" />
+          </div>
+        </VoiceProvider>
       )}
     </ProtectedLayout>
   )

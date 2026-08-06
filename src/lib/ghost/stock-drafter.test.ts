@@ -163,6 +163,25 @@ describe('draftStockReorders', () => {
     expect(sb.inserts).toHaveLength(0)
   })
 
+  it('counts as skipped (not drafted) and logs why when saving the proposal fails', async () => {
+    // Unlike some sibling drafters, this one already treats a failed insert
+    // as skipped rather than a false-positive "drafted" — this just proves
+    // the specific reason is now logged instead of being indistinguishable
+    // from a dedupe/malformed-JSON skip.
+    const sb = makeSupabase({
+      items: [item({ current_count: 1, reorder_threshold: 2 })],
+      insertError: { message: 'row-level security violation' },
+    })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(meteredMessage).mockResolvedValue(claudeJson(DRAFT) as never)
+
+    expect(await draftStockReorders()).toEqual({ drafted: 0, skipped: 1 })
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('could not save proposal'),
+      'row-level security violation',
+    )
+  })
+
   it('swallows errors (never throws) — it runs off a request', async () => {
     vi.mocked(createAdminClient).mockImplementation(() => { throw new Error('DB down') })
     await expect(draftStockReorders()).resolves.toEqual({ drafted: 0, skipped: 0 })

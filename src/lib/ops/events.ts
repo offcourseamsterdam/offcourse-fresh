@@ -28,6 +28,7 @@ export type OpsEventType =
   | 'guest_move_declined'
   | 'guest_move_deferred'
   | 'guest_move_expired'
+  | 'catering_confirmed'
 
 export type OpsActorType = 'human' | 'agent' | 'system'
 

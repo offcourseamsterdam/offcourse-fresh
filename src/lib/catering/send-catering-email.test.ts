@@ -9,7 +9,8 @@ const h = vi.hoisted(() => ({
   maybeSingle: vi.fn(),
   single: vi.fn(),
   update: vi.fn().mockResolvedValue({ error: null }),
-  emailsSend: vi.fn().mockResolvedValue({}),
+  updateArgs: [] as unknown[],
+  sendNewEmail: vi.fn().mockResolvedValue({ id: 'gmail-msg-1', threadId: 'thread-new-1' }),
   postSlackText: vi.fn().mockResolvedValue(undefined),
 }))
 
@@ -17,17 +18,18 @@ vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from: () => ({
       select: () => ({ eq: () => ({ single: h.single }) }),
-      update: () => ({ eq: h.update }),
+      update: (patch: unknown) => ({
+        eq: (...args: unknown[]) => {
+          h.updateArgs.push(patch)
+          return h.update(...args)
+        },
+      }),
     }),
   }),
 }))
 vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText }))
 vi.mock('@/lib/fareharbor/client', () => ({ getFareHarborClient: () => ({ updateBookingNote: vi.fn() }) }))
-vi.mock('resend', () => ({
-  Resend: class {
-    emails = { send: h.emailsSend }
-  },
-}))
+vi.mock('@/lib/gmail/client', () => ({ sendNewEmail: h.sendNewEmail }))
 
 import { sendCateringOrderEmailForBooking } from './send-catering-email'
 
@@ -45,14 +47,16 @@ const BOOKING = {
   guest_count: 4,
   category: 'private',
   catering_email_sent_at: null,
+  catering_thread_id: null as string | null,
   guest_note: null,
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.stubEnv('RESEND_API_KEY', 're_test')
   vi.stubEnv('CATERING_EMAIL_RECIPIENT', 'caterer@example.com')
   h.update.mockResolvedValue({ error: null })
+  h.updateArgs.length = 0
+  h.sendNewEmail.mockResolvedValue({ id: 'gmail-msg-1', threadId: 'thread-new-1' })
 })
 
 describe('sendCateringOrderEmailForBooking — supplier only handles food, never drinks', () => {
@@ -62,7 +66,7 @@ describe('sendCateringOrderEmailForBooking — supplier only handles food, never
     const result = await sendCateringOrderEmailForBooking('b1')
 
     expect(result).toEqual({ ok: false, reason: 'No food items on this booking' })
-    expect(h.emailsSend).not.toHaveBeenCalled()
+    expect(h.sendNewEmail).not.toHaveBeenCalled()
     expect(h.postSlackText).not.toHaveBeenCalled()
   })
 
@@ -72,14 +76,61 @@ describe('sendCateringOrderEmailForBooking — supplier only handles food, never
     const result = await sendCateringOrderEmailForBooking('b1')
 
     expect(result.ok).toBe(true)
-    expect(h.emailsSend).toHaveBeenCalledTimes(1)
-    const emailText = h.emailsSend.mock.calls[0][0].text
-    expect(emailText).toContain('Charcuterie board')
-    expect(emailText).not.toContain('Unlimited Drinks')
-    expect(emailText.toLowerCase()).not.toContain('drink')
+    expect(h.sendNewEmail).toHaveBeenCalledTimes(1)
+    const emailBody = h.sendNewEmail.mock.calls[0][0].body
+    expect(emailBody).toContain('Charcuterie board')
+    expect(emailBody).not.toContain('Unlimited Drinks')
+    expect(emailBody.toLowerCase()).not.toContain('drink')
 
     const slackMsg = h.postSlackText.mock.calls[0][0]
     expect(slackMsg).toContain('Charcuterie board')
     expect(slackMsg).not.toContain('Unlimited Drinks')
+  })
+})
+
+describe('sendCateringOrderEmailForBooking — Gmail thread tracking', () => {
+  it('sends via Gmail (not Resend) and stores the returned threadId on catering_thread_id', async () => {
+    h.single.mockResolvedValue({ data: { ...BOOKING, extras_selected: [food] }, error: null })
+    h.sendNewEmail.mockResolvedValue({ id: 'gmail-msg-1', threadId: 'thread-abc' })
+
+    const result = await sendCateringOrderEmailForBooking('b1')
+
+    expect(result.ok).toBe(true)
+    expect(h.sendNewEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ to: 'caterer@example.com', threadId: undefined }),
+    )
+    expect(h.updateArgs[0]).toMatchObject({ catering_thread_id: 'thread-abc' })
+  })
+
+  it('on a resend, reuses the existing catering_thread_id instead of starting a new thread', async () => {
+    h.single.mockResolvedValue({
+      data: {
+        ...BOOKING,
+        extras_selected: [food],
+        catering_email_sent_at: '2026-07-01T10:00:00.000Z',
+        catering_thread_id: 'thread-existing',
+      },
+      error: null,
+    })
+    // Gmail echoes back the same threadId when sending into an existing thread.
+    h.sendNewEmail.mockResolvedValue({ id: 'gmail-msg-2', threadId: 'thread-existing' })
+
+    const result = await sendCateringOrderEmailForBooking('b1')
+
+    expect(result).toMatchObject({ ok: true, resent: true })
+    expect(h.sendNewEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ threadId: 'thread-existing' }),
+    )
+    expect(h.updateArgs[0]).toMatchObject({ catering_thread_id: 'thread-existing' })
+  })
+
+  it('returns ok:false instead of throwing when the Gmail send itself fails — callers (esp. the daily cron loop) rely on never getting an exception', async () => {
+    h.single.mockResolvedValue({ data: { ...BOOKING, extras_selected: [food] }, error: null })
+    h.sendNewEmail.mockRejectedValue(new Error('GMAIL_USER not configured'))
+
+    const result = await sendCateringOrderEmailForBooking('b1')
+
+    expect(result).toEqual({ ok: false, reason: 'GMAIL_USER not configured' })
+    expect(h.updateArgs).toHaveLength(0)
   })
 })

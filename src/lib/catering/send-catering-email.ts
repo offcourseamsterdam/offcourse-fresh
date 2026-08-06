@@ -15,13 +15,7 @@ import { buildFHBookingNote } from './build-fh-note'
 import { postSlackText } from '@/lib/slack/send-notification'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { formatAmsterdamTime } from '@/lib/utils'
-import { Resend } from 'resend'
-
-let _resend: Resend | null = null
-function getResend(): Resend {
-  if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY ?? '')
-  return _resend
-}
+import { sendNewEmail } from '@/lib/gmail/client'
 
 export type SendCateringEmailResult =
   | { ok: true; resent: boolean; recipient: string }
@@ -34,7 +28,7 @@ export async function sendCateringOrderEmailForBooking(bookingId: string): Promi
     .select(`
       id, booking_uuid, customer_name, listing_title, tour_item_name,
       booking_date, start_time, guest_count, category,
-      extras_selected, catering_email_sent_at, guest_note
+      extras_selected, catering_email_sent_at, catering_thread_id, guest_note
     `)
     .eq('id', bookingId)
     .single()
@@ -59,14 +53,28 @@ export async function sendCateringOrderEmailForBooking(bookingId: string): Promi
   const recipient = process.env.CATERING_EMAIL_RECIPIENT ?? 'info@offcourseamsterdam.com'
   const subject = buildCateringEmailSubject(cruiseName, booking.booking_date, booking.start_time)
 
-  if (process.env.RESEND_API_KEY) {
-    const resend = getResend()
-    await resend.emails.send({
-      from: 'Off Course Amsterdam <cruise@offcourseamsterdam.com>',
-      to: [recipient],
+  // Sending via Gmail (unlike the old Resend path) can throw — a missing/expired
+  // GMAIL_REFRESH_TOKEN, or a transient Gmail API error — and this function's
+  // own return type promises callers a result, never an exception. The daily
+  // catering-auto-send cron loops over every eligible booking with no
+  // try/catch of its own (relying on exactly that promise); an uncaught throw
+  // here would abort that loop and silently skip every remaining booking in
+  // the batch, not just this one.
+  let sentThreadId: string | null
+  try {
+    // On a resend, reuse the existing Gmail thread so a supplier reply lands
+    // where catering_thread_id already points — otherwise the reply would land
+    // in a brand-new thread that nothing recognizes as belonging to this
+    // booking. A fresh send has no thread yet; Gmail mints one and we capture
+    // it below.
+    ;({ threadId: sentThreadId } = await sendNewEmail({
+      to: recipient,
       subject: isResend ? `[UPDATED] ${subject}` : subject,
-      text,
-    })
+      body: text,
+      threadId: isResend ? booking.catering_thread_id : undefined,
+    }))
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : 'Failed to send catering email via Gmail' }
   }
 
   // Slack confirmation
@@ -104,10 +112,13 @@ export async function sendCateringOrderEmailForBooking(bookingId: string): Promi
     }
   }
 
-  // Always update the sent timestamp so we know when the last send was
+  // Always update the sent timestamp so we know when the last send was, and
+  // record the Gmail thread id — same value as before on a same-thread
+  // resend, newly captured on a fresh send — so the inbox sync can recognize
+  // a supplier's reply as belonging to this booking.
   const { error: updateErr } = await supabase
     .from('bookings')
-    .update({ catering_email_sent_at: new Date().toISOString() })
+    .update({ catering_email_sent_at: new Date().toISOString(), catering_thread_id: sentThreadId })
     .eq('id', bookingId)
 
   if (updateErr) return { ok: false, reason: updateErr.message }

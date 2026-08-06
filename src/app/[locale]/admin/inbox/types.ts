@@ -16,6 +16,36 @@ export interface InboxListItem {
   subject: string | null
   unread_count: number
   last_message_at: string
+  /** WhatsApp only: when the free-form 24h reply window closes. Null for other channels. */
+  wa_window_expires_at: string | null
+  /** Set only for OTA notification emails (Withlocals, GetMyBoat, GetYourGuide) — null for real customer conversations. */
+  ota_source: string | null
+  /**
+   * 'waiting' = new request, just an availability check. 'confirmed' = guest
+   * already paid the platform, ready to create the booking. 'needs_import' =
+   * a 3rd-party API already created the booking directly in FareHarbor —
+   * ready to import into our own database instead. 'imported' = the human
+   * clicked Import and it succeeded — settled, nothing left to do (set by
+   * the import_fh_booking action, not handle-message.ts). 'sync_mismatch' =
+   * our own website's FareHarbor booking notification has no matching row in
+   * our own database — needs a manual check, not an import (see
+   * handle-message.ts's 'own_channel' branch). A matching 'own_channel'
+   * notification never reaches this state at all — it's auto-resolved
+   * silently.
+   */
+  ota_status: 'waiting' | 'confirmed' | 'needs_import' | 'imported' | 'sync_mismatch' | null
+  /** The actual guest's name, when the OTA's notification happens to expose it (GetMyBoat does; Withlocals doesn't). */
+  ota_guest_name: string | null
+  /** The AI's own live availability check, as a private cruise (Withlocals/GetMyBoat are always private) — null = not checked / not applicable (e.g. already confirmed). */
+  ota_available: boolean | null
+  /** One-line AI (Haiku) summary of the latest message — null falls back to the raw snippet. */
+  ai_summary: string | null
+  /** A supplier reply thread for a pending catering order (bookings.catering_thread_id) — not a customer conversation. */
+  is_catering_thread: boolean
+  /** When WE last sent a message in this conversation — null if we've never replied. */
+  last_outbound_at: string | null
+  /** The contact's soonest upcoming booking, or their most recent past one if none is upcoming. Null if they have no booking at all. */
+  next_booking: { date: string; time: string | null } | null
   contact: Pick<InboxContact, 'id' | 'name' | 'email'> | null
   snippet: string
   snippet_direction: 'in' | 'out' | 'note' | null
@@ -25,10 +55,14 @@ export interface InboxMessage {
   id: string
   direction: 'in' | 'out' | 'note'
   body: string
+  /** Email only, and only when the source had an HTML part — UNTRUSTED raw markup. Render only through SafeEmailHtml (which sanitizes), never directly. Null for chat/WhatsApp/voice/notes and for our own outbound replies. */
+  body_html: string | null
   author_name: string | null
   status: string
   error: string | null
   created_at: string
+  /** Voice calls only: the call/voicemail recording, if one was made. */
+  recording_url: string | null
 }
 
 export interface InboxBooking {
@@ -57,10 +91,19 @@ export interface InboxAlternative {
   price_is_quote: boolean
 }
 
-/** A Ghost proposal surfaced for this conversation (reply draft or booking). */
+/** What the guest actually asked for, as parsed from the OTA's own email (see ota/detect.ts). */
+export interface OtaRequestedDetails {
+  date: string | null
+  time: string | null
+  dateISO: string | null
+  guests: number | null
+  experienceName: string | null
+}
+
+/** A Ghost proposal surfaced for this conversation (reply draft, booking, or OTA fact block). */
 export interface InboxGhostProposal {
   id: string
-  kind: 'reply_draft' | 'booking_proposal'
+  kind: 'reply_draft' | 'booking_proposal' | 'booking_correction' | 'ota_availability' | 'ota_booking_ready' | 'fh_booking_import_ready'
   status: string
   reasoning: string | null
   created_at: string
@@ -79,6 +122,26 @@ export interface InboxGhostProposal {
       price_eur?: number
     }
     verdict?: { is_bookable: boolean; error: string | null; receipt_total_eur: number | null; alternatives?: InboxAlternative[] }
+    correction?: {
+      booking_id?: string
+      field?: string
+      new_value?: string
+      booking_date?: string
+      start_time?: string
+      listing_title?: string
+      guest_count?: number
+    }
+    // ota_availability / ota_booking_ready only:
+    platform?: string
+    booking_ref?: string | null
+    guest_name?: string | null
+    requested?: OtaRequestedDetails
+    parsed?: OtaRequestedDetails
+    checked?: boolean
+    availability?: {
+      available: boolean
+      listings?: Array<{ category?: string; listing?: string; options?: Array<{ name: string; price_eur: number; duration_min: number }> }>
+    }
   }
   outcome: {
     human_reply?: string
@@ -96,6 +159,12 @@ export interface InboxConversationDetail {
     last_message_at: string
     created_at: string
     booking_id: string | null
+    /** WhatsApp only: when the free-form 24h reply window closes. Null for other channels. */
+    wa_window_expires_at: string | null
+    /** Same OTA fields as InboxListItem — the thread header reads these to show "Imported from X" once ota_status flips to 'imported'. */
+    ota_source: string | null
+    ota_status: InboxListItem['ota_status']
+    ota_guest_name: string | null
     contact: InboxContact | null
   }
   messages: InboxMessage[]
@@ -104,6 +173,13 @@ export interface InboxConversationDetail {
   ghost: {
     replyDraft: InboxGhostProposal | null
     bookingProposal: InboxGhostProposal | null
+    bookingCorrection: InboxGhostProposal | null
+    /** New OTA booking request — read-only availability check, no reply to send. */
+    otaAvailability: InboxGhostProposal | null
+    /** OTA booking confirmed by the guest on the platform — review and create it manually. */
+    otaBookingReady: InboxGhostProposal | null
+    /** A 3rd-party API already created this booking directly in FareHarbor — review and import it into our database. */
+    fhImportReady: InboxGhostProposal | null
     history: InboxGhostProposal[]
   }
 }

@@ -5,7 +5,10 @@ import { filterCateringItems, hasCatering, isDrinksOnlyBooking, type ExtrasLineI
 import { extrasPageUrl } from '@/lib/booking/extras-token'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { amsterdamToday, formatAmsterdamTime } from '@/lib/utils'
+import { autonomyForKind } from './agents'
 import { recentScheduleLessons } from './evaluate'
+import { applyScheduleAssignments, type ScheduleAssignmentInput } from '@/lib/scheduling/apply-assignments'
+import { shiftCostCents, fmtCostEuros } from '@/lib/scheduling/shift-cost'
 import {
   SCHEDULE_DAY_PROMPT,
   SCHEDULE_DAY_JSON,
@@ -21,14 +24,20 @@ import {
  * Ghost ops drafters — shadow proposals for the operations section
  * (vision doc §1: AI reads the truth, writes a proposal, a human decides).
  *
- *   schedule_day     — who should captain tomorrow's open shifts
+ *   schedule_day     — who should captain a day's open shifts. The one
+ *                      exception to "shadow only" below: at 'auto' autonomy
+ *                      it assigns for real and DMs the captain immediately
+ *                      (see draftOrAssignSchedule) — everything else here
+ *                      stays shadow-only.
  *   catering_order   — what to order for upcoming cruises with catering
  *   catering_upsell  — snackbox offer for guests who ONLY booked drinks
  *
  * Same hard rules as the reply drafter: status 'shadow', nothing executes,
  * all errors swallowed, every Claude call metered via recordAiUsage().
  * One proposal per kind per target date (dedupe below) — a re-run cron
- * never doubles up.
+ * never doubles up. schedule_day's auto path is the deliberate exception:
+ * it skips that dedupe so a fresh booking can open (and fill) a new shift
+ * on a date already scanned today — see draftOrAssignSchedule.
  */
 
 type AdminClient = ReturnType<typeof createAdminClient>
@@ -53,36 +62,66 @@ export function extractJson(raw: string): Record<string, unknown> | null {
   }
 }
 
-// ── schedule_day — tomorrow's captain assignments ────────────────────────────
+// ── schedule_day — captain assignments for a given date ──────────────────────
 
-export async function draftTomorrowSchedule(): Promise<'drafted' | 'skipped'> {
+interface ScheduleShiftRow {
+  id: string
+  date: string
+  start_at: string
+  end_at: string
+  status: string
+  staff_id: string | null
+  boats: { name?: string } | null
+  bookings: { listing_title?: string | null; guest_count?: number | null } | null
+}
+
+/**
+ * Drafts (or, at 'auto' autonomy, directly assigns) captains for every OPEN
+ * shift on `targetDate`. Called both by the daily horizon scan and reactively
+ * right after a new booking opens a shift — see
+ * src/lib/scheduling/proactive-scheduling.ts.
+ *
+ * Returns 'assigned' when it auto-executed, 'drafted' when it left a shadow
+ * proposal for a human, 'skipped' when there was nothing to do (or it
+ * couldn't confidently fill anything).
+ */
+export async function draftOrAssignSchedule(targetDate: string): Promise<'assigned' | 'drafted' | 'skipped'> {
   try {
     const supabase = createAdminClient()
-    const tomorrow = amsterdamToday(1)
+    const auto = autonomyForKind('schedule_day') === 'auto'
 
-    if (await proposalExists(supabase, 'schedule_day', tomorrow)) return 'skipped'
+    // The shadow-propose path is one-proposal-per-date forever; the auto path
+    // deliberately skips this so a booking that opens a NEW shift on a date
+    // already scanned today still gets picked up immediately, instead of
+    // waiting for tomorrow's cron. Its own idempotency comes from each shift
+    // only ever being open once (applyScheduleAssignments' atomic claim).
+    if (!auto && (await proposalExists(supabase, 'schedule_day', targetDate))) return 'skipped'
 
     const { data: shifts } = await supabase
       .from('shifts')
       .select('id, date, start_at, end_at, status, staff_id, boats(name), bookings(listing_title, guest_count)')
-      .eq('date', tomorrow)
+      .eq('date', targetDate)
       .in('status', ['open', 'assigned', 'confirmed'])
       .order('start_at')
-    const openShifts = (shifts ?? []).filter(s => s.status === 'open')
+    const shiftRows = (shifts ?? []) as unknown as ScheduleShiftRow[]
+    const openShifts = shiftRows.filter(s => s.status === 'open')
     if (!openShifts.length) return 'skipped' // nothing to schedule = no proposal, no cost
 
     const { data: staff } = await supabase
       .from('staff')
-      .select('id, name, role, max_shifts_per_week, is_active')
+      .select('id, name, role, max_shifts_per_week, is_active, hourly_rate_cents')
       .eq('is_active', true)
     if (!staff?.length) return 'skipped'
 
     const { data: availability } = await supabase
       .from('staff_availability')
       .select('staff_id, status, note')
-      .eq('date', tomorrow)
+      .eq('date', targetDate)
 
-    // Workload last 7 days — the fairness signal.
+    // Workload last 7 REAL days (not relative to targetDate) — how busy
+    // someone actually has been, plus every future shift already on the
+    // books (no upper bound), so a captain already loaded up later in the
+    // horizon reads as less "free" today too.
     const weekAgo = amsterdamToday(-7)
     const { data: recentShifts } = await supabase
       .from('shifts')
@@ -96,18 +135,19 @@ export async function draftTomorrowSchedule(): Promise<'drafted' | 'skipped'> {
       if (s.staff_id) workload.set(s.staff_id, (workload.get(s.staff_id) ?? 0) + 1)
     }
     const availMap = new Map((availability ?? []).map(a => [a.staff_id, a]))
+    const staffById = new Map(staff.map(p => [p.id, p]))
 
     const staffLines = staff
       .map(p => {
         const a = availMap.get(p.id)
-        return `- ${p.name} (id: ${p.id}, ${p.role}) · availability tomorrow: ${a?.status ?? 'not stated'}${a?.note ? ` ("${a.note}")` : ''} · shifts last 7 days: ${workload.get(p.id) ?? 0}${p.max_shifts_per_week ? ` · max/week: ${p.max_shifts_per_week}` : ''}`
+        return `- ${p.name} (id: ${p.id}, ${p.role}) · availability: ${a?.status ?? 'not stated'}${a?.note ? ` ("${a.note}")` : ''} · shifts last 7 days: ${workload.get(p.id) ?? 0}${p.max_shifts_per_week ? ` · max/week: ${p.max_shifts_per_week}` : ''} · rate: ${fmtCostEuros(p.hourly_rate_cents)}/h`
       })
       .join('\n')
 
-    const shiftLines = (shifts ?? [])
+    const shiftLines = shiftRows
       .map(s => {
-        const boat = (s.boats as { name?: string } | null)?.name ?? '?'
-        const booking = s.bookings as { listing_title?: string | null; guest_count?: number | null } | null
+        const boat = s.boats?.name ?? '?'
+        const booking = s.bookings
         const time = `${new Date(s.start_at).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' })}–${new Date(s.end_at).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' })}`
         return `- shift ${s.id} · ${boat} · ${time} · ${booking?.listing_title ?? 'manual shift'}${booking?.guest_count ? ` · ${booking.guest_count} guests` : ''} · status: ${s.status}`
       })
@@ -121,7 +161,7 @@ export async function draftTomorrowSchedule(): Promise<'drafted' | 'skipped'> {
           role: 'user',
           content: `${SCHEDULE_DAY_PROMPT}
 
-TARGET DATE: ${tomorrow}
+TARGET DATE: ${targetDate}
 
 ${await recentScheduleLessons(supabase)}STAFF
 ${staffLines}
@@ -137,13 +177,94 @@ ${SCHEDULE_DAY_JSON}`,
     const parsed = extractJson(firstText(response))
     if (!parsed || !Array.isArray(parsed.assignments)) return 'skipped'
 
-    await supabase.from('agent_proposals').insert({
+    const rawAssignments = parsed.assignments as { shift_id?: string; staff_id?: string; staff_name?: string; reason?: string }[]
+    const openShiftIds = new Set(openShifts.map(s => s.id))
+    const shiftById = new Map(shiftRows.map(s => [s.id, s]))
+
+    // Only ever act on a shift that was actually open when we asked — belt
+    // and suspenders alongside applyScheduleAssignments' own guard.
+    const validAssignments = rawAssignments.filter(
+      (a): a is Required<Pick<typeof a, 'shift_id' | 'staff_id'>> & typeof a =>
+        !!a.shift_id && !!a.staff_id && openShiftIds.has(a.shift_id) && staffById.has(a.staff_id),
+    )
+    if (!validAssignments.length) return 'skipped'
+
+    // Real cost, not the model's arithmetic: derived from the shift's actual
+    // duration and the assigned staff member's actual rate.
+    const assignments: (ScheduleAssignmentInput & { reason?: string; cost_cents: number })[] = validAssignments.map(a => {
+      const shift = shiftById.get(a.shift_id)!
+      const person = staffById.get(a.staff_id)!
+      return {
+        shift_id: a.shift_id,
+        staff_id: a.staff_id,
+        staff_name: a.staff_name ?? person.name,
+        reason: a.reason,
+        cost_cents: shiftCostCents(person.hourly_rate_cents, shift.start_at, shift.end_at),
+      }
+    })
+
+    if (auto) {
+      // No human reviews an auto-assignment before it locks in, so the two
+      // HARD rules from the prompt (never 'unavailable', never double-book
+      // one person) are re-checked here rather than trusted — greedily
+      // accepting in the order Claude returned them.
+      const busyWindows = new Map<string, { start: number; end: number }[]>()
+      for (const s of shiftRows) {
+        if (s.status === 'open' || !s.staff_id) continue
+        const list = busyWindows.get(s.staff_id) ?? []
+        list.push({ start: new Date(s.start_at).getTime(), end: new Date(s.end_at).getTime() })
+        busyWindows.set(s.staff_id, list)
+      }
+      const overlaps = (a: { start: number; end: number }, b: { start: number; end: number }) => a.start < b.end && b.start < a.end
+
+      const safeAssignments: typeof assignments = []
+      for (const a of assignments) {
+        if (availMap.get(a.staff_id)?.status === 'unavailable') continue
+        const shift = shiftById.get(a.shift_id)!
+        const window = { start: new Date(shift.start_at).getTime(), end: new Date(shift.end_at).getTime() }
+        const existing = busyWindows.get(a.staff_id) ?? []
+        if (existing.some(w => overlaps(w, window))) continue
+        safeAssignments.push(a)
+        busyWindows.set(a.staff_id, [...existing, window])
+      }
+      if (!safeAssignments.length) return 'skipped'
+
+      const { applied, skipped } = await applyScheduleAssignments(
+        supabase,
+        safeAssignments,
+        { actorType: 'agent', actorId: 'ops_optimizer', source: 'ghost/schedule_day:auto' },
+        // Assign now, DM later: an auto-assignment made days ahead is
+        // provisional as more bookings land — the captain hears about it
+        // only once Beer confirms (admin/planning/ghost-activity/[id]/confirm),
+        // not once here and possibly again as the roster shifts.
+        { notify: false },
+      )
+      if (!applied.length) return 'skipped'
+
+      const { error: insertError } = await supabase.from('agent_proposals').insert({
+        kind: 'schedule_day',
+        payload: JSON.parse(JSON.stringify({ target_date: targetDate, assignments: safeAssignments })),
+        reasoning: typeof parsed.summary === 'string' ? parsed.summary : null,
+        status: 'executed',
+        model: CLAUDE_DRAFTER_MODEL,
+        outcome: JSON.parse(JSON.stringify({ applied_at: new Date().toISOString(), applied, skipped })),
+      })
+      // The assignments themselves already landed — a failed audit-log insert
+      // shouldn't be reported as if nothing happened.
+      if (insertError) console.error('[ghost/schedule_day] auto-assigned but failed to log proposal:', insertError.message)
+      return 'assigned'
+    }
+
+    const { error: insertError } = await supabase.from('agent_proposals').insert({
       kind: 'schedule_day',
-      payload: { target_date: tomorrow, assignments: parsed.assignments },
+      payload: JSON.parse(JSON.stringify({ target_date: targetDate, assignments })),
       reasoning: typeof parsed.summary === 'string' ? parsed.summary : null,
       status: 'shadow',
       model: CLAUDE_DRAFTER_MODEL,
     })
+    // A swallowed error here previously still returned 'drafted' — a false
+    // positive: no proposal exists to review, but nothing said so.
+    if (insertError) throw new Error(`Could not create schedule_day proposal: ${insertError.message}`)
     return 'drafted'
   } catch (err) {
     console.error('[ghost/schedule_day] failed:', err instanceof Error ? err.message : err)
@@ -201,13 +322,14 @@ ${CATERING_ORDER_JSON}`,
     const parsed = extractJson(firstText(response))
     if (!parsed || !Array.isArray(parsed.orders)) return 'skipped'
 
-    await supabase.from('agent_proposals').insert({
+    const { error: insertError } = await supabase.from('agent_proposals').insert({
       kind: 'catering_order',
       payload: { target_date: today, orders: parsed.orders },
       reasoning: typeof parsed.summary === 'string' ? parsed.summary : null,
       status: 'shadow',
       model: CLAUDE_DRAFTER_MODEL,
     })
+    if (insertError) throw new Error(`Could not create catering_order proposal: ${insertError.message}`)
     return 'drafted'
   } catch (err) {
     console.error('[ghost/catering_order] failed:', err instanceof Error ? err.message : err)
