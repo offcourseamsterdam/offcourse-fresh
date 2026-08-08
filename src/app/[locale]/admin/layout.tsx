@@ -5,6 +5,7 @@ import type { NavSection } from '@/components/layout/DashboardSidebar'
 import { AdminDataPreloader } from '@/components/admin/AdminDataPreloader'
 import { VoiceProvider } from '@/components/admin/VoiceProvider'
 import { VoicePhone } from '@/components/admin/VoicePhone'
+import { AiOpsCenter } from '@/components/admin/AiOpsCenter'
 
 interface Props {
   children: React.ReactNode
@@ -82,7 +83,12 @@ export default async function AdminLayout({ children, params }: Props) {
           <div data-admin className="flex h-screen overflow-hidden bg-zinc-50 font-sans">
             <AdminDataPreloader />
             <DashboardSidebar locale={locale} profile={profile} portalName="Admin Panel" navSections={navSections} />
-            <main className="flex-1 overflow-auto">{children}</main>
+            <main className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex items-center justify-end px-4 py-2 border-b border-zinc-100 bg-white shrink-0">
+                <AiOpsCenter locale={locale} />
+              </div>
+              <div className="flex-1 overflow-auto">{children}</div>
+            </main>
             <VoicePhone />
             <Toaster richColors position="bottom-right" />
           </div>
