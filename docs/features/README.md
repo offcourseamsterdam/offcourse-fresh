@@ -47,3 +47,4 @@ One file per track or major feature. Written before every PR and kept up to date
 | Voice inbox channel (Twilio: ring browser softphone + phone simultaneously, voicemail + transcription, outbound calling) | [voice-twilio-integration.md](voice-twilio-integration.md) | — | done |
 | OTA notification emails (Withlocals/GetMyBoat: booking-ref grouping, availability check, Chat/OTA sidebar filter, co-pilot cards) | [ota-notifications.md](ota-notifications.md) | — | done (one-click auto-booking from a confirmed OTA email not built yet) |
 | Inbox AI summaries (Haiku one-line email summaries + real availability icon) | [inbox-ai-summaries.md](inbox-ai-summaries.md) | — | done |
+| AI Ops Center (persistent admin header panel: approvals, skipped, automated, taken) | [ai-ops-center.md](ai-ops-center.md) | — | done |
