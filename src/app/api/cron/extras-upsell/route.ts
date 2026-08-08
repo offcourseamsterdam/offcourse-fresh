@@ -8,6 +8,7 @@ import { filterCateringItems } from '@/lib/catering/filter'
 import type { ExtrasLineItem } from '@/lib/catering/filter'
 import { formatAmsterdamTime } from '@/lib/utils'
 import { alertCronFailure } from '@/lib/cron/alert'
+import { emitOpsEvent } from '@/lib/ops/events'
 
 /**
  * GET /api/cron/extras-upsell
@@ -120,6 +121,19 @@ export async function GET(request: NextRequest) {
         .from('bookings')
         .update({ extras_upsell_sent_at: new Date().toISOString() })
         .eq('id', booking.id)
+
+      await emitOpsEvent({
+        eventType: 'extras_upsell_sent',
+        actorType: 'system',
+        source: 'cron/extras-upsell',
+        bookingId: booking.id,
+        payload: {
+          recipient: booking.customer_email,
+          listingId: booking.listing_id,
+          listingTitle: booking.listing_title,
+          bookingDate: booking.booking_date,
+        },
+      })
 
       sent++
     } catch (err) {

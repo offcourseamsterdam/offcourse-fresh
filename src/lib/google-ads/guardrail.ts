@@ -1,4 +1,5 @@
 import type { PerformanceRow } from './reporting'
+import { emitOpsEvent } from '@/lib/ops/events'
 
 // The "responsible spend" safety net. A daily cron evaluates campaign performance
 // against simple rules and pings Slack when something needs a human look. The
@@ -121,7 +122,22 @@ export async function runGuardrail(
     const { setCampaignStatus } = await import('./campaigns')
     for (const t of pauseTargets) {
       const r = await setCampaignStatus(t.campaignId, 'PAUSED')
-      if (r.ok) paused.push(t)
+      if (r.ok) {
+        paused.push(t)
+        const row = rows.find(row => row.id === t.campaignId)
+        await emitOpsEvent({
+          eventType: 'ads_campaign_paused',
+          actorType: 'system',
+          source: 'google-ads/guardrail',
+          payload: {
+            campaignId: t.campaignId,
+            campaignName: t.campaignName,
+            reason: t.reason,
+            costEuros: row?.costEuros,
+            conversions: row?.conversions,
+          },
+        })
+      }
     }
   }
 

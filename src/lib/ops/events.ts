@@ -29,6 +29,8 @@ export type OpsEventType =
   | 'guest_move_deferred'
   | 'guest_move_expired'
   | 'catering_confirmed'
+  | 'ads_campaign_paused'
+  | 'extras_upsell_sent'
 
 export type OpsActorType = 'human' | 'agent' | 'system'
 

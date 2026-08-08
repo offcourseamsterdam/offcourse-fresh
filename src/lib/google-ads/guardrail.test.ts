@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { evaluateGuardrail, formatAlerts, selectAutoPause, formatPauses, type GuardrailConfig } from './guardrail'
 import type { PerformanceRow } from './reporting'
 
@@ -94,5 +94,76 @@ describe('formatPauses', () => {
     expect(msg).toContain('AUTO-PAUSED')
     expect(msg).toContain('*Bleeder*')
     expect(msg).toContain('Re-enable')
+  })
+})
+
+// runGuardrail is the I/O wrapper — it's the only place that actually flips a
+// campaign to PAUSED, so it's the only place that should ever emit
+// 'ads_campaign_paused'. A campaign that only trips a Slack alert (no pause)
+// must NOT emit anything — the event log is for real automated actions, not
+// warnings a human still has to act on.
+const h = vi.hoisted(() => ({
+  campaignPerformance: vi.fn(),
+  setCampaignStatus: vi.fn(),
+  postSlackText: vi.fn().mockResolvedValue(undefined),
+  emitOpsEvent: vi.fn().mockResolvedValue(undefined),
+}))
+vi.mock('./reporting', () => ({ campaignPerformance: h.campaignPerformance }))
+vi.mock('./campaigns', () => ({ setCampaignStatus: h.setCampaignStatus }))
+vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText }))
+vi.mock('@/lib/ops/events', () => ({ emitOpsEvent: h.emitOpsEvent }))
+
+describe('runGuardrail', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('emits ads_campaign_paused when a campaign is actually auto-paused', async () => {
+    const { runGuardrail } = await import('./guardrail')
+    h.campaignPerformance.mockResolvedValue({
+      ok: true,
+      rows: [perf({ id: '42', name: 'Bleeder', costEuros: 250, conversions: 0 })],
+    })
+    h.setCampaignStatus.mockResolvedValue({ ok: true })
+
+    const res = await runGuardrail({ ...pauseCfg }, 30)
+
+    expect(res.paused).toHaveLength(1)
+    expect(h.emitOpsEvent).toHaveBeenCalledTimes(1)
+    expect(h.emitOpsEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'ads_campaign_paused',
+        actorType: 'system',
+        source: 'google-ads/guardrail',
+        payload: expect.objectContaining({ campaignId: '42', campaignName: 'Bleeder' }),
+      }),
+    )
+  })
+
+  it('does NOT emit ads_campaign_paused for a campaign that only trips a Slack alert', async () => {
+    const { runGuardrail } = await import('./guardrail')
+    // Over the spend cap → alert-worthy, but nowhere near the hard-bleed line,
+    // and autoPause is off in this config — nothing should be paused.
+    h.campaignPerformance.mockResolvedValue({
+      ok: true,
+      rows: [perf({ id: '7', name: 'Big', costEuros: 1200, conversions: 10, conversionValueEuros: 3000 })],
+    })
+
+    const res = await runGuardrail(cfg, 30)
+
+    expect(res.paused).toHaveLength(0)
+    expect(h.emitOpsEvent).not.toHaveBeenCalled()
+  })
+
+  it('does NOT emit when setCampaignStatus fails (the pause did not actually happen)', async () => {
+    const { runGuardrail } = await import('./guardrail')
+    h.campaignPerformance.mockResolvedValue({
+      ok: true,
+      rows: [perf({ id: '42', name: 'Bleeder', costEuros: 250, conversions: 0 })],
+    })
+    h.setCampaignStatus.mockResolvedValue({ ok: false, error: 'boom' })
+
+    const res = await runGuardrail({ ...pauseCfg }, 30)
+
+    expect(res.paused).toHaveLength(0)
+    expect(h.emitOpsEvent).not.toHaveBeenCalled()
   })
 })
