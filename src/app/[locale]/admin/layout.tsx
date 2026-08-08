@@ -19,7 +19,7 @@ const navSections: NavSection[] = [
       { href: '/admin/inbox',     label: 'Inbox',     icon: 'inbox',     badge: 'inbox-open-count' },
       { href: '/admin/catering',  label: 'Catering',  icon: 'catering',  badge: 'pending-catering-count' },
       { href: '/admin/planning',  label: 'Planning',  icon: 'planning' },
-      { href: '/admin/scheduling', label: 'Scheduling', icon: 'schedule' },
+      { href: '/admin/scheduling', label: 'Availability', icon: 'schedule' },
       { href: '/admin/maintenance', label: 'Maintenance', icon: 'maintenance' },
       { href: '/admin/stock',      label: 'Stock',      icon: 'stock' },
       { href: '/admin/customers', label: 'Customers', icon: 'customers', comingSoon: true },
