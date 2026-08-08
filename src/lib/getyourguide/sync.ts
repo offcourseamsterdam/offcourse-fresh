@@ -9,12 +9,24 @@ const GYG_URL = 'https://www.getyourguide.com/en-gb/amsterdam-l36/amsterdam-hidd
  * review" notification email, see detect-review-notification.ts) to that
  * product's own activity page URL, for reactively re-syncing just-reviewed
  * products immediately instead of waiting for the weekly cron. Grown one
- * real product at a time, same discipline as lib/ota/detect.ts — a product
- * name seen in a real email but missing here just means we haven't been
- * given its URL yet, not a bug (see gmail/sync.ts's handling of a miss).
+ * real product at a time, same discipline as lib/ota/detect.ts.
+ *
+ * "Private Canal Cruise Through Amsterdam's Hidden Gems" was originally
+ * (wrongly) assumed to be GYG_URL/t1020291 above — Beer confirmed the real
+ * page (2026-08-08): it's actually t1411454, a DIFFERENT product. GYG_URL
+ * itself is "Small Shared Canal Cruise with Local Captain and Hidden Gems".
+ * Both URLs came to us as GYG's own "preview" links (a `?preview=TOKEN`
+ * query param, used for previewing an unpublished listing as its owner) —
+ * stripped here since the reactive fetch below has no session/auth and the
+ * canonical published URL is what actually serves the public JSON-LD this
+ * code parses.
  */
+const GYG_PRIVATE_CANAL_CRUISE_URL =
+  'https://www.getyourguide.com/en-gb/amsterdam-l36/private-canal-cruise-through-amsterdam-s-hidden-gems-t1411454/'
+
 export const GYG_PRODUCT_URLS: Record<string, string> = {
-  "Private Canal Cruise Through Amsterdam's Hidden Gems": GYG_URL,
+  "Private Canal Cruise Through Amsterdam's Hidden Gems": GYG_PRIVATE_CANAL_CRUISE_URL,
+  'Small Shared Canal Cruise with Local Captain and Hidden Gems': GYG_URL,
 }
 
 export interface SyncGYGResult {
