@@ -6,7 +6,9 @@ import { syncGYGReviews, GYG_PRODUCT_URLS } from '@/lib/getyourguide/sync'
 /**
  * GET /api/cron/getyourguide-reviews
  *
- * Scheduled weekly (Monday 08:15 Amsterdam time — see vercel.json).
+ * Scheduled weekly: Monday 08:15 UTC (see vercel.json) — corrected 2026-08-08;
+ * Vercel Cron runs in UTC with no DST adjustment, so this is 09:15 Amsterdam
+ * in winter (CET) but 10:15 in summer (CEST), not a fixed "08:15 Amsterdam".
  * Fetches GYG reviews via JSON-LD from every known product's activity page
  * (GYG_PRODUCT_URLS) — not just one. Off Course has multiple GYG listings
  * (confirmed via real "new review" notification emails naming different

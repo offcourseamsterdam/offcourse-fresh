@@ -67,6 +67,14 @@
     {
       "path": "/api/cron/gmail-inbox-sync",
       "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/cron/availability-request",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/schedule-digest",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

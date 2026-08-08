@@ -31,9 +31,11 @@ const STALE_CLAIM_MS = 5 * 60 * 1000
 const ESCALATE_MIN_MS = 30 * 60 * 1000
 
 /**
- * GET /api/cron/pending-fh-sweep — Vercel Cron, currently once daily (Vercel Hobby
- * plan caps cron frequency at once/day; bump the vercel.json schedule if this ever
- * moves to Pro — the escalation logic below is cadence-independent either way).
+ * GET /api/cron/pending-fh-sweep — Vercel Cron, currently once daily (this is a
+ * plain scheduling choice, not a plan limit — corrected 2026-08-08; other crons
+ * in this project already run every 2/5/15 minutes, so a paid plan is in use.
+ * Bump the vercel.json schedule if this ever needs tighter cadence — the
+ * escalation logic below is cadence-independent either way).
  *
  * The safety net for the "park, never refund" model. Finds bookings the webhook
  * left at `paid_pending_fh` (FareHarbor failed at finalize time) and completes them:

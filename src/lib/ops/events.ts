@@ -31,6 +31,8 @@ export type OpsEventType =
   | 'catering_confirmed'
   | 'ads_campaign_paused'
   | 'extras_upsell_sent'
+  | 'availability_request_sent'
+  | 'schedule_digest_sent'
 
 export type OpsActorType = 'human' | 'agent' | 'system'
 

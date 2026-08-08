@@ -28,6 +28,10 @@ export const GUEST_MOVE_EXPIRY_HOURS = 48
 export const CATERING_LOOKAHEAD_DAYS = 3
 /** Snackbox upsell: days before the cruise the offer is drafted. */
 export const UPSELL_LEAD_DAYS = 2
+/** Monthly availability request: how many days before a month starts captains get asked to fill it in. */
+export const AVAILABILITY_REQUEST_LEAD_DAYS = 42
+/** Captain schedule digest: the Amsterdam-local hour it goes out, checked DST-safe against the real clock (not a fixed UTC cron time). */
+export const SCHEDULE_DIGEST_HOUR_AMSTERDAM = 18
 
 // ── Shared prompt blocks (imported by the drafters) ─────────────────────────
 

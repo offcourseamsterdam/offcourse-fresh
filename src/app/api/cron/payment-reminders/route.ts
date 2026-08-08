@@ -9,7 +9,9 @@ import { alertCronFailure } from '@/lib/cron/alert'
 
 /**
  * GET /api/cron/payment-reminders
- * Vercel Cron: runs every hour.
+ * Vercel Cron: runs once daily at 08:00 UTC (see vercel.json) — corrected
+ * 2026-08-08; this previously said "every hour", which hasn't matched the
+ * actual schedule for a while.
  * Sends a reminder email to customers whose payment link was created 18h+ ago
  * and is still unpaid (and not yet expired).
  */

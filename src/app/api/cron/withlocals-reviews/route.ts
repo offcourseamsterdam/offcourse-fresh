@@ -7,7 +7,9 @@ import { syncWithlocalsReviews } from '@/lib/withlocals/sync'
 /**
  * GET /api/cron/withlocals-reviews
  *
- * Scheduled weekly (Monday 08:00 Amsterdam time — see vercel.json).
+ * Scheduled weekly: Monday 08:00 UTC (see vercel.json) — corrected 2026-08-08;
+ * Vercel Cron runs in UTC with no DST adjustment, so this is 09:00 Amsterdam
+ * in winter (CET) but 10:00 in summer (CEST), not a fixed "08:00 Amsterdam".
  *
  * Silently skips if withlocals_experience_short_id is not configured.
  */

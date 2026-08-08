@@ -26,7 +26,7 @@ import { adminMutate } from '@/hooks/useAdminSave'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { GHOST_AGENTS, agentForKind, agentAutonomy } from '@/lib/ghost/agents'
 import { replySimilarity, type SimilarityLabel } from '@/lib/ghost/similarity'
-import { formatAmsterdamTime } from '@/lib/utils'
+import { formatAmsterdamTime, amsterdamToday } from '@/lib/utils'
 
 /**
  * The Ghost AI's notebook — shadow-mode proposals, read-only + teachable.
@@ -173,6 +173,13 @@ interface GhostProposal {
   trigger: { body: string; author_name: string | null; created_at: string } | null
 }
 
+interface UpcomingData {
+  openChatsCount: number
+  awaitingReviewCount: number
+  nextScheduleDigestAt: string
+  nextAvailabilityRequest: { targetMonth: string; targetMonthStart: string; triggerDate: string; daysUntil: number }
+}
+
 interface GhostData {
   proposals: GhostProposal[]
   hasMore: boolean
@@ -234,6 +241,7 @@ export default function GhostPage() {
     `/api/admin/ghost?limit=${limit}&reviewed=${unreviewedOnly ? 'unreviewed' : 'all'}`,
     { refreshInterval: POLL_MS },
   )
+  const { data: upcoming } = useAdminFetch<UpcomingData>('/api/admin/ghost/upcoming', { refreshInterval: POLL_MS })
 
   // Conversation drafts (reply_draft, booking_proposal) live in the inbox now —
   // this page is the cross-conversation ops dashboard: ops proposals + stats.
@@ -306,6 +314,27 @@ export default function GhostPage() {
       </div>
 
       <AdminErrorBanner error={error} />
+
+      {/* Upcoming — the director's view: what's scheduled to happen and what's
+          outstanding right now, distinct from the flat past-and-future proposal
+          list below. */}
+      {upcoming && (
+        <div className="rounded-xl border border-zinc-200 bg-white p-4 mb-5">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 mb-3 inline-flex items-center gap-1">
+            <CalendarClock className="w-3 h-3" /> Upcoming
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <UpcomingCard label="Open customer chats" value={String(upcoming.openChatsCount)} accent={upcoming.openChatsCount > 0 ? 'amber' : undefined} />
+            <UpcomingCard label="Awaiting your review" value={String(upcoming.awaitingReviewCount)} sub="for a future date" accent={upcoming.awaitingReviewCount > 0 ? 'amber' : undefined} />
+            <UpcomingCard label="Next schedule digest" value={scheduleDigestLabel(upcoming.nextScheduleDigestAt)} sub={`${formatAmsterdamTime(upcoming.nextScheduleDigestAt)} to every captain with a shift the next day`} />
+            <UpcomingCard
+              label="Next availability request"
+              value={upcoming.nextAvailabilityRequest.daysUntil === 0 ? 'today' : `in ${upcoming.nextAvailabilityRequest.daysUntil}d`}
+              sub={`for ${monthLabel(upcoming.nextAvailabilityRequest.targetMonth)}, on ${upcoming.nextAvailabilityRequest.triggerDate}`}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Stats strip — is it learning? */}
       {data && (
@@ -489,6 +518,27 @@ export default function GhostPage() {
       {data && data.knowledge.length > 0 && (
         <KnowledgePanel knowledge={data.knowledge} onChanged={refresh} />
       )}
+    </div>
+  )
+}
+
+/** "today"/"tomorrow" instead of a raw date — the digest only ever fires within the next 24h. */
+function scheduleDigestLabel(atIso: string): string {
+  const dateStr = new Date(atIso).toLocaleDateString('en-CA', { timeZone: 'Europe/Amsterdam' })
+  return dateStr === amsterdamToday() ? 'today' : 'tomorrow'
+}
+
+/** "2026-10" → "October 2026" */
+function monthLabel(yyyyMm: string): string {
+  return new Date(`${yyyyMm}-01T12:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'Europe/Amsterdam' })
+}
+
+function UpcomingCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: 'amber' }) {
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">{label}</p>
+      <p className={`text-xl font-semibold leading-tight ${accent === 'amber' ? 'text-amber-600' : 'text-zinc-900'}`}>{value}</p>
+      {sub && <p className="text-[11px] text-zinc-400 truncate" title={sub}>{sub}</p>}
     </div>
   )
 }
