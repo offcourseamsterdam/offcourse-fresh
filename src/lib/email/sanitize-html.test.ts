@@ -42,6 +42,30 @@ describe('sanitizeEmailHtml', () => {
     expect(result).toContain('data:image/png;base64,iVBORw0KGgo=')
   })
 
+  it('keeps a remote <img> src when the caller has already trusted the sender', () => {
+    const result = sanitizeEmailHtml(
+      '<img src="https://cdn.getyourguide.com/stars.png">',
+      { allowRemoteImages: true },
+    )
+    expect(result).toContain('cdn.getyourguide.com')
+  })
+
+  it('still strips scripts and event handlers even with allowRemoteImages — that opt-out is scoped to <img src> only', () => {
+    const result = sanitizeEmailHtml(
+      '<script>alert(1)</script><img src="https://trusted.example.com/logo.png" onerror="alert(2)">',
+      { allowRemoteImages: true },
+    )
+    expect(result).not.toContain('<script')
+    expect(result).not.toContain('onerror')
+    expect(result).toContain('trusted.example.com')
+  })
+
+  it('goes back to dropping remote images on the next call once allowRemoteImages is left off — the flag never leaks between calls', () => {
+    sanitizeEmailHtml('<img src="https://trusted.example.com/logo.png">', { allowRemoteImages: true })
+    const result = sanitizeEmailHtml('<img src="https://untrusted.example.com/pixel.gif">')
+    expect(result).not.toContain('untrusted.example.com')
+  })
+
   it('forces target="_blank" and rel="noopener noreferrer" on links', () => {
     const result = sanitizeEmailHtml('<a href="https://fareharbor.com">View booking</a>')
     expect(result).toContain('target="_blank"')

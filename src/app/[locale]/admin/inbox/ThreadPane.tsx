@@ -9,6 +9,7 @@ import { Linkify } from '@/components/chat/Linkify'
 import { SafeEmailHtml } from '@/components/admin/SafeEmailHtml'
 import { WhatsAppIcon } from '@/components/chat/WhatsAppIcon'
 import { OTA_PLATFORM_NAME } from '@/lib/ota/detect'
+import { isTrustedEmailSender } from '@/lib/email/trusted-senders'
 import { AvailabilityFinder } from './AvailabilityFinder'
 import type { InboxConversationDetail, InboxMessage } from './types'
 
@@ -165,6 +166,7 @@ export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed,
             translation={translations[m.id]}
             translating={!!translating[m.id]}
             onTranslate={() => translate(m.id)}
+            trustSender={isTrustedEmailSender(conversation.contact?.email)}
           />
         ))}
         <div ref={bottomRef} />
@@ -250,9 +252,11 @@ function MessageBubble({
   translation,
   translating,
   onTranslate,
+  trustSender,
 }: {
   message: InboxMessage
   channel: InboxConversationDetail['conversation']['channel']
+  trustSender?: boolean
   translation?: Translation
   translating?: boolean
   onTranslate?: () => void
@@ -285,7 +289,7 @@ function MessageBubble({
               : `bg-primary text-white ${isEmail ? '' : 'rounded-br-sm'}`
           }`}
         >
-          {showHtml ? <SafeEmailHtml html={m.body_html!} /> : <Linkify text={m.body} />}
+          {showHtml ? <SafeEmailHtml html={m.body_html!} trustSender={trustSender} /> : <Linkify text={m.body} />}
           {m.recording_url && (
             <audio controls src={m.recording_url} className="mt-2 h-8 w-full max-w-[220px]" />
           )}

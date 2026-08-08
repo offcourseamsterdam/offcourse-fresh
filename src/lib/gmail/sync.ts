@@ -201,6 +201,12 @@ async function handlePendingCateringReply(supabase: SupabaseAdmin, message: Gmai
  * Triggers an immediate resync of just that product's reviews instead of
  * waiting for the weekly cron, so a fresh 5-star review shows up on the site
  * same-day rather than up to a week later.
+ *
+ * Deliberately does NOT stamp conversations.ota_source — that field also
+ * drives the inbox list's "Booking request" title and OTA filter bucket
+ * (see ConversationList.tsx), and this is neither. Sender trust for
+ * rendering this email's remote images is decided separately, straight from
+ * the contact's email domain — see ThreadPane.tsx's trustSender check.
  */
 async function handleGygReviewNotification(message: GmailMessage): Promise<string | null> {
   const detection = detectGygReviewNotification({

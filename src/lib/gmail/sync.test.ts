@@ -29,7 +29,7 @@ vi.mock('@/lib/getyourguide/sync', () => ({
 
 const state = vi.hoisted(() => ({
   contacts: [] as { id: string; email: string; name: string }[],
-  conversations: [] as { id: string; channel: string; provider_thread_id: string | null; status: string; unread_count: number; ai_summary?: string | null }[],
+  conversations: [] as { id: string; channel: string; provider_thread_id: string | null; status: string; unread_count: number; ai_summary?: string | null; ota_source?: string | null }[],
   bookings: [] as { id: string; catering_thread_id: string | null; catering_confirmed_at: string | null; booking_date: string | null }[],
   agentProposals: [] as Record<string, unknown>[],
   insertedMessageIds: new Set<string>(),
@@ -565,6 +565,7 @@ describe('syncGmailInbox — GetYourGuide review notification emails', () => {
     expect(h.syncGYGReviews).toHaveBeenCalledWith('https://gyg.example/known-product')
     expect(h.draftShadowReply).not.toHaveBeenCalled()
     expect(h.detectOtaEmail).toHaveBeenCalled() // still runs (used for conversation grouping), just never acted on
+    expect(state.conversations[0].ota_source).toBeNull() // never stamped — see handleGygReviewNotification's own comment on why
   })
 
   it('notes the product has no configured URL yet instead of silently doing nothing', async () => {

@@ -10,13 +10,18 @@ import { sanitizeEmailHtml } from '@/lib/email/sanitize-html'
  * useEffect rather than during render: a Next.js client component still
  * renders once on the server for the initial HTML, and calling DOMPurify
  * there would break the page, not just this widget.
+ *
+ * `trustSender` allows this one message's remote images to load (e.g. a
+ * GetYourGuide review notification's star-rating graphic and logo) — only
+ * pass true once the sender is already known/trusted (see
+ * lib/email/trusted-senders.ts), never for an arbitrary customer email.
  */
-export function SafeEmailHtml({ html }: { html: string }) {
+export function SafeEmailHtml({ html, trustSender }: { html: string; trustSender?: boolean }) {
   const [sanitized, setSanitized] = useState<string | null>(null)
 
   useEffect(() => {
-    setSanitized(sanitizeEmailHtml(html))
-  }, [html])
+    setSanitized(sanitizeEmailHtml(html, { allowRemoteImages: trustSender }))
+  }, [html, trustSender])
 
   if (sanitized === null) return null
   return (
