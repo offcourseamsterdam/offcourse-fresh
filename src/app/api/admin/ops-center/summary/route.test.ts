@@ -155,7 +155,7 @@ describe('GET /api/admin/ops-center/summary', () => {
         {
           id: 'e1',
           event_type: 'ads_campaign_paused',
-          payload: { campaign_name: 'Search - Canal Cruises' },
+          payload: { campaignName: 'Search - Canal Cruises' },
           occurred_at: hoursAgo(1),
         },
       ],
@@ -168,6 +168,38 @@ describe('GET /api/admin/ops-center/summary', () => {
     expect(body.data.feed).toHaveLength(1)
     expect(body.data.feed[0]).toMatchObject({ id: 'e1', bucket: 'automated' })
     expect(body.data.feed[0].summary).toContain('Search - Canal Cruises')
+  })
+
+  it('regression: renders the real campaignName from guardrail.ts payload shape, not "undefined"', async () => {
+    // Mirrors the exact payload shape emitted by runGuardrail() in
+    // src/lib/google-ads/guardrail.ts (camelCase — the codebase's convention
+    // for emitOpsEvent payloads, see gmail/sync.ts and cron/extras-upsell).
+    // A prior bug had this route read `payload.campaign_name` (snake_case),
+    // which never matched and silently rendered `"undefined"` in the feed.
+    const sb = makeSupabase({
+      events: [
+        {
+          id: 'e-guardrail',
+          event_type: 'ads_campaign_paused',
+          payload: {
+            campaignId: '12345',
+            campaignName: 'Search - Canal Cruises NL',
+            reason: 'High spend, zero conversions over 30 days',
+            costEuros: 142.5,
+            conversions: 0,
+          },
+          occurred_at: hoursAgo(1),
+        },
+      ],
+    })
+    vi.mocked(createAdminClient).mockReturnValue(sb as never)
+
+    const res = await GET()
+    const body = await res.json()
+
+    expect(body.data.feed).toHaveLength(1)
+    expect(body.data.feed[0].summary).toContain('Search - Canal Cruises NL')
+    expect(body.data.feed[0].summary).not.toContain('undefined')
   })
 
   it('maps extras_upsell_sent and catering_order_sent ops_events to automated items', async () => {
@@ -207,7 +239,7 @@ describe('GET /api/admin/ops-center/summary', () => {
         { id: 'p-shadow-old', kind: 'ops_review', status: 'shadow', reasoning: 'r', payload: {}, created_at: hoursAgo(30) },
       ],
       events: [
-        { id: 'e-automated-recent', event_type: 'ads_campaign_paused', payload: { campaign_name: 'X' }, occurred_at: hoursAgo(1) },
+        { id: 'e-automated-recent', event_type: 'ads_campaign_paused', payload: { campaignName: 'X' }, occurred_at: hoursAgo(1) },
       ],
     })
     vi.mocked(createAdminClient).mockReturnValue(sb as never)

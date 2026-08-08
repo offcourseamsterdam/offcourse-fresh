@@ -27,7 +27,7 @@ function summarizeProposal(kind: string, status: string, reasoning: string | nul
 }
 
 function summarizeAutomatedEvent(eventType: string, payload: Record<string, unknown>): string {
-  if (eventType === 'ads_campaign_paused') return `Paused ad campaign "${payload.campaign_name}" — spend with no bookings`
+  if (eventType === 'ads_campaign_paused') return `Paused ad campaign "${payload.campaignName}" — spend with no bookings`
   if (eventType === 'extras_upsell_sent') return 'Sent an extras upsell email'
   if (eventType === 'catering_order_sent') return 'Sent a catering order to the supplier'
   return eventType.replace(/_/g, ' ')
