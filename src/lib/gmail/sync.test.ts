@@ -10,6 +10,8 @@ const h = vi.hoisted(() => ({
   checkOtaAvailability: vi.fn().mockResolvedValue({ checked: true, dateISO: '2026-09-24', guests: 2, availability: { available: true } }),
   summarizeInboundEmail: vi.fn().mockResolvedValue('mock summary'),
   alertCronFailure: vi.fn().mockResolvedValue(undefined),
+  detectGygReviewNotification: vi.fn().mockReturnValue(null),
+  syncGYGReviews: vi.fn().mockResolvedValue({ imported: 0, skipped: 0, blocked: false }),
 }))
 vi.mock('./client', () => ({ listNewMessages: h.listNewMessages, getMessage: h.getMessage }))
 vi.mock('./summarize', () => ({ summarizeInboundEmail: h.summarizeInboundEmail }))
@@ -19,6 +21,11 @@ vi.mock('@/lib/ops/events', () => ({ emitOpsEvent: h.emitOpsEvent }))
 vi.mock('@/lib/ota/detect', () => ({ detectOtaEmail: h.detectOtaEmail }))
 vi.mock('@/lib/ota/check-availability', () => ({ checkOtaAvailability: h.checkOtaAvailability }))
 vi.mock('@/lib/cron/alert', () => ({ alertCronFailure: h.alertCronFailure }))
+vi.mock('@/lib/getyourguide/detect-review-notification', () => ({ detectGygReviewNotification: h.detectGygReviewNotification }))
+vi.mock('@/lib/getyourguide/sync', () => ({
+  syncGYGReviews: h.syncGYGReviews,
+  GYG_PRODUCT_URLS: { "Private Canal Cruise Through Amsterdam's Hidden Gems": 'https://gyg.example/known-product' },
+}))
 
 const state = vi.hoisted(() => ({
   contacts: [] as { id: string; email: string; name: string }[],
@@ -195,6 +202,8 @@ beforeEach(() => {
   h.checkOtaAvailability.mockResolvedValue({ checked: true, dateISO: '2026-09-24', guests: 2, availability: { available: true } })
   h.summarizeInboundEmail.mockResolvedValue('mock summary')
   h.alertCronFailure.mockResolvedValue(undefined)
+  h.detectGygReviewNotification.mockReturnValue(null)
+  h.syncGYGReviews.mockResolvedValue({ imported: 0, skipped: 0, blocked: false })
   process.env.GMAIL_USER = 'info@offcourseamsterdam.com'
   delete process.env.GMAIL_SUPPORT_ADDRESS
 })
@@ -530,6 +539,61 @@ describe('syncGmailInbox — supplier replies to a pending catering order', () =
 
     expect(result).toEqual({ imported: 1, skipped: 0 })
     expect(h.detectCateringConfirmation).not.toHaveBeenCalled()
+    expect(h.draftShadowReply).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('syncGmailInbox — GetYourGuide review notification emails', () => {
+  it('resyncs just that product immediately and skips draftShadowReply/OTA handling', async () => {
+    h.detectGygReviewNotification.mockReturnValue({
+      productName: "Private Canal Cruise Through Amsterdam's Hidden Gems",
+    })
+    h.syncGYGReviews.mockResolvedValue({ imported: 1, skipped: 0, blocked: false })
+    h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-gyg-1' }])
+    h.getMessage.mockResolvedValue(
+      gmailMessage({
+        threadId: 'thread-gyg-1',
+        from: { email: 'do-not-reply@notification.getyourguide.com', name: 'GetYourGuide' },
+        subject: 'You have a new review on GetYourGuide - 607167 (126298522)',
+        bodyText: "You have received a new review for your product Private Canal Cruise Through Amsterdam's Hidden Gems.",
+      }),
+    )
+
+    const result = await syncGmailInbox()
+
+    expect(result).toEqual({ imported: 1, skipped: 0 })
+    expect(h.syncGYGReviews).toHaveBeenCalledWith('https://gyg.example/known-product')
+    expect(h.draftShadowReply).not.toHaveBeenCalled()
+    expect(h.detectOtaEmail).toHaveBeenCalled() // still runs (used for conversation grouping), just never acted on
+  })
+
+  it('notes the product has no configured URL yet instead of silently doing nothing', async () => {
+    h.detectGygReviewNotification.mockReturnValue({ productName: 'Some Brand New Product' })
+    h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-gyg-2' }])
+    h.getMessage.mockResolvedValue(
+      gmailMessage({
+        threadId: 'thread-gyg-2',
+        from: { email: 'do-not-reply@notification.getyourguide.com', name: 'GetYourGuide' },
+      }),
+    )
+
+    const result = await syncGmailInbox()
+
+    expect(result).toEqual({ imported: 1, skipped: 0 })
+    expect(h.syncGYGReviews).not.toHaveBeenCalled()
+    expect(h.summarizeInboundEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ context: expect.stringContaining('no page URL configured') }),
+    )
+  })
+
+  it('an ordinary email that is not a GYG review notification is unaffected — draftShadowReply still runs (regression)', async () => {
+    h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-1' }])
+    h.getMessage.mockResolvedValue(gmailMessage())
+
+    const result = await syncGmailInbox()
+
+    expect(result).toEqual({ imported: 1, skipped: 0 })
+    expect(h.syncGYGReviews).not.toHaveBeenCalled()
     expect(h.draftShadowReply).toHaveBeenCalledTimes(1)
   })
 })

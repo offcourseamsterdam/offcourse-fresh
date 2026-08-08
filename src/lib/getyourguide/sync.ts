@@ -4,6 +4,19 @@ import type { ReviewRow } from '@/lib/outscraper/parse'
 
 const GYG_URL = 'https://www.getyourguide.com/en-gb/amsterdam-l36/amsterdam-hidden-gems-canal-cruise-t1020291/'
 
+/**
+ * Maps a GYG product's exact display name (as it appears in their "new
+ * review" notification email, see detect-review-notification.ts) to that
+ * product's own activity page URL, for reactively re-syncing just-reviewed
+ * products immediately instead of waiting for the weekly cron. Grown one
+ * real product at a time, same discipline as lib/ota/detect.ts — a product
+ * name seen in a real email but missing here just means we haven't been
+ * given its URL yet, not a bug (see gmail/sync.ts's handling of a miss).
+ */
+export const GYG_PRODUCT_URLS: Record<string, string> = {
+  "Private Canal Cruise Through Amsterdam's Hidden Gems": GYG_URL,
+}
+
 export interface SyncGYGResult {
   imported: number
   skipped: number
@@ -31,14 +44,18 @@ function detectLanguage(text: string): string {
  * Fetch GYG reviews from their JSON-LD structured data.
  * GYG's initial HTML contains review schema markup, so no JS rendering needed.
  * Falls back gracefully if Cloudflare blocks the request.
+ *
+ * `url` defaults to the main tracked product (the weekly cron's own call
+ * never passes one) — pass a specific product's URL to resync just that one
+ * reactively, see gmail/sync.ts's GYG review-notification handling.
  */
-export async function syncGYGReviews(): Promise<SyncGYGResult> {
+export async function syncGYGReviews(url: string = GYG_URL): Promise<SyncGYGResult> {
   const supabase = createAdminClient()
 
   // Attempt to fetch the GYG page with browser-like headers
   let html: string
   try {
-    const res = await fetch(GYG_URL, {
+    const res = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',

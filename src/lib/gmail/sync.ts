@@ -7,6 +7,8 @@ import { draftShadowReply } from '@/lib/chat/shadow-drafter'
 import { detectCateringConfirmation } from '@/lib/catering/detect-confirmation'
 import { detectOtaEmail, type OtaDetection } from '@/lib/ota/detect'
 import { handleOtaMessage } from '@/lib/ota/handle-message'
+import { detectGygReviewNotification } from '@/lib/getyourguide/detect-review-notification'
+import { syncGYGReviews, GYG_PRODUCT_URLS } from '@/lib/getyourguide/sync'
 import { summarizeInboundEmail } from './summarize'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { alertCronFailure } from '@/lib/cron/alert'
@@ -194,6 +196,38 @@ async function handlePendingCateringReply(supabase: SupabaseAdmin, message: Gmai
 }
 
 /**
+ * GetYourGuide's "you have a new review" notification — never a customer
+ * message, never something to reply to (see detect-review-notification.ts).
+ * Triggers an immediate resync of just that product's reviews instead of
+ * waiting for the weekly cron, so a fresh 5-star review shows up on the site
+ * same-day rather than up to a week later.
+ */
+async function handleGygReviewNotification(message: GmailMessage): Promise<string | null> {
+  const detection = detectGygReviewNotification({
+    fromEmail: message.from.email,
+    subject: message.subject,
+    bodyText: message.bodyText,
+  })
+  if (!detection) return null
+
+  const url = GYG_PRODUCT_URLS[detection.productName]
+  if (!url) {
+    return `New GetYourGuide review for "${detection.productName}" — no page URL configured for this product yet, so it wasn't auto-synced (add it to GYG_PRODUCT_URLS).`
+  }
+
+  try {
+    const result = await syncGYGReviews(url)
+    if (result.blocked) {
+      return `New GetYourGuide review for "${detection.productName}" — tried to sync immediately but GetYourGuide blocked the request; will retry on the weekly cron.`
+    }
+    return `New GetYourGuide review for "${detection.productName}" — synced immediately (${result.imported} new review${result.imported === 1 ? '' : 's'}).`
+  } catch (err) {
+    console.error('[gmail/sync] GYG review resync failed:', err instanceof Error ? err.message : err)
+    return `New GetYourGuide review for "${detection.productName}" — resync attempt failed, will retry on the weekly cron.`
+  }
+}
+
+/**
  * A reply sent directly from Gmail's own app/website — never through our
  * admin panel, which sends via the API and inserts its own 'out' row
  * directly (see api/admin/inbox/conversations/[id]/messages/route.ts).
@@ -357,6 +391,9 @@ export async function syncGmailInbox(): Promise<GmailSyncResult> {
       const cateringContext = await handlePendingCateringReply(supabase, message)
       ghostContext = cateringContext
       if (!cateringContext) {
+        ghostContext = await handleGygReviewNotification(message)
+      }
+      if (!cateringContext && !ghostContext) {
         if (ota) {
           // OTA notification: never a customer email reply (you act on the
           // platform, not by replying to info@withlocals.com) — a dedicated,
