@@ -99,6 +99,34 @@ describe('GET /api/admin/ops-center/summary', () => {
     expect(body.data.feed).toHaveLength(1)
     expect(body.data.feed[0]).toMatchObject({ id: 'p1', bucket: 'taken' })
     expect(body.data.feed[0].summary).toContain('Sanne')
+    // Every item names which agent it's from and which date it's about — a
+    // card is meaningless out of context otherwise (Beer, 2026-08-08: pointed
+    // at a skipped schedule_day card with no way to tell which agent or date
+    // it belonged to).
+    expect(body.data.feed[0].summary).toBe('Scheduling agent (2026-08-08): Assigned Sanne')
+  })
+
+  it('names the agent and date on a skipped schedule_day card, not just the raw reasoning', async () => {
+    const sb = makeSupabase({
+      proposals: [
+        {
+          id: 'p4',
+          kind: 'schedule_day',
+          status: 'skipped',
+          reasoning: 'Cannot assign the 17:00–18:30 Curaçao shift — genuine tie, deferring to human review.',
+          payload: { target_date: '2026-08-21' },
+          created_at: hoursAgo(1),
+        },
+      ],
+    })
+    vi.mocked(createAdminClient).mockReturnValue(sb as never)
+
+    const res = await GET()
+    const body = await res.json()
+
+    expect(body.data.feed[0].summary).toBe(
+      'Scheduling agent (2026-08-21): Cannot assign the 17:00–18:30 Curaçao shift — genuine tie, deferring to human review.',
+    )
   })
 
   it('maps a skipped proposal to a skipped item using its reasoning', async () => {
@@ -123,7 +151,7 @@ describe('GET /api/admin/ops-center/summary', () => {
     expect(body.data.feed[0]).toMatchObject({
       id: 'p2',
       bucket: 'skipped',
-      summary: 'No guests met the upsell threshold today.',
+      summary: 'Catering agent: No guests met the upsell threshold today.',
     })
   })
 
@@ -216,6 +244,18 @@ describe('GET /api/admin/ops-center/summary', () => {
 
     expect(body.data.feed).toHaveLength(2)
     expect(body.data.feed.every((f: { bucket: string }) => f.bucket === 'automated')).toBe(true)
+  })
+
+  it('names the department and date on an automated extras_upsell_sent event', async () => {
+    const sb = makeSupabase({
+      events: [{ id: 'e4', event_type: 'extras_upsell_sent', payload: { bookingDate: '2026-08-10' }, occurred_at: hoursAgo(1) }],
+    })
+    vi.mocked(createAdminClient).mockReturnValue(sb as never)
+
+    const res = await GET()
+    const body = await res.json()
+
+    expect(body.data.feed[0].summary).toBe('Catering (2026-08-10): Sent an extras upsell email')
   })
 
   it('counts emailsProcessedToday from the messages table query result', async () => {

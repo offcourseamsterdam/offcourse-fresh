@@ -2,9 +2,17 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { amsterdamToday } from '@/lib/utils'
+import { agentForKind } from '@/lib/ghost/agents'
 
 const OPS_KINDS = ['schedule_day', 'catering_order', 'catering_upsell', 'maintenance_task', 'stock_reorder', 'ops_review', 'guest_move_request']
 const AUTOMATED_EVENT_TYPES = ['catering_order_sent', 'extras_upsell_sent', 'ads_campaign_paused']
+
+/** Non-AI automated actions have no agent (see lib/ghost/agents.ts) — this is the equivalent "which department" label for those. */
+const AUTOMATED_EVENT_DEPARTMENT: Record<string, string> = {
+  ads_campaign_paused: 'Marketing',
+  extras_upsell_sent: 'Catering',
+  catering_order_sent: 'Catering',
+}
 
 interface FeedItem {
   id: string
@@ -15,22 +23,29 @@ interface FeedItem {
   href: string
 }
 
+/** "Scheduling agent (2026-08-21): " — every item names which agent it's from and which date it's about, so a skipped/taken card is self-contained even out of context. */
+function labelPrefix(agentOrDept: string, date: unknown): string {
+  return typeof date === 'string' ? `${agentOrDept} (${date}): ` : `${agentOrDept}: `
+}
+
 function summarizeProposal(kind: string, status: string, reasoning: string | null, payload: Record<string, unknown>): string {
-  if (status === 'skipped') return reasoning ?? `${kind.replace(/_/g, ' ')} — nothing confidently actionable.`
+  const prefix = labelPrefix(agentForKind(kind)?.name ?? kind.replace(/_/g, ' '), payload.target_date)
+  if (status === 'skipped') return `${prefix}${reasoning ?? 'nothing confidently actionable.'}`
   if (kind === 'schedule_day') {
     const assignments = (payload.assignments as { staff_name?: string }[] | undefined) ?? []
     return assignments.length
-      ? `Assigned ${assignments.map(a => a.staff_name).filter(Boolean).join(', ')} for ${payload.target_date}`
-      : `Schedule review for ${payload.target_date}`
+      ? `${prefix}Assigned ${assignments.map(a => a.staff_name).filter(Boolean).join(', ')}`
+      : `${prefix}Schedule review`
   }
-  return reasoning ?? kind.replace(/_/g, ' ')
+  return `${prefix}${reasoning ?? kind.replace(/_/g, ' ')}`
 }
 
 function summarizeAutomatedEvent(eventType: string, payload: Record<string, unknown>): string {
-  if (eventType === 'ads_campaign_paused') return `Paused ad campaign "${payload.campaignName}" — spend with no bookings`
-  if (eventType === 'extras_upsell_sent') return 'Sent an extras upsell email'
-  if (eventType === 'catering_order_sent') return 'Sent a catering order to the supplier'
-  return eventType.replace(/_/g, ' ')
+  const prefix = labelPrefix(AUTOMATED_EVENT_DEPARTMENT[eventType] ?? eventType.replace(/_/g, ' '), payload.bookingDate)
+  if (eventType === 'ads_campaign_paused') return `${prefix}Paused ad campaign "${payload.campaignName}" — spend with no bookings`
+  if (eventType === 'extras_upsell_sent') return `${prefix}Sent an extras upsell email`
+  if (eventType === 'catering_order_sent') return `${prefix}Sent a catering order to the supplier`
+  return `${prefix}${eventType.replace(/_/g, ' ')}`
 }
 
 /**
