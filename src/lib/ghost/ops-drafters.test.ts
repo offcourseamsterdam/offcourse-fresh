@@ -239,6 +239,18 @@ describe('draftOrAssignSchedule', () => {
     expect(sb.inserts).toHaveLength(0)
   })
 
+  it('regression: a day with zero shifts at all also skips without calling Claude or inserting anything', async () => {
+    const sb = makeSupabase({
+      agent_proposals: [{ data: [] }],
+      shifts: [{ data: [] }],
+    })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    expect(await draftOrAssignSchedule(TOMORROW)).toBe('skipped')
+    expect(meteredMessage).not.toHaveBeenCalled()
+    expect(sb.inserts).toHaveLength(0)
+  })
+
   it('drafts a shadow schedule_day proposal when not at auto autonomy (the review-first fallback)', async () => {
     const sb = makeSupabase({
       agent_proposals: [{ data: [] }],
@@ -277,6 +289,29 @@ describe('draftOrAssignSchedule', () => {
 
     expect(await draftOrAssignSchedule(TOMORROW)).toBe('skipped')
     expect(sb.inserts).toHaveLength(0)
+  })
+
+  it('persists the skip reasoning when the model explicitly declines to assign anyone', async () => {
+    const sb = makeSupabase({
+      agent_proposals: [{ data: [] }],
+      shifts: [{ data: [openShift] }, { data: [] }],
+      staff: [{ data: [activeStaff] }],
+      staff_availability: [{ data: [{ staff_id: 'cap1', status: 'available', note: null }] }],
+    })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(meteredMessage).mockResolvedValue(
+      claudeJson({ assignments: [], summary: 'No one is a safe fit for this shift today.' }) as never,
+    )
+
+    expect(await draftOrAssignSchedule(TOMORROW)).toBe('skipped')
+
+    expect(sb.inserts).toHaveLength(1)
+    const { table, row } = sb.inserts[0]
+    expect(table).toBe('agent_proposals')
+    expect(row.kind).toBe('schedule_day')
+    expect(row.status).toBe('skipped')
+    expect(row.payload).toEqual({ target_date: TOMORROW, assignments: [] })
+    expect(row.reasoning).toContain('No one is a safe fit')
   })
 
   it('swallows errors (returns skipped, never throws)', async () => {
@@ -405,6 +440,30 @@ describe('draftOrAssignSchedule', () => {
 
       expect(await draftOrAssignSchedule(TOMORROW)).toBe('skipped')
       expect(applyScheduleAssignments).not.toHaveBeenCalled()
+    })
+
+    it('persists a skipped proposal noting the safety net rejected everything, in the auto path', async () => {
+      const sb = makeSupabase({
+        shifts: [{ data: [openShift] }, { data: [] }],
+        staff: [{ data: [activeStaff] }],
+        staff_availability: [{ data: [{ staff_id: 'cap1', status: 'unavailable', note: 'sick' }] }],
+      })
+      vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+      vi.mocked(meteredMessage).mockResolvedValue(
+        claudeJson({ assignments: [{ shift_id: 's1', staff_id: 'cap1', staff_name: 'Sanne' }], summary: 'Sanne can take it.' }) as never,
+      )
+
+      expect(await draftOrAssignSchedule(TOMORROW)).toBe('skipped')
+      expect(applyScheduleAssignments).not.toHaveBeenCalled()
+
+      expect(sb.inserts).toHaveLength(1)
+      const { table, row } = sb.inserts[0]
+      expect(table).toBe('agent_proposals')
+      expect(row.kind).toBe('schedule_day')
+      expect(row.status).toBe('skipped')
+      expect(row.payload).toEqual({ target_date: TOMORROW, assignments: [] })
+      expect(row.reasoning).toContain('Sanne can take it.')
+      expect(row.reasoning).toContain('safety net')
     })
 
     it('skips (no applyScheduleAssignments call) when applying finds nothing left open (a manual change already won)', async () => {

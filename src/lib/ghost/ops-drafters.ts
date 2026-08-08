@@ -187,7 +187,17 @@ ${SCHEDULE_DAY_JSON}`,
       (a): a is Required<Pick<typeof a, 'shift_id' | 'staff_id'>> & typeof a =>
         !!a.shift_id && !!a.staff_id && openShiftIds.has(a.shift_id) && staffById.has(a.staff_id),
     )
-    if (!validAssignments.length) return 'skipped'
+    if (!validAssignments.length) {
+      const { error: insertError } = await supabase.from('agent_proposals').insert({
+        kind: 'schedule_day',
+        payload: { target_date: targetDate, assignments: [] },
+        reasoning: typeof parsed.summary === 'string' ? parsed.summary : 'Model returned no valid assignments.',
+        status: 'skipped',
+        model: CLAUDE_DRAFTER_MODEL,
+      })
+      if (insertError) throw new Error(`Could not create schedule_day proposal: ${insertError.message}`)
+      return 'skipped'
+    }
 
     // Real cost, not the model's arithmetic: derived from the shift's actual
     // duration and the assigned staff member's actual rate.
@@ -227,7 +237,20 @@ ${SCHEDULE_DAY_JSON}`,
         safeAssignments.push(a)
         busyWindows.set(a.staff_id, [...existing, window])
       }
-      if (!safeAssignments.length) return 'skipped'
+      if (!safeAssignments.length) {
+        const { error: insertError } = await supabase.from('agent_proposals').insert({
+          kind: 'schedule_day',
+          payload: { target_date: targetDate, assignments: [] },
+          reasoning:
+            typeof parsed.summary === 'string'
+              ? `${parsed.summary} (safety net also rejected every proposed assignment.)`
+              : 'The safety net rejected every proposed assignment.',
+          status: 'skipped',
+          model: CLAUDE_DRAFTER_MODEL,
+        })
+        if (insertError) throw new Error(`Could not create schedule_day proposal: ${insertError.message}`)
+        return 'skipped'
+      }
 
       const { applied, skipped } = await applyScheduleAssignments(
         supabase,
