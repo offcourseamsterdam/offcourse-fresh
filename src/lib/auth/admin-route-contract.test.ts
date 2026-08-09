@@ -175,7 +175,7 @@ describe('admin route auth contract', () => {
     // 143 = 142 + /api/admin/ops-center/summary (Ops Center badge count +
     // recent-activity feed across agent_proposals + ops_events).
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`144`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`145`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {
