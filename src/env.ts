@@ -74,6 +74,11 @@ const envSchema = z.object({
   // receives unrelated mail — and is the From address on replies. Falls back
   // to GMAIL_USER when unset (i.e. the mailbox IS the customer-facing address).
   GMAIL_SUPPORT_ADDRESS: z.string().optional(),
+  // Gmail push notifications (near-instant sync instead of 2-min polling) —
+  // see lib/gmail/watch.ts and api/webhooks/gmail-push. Both require a
+  // one-time manual Google Cloud Pub/Sub setup.
+  GMAIL_PUBSUB_TOPIC: z.string().optional(),
+  GMAIL_PUSH_WEBHOOK_SECRET: z.string().optional(),
 
   // Outscraper — reviews scraping (Google Maps + TripAdvisor). Same key verifies webhook HMAC.
   OUTSCRAPER_API_KEY: z.string().optional(),
