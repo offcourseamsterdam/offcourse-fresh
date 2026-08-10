@@ -38,7 +38,7 @@ function fmtCategory(category?: string | null): string | null {
  */
 async function lookupCustomerTypeInfo(
   ratePk: number | null | undefined,
-): Promise<{ name: string; duration_minutes: number } | null> {
+): Promise<{ name: string; duration_minutes: number; customer_type_pk: number | null } | null> {
   if (!ratePk) return null
   try {
     const supabase = createAdminClient()
@@ -49,19 +49,47 @@ async function lookupCustomerTypeInfo(
       .maybeSingle()
     if (error || !data) return null
 
-    type CtRow = { fareharbor_pk: number; name?: string; duration_minutes?: number }
+    type CtRow = { fareharbor_pk: number; customer_type_pk?: number; name?: string; duration_minutes?: number }
     const cts = (data.customer_types ?? []) as CtRow[]
     const found = cts.find(ct => ct.fareharbor_pk === ratePk)
     if (found?.name) {
       return {
         name: found.name,
         duration_minutes: found.duration_minutes ?? 0,
+        customer_type_pk: found.customer_type_pk ?? null,
       }
     }
   } catch (err) {
     console.error('[sendConfirmationEmail] customer-type lookup failed:', err)
   }
   return null
+}
+
+/**
+ * Best-effort photo for the boat behind a booked customer type, matched via
+ * `boats.fareharbor_customer_type_pks` (type PKs, not rate PKs — see ctInfo
+ * above). Returns null on any failure or when no boat has that type PK.
+ */
+async function lookupBoatPhoto(
+  customerTypePk: number | null,
+): Promise<{ name: string; photoUrl: string } | null> {
+  if (!customerTypePk) return null
+  try {
+    const supabase = createAdminClient()
+    const { data, error } = await supabase
+      .from('boats')
+      .select('name, photo_url, photo_covered_url')
+      .contains('fareharbor_customer_type_pks', [customerTypePk])
+      .eq('is_active', true)
+      .maybeSingle()
+    if (error || !data) return null
+    const photoUrl = data.photo_url ?? data.photo_covered_url
+    if (!photoUrl) return null
+    return { name: data.name, photoUrl }
+  } catch (err) {
+    console.error('[sendConfirmationEmail] boat photo lookup failed:', err)
+    return null
+  }
 }
 
 export interface ConfirmationEmailInput {
@@ -122,6 +150,7 @@ export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<
   // Private cruises: FH returns end_at == start_at; recompute from duration.
   // Shared cruises: end_at is correct; lookup still gives us the type name.
   const ctInfo = await lookupCustomerTypeInfo(p.fareharborCustomerTypeRatePk)
+  const boatPhoto = await lookupBoatPhoto(ctInfo?.customer_type_pk ?? null)
 
   let effectiveEndAt = p.endAt
   if (ctInfo?.duration_minutes && p.startAt) {
@@ -263,6 +292,15 @@ export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<
               You're all set — your spot is reserved. See you on the water!
             </p>
 
+            ${boatPhoto ? `<!-- Boat photo -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">
+              <tr>
+                <td style="border-radius:12px;overflow:hidden;">
+                  <img src="${esc(boatPhoto.photoUrl)}" alt="${esc(boatPhoto.name)}" width="496" style="display:block;width:100%;max-width:496px;height:auto;border-radius:12px;" />
+                </td>
+              </tr>
+            </table>` : ''}
+
             <!-- Detail block -->
             <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">
               <tr>
@@ -394,6 +432,7 @@ export async function sendRescheduleEmail(p: RescheduleEmailInput): Promise<void
 
   // Resolve correct end time (private cruises have end_at == start_at in FH)
   const ctInfo = await lookupCustomerTypeInfo(p.fareharborCustomerTypeRatePk)
+  const boatPhoto = await lookupBoatPhoto(ctInfo?.customer_type_pk ?? null)
   let effectiveEndAt = p.newEndAt
   if (ctInfo?.duration_minutes && p.newStartAt) {
     const startMs = new Date(p.newStartAt).getTime()
@@ -459,6 +498,15 @@ export async function sendRescheduleEmail(p: RescheduleEmailInput): Promise<void
             <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.7;">
               Your booking has been moved to a new date. Here are the updated details — everything else stays the same.
             </p>
+
+            ${boatPhoto ? `<!-- Boat photo -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">
+              <tr>
+                <td style="border-radius:12px;overflow:hidden;">
+                  <img src="${esc(boatPhoto.photoUrl)}" alt="${esc(boatPhoto.name)}" width="496" style="display:block;width:100%;max-width:496px;height:auto;border-radius:12px;" />
+                </td>
+              </tr>
+            </table>` : ''}
 
             <!-- Rescheduled badge -->
             <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">
