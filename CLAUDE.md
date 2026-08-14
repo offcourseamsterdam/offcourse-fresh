@@ -122,6 +122,26 @@ Beer's goal: become someone who can read their own codebase, understand architec
 
 ## Known Gotchas
 
+### Slack Notification Routing (CRITICAL)
+As of 2026-08-11: **all Slack notifications go to Beer's DM (`D08PRAXD13R`) by default.**
+The only exceptions — which keep going to the shared `#bookings` channel — are:
+- **Catering order notifications**
+- **Direct booking notifications**
+
+Everything else (cron/ops alerts, ads guardrail, reviews, sweep/consistency checks, etc.)
+must route to `D08PRAXD13R`, not the shared channel webhook.
+
+Today `src/lib/slack/send-notification.ts` has one general-purpose function,
+`postSlackText()`, that posts to whatever `SLACK_WEBHOOK_URL` is configured for — currently
+`#bookings` — with no per-type routing. About a dozen call sites across bookings, cron,
+catering, tracking, and ads guardrail code all go through it. `D08PRAXD13R` is already the
+hardcoded fallback for the separate critical-alert DM path (`postSlackDM` / `postSlackCritical`),
+just not yet the default for regular notifications.
+**This policy is recorded but not yet implemented in code** — when implementing, audit every
+`postSlackText` call site, keep catering (`src/lib/catering/notify.ts`,
+`src/lib/catering/send-catering-email.ts`) and direct-booking notifications on the channel
+webhook, and repoint everything else to `postSlackDM`/`D08PRAXD13R`.
+
 ### Dev Server
 Two ways to run the app — pick whichever fits the task:
 
@@ -361,6 +381,10 @@ SLACK_ALERT_DM_CHANNEL=     # has a hardcoded fallback channel id if unset
 
 # Testing / dev flags
 SUPPRESS_CONFIRMATION_EMAILS=   # test-mode: suppress outbound Resend emails during manual testing
+ADMIN_DEV_BYPASS=               # skip admin login on localhost only (page-shell fake profile, no real session)
+ADMIN_DEV_BYPASS_SECRET=        # enables the floating "Admin ⚡" button (real session, works on Vercel
+                                 # previews too). Set locally + Preview-scoped in Vercel. NEVER in Production.
+ADMIN_DEV_BYPASS_EMAIL=         # admin user_profiles email the bypass button signs in as
 
 # Site / deploy
 NEXT_PUBLIC_SITE_URL=https://offcourseamsterdam.com
