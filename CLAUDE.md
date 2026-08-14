@@ -359,7 +359,7 @@ GOOGLE_ADS_REFRESH_TOKEN=
 GOOGLE_ADS_CUSTOMER_ID=             # advertiser account (10 digits, no dashes)
 GOOGLE_ADS_LOGIN_CUSTOMER_ID=       # manager / MCC account
 GOOGLE_ADS_CONVERSION_ACTION_ID=
-GOOGLE_ADS_API_VERSION=v20          # bump when Google sunsets a version
+GOOGLE_ADS_API_VERSION=v22          # bump when Google sunsets a version
 GOOGLE_ADS_REQUIRE_CONSENT=true
 
 # Google — reviews / OAuth (GOOGLE_OAUTH_* is reused by Google Ads auth)
