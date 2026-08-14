@@ -101,6 +101,12 @@ const envSchema = z.object({
   GOOGLE_ADS_CONVERSION_ACTION_ID: z.string().optional(),
   GOOGLE_ADS_REQUIRE_CONSENT: z.enum(['true', 'false']).default('true'),
   GOOGLE_ADS_API_VERSION: z.string().optional(),
+
+  // ── Admin dev-login bypass ───────────────────────────────────────────────
+  // See src/lib/auth/dev-bypass.ts. Only ever set on localhost / Vercel
+  // preview env vars — NEVER in Vercel's Production environment.
+  ADMIN_DEV_BYPASS_SECRET: z.string().optional(),
+  ADMIN_DEV_BYPASS_EMAIL: z.string().email().optional(),
 })
 
 function validate() {

@@ -58,11 +58,28 @@ export function WhatsAppButton() {
     ? 'bottom-[84px] lg:bottom-6'
     : 'bottom-6'
 
+  // Best-effort real-session bypass (POST /api/dev/admin-bypass — see
+  // src/lib/auth/dev-bypass.ts). That endpoint 404s whenever
+  // ADMIN_DEV_BYPASS_SECRET/EMAIL aren't configured for this environment
+  // (always the case in production), so this link degrades to its old
+  // behavior — a plain shortcut to the login-gated /admin — wherever the
+  // bypass isn't set up.
+  async function handleAdminClick(e: React.MouseEvent<HTMLAnchorElement>) {
+    e.preventDefault()
+    try {
+      await fetch('/api/dev/admin-bypass', { method: 'POST' })
+    } catch {
+      // ignore — fall through to plain navigation either way
+    }
+    window.location.href = `/${locale}/admin`
+  }
+
   return (
     <>
       {showAdmin && (
         <a
           href={`/${locale}/admin`}
+          onClick={handleAdminClick}
           aria-label="Go to admin panel"
           title="Admin panel (dev shortcut)"
           className={`fixed ${bottomClass} right-[52px] z-50 w-10 h-10 bg-primary rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-[bottom] duration-300 text-white text-[10px] font-bold`}
