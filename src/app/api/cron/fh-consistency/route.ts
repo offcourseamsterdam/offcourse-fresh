@@ -36,12 +36,12 @@ export async function GET(request: NextRequest) {
     .order('booking_date', { ascending: true })
 
   if (error) {
-    await postSlackText(`🚨 *FH Consistency Check FAILED* — could not query Supabase: ${error.message}`)
+    await postSlackText(`🚨 *FH Consistency Check FAILED* — could not query Supabase: ${error.message}`, 'fh_consistency.failed')
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   }
 
   if (!bookings || bookings.length === 0) {
-    await postSlackText('✅ *FH Consistency Check* — no upcoming bookings to check.')
+    await postSlackText('✅ *FH Consistency Check* — no upcoming bookings to check.', 'fh_consistency.clean')
     return NextResponse.json({ ok: true, checked: 0, issues: 0 })
   }
 
@@ -83,7 +83,8 @@ export async function GET(request: NextRequest) {
     const dates = [...new Set(bookings.map(b => b.booking_date))].sort()
     await postSlackText(
       `✅ *FH Consistency Check* — all ${bookings.length} upcoming booking${bookings.length === 1 ? '' : 's'} confirmed in FareHarbor with correct notes. ` +
-      `Dates checked: ${dates.join(', ')}.`
+      `Dates checked: ${dates.join(', ')}.`,
+      'fh_consistency.clean',
     )
   } else {
     const lines = [
@@ -93,7 +94,7 @@ export async function GET(request: NextRequest) {
       '',
       `_Checked ${bookings.length} upcoming booking${bookings.length === 1 ? '' : 's'} total._`,
     ]
-    await postSlackText(lines.join('\n'))
+    await postSlackText(lines.join('\n'), 'fh_consistency.issues')
   }
 
   return NextResponse.json({ ok: true, checked: bookings.length, issues: issues.length })

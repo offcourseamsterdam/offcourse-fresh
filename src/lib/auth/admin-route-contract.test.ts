@@ -159,8 +159,10 @@ describe('admin route auth contract', () => {
     // 116 = 114 + /api/admin/finance/share-links + /share-links/[id] (issue
     // and revoke temporary accountant tokens for the Finance tab — migration
     // 107, src/lib/auth/finance-share.ts).
+    // 117 = 116 + /api/admin/notifications (the Slack notification feed behind
+    // Operations → Notifications — migration 108, src/lib/slack/log-notification.ts).
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`116`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`117`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {

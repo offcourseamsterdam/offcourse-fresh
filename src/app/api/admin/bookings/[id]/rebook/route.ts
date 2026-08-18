@@ -120,7 +120,7 @@ export async function POST(
       `👤 ${booking.customer_name ?? '—'} · ${booking.customer_email ?? '—'}`,
       `${booking.booking_date ?? '—'} → ${newDate} · ${formatAmsterdamTime(newStartAt)}`,
       `🎫 FH: ${newFhBooking.uuid}`,
-    ].join('\n')).catch(err => console.error('[rebook] Slack error (ignored):', err))
+    ].join('\n'), 'booking.rescheduled_admin').catch(err => console.error('[rebook] Slack error (ignored):', err))
 
     // Send reschedule confirmation email — only when explicitly requested
     if (sendEmail !== false) sendRescheduleEmail({

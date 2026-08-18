@@ -129,7 +129,7 @@ export async function runGuardrail(
   let posted = false
   if (message) {
     const { postSlackText } = await import('@/lib/slack/send-notification')
-    await postSlackText(message)
+    await postSlackText(message, 'google_ads.guardrail')
     posted = true
   }
   return { ok: true, alerts, paused, posted }

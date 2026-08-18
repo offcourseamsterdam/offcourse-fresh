@@ -78,7 +78,8 @@ export async function POST(request: NextRequest) {
   const status = payload.status as string | undefined
   if (status === 'Error' || status === 'Failure') {
     await postSlackText(
-      `⚠️ Outscraper ${source} job failed (request ${requestId ?? 'unknown'}). Reviews not updated.`
+      `⚠️ Outscraper ${source} job failed (request ${requestId ?? 'unknown'}). Reviews not updated.`,
+      'reviews.job_failed',
     ).catch(() => {})
     return NextResponse.json({ received: true })
   }
@@ -127,11 +128,11 @@ export async function POST(request: NextRequest) {
     // PostgREST requires a WHERE clause on UPDATE; there is a single config row.
     await supabase.from('google_reviews_config').update(configUpdate).not('id', 'is', null)
 
-    await postSlackText(`✅ Outscraper ${source}: imported ${uniqueReviews.length} review(s).`).catch(() => {})
+    await postSlackText(`✅ Outscraper ${source}: imported ${uniqueReviews.length} review(s).`, 'reviews.import_completed').catch(() => {})
     return NextResponse.json({ received: true, upserted: uniqueReviews.length })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    await postSlackText(`🚨 Outscraper webhook error (${source}): ${msg}`).catch(() => {})
+    await postSlackText(`🚨 Outscraper webhook error (${source}): ${msg}`, 'reviews.import_failed').catch(() => {})
     // Still return 200 — don't let Outscraper retry-storm a broken handler
     return NextResponse.json({ received: true, error: msg })
   }

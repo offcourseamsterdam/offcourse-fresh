@@ -93,7 +93,7 @@ export async function POST(
       `📅 ${booking.booking_date ?? '—'} · ${formatAmsterdamTime(booking.start_time)}`,
       `💰 Refund: ${refundLabel}`,
       booking.booking_uuid ? `🎫 FH: ${booking.booking_uuid}` : '',
-    ].filter(Boolean).join('\n')).catch(err => console.error('[cancel-booking] Slack error (ignored):', err))
+    ].filter(Boolean).join('\n'), 'booking.cancelled_admin').catch(err => console.error('[cancel-booking] Slack error (ignored):', err))
 
     return apiOk({ cancelled: true, refundId, refundError })
   } catch (err) {

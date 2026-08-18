@@ -21,5 +21,6 @@ export async function alertCronFailure(cronName: string, error: unknown, detail?
       `> ${message}` +
       (detail ? `\n> ${detail}` : '') +
       `\n_Check the Vercel function logs for the full stack trace._`,
+    'cron.failed',
   )
 }

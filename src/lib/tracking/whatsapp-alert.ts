@@ -78,6 +78,7 @@ export async function notifyGoogleAdsWhatsAppClick(
         campaign: session?.utm_campaign ?? session?.campaign_slug ?? null,
         country: session?.country_code ?? null,
       }),
+      'tracking.whatsapp_click',
     )
   } catch (err) {
     console.error('[tracking/whatsapp-alert] failed:', err)
@@ -149,6 +150,7 @@ export async function notifyAffiliateWhatsAppClick(
     // conversations don't leak into the general alerts channel.
     await postSlackDM(
       buildAffiliateWhatsAppAlert({ source, page, partnerName, campaignSlug }),
+      'tracking.affiliate_whatsapp_click',
       AFFILIATE_ALERT_SLACK_USER_ID,
     )
   } catch (err) {

@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
         `Customer: ${booking.customer_name} · ${booking.customer_email}`,
         `Cruise: ${booking.listing_title}  ·  Date: ${booking.booking_date ?? '—'}`,
         '_Manually flip status to confirmed in Supabase and verify FareHarbor._',
-      ].join('\n'))
+      ].join('\n'), 'booking.payment_link_db_failed')
       // Still send confirmation email — customer paid and needs their booking details
     } else {
       await notifyBookingsChanged()
@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
     ].filter(Boolean).join('\n')
 
     await Promise.allSettled([
-      postSlackText(slackText),
+      postSlackText(slackText, 'booking.payment_link_created'),
       sendConfirmationEmail({
         contact: {
           name: booking.customer_name ?? '',
@@ -194,7 +194,7 @@ export async function POST(request: NextRequest) {
       `${booking.listing_title}`,
       `👤 ${booking.customer_name}`,
       booking.booking_uuid ? `FH cancelled: ${booking.booking_uuid}` : '',
-    ].filter(Boolean).join('\n'))
+    ].filter(Boolean).join('\n'), 'booking.payment_link_expired')
   }
 
   // ── payment_intent.succeeded ──────────────────────────────────────────────
@@ -435,7 +435,7 @@ export async function POST(request: NextRequest) {
 
     // Slack + email + catering fire concurrently (all best-effort side channels)
     await Promise.allSettled([
-      postSlackText(slackText),
+      postSlackText(slackText, 'booking.created'),
       sendConfirmationEmail({
         contact: {
           name: meta.guest_name ?? '',
@@ -505,7 +505,7 @@ export async function POST(request: NextRequest) {
         isFullRefund ? '↩️ *Full refund issued*' : '↩️ *Partial refund issued*',
         `Amount refunded: €${(refundedCents / 100).toFixed(2)}`,
         `PI: \`${piId}\``,
-      ].join('\n'))
+      ].join('\n'), 'payment.refunded')
     }
   }
 
@@ -526,7 +526,7 @@ export async function POST(request: NextRequest) {
       `Dispute: \`${dispute.id}\``,
       '',
       `https://dashboard.stripe.com/disputes/${dispute.id}`,
-    ].join('\n'))
+    ].join('\n'), 'payment.chargeback')
   }
 
   // ── payment_intent.payment_failed ──────────────────────────────────────────
@@ -544,7 +544,7 @@ export async function POST(request: NextRequest) {
       meta.listing_title ? `Cruise: ${meta.listing_title}` : '',
       meta.guest_name ? `Guest: ${meta.guest_name} · ${meta.guest_email}` : '',
       `PI: \`${pi.id}\``,
-    ].filter(Boolean).join('\n'))
+    ].filter(Boolean).join('\n'), 'payment.failed')
   }
 
   return NextResponse.json({ received: true })
@@ -580,7 +580,7 @@ async function alertWebhookFailure(
   ].join('\n')
 
   if (process.env.SLACK_BOT_TOKEN || process.env.SLACK_WEBHOOK_URL) {
-    await postSlackCritical(text)
+    await postSlackCritical(text, 'booking.webhook_failed')
   } else {
     console.error('[stripe-webhook] CRITICAL (no Slack configured):', text)
   }

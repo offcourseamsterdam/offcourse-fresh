@@ -111,5 +111,5 @@ export async function notifyBookingFailure(ctx: BookingFailureContext): Promise<
     )
   }
 
-  await postSlackText(lines.join('\n'))
+  await postSlackText(lines.join('\n'), 'booking.failure_report')
 }

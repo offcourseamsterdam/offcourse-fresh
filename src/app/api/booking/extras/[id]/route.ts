@@ -251,7 +251,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       const itemSummary = newItems.map(i => `${i.name} ×${i.quantity}`).join(', ')
       const cruiseDateStr = new Date(bookingSnapshot.booking_date ?? '').toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', timeZone: 'Europe/Amsterdam' })
       await postSlackText(
-        `🍽️ *New catering pre-order* — ${bookingSnapshot.listing_title ?? 'cruise'} on ${cruiseDateStr}\n*Guest:* ${bookingSnapshot.customer_name}\n*Items:* ${itemSummary}`
+        `🍽️ *New catering pre-order* — ${bookingSnapshot.listing_title ?? 'cruise'} on ${cruiseDateStr}\n*Guest:* ${bookingSnapshot.customer_name}\n*Items:* ${itemSummary}`,
+        'catering.preorder_added',
       ).catch(() => {})
     }
   })

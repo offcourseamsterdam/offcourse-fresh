@@ -30,6 +30,7 @@ import {
   Ticket,
   UtensilsCrossed,
   Receipt,
+  Bell,
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react'
@@ -75,6 +76,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   settings: Settings,
   promocodes: Ticket,
   finance: Receipt,
+  notifications: Bell,
 }
 
 const PREFETCH_URLS: Record<string, string> = {
@@ -85,6 +87,7 @@ const PREFETCH_URLS: Record<string, string> = {
   '/admin/cruises':     '/api/admin/cruise-listings',
   '/admin/promo-codes': '/api/admin/promo-codes',
   '/admin/finance':     '/api/admin/finance/partners-summary',
+  '/admin/notifications': '/api/admin/notifications?days=7',
 }
 
 const RAIL_STORAGE_KEY = 'admin:sidebar-collapsed'

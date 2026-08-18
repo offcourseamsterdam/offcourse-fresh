@@ -59,5 +59,5 @@ export async function notifyCateringOrder(input: CateringNotifyInput): Promise<v
     ? `🚨 *URGENT CATERING ORDER — cruise in ${Math.round(hoursUntil!)}h!*\n*${cruiseName}* — ${dateLabel} at ${timeLabel}\n${guestLine}${itemLines}\n\n<${adminUrl}|→ Admin: review catering>`
     : `🍽️ *New catering order — review needed*\n*${cruiseName}* — ${dateLabel} at ${timeLabel}\n${guestLine}${itemLines}\n\n<${adminUrl}|→ Admin: review catering>`
 
-  await postSlackText(message)
+  await postSlackText(message, 'catering.order_received')
 }

@@ -3557,6 +3557,39 @@ export type Database = {
         }
         Relationships: []
       }
+      slack_notifications: {
+        Row: {
+          channel: string | null
+          created_at: string
+          destination: string
+          error: string | null
+          id: string
+          kind: string
+          status: string
+          text: string
+        }
+        Insert: {
+          channel?: string | null
+          created_at?: string
+          destination?: string
+          error?: string | null
+          id?: string
+          kind: string
+          status?: string
+          text: string
+        }
+        Update: {
+          channel?: string | null
+          created_at?: string
+          destination?: string
+          error?: string | null
+          id?: string
+          kind?: string
+          status?: string
+          text?: string
+        }
+        Relationships: []
+      }
       social_proof_reviews: {
         Row: {
           author_photo_url: string | null

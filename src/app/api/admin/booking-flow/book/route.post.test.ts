@@ -237,9 +237,11 @@ describe('POST /book — finalize (no claim mutex)', () => {
     // FareHarbor-booked cruise whose DB row failed to save.
     expect(h.postSlackCritical).toHaveBeenCalledWith(
       expect.stringContaining('CRITICAL: BOOKING DB SAVE FAILED'),
+      'booking.db_save_failed',
     )
     expect(h.postSlackCritical).toHaveBeenCalledWith(
       expect.stringContaining('recreate the FareHarbor booking'),
+      'booking.db_save_failed',
     )
   })
 

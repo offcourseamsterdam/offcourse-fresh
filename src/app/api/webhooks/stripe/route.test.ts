@@ -236,7 +236,10 @@ describe('stripe webhook — payment_intent.succeeded (single finalizer)', () =>
     expect(h.insert).toHaveBeenCalledTimes(1) // the parked row was written
     expect(h.update).not.toHaveBeenCalled()   // never flipped to confirmed
     // CRITICAL alert with the "do NOT refund" instruction, and absolutely no refund.
-    expect(h.postSlackCritical).toHaveBeenCalledWith(expect.stringContaining('do NOT refund'))
+    expect(h.postSlackCritical).toHaveBeenCalledWith(
+      expect.stringContaining('do NOT refund'),
+      'booking.webhook_failed',
+    )
     expect(h.refundsCreate).not.toHaveBeenCalled()
     expect(h.sendConfirmationEmail).not.toHaveBeenCalled()
   })
@@ -533,7 +536,7 @@ describe('stripe webhook — charge.refunded', () => {
     expect(h.reportRefundAdjustment).toHaveBeenCalledWith(expect.objectContaining({
       paymentIntentId: 'pi_test', isFullRefund: true, refundedCents: 16500, chargeAmountCents: 16500,
     }))
-    expect(h.postSlackText).toHaveBeenCalledWith(expect.stringContaining('Full refund'))
+    expect(h.postSlackText).toHaveBeenCalledWith(expect.stringContaining('Full refund'), 'payment.refunded')
   })
 
   it('a PARTIAL refund (amount_refunded < amount) sets payment_status to partially_refunded', async () => {
@@ -550,7 +553,7 @@ describe('stripe webhook — charge.refunded', () => {
     expect(h.reportRefundAdjustment).toHaveBeenCalledWith(expect.objectContaining({
       paymentIntentId: 'pi_test', isFullRefund: false, refundedCents: 5000, chargeAmountCents: 16500,
     }))
-    expect(h.postSlackText).toHaveBeenCalledWith(expect.stringContaining('Partial refund'))
+    expect(h.postSlackText).toHaveBeenCalledWith(expect.stringContaining('Partial refund'), 'payment.refunded')
   })
 
   it('resolves payment_intent when Stripe sends the expanded object instead of a bare id string', async () => {
@@ -585,6 +588,6 @@ describe('stripe webhook — charge.refunded', () => {
     const res = await POST(mockReq())
 
     expect(res.status).toBe(200)
-    expect(h.postSlackText).toHaveBeenCalledWith(expect.stringContaining('refund'))
+    expect(h.postSlackText).toHaveBeenCalledWith(expect.stringContaining('refund'), 'payment.refunded')
   })
 })

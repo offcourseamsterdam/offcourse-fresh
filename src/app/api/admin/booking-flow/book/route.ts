@@ -1139,7 +1139,7 @@ async function alertBookingSaveFailure(p: BookingPayload, dbError: string) {
   // CRITICAL alert — routes to Beer's DM (falls back to the shared channel if the
   // bot token isn't configured). This is the last-line safety net for a paid,
   // FareHarbor-booked cruise whose DB row failed to save; it must not be lost.
-  await postSlackCritical(text)
+  await postSlackCritical(text, 'booking.db_save_failed')
 }
 
 interface SlackPayload {
@@ -1214,7 +1214,7 @@ async function sendSlackNotification(p: SlackPayload) {
     !isInternal && p.stripePaymentIntentId ? `💳 PI: ${p.stripePaymentIntentId}` : '',
   ].filter(Boolean).join('\n')
 
-  await postSlackText(text)
+  await postSlackText(text, 'booking.created')
 }
 
 // ── Promo code rotation ────────────────────────────────────────────────────
@@ -1235,5 +1235,5 @@ async function notifyPromoRotation(oldCode: string, newCode: string, label: stri
     '_Share the new code with your partners._',
   ].join('\n')
 
-  await postSlackText(text)
+  await postSlackText(text, 'promo.code_rotated')
 }

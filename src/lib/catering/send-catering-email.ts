@@ -87,7 +87,8 @@ export async function sendCateringOrderEmailForBooking(bookingId: string): Promi
   const timeLabel = formatAmsterdamTime(booking.start_time)
   const slackPrefix = isResend ? '🔄 *Catering order resent to supplier*' : '🍽️ *Catering order sent to supplier*'
   await postSlackText(
-    `${slackPrefix}\n*${cruiseName}* — ${dateLabel} at ${timeLabel}\n${booking.guest_count ? `${booking.guest_count} guests\n` : ''}${itemSummary}`
+    `${slackPrefix}\n*${cruiseName}* — ${dateLabel} at ${timeLabel}\n${booking.guest_count ? `${booking.guest_count} guests\n` : ''}${itemSummary}`,
+    'catering.sent_to_supplier',
   )
 
   // Update FareHarbor booking note with catering details (best-effort)

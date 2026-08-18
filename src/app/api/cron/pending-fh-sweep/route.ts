@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
     .limit(50)
 
   if (error) {
-    await postSlackCritical(`🚨 *pending-fh-sweep FAILED* — could not query Supabase: ${error.message}`)
+    await postSlackCritical(`🚨 *pending-fh-sweep FAILED* — could not query Supabase: ${error.message}`, 'sweep.query_failed')
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   }
   if (!candidates || candidates.length === 0) {
@@ -113,6 +113,7 @@ export async function GET(request: NextRequest) {
         await notifyBookingsChanged()
         await postSlackText(
           `↩️ *Parked booking cancelled — payment was refunded* (no FareHarbor booking created)\nPI: \`${piId}\` · ${claimed.customer_name ?? '?'} · ${claimed.listing_title ?? ''}`,
+          'sweep.refund_cancelled',
         )
         cancelled++
         continue
@@ -148,7 +149,7 @@ export async function GET(request: NextRequest) {
           `*Customer:* ${claimed.customer_name ?? '?'} · ${claimed.customer_email ?? '?'} · ${claimed.customer_phone ?? '?'}`,
           `*Cruise:* ${claimed.listing_title ?? ''} · ${claimed.booking_date ?? '?'}`,
           '_Create the FareHarbor booking manually and flip the row to confirmed — do NOT refund._',
-        ].join('\n'))
+        ].join('\n'), 'sweep.paid_but_unbooked')
       }
       continue
     }
@@ -175,7 +176,7 @@ export async function GET(request: NextRequest) {
         `👥 ${guestCount} guest${guestCount !== 1 ? 's' : ''} · ${claimed.category ?? ''}`,
         fhBookingUuid ? `🎫 FH: ${fhBookingUuid}` : '',
         `💳 PI: ${piId}`,
-      ].filter(Boolean).join('\n')),
+      ].filter(Boolean).join('\n'), 'sweep.booking_completed'),
       sendConfirmationEmail({
         contact: {
           name: claimed.customer_name ?? '',

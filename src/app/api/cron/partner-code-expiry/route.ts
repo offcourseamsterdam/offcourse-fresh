@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
         `Code: \`${row.code}\` — expires *${expiryDate}*`,
         `Generate a fresh code: ${siteUrl}/en/admin/partners/${row.partner_id}`,
       ].join('\n')
-      await postSlackText(text)
+      await postSlackText(text, 'partner.code_expiring')
     }
 
     return NextResponse.json({ ok: true, checked: rows.length })

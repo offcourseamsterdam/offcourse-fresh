@@ -238,6 +238,7 @@ export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<
           (p.fhBookingUuid ? ` (FH \`${p.fhBookingUuid}\`)` : '') +
           (p.stripePaymentIntentId ? ` · PI \`${p.stripePaymentIntentId}\`` : '') +
           `\n_The confirmation email was sent WITHOUT an invoice — issue one manually._`,
+        'booking.invoice_pdf_failed',
       ).catch(() => { /* best-effort */ })
     }
   }
