@@ -41,21 +41,48 @@ export async function GET(
 
   const { data: shifts } = await supabase
     .from('shifts')
-    .select('id, start_at, end_at, status, notes, boats(name)')
+    .select(
+      'id, start_at, end_at, status, notes, boats(name), bookings!shifts_booking_id_fkey(guest_count, listing_title, listing_id)',
+    )
     .eq('staff_id', staff.id)
     .neq('status', 'cancelled')
     .gte('start_at', from)
     .lte('start_at', to)
     .order('start_at', { ascending: true })
 
-  const icsShifts: IcsShift[] = (shifts ?? []).map(s => ({
-    id: s.id,
-    start_at: s.start_at,
-    end_at: s.end_at,
-    status: s.status,
-    notes: s.notes,
-    boatName: (s.boats as { name: string } | null)?.name ?? null,
-  }))
+  const listingIds = [
+    ...new Set(
+      (shifts ?? [])
+        .map(s => (s.bookings as { listing_id: string | null } | null)?.listing_id)
+        .filter((id): id is string => !!id),
+    ),
+  ]
+
+  const departureByListing = new Map<string, string>()
+  if (listingIds.length > 0) {
+    const { data: listings } = await supabase
+      .from('cruise_listings')
+      .select('id, departure_location')
+      .in('id', listingIds)
+    for (const listing of listings ?? []) {
+      if (listing.departure_location) departureByListing.set(listing.id, listing.departure_location)
+    }
+  }
+
+  const icsShifts: IcsShift[] = (shifts ?? []).map(s => {
+    const booking = s.bookings as { guest_count: number | null; listing_title: string | null; listing_id: string | null } | null
+    return {
+      id: s.id,
+      start_at: s.start_at,
+      end_at: s.end_at,
+      status: s.status,
+      notes: s.notes,
+      boatName: (s.boats as { name: string } | null)?.name ?? null,
+      tripTitle: booking?.listing_title ?? null,
+      guestCount: booking?.guest_count ?? null,
+      departureLocation: booking?.listing_id ? (departureByListing.get(booking.listing_id) ?? null) : null,
+    }
+  })
 
   const body = buildShiftIcs(icsShifts, {
     calendarName: `${staff.name} — Off Course shifts`,

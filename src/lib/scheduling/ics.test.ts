@@ -11,6 +11,9 @@ function shift(over: Partial<IcsShift> = {}): IcsShift {
     boatName: 'Diana',
     status: 'confirmed',
     notes: null,
+    tripTitle: null,
+    guestCount: null,
+    departureLocation: null,
     ...over,
   }
 }
@@ -67,5 +70,33 @@ describe('buildShiftIcs', () => {
   it('produces no VEVENT for an empty list', () => {
     const ics = buildShiftIcs([], { calendarName: 'x', stamp })
     expect(ics).not.toContain('BEGIN:VEVENT')
+  })
+
+  it('includes the trip title in the summary and description', () => {
+    const ics = buildShiftIcs([shift({ tripTitle: 'Sunset Cruise' })], { calendarName: 'x', stamp })
+    expect(ics).toContain('SUMMARY:⚓ Diana — Sunset Cruise')
+    expect(ics).toContain('Trip: Sunset Cruise')
+  })
+
+  it('includes guest count in the description', () => {
+    const ics = buildShiftIcs([shift({ guestCount: 6 })], { calendarName: 'x', stamp })
+    expect(ics).toContain('Guests: 6')
+  })
+
+  it('uses the trip departure location, falling back to the default address', () => {
+    const withLocation = buildShiftIcs([shift({ departureLocation: 'De Ruijterkade 44' })], {
+      calendarName: 'x',
+      stamp,
+    })
+    expect(withLocation).toContain('LOCATION:De Ruijterkade 44')
+
+    const withoutLocation = buildShiftIcs([shift()], { calendarName: 'x', stamp })
+    expect(withoutLocation).toContain('LOCATION:Off Course\\, Amsterdam')
+  })
+
+  it('omits trip/guest lines for shifts with no linked booking', () => {
+    const ics = buildShiftIcs([shift()], { calendarName: 'x', stamp })
+    expect(ics).not.toContain('Trip:')
+    expect(ics).not.toContain('Guests:')
   })
 })

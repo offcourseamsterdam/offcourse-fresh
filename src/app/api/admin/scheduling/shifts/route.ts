@@ -28,7 +28,9 @@ export async function GET(request: NextRequest) {
     const [shiftsRes, boatsRes, staffRes, availabilityRes] = await Promise.all([
       supabase
         .from('shifts')
-        .select('*, staff(name), bookings(customer_name, guest_count, category, listing_title)')
+        .select(
+          '*, staff(name), bookings!shifts_booking_id_fkey(customer_name, guest_count, category, listing_title)',
+        )
         .gte('date', from)
         .lte('date', to)
         .order('start_at'),

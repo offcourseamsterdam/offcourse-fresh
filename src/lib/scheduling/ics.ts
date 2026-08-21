@@ -11,6 +11,9 @@ export interface IcsShift {
   boatName: string | null
   status: string
   notes: string | null
+  tripTitle: string | null
+  guestCount: number | null
+  departureLocation: string | null
 }
 
 /** RFC 5545 text escaping: backslash, comma, semicolon, newline. */
@@ -63,8 +66,11 @@ export function buildShiftIcs(
   for (const shift of shifts) {
     const boat = shift.boatName ?? 'Boat TBD'
     const summaryBits = [`⚓ ${boat}`]
+    if (shift.tripTitle) summaryBits.push(`— ${shift.tripTitle}`)
     if (shift.status === 'assigned') summaryBits.push('(to confirm)')
     const descParts = [`Status: ${shift.status}`]
+    if (shift.tripTitle) descParts.push(`Trip: ${shift.tripTitle}`)
+    if (shift.guestCount != null) descParts.push(`Guests: ${shift.guestCount}`)
     if (shift.notes) descParts.push(shift.notes)
 
     lines.push(
@@ -75,7 +81,7 @@ export function buildShiftIcs(
       `DTEND:${toIcsUtc(shift.end_at)}`,
       fold(`SUMMARY:${escapeText(summaryBits.join(' '))}`),
       fold(`DESCRIPTION:${escapeText(descParts.join(' — '))}`),
-      `LOCATION:${escapeText('Off Course, Amsterdam')}`,
+      `LOCATION:${escapeText(shift.departureLocation ?? 'Off Course, Amsterdam')}`,
       'END:VEVENT',
     )
   }
