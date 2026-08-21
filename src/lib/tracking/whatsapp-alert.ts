@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { postSlackText, postSlackDM } from '@/lib/slack/send-notification'
+import { postSlackOps, postSlackDM } from '@/lib/slack/send-notification'
 
 /** Beer's Slack user id — affiliate-referred WhatsApp taps go straight to him, not the shared channel. */
 const AFFILIATE_ALERT_SLACK_USER_ID = 'U08PRAX8A07'
@@ -70,7 +70,7 @@ export async function notifyGoogleAdsWhatsAppClick(
     const source = typeof metadata?.source === 'string' ? metadata.source : undefined
     const page = typeof metadata?.path === 'string' ? metadata.path : session?.entry_page ?? null
 
-    await postSlackText(
+    await postSlackOps(
       buildWhatsAppAdAlert({
         source,
         page,

@@ -1,11 +1,12 @@
-import { postSlackText } from '@/lib/slack/send-notification'
+import { postSlackOps } from '@/lib/slack/send-notification'
 
 /**
  * Failure alert for cron jobs (/api/cron/**, /api/fareharbor/sync).
  *
  * Crons run unattended — when one fails, nobody is watching the logs. This
- * sends the failure to Slack (the channel a human actually reads) in addition
- * to logging it. Never throws: alerting must not mask the original failure.
+ * sends the failure to Beer's Slack DM (never the shared #bookings channel —
+ * see CLAUDE.md's Slack Notification Routing policy) in addition to logging
+ * it. Never throws: alerting must not mask the original failure.
  *
  * Usage in a cron route:
  *   } catch (err) {
@@ -16,7 +17,7 @@ import { postSlackText } from '@/lib/slack/send-notification'
 export async function alertCronFailure(cronName: string, error: unknown, detail?: string): Promise<void> {
   const message = error instanceof Error ? error.message : String(error)
   console.error(`[cron/${cronName}] FAILED:`, error)
-  await postSlackText(
+  await postSlackOps(
     `:rotating_light: *Cron job failed: ${cronName}*\n` +
       `> ${message}` +
       (detail ? `\n> ${detail}` : '') +

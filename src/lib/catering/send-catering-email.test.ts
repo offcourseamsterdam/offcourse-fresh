@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   update: vi.fn().mockResolvedValue({ error: null }),
   emailsSend: vi.fn().mockResolvedValue({}),
   postSlackText: vi.fn().mockResolvedValue(undefined),
+  postSlackOps: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/lib/supabase/admin', () => ({
@@ -21,7 +22,7 @@ vi.mock('@/lib/supabase/admin', () => ({
     }),
   }),
 }))
-vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText }))
+vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText, postSlackOps: h.postSlackOps }))
 vi.mock('@/lib/fareharbor/client', () => ({ getFareHarborClient: () => ({ updateBookingNote: vi.fn() }) }))
 vi.mock('resend', () => ({
   Resend: class {

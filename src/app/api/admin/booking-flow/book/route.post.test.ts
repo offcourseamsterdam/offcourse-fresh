@@ -30,6 +30,7 @@ const h = vi.hoisted(() => ({
   sendCateringOrderEmailForBooking: vi.fn().mockResolvedValue({ ok: true, resent: false, recipient: 'x' }),
   notifyBookingFailure: vi.fn().mockResolvedValue(undefined),
   postSlackText: vi.fn().mockResolvedValue(undefined),
+  postSlackOps: vi.fn().mockResolvedValue(undefined),
   postSlackCritical: vi.fn().mockResolvedValue(undefined),
   requireAdmin: vi.fn().mockResolvedValue(null),
   // 'promo_codes' lookup for the isAuthorizedByFullPromo check — independent of the
@@ -74,7 +75,7 @@ vi.mock('@/lib/booking/send-confirmation-email', () => ({ sendConfirmationEmail:
 vi.mock('@/lib/catering/notify', () => ({ notifyCateringOrder: h.notifyCateringOrder }))
 vi.mock('@/lib/catering/send-catering-email', () => ({ sendCateringOrderEmailForBooking: h.sendCateringOrderEmailForBooking }))
 vi.mock('@/lib/booking/notify-booking-failure', () => ({ notifyBookingFailure: h.notifyBookingFailure }))
-vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText, postSlackCritical: h.postSlackCritical }))
+vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText, postSlackOps: h.postSlackOps, postSlackCritical: h.postSlackCritical }))
 
 import { POST } from './route'
 

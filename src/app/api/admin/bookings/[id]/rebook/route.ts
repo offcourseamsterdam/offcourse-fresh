@@ -4,7 +4,7 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { sendRescheduleEmail } from '@/lib/booking/send-confirmation-email'
-import { postSlackText } from '@/lib/slack/send-notification'
+import { postSlackOps } from '@/lib/slack/send-notification'
 import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
 import { formatAmsterdamTime } from '@/lib/utils'
 
@@ -114,7 +114,7 @@ export async function POST(
     await notifyBookingsChanged()
 
     // Slack — best-effort, never blocks the response
-    postSlackText([
+    postSlackOps([
       `📅 *Booking rescheduled (admin)*`,
       `*${booking.listing_title ?? 'Canal Cruise'}*`,
       `👤 ${booking.customer_name ?? '—'} · ${booking.customer_email ?? '—'}`,

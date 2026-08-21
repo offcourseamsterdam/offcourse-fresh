@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { escapeHtml as esc, fmtEurosRounded as fmtAmountEur } from '@/lib/utils'
 import { generateInvoicePdf, makeInvoiceNumber } from '@/lib/booking/generate-invoice-pdf'
 import { allocateInvoiceNumber } from '@/lib/booking/allocate-invoice-number'
-import { postSlackText } from '@/lib/slack/send-notification'
+import { postSlackOps } from '@/lib/slack/send-notification'
 
 let _resend: Resend | null = null
 function getResend(): Resend {
@@ -233,7 +233,7 @@ export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<
       // A missing VAT invoice on a paid booking is a compliance gap, and the
       // customer is never told (the note below is suppressed). Alert ops so the
       // invoice can be issued manually.
-      await postSlackText(
+      await postSlackOps(
         `🧾 *Invoice PDF generation failed* for ${p.contact.email}` +
           (p.fhBookingUuid ? ` (FH \`${p.fhBookingUuid}\`)` : '') +
           (p.stripePaymentIntentId ? ` · PI \`${p.stripePaymentIntentId}\`` : '') +

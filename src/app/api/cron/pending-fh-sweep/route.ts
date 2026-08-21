@@ -10,7 +10,7 @@ import { notifyCateringOrder } from '@/lib/catering/notify'
 import { hasFood, type ExtrasLineItem } from '@/lib/catering/filter'
 import { isWithinCateringAutoSendWindow } from '@/lib/catering/auto-send-cutoff'
 import { sendCateringOrderEmailForBooking } from '@/lib/catering/send-catering-email'
-import { postSlackText, postSlackCritical } from '@/lib/slack/send-notification'
+import { postSlackText, postSlackOps, postSlackCritical } from '@/lib/slack/send-notification'
 import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
 import { resolvePaymentMethodLabel } from '@/lib/stripe/payment-method-label'
 import { formatAmsterdamTime } from '@/lib/utils'
@@ -111,7 +111,7 @@ export async function GET(request: NextRequest) {
           .update({ status: 'cancelled', payment_status: 'refunded', updated_at: nowIso })
           .eq('id', claimed.id)
         await notifyBookingsChanged()
-        await postSlackText(
+        await postSlackOps(
           `↩️ *Parked booking cancelled — payment was refunded* (no FareHarbor booking created)\nPI: \`${piId}\` · ${claimed.customer_name ?? '?'} · ${claimed.listing_title ?? ''}`,
         )
         cancelled++

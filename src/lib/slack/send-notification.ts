@@ -62,3 +62,21 @@ export async function postSlackCritical(text: string): Promise<void> {
   const sentToDm = await postSlackDM(text)
   if (!sentToDm) await postSlackText(text)
 }
+
+/**
+ * Route a routine ops/notification alert to Beer's DM ONLY — per his explicit
+ * instruction (2026-08-22): "only my slack", not the shared #bookings channel,
+ * not even as a fallback. This is the default for anything that isn't a
+ * catering order or a direct-booking notification (see the "Slack Notification
+ * Routing" section of CLAUDE.md) and isn't severe enough to warrant
+ * postSlackCritical's channel fallback.
+ *
+ * Deliberately does NOT fall back to postSlackText if the DM fails — that
+ * would silently reintroduce #bookings traffic this policy exists to remove.
+ * If SLACK_BOT_TOKEN is ever missing/invalid, the alert is lost from Slack
+ * (postSlackDM already logs the reason) but never leaks to the shared channel.
+ */
+export async function postSlackOps(text: string): Promise<void> {
+  const sentToDm = await postSlackDM(text)
+  if (!sentToDm) console.error('[slack] postSlackOps: DM failed and there is no channel fallback by design — alert lost:', text.slice(0, 200))
+}

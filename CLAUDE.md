@@ -123,24 +123,34 @@ Beer's goal: become someone who can read their own codebase, understand architec
 ## Known Gotchas
 
 ### Slack Notification Routing (CRITICAL)
-As of 2026-08-11: **all Slack notifications go to Beer's DM (`D08PRAXD13R`) by default.**
-The only exceptions — which keep going to the shared `#bookings` channel — are:
-- **Catering order notifications**
-- **Direct booking notifications**
+**Implemented 2026-08-22.** All Slack notifications go to Beer's DM by default.
+The only exceptions — which keep going to the shared `#bookings` channel via
+`postSlackText()` — are:
+- **Catering order notifications** (`src/lib/catering/notify.ts`,
+  `src/lib/catering/send-catering-email.ts`, and the catering pre-order in
+  `api/booking/extras/[id]`)
+- **Direct booking notifications** ("New booking confirmed!" from
+  `api/admin/booking-flow/book`, both Stripe webhook confirmations, and the
+  `pending-fh-sweep` "parked booking completed" that replaces a missed one)
 
-Everything else (cron/ops alerts, ads guardrail, reviews, sweep/consistency checks, etc.)
-must route to `D08PRAXD13R`, not the shared channel webhook.
+Everything else (cron/ops alerts, ads guardrail, reviews, sweep/consistency checks,
+refunds, chargebacks, admin cancel/rebook, etc.) uses **`postSlackOps()`**.
 
-Today `src/lib/slack/send-notification.ts` has one general-purpose function,
-`postSlackText()`, that posts to whatever `SLACK_WEBHOOK_URL` is configured for — currently
-`#bookings` — with no per-type routing. About a dozen call sites across bookings, cron,
-catering, tracking, and ads guardrail code all go through it. `D08PRAXD13R` is already the
-hardcoded fallback for the separate critical-alert DM path (`postSlackDM` / `postSlackCritical`),
-just not yet the default for regular notifications.
-**This policy is recorded but not yet implemented in code** — when implementing, audit every
-`postSlackText` call site, keep catering (`src/lib/catering/notify.ts`,
-`src/lib/catering/send-catering-email.ts`) and direct-booking notifications on the channel
-webhook, and repoint everything else to `postSlackDM`/`D08PRAXD13R`.
+`src/lib/slack/send-notification.ts` now has three senders — pick deliberately:
+- `postSlackText()` — shared `#bookings` channel. ONLY for the two exceptions above.
+- `postSlackOps()` — Beer's DM, **no channel fallback by design**. Beer's instruction
+  was "only my slack", so a failed DM is logged and dropped rather than leaking to
+  `#bookings`. This is the default for anything that isn't one of the two exceptions.
+- `postSlackCritical()` — Beer's DM, but *does* fall back to the channel webhook,
+  because a paid-but-unbooked alert must never be lost. Reserve for money-path
+  failures where silence is worse than posting in the wrong place.
+
+The DM target is `SLACK_ALERT_DM_CHANNEL`. Set it to Beer's **user** ID
+(`U08PRAX8A07`), not a `D...` DM-channel ID: a `D...` id is specific to one app's
+DM conversation, and the old hardcoded `D08PRAXD13R` fallback belonged to a
+different app — it returns `channel_not_found` for this bot, which is why DM
+alerts silently fell back to `#bookings` for months. A user ID makes Slack open
+the correct DM automatically. Set in `.env.local` + Vercel Preview + Production.
 
 ### Dev Server
 Two ways to run the app — pick whichever fits the task:

@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   dbUpdate: vi.fn(),
   sendRescheduleEmail: vi.fn().mockResolvedValue(undefined),
   postSlackText: vi.fn().mockResolvedValue(undefined),
+  postSlackOps: vi.fn().mockResolvedValue(undefined),
   requireAdmin: vi.fn().mockResolvedValue(null),
 }))
 
@@ -33,7 +34,7 @@ vi.mock('@/lib/supabase/admin', () => ({
 
 vi.mock('@/lib/auth/require-admin', () => ({ requireAdmin: h.requireAdmin }))
 vi.mock('@/lib/booking/send-confirmation-email', () => ({ sendRescheduleEmail: h.sendRescheduleEmail }))
-vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText }))
+vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText, postSlackOps: h.postSlackOps }))
 
 import { POST } from './route'
 
@@ -139,8 +140,8 @@ describe('POST /api/admin/bookings/[id]/rebook', () => {
 
   it('sends a Slack notification on successful rebook', async () => {
     await POST(mockReq(BODY), mockParams())
-    expect(h.postSlackText).toHaveBeenCalledOnce()
-    const msg = h.postSlackText.mock.calls[0][0] as string
+    expect(h.postSlackOps).toHaveBeenCalledOnce()
+    const msg = h.postSlackOps.mock.calls[0][0] as string
     expect(msg).toContain('rescheduled')
     expect(msg).toContain('Enrico Test')
     expect(msg).toContain('enrico@example.com')

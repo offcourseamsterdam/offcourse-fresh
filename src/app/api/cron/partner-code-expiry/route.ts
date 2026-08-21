@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { postSlackText } from '@/lib/slack/send-notification'
+import { postSlackOps } from '@/lib/slack/send-notification'
 import { requireCronSecret } from '@/lib/auth/require-cron-secret'
 import { alertCronFailure } from '@/lib/cron/alert'
 
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
         `Code: \`${row.code}\` — expires *${expiryDate}*`,
         `Generate a fresh code: ${siteUrl}/en/admin/partners/${row.partner_id}`,
       ].join('\n')
-      await postSlackText(text)
+      await postSlackOps(text)
     }
 
     return NextResponse.json({ ok: true, checked: rows.length })

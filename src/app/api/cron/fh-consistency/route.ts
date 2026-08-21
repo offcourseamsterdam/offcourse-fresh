@@ -3,7 +3,7 @@ import { requireCronSecret } from '@/lib/auth/require-cron-secret'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { FHNotFoundError } from '@/lib/fareharbor/types'
-import { postSlackText } from '@/lib/slack/send-notification'
+import { postSlackOps } from '@/lib/slack/send-notification'
 import { buildFHBookingNote } from '@/lib/catering/build-fh-note'
 import type { ExtrasLineItem } from '@/lib/catering/filter'
 import { toAmsDateStr } from '@/lib/utils'
@@ -36,12 +36,12 @@ export async function GET(request: NextRequest) {
     .order('booking_date', { ascending: true })
 
   if (error) {
-    await postSlackText(`🚨 *FH Consistency Check FAILED* — could not query Supabase: ${error.message}`)
+    await postSlackOps(`🚨 *FH Consistency Check FAILED* — could not query Supabase: ${error.message}`)
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   }
 
   if (!bookings || bookings.length === 0) {
-    await postSlackText('✅ *FH Consistency Check* — no upcoming bookings to check.')
+    await postSlackOps('✅ *FH Consistency Check* — no upcoming bookings to check.')
     return NextResponse.json({ ok: true, checked: 0, issues: 0 })
   }
 
@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
 
   if (issues.length === 0) {
     const dates = [...new Set(bookings.map(b => b.booking_date))].sort()
-    await postSlackText(
+    await postSlackOps(
       `✅ *FH Consistency Check* — all ${bookings.length} upcoming booking${bookings.length === 1 ? '' : 's'} confirmed in FareHarbor with correct notes. ` +
       `Dates checked: ${dates.join(', ')}.`
     )
@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
       '',
       `_Checked ${bookings.length} upcoming booking${bookings.length === 1 ? '' : 's'} total._`,
     ]
-    await postSlackText(lines.join('\n'))
+    await postSlackOps(lines.join('\n'))
   }
 
   return NextResponse.json({ ok: true, checked: bookings.length, issues: issues.length })

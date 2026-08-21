@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
   refundsList: vi.fn(),
   createBookingIdempotent: vi.fn(),
   postSlackText: vi.fn().mockResolvedValue(undefined),
+  postSlackOps: vi.fn().mockResolvedValue(undefined),
   postSlackCritical: vi.fn().mockResolvedValue(undefined),
   notifyBookingsChanged: vi.fn().mockResolvedValue(undefined),
   sendConfirmationEmail: vi.fn().mockResolvedValue(undefined),
@@ -84,7 +85,7 @@ vi.mock('@/lib/booking/send-confirmation-email', () => ({ sendConfirmationEmail:
 vi.mock('@/lib/catering/notify', () => ({ notifyCateringOrder: h.notifyCateringOrder }))
 vi.mock('@/lib/catering/auto-send-cutoff', () => ({ isWithinCateringAutoSendWindow: () => false }))
 vi.mock('@/lib/catering/send-catering-email', () => ({ sendCateringOrderEmailForBooking: h.sendCateringOrderEmailForBooking }))
-vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText, postSlackCritical: h.postSlackCritical }))
+vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText, postSlackOps: h.postSlackOps, postSlackCritical: h.postSlackCritical }))
 vi.mock('@/lib/realtime/notify-bookings-changed', () => ({ notifyBookingsChanged: h.notifyBookingsChanged }))
 vi.mock('@/lib/stripe/payment-method-label', () => ({ resolvePaymentMethodLabel: h.resolvePaymentMethodLabel }))
 

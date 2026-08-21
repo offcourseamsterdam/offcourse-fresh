@@ -44,6 +44,7 @@ const notify = vi.hoisted(() => ({
   sendCateringOrderEmailForBooking: vi.fn().mockResolvedValue({ ok: true, resent: false, recipient: 'x' }),
   notifyBookingFailure: vi.fn().mockResolvedValue(undefined),
   postSlackText: vi.fn().mockResolvedValue(undefined),
+  postSlackOps: vi.fn().mockResolvedValue(undefined),
   requireAdmin: vi.fn().mockResolvedValue(null),
 }))
 
@@ -90,7 +91,7 @@ vi.mock('@/lib/booking/send-confirmation-email', () => ({ sendConfirmationEmail:
 vi.mock('@/lib/catering/notify', () => ({ notifyCateringOrder: notify.notifyCateringOrder }))
 vi.mock('@/lib/catering/send-catering-email', () => ({ sendCateringOrderEmailForBooking: notify.sendCateringOrderEmailForBooking }))
 vi.mock('@/lib/booking/notify-booking-failure', () => ({ notifyBookingFailure: notify.notifyBookingFailure }))
-vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: notify.postSlackText }))
+vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: notify.postSlackText, postSlackOps: notify.postSlackOps }))
 
 const CITY_TAX_PER_GUEST = 260 // src/lib/booking/constants.ts CITY_TAX_CENTS_PER_GUEST
 

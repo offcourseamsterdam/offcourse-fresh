@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   maybeSingle: vi.fn().mockResolvedValue({ data: { id: 'cfg-1', outscraper_processed_ids: [] } }),
   configUpdate: vi.fn().mockResolvedValue({ error: null }),
   postSlackText: vi.fn().mockResolvedValue(undefined),
+  postSlackOps: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/lib/supabase/admin', () => ({
@@ -30,7 +31,7 @@ vi.mock('@/lib/supabase/admin', () => ({
     },
   }),
 }))
-vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText }))
+vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText, postSlackOps: h.postSlackOps }))
 
 import { POST } from './route'
 

@@ -9,7 +9,7 @@
  * No-op (with console.error) when SLACK_WEBHOOK_URL isn't set.
  */
 
-import { postSlackText } from '@/lib/slack/send-notification'
+import { postSlackOps } from '@/lib/slack/send-notification'
 import { formatAmsterdamTime } from '@/lib/utils'
 
 export type BookingFailureStage =
@@ -111,5 +111,5 @@ export async function notifyBookingFailure(ctx: BookingFailureContext): Promise<
     )
   }
 
-  await postSlackText(lines.join('\n'))
+  await postSlackOps(lines.join('\n'))
 }

@@ -19,6 +19,7 @@ const h = vi.hoisted(() => ({
   extrasEq: vi.fn(),
   bookingUpdate: vi.fn().mockResolvedValue({ error: null }),
   postSlackText: vi.fn().mockResolvedValue(undefined),
+  postSlackOps: vi.fn().mockResolvedValue(undefined),
   resendSend: vi.fn().mockResolvedValue({ data: { id: 'email-1' }, error: null }),
   afterCallback: null as (() => Promise<void> | void) | null,
 }))
@@ -55,7 +56,7 @@ vi.mock('@/lib/fareharbor/client', () => ({
   }),
 }))
 
-vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText }))
+vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText, postSlackOps: h.postSlackOps }))
 
 vi.mock('resend', () => ({
   Resend: class {
