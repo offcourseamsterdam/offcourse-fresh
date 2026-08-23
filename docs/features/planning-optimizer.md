@@ -6,18 +6,42 @@ A new "Optimizer" button on `/admin/planning`, opening a dedicated panel
 that surfaces every schedule inefficiency it can find for the dates
 currently in view:
 
-- **Same-day paid gaps** and **same-day cross-boat merges** — already
-  computed correctly by the nightly ops-review optimizer, but until now that
-  logic only ever ran once, for tomorrow. The panel runs it on demand for
-  every visible day instead. Shown read-only — `/admin/ghost` already owns
-  full review of these.
-- **Cross-day consolidation** (new) — two single-booking shared departures
-  exactly 1 day apart, same product, whose combined guest count fits one
-  boat. Real example checked against prod (2026-08-23): Paige Monacelli
-  (Tue 25 Aug, 4 guests) and Sophie Russell (Wed 26 Aug, 2 guests) were each
-  the *only* booking on their departure — moving one onto the other frees a
-  whole boat-day. This item type is actionable directly from the panel: the
-  drafted SMS/email is shown inline, and Approve sends it immediately.
+- **Same-day paid gaps** — already computed correctly by the nightly
+  ops-review optimizer, but until now that logic only ever ran once, for
+  tomorrow. The panel runs it on demand for every visible day instead. Shown
+  read-only — no ask exists for a gap yet, `/admin/ghost`'s nightly review
+  covers it.
+- **Same-day boat swaps** (`same_day_merge`, extended 2026-08-23) — a
+  single-booking shift that fits cleanly onto another in-use boat's day, no
+  overlap, capacity checked. **Private cruises are included** (Beer,
+  2026-08-23: "private cruises can definitely swap Diana for Curaçao") — a
+  private party doesn't care which specific boat, just that it fits; a real
+  data bug had this gated on the wrong profile flag (`allowMerge`, which
+  correctly stays false for private — that flag is about never combining two
+  parties onto one departure, not about boats) instead of the right one
+  (`allowBoatSwap`, true for both categories). Priced at the moving boat's
+  full shift cost — "one boat, one day, one shift" means the swap frees that
+  boat's captain entirely for the day. Actionable: dry-run validated against
+  FareHarbor (same time, other boat — never a different time), then drafted
+  and shown inline exactly like cross-day.
+- **Cross-day consolidation** — two single-booking shared departures exactly
+  1 day apart, same product, whose combined guest count fits one boat. Real
+  example checked against prod (2026-08-23): Paige Monacelli (Tue 25 Aug, 4
+  guests) and Sophie Russell (Wed 26 Aug, 2 guests) were each the *only*
+  booking on their departure — moving one onto the other frees a whole
+  boat-day. Actionable directly from the panel: the drafted SMS/email is
+  shown inline, and Approve sends it immediately. Prices a SHRINK, not just
+  full elimination, when the moving shift also covers an unrelated departure
+  that stays behind (Beer, 2026-08-23: "you are saving costs" even when a
+  shift doesn't disappear entirely — it can still get shorter).
+
+Once a guest accepts any of these asks, the accepting admin can click **Mark
+rebooked in FareHarbor** on the `/admin/ghost` card after doing the real
+FareHarbor rebook by hand — this records `outcome.rebooked_at` and resyncs
+the affected date(s) immediately, so Planning doesn't wait on the next
+unrelated sync to reflect it (Beer, 2026-08-23: "when something was
+successful to process the rebooking" — previously a guest "yes" only ever
+fired a Slack reminder with nothing closing the loop).
 
 Full design history and the decisions behind it:
 `docs/plans/2026-08-23-cross-day-consolidation-optimizer.md`.
@@ -26,12 +50,17 @@ Full design history and the decisions behind it:
 
 | File | Description |
 |---|---|
-| `src/lib/ghost/cross-day-consolidation.ts` | `findCrossDayConsolidationCandidates()` — pure function, the core new logic. |
+| `src/lib/ghost/cross-day-consolidation.ts` | `findCrossDayConsolidationCandidates()` — pure function, the cross-day logic (shrink-or-eliminate pricing). |
 | `src/lib/ghost/cross-day-move-drafter.ts` | `draftCrossDayConsolidation()` — drafts the SMS/email via Claude and inserts the proposal. |
-| `src/lib/ghost/rulebook.ts` | `CROSS_DAY_WINDOW_DAYS`, `CROSS_DAY_INCENTIVE`, `CROSS_DAY_MOVE_PROMPT` — the tunable dials. |
-| `src/app/api/admin/planning/optimizer/route.ts` | `GET ?from=&to=` — merges same-day facts + cross-day candidates into one tagged list. |
+| `src/lib/ghost/ops-review.ts` | `computeDayFacts()` — same-day gaps + `mergeCandidates` (the boat-swap pool), gated on `allowBoatSwap`. |
+| `src/lib/ghost/boat-swap-drafter.ts` | `findSwapSlot()`/`validateBoatSwap()` (FH dry-run, same time/other boat) + `draftBoatSwap()`. |
+| `src/lib/ops/profile.ts` | `deriveOperationalProfile()` — `allowMerge`/`allowBoatSwap`/`allowTimeChange` per category. |
+| `src/lib/ghost/rulebook.ts` | `CROSS_DAY_WINDOW_DAYS`, `CROSS_DAY_INCENTIVE`, `CROSS_DAY_MOVE_PROMPT`, `BOAT_SWAP_PROMPT` — the tunable dials + prompts. |
+| `src/app/api/admin/planning/optimizer/route.ts` | `GET` (always today → +horizon) — merges same-day facts, boat-swap asks, and cross-day candidates into one tagged list. |
+| `src/app/api/admin/ghost/proposals/[id]/route.ts` | `mark_rebooked` action — closes the loop after a guest accepts any move type. |
 | `src/app/[locale]/admin/planning/OptimizerPanel.tsx` | The slide-over UI. |
 | `src/app/[locale]/admin/planning/page.tsx` | The header button + wiring. |
+| `src/app/[locale]/admin/ghost/page.tsx` | The proposal card — renders the boat-swap ask distinctly (same time, different boat) and the "Mark rebooked" button. |
 
 ## Architecture decisions
 
@@ -55,16 +84,21 @@ the panel from calling Claude (and creating duplicate proposals) every time,
 `findOpenCrossDayProposal` checks for an already-open ask on that booking
 first and reuses it.
 
-**Same-day items are read-only in this panel.** Applying a same-day
-cross-boat merge safely (reassigning a captain, changing a shift's boat)
-is a separate, larger action than approving a text message — v1 shows the
-opportunity here for visibility, but the actual fix still happens via the
-existing `/admin/ghost` review flow.
+**Only a paid gap stays read-only.** Closing a gap means changing WHEN a
+guest sails — that's guest-move-drafter.ts's job (a separate nightly/
+new-booking drafter, not yet wired into this panel). A boat swap only
+changes WHICH boat, at the exact same time, so it fits the same
+dry-run-then-draft shape as cross-day and is actionable here too.
 
-**The candidate-finder always frames the LATER day's booking as moving onto
-the EARLIER day's departure** (never the reverse), so each adjacent pair of
-shifts produces exactly one candidate instead of two mirror-image ones for
-the same real opportunity.
+**Boat swap never re-implements the actual boat reassignment.** The ask and
+its accept/decline flow are identical to every other `guest_move_request` —
+the real FareHarbor change (and the shift's boat_id) still gets updated by a
+human, then confirmed via `mark_rebooked`, exactly like a time or date move.
+
+**Which party moves is decided by size, not a fixed direction** (Beer,
+2026-08-23): for cross-day, whichever party is SMALLER is asked to move (a
+tie defaults to the later day) — not "the later day always moves". For a
+same-day boat swap there's only one party involved, so this doesn't apply.
 
 ## How to extend
 
@@ -74,15 +108,21 @@ OR 2 days apart) needs the loop in `findCrossDayConsolidationCandidates`
 widened to check every offset up to the window — right now it reads exactly
 one fixed offset, documented in a comment at the call site.
 
-**Adding a fourth optimization kind:** give it its own `OptimizerItem.kind`
-value, push items for it in the route alongside the existing three, and add
-a `KIND_META` entry in `OptimizerPanel.tsx`. No other changes needed — the
-panel only ever renders whatever kinds it's given.
+**Adding a new optimization kind:** give it its own `OptimizerItem.kind`
+value, push items for it in the route, and add a `KIND_META` entry in
+`OptimizerPanel.tsx`. If it should be actionable (not just informational),
+add its kind to the panel's `isActionable` check too.
+
+**Making same-day gaps actionable in this panel:** wire `guest-move-drafter.ts`'s
+existing `selectMoveCandidate`/dry-run/draft pipeline into the route the same
+way boat swaps and cross-day already are — it already supports private
+bookings (`allowTimeChange`), it just isn't called from here yet.
 
 ## Dependencies
 
 **Depends on:** `computeDayFacts` (`ops-review.ts`), `shiftCostCents`
-(`scheduling/shift-cost.ts`), the existing `guest_move_request` send/response
-flow, `shift_bookings` membership.
+(`scheduling/shift-cost.ts`), `deriveOperationalProfile` (`ops/profile.ts`),
+the existing `guest_move_request` send/response flow, `shift_bookings`
+membership, live FareHarbor availability (boat-swap and same-day dry-runs).
 
 **Depended on by:** nothing yet — this is a new, additional surface.

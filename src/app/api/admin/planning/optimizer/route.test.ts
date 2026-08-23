@@ -3,9 +3,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const h = vi.hoisted(() => ({
   requireAdmin: vi.fn().mockResolvedValue(null),
   draftCrossDayConsolidation: vi.fn(),
+  validateBoatSwap: vi.fn().mockResolvedValue(null),
+  draftBoatSwap: vi.fn(),
 }))
 vi.mock('@/lib/auth/require-admin', () => ({ requireAdmin: h.requireAdmin }))
 vi.mock('@/lib/ghost/cross-day-move-drafter', () => ({ draftCrossDayConsolidation: h.draftCrossDayConsolidation }))
+vi.mock('@/lib/ghost/boat-swap-drafter', () => ({ validateBoatSwap: h.validateBoatSwap, draftBoatSwap: h.draftBoatSwap }))
 // Pinned so the route's server-computed "today → today+horizon" range is
 // deterministic in tests, regardless of the real wall-clock date.
 vi.mock('@/lib/utils', async importOriginal => {
@@ -96,12 +99,15 @@ function makeSupabase({
   existingProposalByBookingId = {},
   alreadyRecordedFindings = false,
   insertedOpsEvents = [] as Record<string, unknown>[],
+  listingSlug = null as string | null,
 }: {
   shifts: unknown[]
   bookings: unknown[]
   existingProposalByBookingId?: Record<string, { id: string; payload: Record<string, unknown> }>
   alreadyRecordedFindings?: boolean
   insertedOpsEvents?: Record<string, unknown>[]
+  /** Same-day boat-swap candidates look up cruise_listings.slug by listing_id — null means "not found" (falls back to a read-only finding). */
+  listingSlug?: string | null
 }) {
   const from = vi.fn((table: string) => {
     if (table === 'ops_events') {
@@ -131,6 +137,9 @@ function makeSupabase({
           gte: () => ({ lte: () => ({ in: async () => ({ data: bookings, error: null }) }) }),
         }),
       }
+    }
+    if (table === 'cruise_listings') {
+      return { select: () => ({ eq: () => ({ single: async () => ({ data: listingSlug ? { slug: listingSlug } : null }) }) }) }
     }
     if (table === 'agent_proposals') {
       return {
@@ -303,6 +312,123 @@ describe('GET /api/admin/planning/optimizer', () => {
     // 3h gap (11:00-14:00) at €30/hr = €90 = 9000 cents.
     expect(gap.estSavingCents).toBe(9000)
     expect(h.draftCrossDayConsolidation).not.toHaveBeenCalled()
+  })
+
+  describe('same-day boat swap (Beer, 2026-08-23: "private cruises can definitely swap Diana for Curaçao")', () => {
+    const DIANA_BOAT = { name: 'Diana', max_capacity: 8 }
+    const privateDianaBooking = {
+      ...PAIGE_BOOKING,
+      id: 'gurkan-private',
+      booking_date: '2026-08-28',
+      category: 'private',
+      customer_name: 'Gurkan Celik',
+      listing_id: 'listing-diana-private',
+      guest_count: 4,
+      fareharbor_availability_pk: 4001,
+      start_time: '2026-08-28T09:00:00Z',
+      end_time: '2026-08-28T10:30:00Z',
+    }
+    const dianaShift = {
+      id: 'diana-shift',
+      date: '2026-08-28',
+      start_at: '2026-08-28T08:15:00Z',
+      end_at: '2026-08-28T11:30:00Z',
+      status: 'assigned',
+      staff_id: 'staff-diana',
+      booking_id: 'gurkan-private',
+      fareharbor_availability_pk: 4001,
+      boat_id: 'boat-diana',
+      staff: { name: 'Jip', hourly_rate_cents: 3500 },
+      boats: DIANA_BOAT,
+    }
+    const otherCuracaoBooking = {
+      ...PAIGE_BOOKING,
+      id: 'other-curacao',
+      booking_date: '2026-08-28',
+      fareharbor_availability_pk: 4002,
+      start_time: '2026-08-28T14:00:00Z',
+      end_time: '2026-08-28T15:30:00Z',
+    }
+    const curacaoShift = {
+      id: 'curacao-shift',
+      date: '2026-08-28',
+      start_at: '2026-08-28T13:15:00Z',
+      end_at: '2026-08-28T16:30:00Z',
+      status: 'assigned',
+      staff_id: 'staff-curacao',
+      booking_id: 'other-curacao',
+      fareharbor_availability_pk: 4002,
+      boat_id: 'boat-curacao',
+      staff: { name: 'Femke', hourly_rate_cents: 4000 },
+      boats: BOAT,
+    }
+
+    it('dry-run validates and drafts a real ask when a private cruise fits cleanly onto the other boat', async () => {
+      h.validateBoatSwap.mockResolvedValue({ slot: { availPk: 1, customerTypeRatePk: 2, optionName: 'Private' }, verdict: { is_bookable: true } })
+      h.draftBoatSwap.mockResolvedValue('drafted')
+      vi.mocked(createAdminClient).mockReturnValue(
+        makeSupabase({
+          shifts: [dianaShift, curacaoShift],
+          bookings: [privateDianaBooking, otherCuracaoBooking],
+          listingSlug: 'private-hidden-gems-cruise',
+        }) as never,
+      )
+
+      const res = await GET(makeReq('2026-08-28', '2026-08-28'))
+      const body = await res.json()
+
+      const swap = body.data.items.find((i: { kind: string; boat: string }) => i.kind === 'same_day_merge' && i.boat === 'Diana')
+      expect(swap).toBeTruthy()
+      expect(swap.date).toBe('2026-08-28')
+      // 3h15m (08:15-11:30) at €35/h = €113.75 = 11375 cents.
+      expect(swap.estSavingCents).toBe(11375)
+
+      // The dry-run ran against the REAL resolved booking, not a guess.
+      expect(h.validateBoatSwap).toHaveBeenCalledWith(
+        expect.objectContaining({ fromBoat: 'Diana', toBoat: 'Curaçao' }),
+        expect.objectContaining({ id: 'gurkan-private', category: 'private', customerName: 'Gurkan Celik' }),
+        'private-hidden-gems-cruise',
+      )
+      expect(h.draftBoatSwap).toHaveBeenCalled()
+    })
+
+    it('stays a read-only finding (no ask drafted) when FareHarbor has no matching slot on the other boat', async () => {
+      h.validateBoatSwap.mockResolvedValue(null)
+      vi.mocked(createAdminClient).mockReturnValue(
+        makeSupabase({
+          shifts: [dianaShift, curacaoShift],
+          bookings: [privateDianaBooking, otherCuracaoBooking],
+          listingSlug: 'private-hidden-gems-cruise',
+        }) as never,
+      )
+
+      const res = await GET(makeReq('2026-08-28', '2026-08-28'))
+      const body = await res.json()
+
+      const swap = body.data.items.find((i: { kind: string; boat: string }) => i.kind === 'same_day_merge' && i.boat === 'Diana')
+      expect(swap).toBeTruthy()
+      expect(swap.proposalId).toBeUndefined()
+      expect(swap.smsText).toBeUndefined()
+      expect(h.draftBoatSwap).not.toHaveBeenCalled()
+    })
+
+    it('stays a read-only finding when the booking has no listing_id to validate against', async () => {
+      h.validateBoatSwap.mockResolvedValue({ slot: { availPk: 1, customerTypeRatePk: 2, optionName: 'Private' }, verdict: { is_bookable: true } })
+      vi.mocked(createAdminClient).mockReturnValue(
+        makeSupabase({
+          shifts: [dianaShift, curacaoShift],
+          bookings: [{ ...privateDianaBooking, listing_id: null }, otherCuracaoBooking],
+        }) as never,
+      )
+
+      const res = await GET(makeReq('2026-08-28', '2026-08-28'))
+      const body = await res.json()
+
+      const swap = body.data.items.find((i: { kind: string; boat: string }) => i.kind === 'same_day_merge' && i.boat === 'Diana')
+      expect(swap).toBeTruthy()
+      expect(swap.proposalId).toBeUndefined()
+      expect(h.validateBoatSwap).not.toHaveBeenCalled()
+    })
   })
 
   describe('persisting same-day findings (Beer, 2026-08-23: "whatever it finds, it should store that information")', () => {

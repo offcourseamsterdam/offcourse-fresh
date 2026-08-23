@@ -126,6 +126,10 @@ interface GhostProposal {
     total_cents?: number | null
     incentive?: string
     sms_text?: string
+    /** distinguishes a same-day time-shift ask from a cross-day / boat-swap one */
+    move_type?: string
+    from_boat?: string
+    to_boat?: string
     // catering_upsell (shares guest_name/cruise_title/recipient/email_* fields)
     guest_count?: number | null
     /** guest_move_request dry-run: the geometric ideal the FH slot was snapped from */
@@ -1237,10 +1241,19 @@ function ProposalCard({ proposal: p, onChanged }: { proposal: GhostProposal; onC
                 {p.payload.guest_name ?? 'Guest'} · {p.payload.cruise_title ?? 'cruise'} · {p.payload.target_date}
               </p>
               <p className="text-violet-700 mt-0.5">
-                {p.payload.current_start_at ? formatAmsterdamTime(p.payload.current_start_at) : '?'}
-                {' → '}
-                <span className="font-semibold">{p.payload.proposed_start_at ? formatAmsterdamTime(p.payload.proposed_start_at) : '?'}</span>
-                {p.payload.boat ? ` · same boat (${p.payload.boat})` : ''}
+                {p.payload.move_type === 'boat_swap' ? (
+                  <>
+                    {p.payload.current_start_at ? formatAmsterdamTime(p.payload.current_start_at) : '?'} · same time, same price ·{' '}
+                    {p.payload.from_boat ?? 'this boat'} <span className="font-semibold">→ {p.payload.to_boat ?? p.payload.boat ?? '?'}</span>
+                  </>
+                ) : (
+                  <>
+                    {p.payload.current_start_at ? formatAmsterdamTime(p.payload.current_start_at) : '?'}
+                    {' → '}
+                    <span className="font-semibold">{p.payload.proposed_start_at ? formatAmsterdamTime(p.payload.proposed_start_at) : '?'}</span>
+                    {p.payload.boat ? ` · same boat (${p.payload.boat})` : ''}
+                  </>
+                )}
                 {typeof p.payload.est_saving_cents === 'number' && (
                   <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">
                     saves €{(p.payload.est_saving_cents / 100).toFixed(0)}

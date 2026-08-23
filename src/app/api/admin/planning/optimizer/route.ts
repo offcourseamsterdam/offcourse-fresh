@@ -2,13 +2,14 @@ import type { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { computeDayFacts, type OpsReviewShift } from '@/lib/ghost/ops-review'
+import { computeDayFacts, type OpsReviewShift, type MergeCandidate } from '@/lib/ghost/ops-review'
 import {
   findCrossDayConsolidationCandidates,
   type ConsolidationShift,
   type ConsolidationBooking,
 } from '@/lib/ghost/cross-day-consolidation'
 import { draftCrossDayConsolidation } from '@/lib/ghost/cross-day-move-drafter'
+import { validateBoatSwap, draftBoatSwap, type BoatSwapBooking } from '@/lib/ghost/boat-swap-drafter'
 import { OPTIMIZE_HORIZON_DAYS } from '@/lib/ghost/rulebook'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { amsterdamToday } from '@/lib/utils'
@@ -50,7 +51,7 @@ type AdminClient = ReturnType<typeof createAdminClient>
 const SHIFT_SELECT =
   'id, date, start_at, end_at, status, staff_id, booking_id, fareharbor_availability_pk, boat_id, staff(name, hourly_rate_cents), boats(name, max_capacity), shift_bookings(booking_id)'
 const BOOKING_SELECT =
-  'id, booking_date, category, customer_name, customer_email, customer_phone, extras_selected, listing_title, guest_count, receipt_total, base_amount_cents, extras_amount_cents, fareharbor_availability_pk, customer_type_name, start_time, end_time'
+  'id, booking_date, category, customer_name, customer_email, customer_phone, extras_selected, listing_id, listing_title, guest_count, receipt_total, base_amount_cents, extras_amount_cents, fareharbor_availability_pk, customer_type_name, start_time, end_time'
 
 interface RawStaff {
   name?: string
@@ -82,6 +83,7 @@ interface RawBookingRow {
   customer_email: string | null
   customer_phone: string | null
   extras_selected: unknown
+  listing_id: string | null
   listing_title: string | null
   guest_count: number | null
   receipt_total: number | null
@@ -105,6 +107,25 @@ function toConsolidationBooking(b: RawBookingRow): ConsolidationBooking {
     totalCents: b.receipt_total ?? (b.base_amount_cents ?? 0) + (b.extras_amount_cents ?? 0),
     fareharborAvailabilityPk: b.fareharbor_availability_pk,
     extrasSelected: (b.extras_selected as ExtrasLineItem[] | null) ?? null,
+    listingTitle: b.listing_title,
+    startTime: b.start_time,
+    endTime: b.end_time,
+  }
+}
+
+function toBoatSwapBooking(b: RawBookingRow): BoatSwapBooking {
+  return {
+    id: b.id,
+    category: b.category,
+    customerTypeName: b.customer_type_name,
+    customerName: b.customer_name,
+    customerEmail: b.customer_email,
+    customerPhone: b.customer_phone,
+    guestCount: b.guest_count,
+    totalCents: b.receipt_total ?? (b.base_amount_cents ?? 0) + (b.extras_amount_cents ?? 0),
+    fareharborAvailabilityPk: b.fareharbor_availability_pk,
+    extrasSelected: (b.extras_selected as ExtrasLineItem[] | null) ?? null,
+    listingId: b.listing_id,
     listingTitle: b.listing_title,
     startTime: b.start_time,
     endTime: b.end_time,
@@ -200,6 +221,20 @@ async function findOpenCrossDayProposal(supabase: AdminClient, bookingId: string
   return data as { id: string; payload: Record<string, unknown> } | null
 }
 
+async function findOpenBoatSwapProposal(supabase: AdminClient, bookingId: string) {
+  const { data } = await supabase
+    .from('agent_proposals')
+    .select('id, payload')
+    .eq('kind', 'guest_move_request')
+    .eq('payload->>booking_id', bookingId)
+    .eq('payload->>move_type', 'boat_swap')
+    .in('status', ['shadow', 'sending', 'approved'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return data as { id: string; payload: Record<string, unknown> } | null
+}
+
 export interface OptimizerItem {
   kind: 'same_day_gap' | 'same_day_merge' | 'cross_day_consolidation'
   date: string
@@ -266,6 +301,7 @@ export async function GET(_request: NextRequest) {
       list.push(s)
       shiftsByDate.set(s.date, list)
     }
+    const allMergeCandidates: MergeCandidate[] = []
     for (const [date, dayShifts] of shiftsByDate) {
       const opsShifts: OpsReviewShift[] = dayShifts.map(s => {
         const matched = bookingsForShift(s, bookingsById, bookingsByAvailPk)
@@ -299,21 +335,56 @@ export async function GET(_request: NextRequest) {
           estSavingCents: gap.estIdleCostCents,
         })
       }
-      for (const merge of facts.mergeCandidates) {
-        items.push({
+      allMergeCandidates.push(...facts.mergeCandidates)
+    }
+
+    // ── Boat swap (new). ── Each merge candidate is dry-run validated against
+    // FareHarbor (same time, other boat) and, when bookable, drafted as an
+    // actual ask — same eager-draft-with-idempotency-check shape as cross-day
+    // below. A candidate that can't be resolved to a contactable booking, or
+    // has no real slot to swap onto, still surfaces as a read-only finding
+    // (unchanged from before) rather than being dropped.
+    const boatSwapItems = await Promise.all(
+      allMergeCandidates.map(async (merge): Promise<OptimizerItem> => {
+        const base: OptimizerItem = {
           kind: 'same_day_merge',
-          date,
+          date: merge.date,
           boat: merge.fromBoat,
           summary: `${merge.cruise ?? 'Departure'} (${merge.guests ?? '?'} guests) could move ${merge.fromBoat} → ${merge.toBoat} — frees ${merge.fromBoat}'s captain for the day.`,
           estSavingCents: merge.estSavingCents,
-        })
-      }
-    }
+        }
 
-    // Persist same-day findings — see the file doc comment on why. Runs
-    // after the loop (not inline per-gap) so the finding's own already-built
-    // OptimizerItem is what's recorded, rather than reconstructing the same
-    // fields twice.
+        const rawShift = rawShifts.find(s => s.id === merge.shiftId)
+        const booking = rawShift ? bookingsForShift(rawShift, bookingsById, bookingsByAvailPk)[0] : null
+        if (!booking?.listing_id) return base // nothing to validate a swap against — read-only finding only
+
+        const existing = await findOpenBoatSwapProposal(supabase, booking.id)
+        if (existing) {
+          const payload = (existing.payload ?? {}) as { sms_text?: string; email_subject?: string; email_body?: string }
+          return { ...base, proposalId: existing.id, guestName: booking.customer_name, smsText: payload.sms_text, emailSubject: payload.email_subject, emailBody: payload.email_body }
+        }
+
+        const { data: listing } = await supabase.from('cruise_listings').select('slug').eq('id', booking.listing_id).single()
+        if (!listing?.slug) return base
+
+        const swapBooking = toBoatSwapBooking(booking)
+        const validated = await validateBoatSwap(merge, swapBooking, listing.slug)
+        if (!validated) return base
+
+        const outcome = await draftBoatSwap(supabase, merge, swapBooking, validated, { source: 'admin/planning/optimizer', listingSlug: listing.slug })
+        if (outcome !== 'drafted') return base
+
+        const drafted = await findOpenBoatSwapProposal(supabase, booking.id)
+        const payload = (drafted?.payload ?? {}) as { sms_text?: string; email_subject?: string; email_body?: string }
+        return { ...base, proposalId: drafted?.id, guestName: swapBooking.customerName, smsText: payload.sms_text, emailSubject: payload.email_subject, emailBody: payload.email_body }
+      }),
+    )
+    items.push(...boatSwapItems)
+
+    // Persist same-day findings — see the file doc comment on why. Runs after
+    // gaps AND boat swaps are both in `items` (not inline per-gap) so the
+    // finding's own already-built OptimizerItem is what's recorded, rather
+    // than reconstructing the same fields twice.
     await Promise.all(items.map(item => recordSameDayFinding(supabase, item)))
 
     // ── Cross-day consolidation (new). ──

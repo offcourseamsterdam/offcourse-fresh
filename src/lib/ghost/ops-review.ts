@@ -66,6 +66,7 @@ export interface BoatGap {
 
 export interface MergeCandidate {
   shiftId: string
+  date: string
   cruise: string | null
   guests: number | null
   fromBoat: string
@@ -167,6 +168,7 @@ export function computeDayFacts(
       if (clashes) continue
       mergeCandidates.push({
         shiftId: s.id,
+        date,
         cruise: s.listingTitle,
         guests: s.guestCount,
         fromBoat: s.boat,

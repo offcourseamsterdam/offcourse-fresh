@@ -21,11 +21,11 @@ const KIND_META: Record<OptimizerItem['kind'], { label: string; Icon: typeof Clo
 
 /**
  * Dedicated Optimizer panel (Beer, 2026-08-23: "a new, dedicated panel" —
- * not folded into /admin/ghost's review page). Every schedule inefficiency
- * same-day paid gaps and cross-boat merges (informational — the nightly ops
- * review already surfaces these in full on /admin/ghost, this is a fast
- * glance, not a second review UI to maintain) plus cross-day consolidation
- * (actionable here — approve sends the drafted SMS/email straight away).
+ * not folded into /admin/ghost's review page). Every schedule inefficiency:
+ * same-day paid gaps (informational only — no ask exists for these yet);
+ * same-day boat swaps and cross-day consolidation are both actionable here
+ * (approve sends the drafted SMS/email straight away) — same underlying
+ * guest_move_request proposal either way, just a different move_type.
  *
  * Takes no date-range props on purpose (Beer, 2026-08-23: "always from the
  * point of view of today, not the past week") — the route itself always
@@ -96,7 +96,7 @@ export function OptimizerPanel({ onClose }: { onClose: () => void }) {
 
           {items.map((item, i) => {
             const meta = KIND_META[item.kind]
-            const isCrossDay = item.kind === 'cross_day_consolidation'
+            const isActionable = item.kind === 'cross_day_consolidation' || item.kind === 'same_day_merge'
             const sent = !!item.proposalId && sentIds.has(item.proposalId)
             return (
               <div key={`${item.kind}-${item.date}-${item.boat}-${i}`} className="px-5 py-4 border-b border-zinc-50 last:border-0">
@@ -111,7 +111,7 @@ export function OptimizerPanel({ onClose }: { onClose: () => void }) {
                 <p className="text-xs text-zinc-400 mb-1">{formatItemDate(item.date)} · {item.boat}</p>
                 <p className="text-sm text-zinc-800 mb-2">{item.summary}</p>
 
-                {isCrossDay && (
+                {isActionable && (
                   <>
                     {(item.smsText || item.emailBody) && (
                       <div className="rounded-lg bg-violet-50 border border-violet-100 px-3 py-2 text-xs text-violet-800 space-y-1 mb-2">
