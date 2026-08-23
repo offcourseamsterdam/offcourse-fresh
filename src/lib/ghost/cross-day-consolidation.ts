@@ -1,4 +1,4 @@
-import { hasCatering, type ExtrasLineItem } from '@/lib/catering/filter'
+import { hasFood, type ExtrasLineItem } from '@/lib/catering/filter'
 import { shiftCostCents } from '@/lib/scheduling/shift-cost'
 import { CROSS_DAY_WINDOW_DAYS } from './rulebook'
 
@@ -79,9 +79,18 @@ function addDaysToDateStr(date: string, delta: number): string {
 /**
  * A shift is a "moving" candidate only when moving it away would empty the
  * WHOLE shift — a single shared departure (one FareHarbor availability slot,
- * possibly several parties on it, but only one time/product), nobody's
- * catering already placed, category shared (private never merges — Beer,
+ * possibly several parties on it, but only one time/product), nobody's FOOD
+ * order already placed, category shared (private never merges — Beer,
  * 2026-07-04, enforced elsewhere too via deriveOperationalProfile.allowMerge).
+ *
+ * Food specifically, not any catering (Beer, 2026-08-23) — a food order
+ * commits a supplier to a delivery at a fixed time and place, which a date
+ * change would genuinely break. A drinks-only order has no such dependency:
+ * drinks are stocked on the boat itself, not delivered externally, so they
+ * travel with the boat to whichever day it actually sails. This is narrower
+ * than guest-move-drafter.ts's same-day equivalent, which still blocks on
+ * ANY catering (food or drinks) — that rule is unchanged and out of scope
+ * here; this file only governs the cross-day case.
  *
  * Multi-departure shifts (two different sailings that day on the same boat)
  * are skipped — moving one departure away wouldn't free the shift, and the
@@ -92,7 +101,7 @@ function asSingleDepartureShift(shift: ConsolidationShift): { booking: Consolida
   const pks = new Set(shift.bookings.map(b => b.fareharborAvailabilityPk))
   if (pks.size !== 1) return null
   if (shift.bookings.some(b => b.category !== 'shared')) return null
-  if (shift.bookings.some(b => hasCatering(b.extrasSelected))) return null
+  if (shift.bookings.some(b => hasFood(b.extrasSelected))) return null
   const productNames = new Set(shift.bookings.map(b => b.customerTypeName))
   if (productNames.size !== 1) return null
   const guestCount = shift.bookings.reduce((sum, b) => sum + (b.guestCount ?? 0), 0)
@@ -126,42 +135,48 @@ export function findCrossDayConsolidationCandidates(
     const capacity = boatCapacityByBoat[boat]
     if (capacity == null) continue
 
-    // Always the LATER day's booking moving onto the EARLIER day's departure
-    // (Beer's own example: Wednesday's guest joins Tuesday's) — a fixed
-    // direction, not "whichever neighbor exists", so each adjacent pair
-    // produces exactly one candidate instead of one from each shift's
-    // perspective (which would say both "Tue could join Wed" and "Wed could
-    // join Tue" for the same real pair).
-    //
     // Checks EXACTLY CROSS_DAY_WINDOW_DAYS apart, not "anywhere within" it —
     // fine at the current value of 1 (there's no day in between to miss).
     // Raising it later to admit a real range (e.g. 1 OR 2 days apart) needs
     // this loop widened to check every offset up to the window, not just
     // reading a bigger single offset.
+    //
+    // Driven by iterating the LATER of each pair (so every adjacent pair is
+    // visited exactly once, never once from each side — that would report
+    // both "Tue could join Wed" and "Wed could join Tue" for the same real
+    // pair) — but which one is actually ASKED to move is decided separately,
+    // below, by party size.
     for (const [date, laterShift] of byDate) {
       const earlierShift = byDate.get(addDaysToDateStr(date, -CROSS_DAY_WINDOW_DAYS))
       if (!earlierShift) continue
 
-      const movingInfo = asSingleDepartureShift(laterShift)
-      if (!movingInfo) continue
-      const receivingInfo = asSingleDepartureShift(earlierShift)
-      if (!receivingInfo) continue
-      if (receivingInfo.booking.customerTypeName !== movingInfo.booking.customerTypeName) continue
+      const laterInfo = asSingleDepartureShift(laterShift)
+      if (!laterInfo) continue
+      const earlierInfo = asSingleDepartureShift(earlierShift)
+      if (!earlierInfo) continue
+      if (laterInfo.booking.customerTypeName !== earlierInfo.booking.customerTypeName) continue
 
-      const combinedGuestCount = movingInfo.guestCount + receivingInfo.guestCount
+      const combinedGuestCount = laterInfo.guestCount + earlierInfo.guestCount
       if (combinedGuestCount > capacity) continue
 
+      // Ask whichever party is SMALLER to move (Beer, 2026-08-23: smaller
+      // groups tend to be more flexible) — not a fixed "later always moves".
+      // A tie keeps the simpler original default: later moves onto earlier.
+      const laterMoves = laterInfo.guestCount <= earlierInfo.guestCount
+      const moving = laterMoves ? { shift: laterShift, info: laterInfo } : { shift: earlierShift, info: earlierInfo }
+      const receiving = laterMoves ? { shift: earlierShift, info: earlierInfo } : { shift: laterShift, info: laterInfo }
+
       candidates.push({
-        fromShiftId: laterShift.shiftId,
-        fromDate: laterShift.date,
-        toShiftId: earlierShift.shiftId,
-        toDate: earlierShift.date,
+        fromShiftId: moving.shift.shiftId,
+        fromDate: moving.shift.date,
+        toShiftId: receiving.shift.shiftId,
+        toDate: receiving.shift.date,
         boat,
-        booking: movingInfo.booking,
-        receivingBooking: receivingInfo.booking,
+        booking: moving.info.booking,
+        receivingBooking: receiving.info.booking,
         combinedGuestCount,
         capacity,
-        estSavingCents: laterShift.hourlyRateCents != null ? shiftCostCents(laterShift.hourlyRateCents, laterShift.startAt, laterShift.endAt) : 0,
+        estSavingCents: moving.shift.hourlyRateCents != null ? shiftCostCents(moving.shift.hourlyRateCents, moving.shift.startAt, moving.shift.endAt) : 0,
       })
     }
   }

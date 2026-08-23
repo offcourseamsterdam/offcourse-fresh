@@ -90,6 +90,13 @@ export const GUEST_MOVE_PROMPT = `You write for Off Course Amsterdam ("your frie
 - Make clear: totally fine to say no, their original time stays if they prefer. One tap to answer.
 - English. SMS max ~300 characters.`
 
+export const CROSS_DAY_MOVE_PROMPT = `You write for Off Course Amsterdam ("your friend with a boat" — warm, casual, dry humour, never corporate). Draft a DATE-change request to a guest: their shared cruise is nearly empty, and a nearby day's departure of the exact same cruise has room — ask if they'd move onto that day instead, same boat, same time of day, same price. This is a SHADOW draft: a human approves before anything is sent.
+
+- Sweetener to offer: ${CROSS_DAY_INCENTIVE}.
+- The message must include the literal placeholder {{link}} exactly once in the SMS and once in the email body — it becomes their personal response button/URL.
+- Make clear: totally fine to say no, their original date stays if they prefer. One tap to answer.
+- English. SMS max ~300 characters.`
+
 // ── The rulebook entries (rendered on /admin/ghost/rulebook) ─────────────────
 
 export interface HardRule {
@@ -180,7 +187,7 @@ export const RULEBOOK: RulebookEntry[] = [
       { rule: 'DRY-RUN: no ask exists until FareHarbor confirmed the target slot. The geometric ideal is snapped to a REAL availability (same boat, same duration, whole party validated non-mutatingly), and the send button re-validates the slot again immediately before dispatch — a stale slot expires the request instead of sending it.', enforcedIn: 'guest-move-drafter.ts (pickSnapSlot/validateMoveSlot/revalidateStoredMove) + proposals/[id]:send_move' },
       { rule: 'Sending is a human click (SMS + email with a personal HMAC link). A guest YES never rebooks anything — Slack pings the team to rebook via admin.', enforcedIn: 'proposals/[id]/route.ts + api/move/respond' },
       { rule: `Unanswered asks expire after ${GUEST_MOVE_EXPIRY_HOURS}h.`, enforcedIn: 'src/lib/ghost/guest-move-drafter.ts (expiry sweep)' },
-      { rule: `CROSS-DAY variant (same kind, different opportunity — Beer 2026-08-23): two single-booking shared departures exactly ${CROSS_DAY_WINDOW_DAYS} day apart, same product, combined guests within the receiving boat's capacity, no catering aboard either. Private cruises never eligible (they never merge at all). Same human-approval-then-send flow and tokened response link as the same-day ask — no new send/response code, only a new candidate source and a different incentive (${CROSS_DAY_INCENTIVE}).`, enforcedIn: 'src/lib/ghost/cross-day-consolidation.ts + cross-day-move-drafter.ts' },
+      { rule: `CROSS-DAY variant (same kind, different opportunity — Beer 2026-08-23): two single-booking shared departures exactly ${CROSS_DAY_WINDOW_DAYS} day apart, same product, combined guests within the receiving boat's capacity, no FOOD order aboard either (drinks-only is fine — stocked on the boat, not a supplier delivery, so it travels with whichever day the boat sails). Private cruises never eligible (they never merge at all). Whichever party is SMALLER gets asked to move (a tie defaults to the later day) — not a fixed "later always moves". Same human-approval-then-send flow and tokened response link as the same-day ask — no new send/response code, only a new candidate source and a different incentive (${CROSS_DAY_INCENTIVE}).`, enforcedIn: 'src/lib/ghost/cross-day-consolidation.ts + cross-day-move-drafter.ts' },
     ],
     prompt: GUEST_MOVE_PROMPT,
     promptShared: true,

@@ -49,8 +49,9 @@ describe('findCrossDayConsolidationCandidates', () => {
 
     expect(candidates).toHaveLength(1)
     const c = candidates[0]
-    // The LATER day's booking moves onto the earlier day's departure — same
-    // bias as selectMoveCandidate's "pull the later sailing earlier" default.
+    // Sophie (2 guests) is the smaller party, so she's asked to move onto
+    // Paige's (4 guests) departure — she also happens to be the later date
+    // here, but see the dedicated test below proving size decides this, not date.
     expect(c.booking.id).toBe('sophie')
     expect(c.receivingBooking.id).toBe('paige')
     expect(c.fromDate).toBe('2026-08-26')
@@ -95,7 +96,7 @@ describe('findCrossDayConsolidationCandidates', () => {
     expect(findCrossDayConsolidationCandidates(shifts, { Curaçao: 12 })).toEqual([])
   })
 
-  it('skips a shift that already has catering aboard — the supplier order is already placed', () => {
+  it('skips a shift that already has a food order aboard — the supplier delivery is already committed', () => {
     const shifts: ConsolidationShift[] = [
       shift({
         shiftId: 's1',
@@ -118,6 +119,33 @@ describe('findCrossDayConsolidationCandidates', () => {
     ]
 
     expect(findCrossDayConsolidationCandidates(shifts, { Curaçao: 12 })).toEqual([])
+  })
+
+  it('does NOT skip a shift whose only extra is drinks — stocked on the boat, not delivered by a supplier (Beer, 2026-08-23)', () => {
+    const shifts: ConsolidationShift[] = [
+      shift({
+        shiftId: 'tue-shift',
+        date: '2026-08-25',
+        bookings: [
+          {
+            ...baseBooking,
+            id: 'paige',
+            guestCount: 4,
+            fareharborAvailabilityPk: 1001,
+            extrasSelected: [{ name: 'Unlimited Drinks', category: 'drinks', amount_cents: 3000, quantity: 1 }],
+          },
+        ],
+      }),
+      shift({
+        shiftId: 'wed-shift',
+        date: '2026-08-26',
+        bookings: [{ ...baseBooking, id: 'sophie', guestCount: 2, fareharborAvailabilityPk: 1002 }],
+      }),
+    ]
+
+    const candidates = findCrossDayConsolidationCandidates(shifts, { Curaçao: 12 })
+    expect(candidates).toHaveLength(1)
+    expect(candidates[0].booking.id).toBe('sophie')
   })
 
   it('skips private shifts entirely — private cruises never merge onto another party\'s boat', () => {
@@ -212,5 +240,52 @@ describe('findCrossDayConsolidationCandidates', () => {
     ]
 
     expect(findCrossDayConsolidationCandidates(shifts, { Curaçao: 12, Diana: 8 })).toEqual([])
+  })
+
+  describe('which party gets asked to move (Beer, 2026-08-23: smaller party, not just "later date")', () => {
+    it('asks the EARLIER day to move when it is the smaller party — proves size decides, not date', () => {
+      const shifts: ConsolidationShift[] = [
+        shift({
+          shiftId: 'tue-shift',
+          date: '2026-08-25',
+          bookings: [{ ...baseBooking, id: 'small-party', guestCount: 2, fareharborAvailabilityPk: 1 }],
+        }),
+        shift({
+          shiftId: 'wed-shift',
+          date: '2026-08-26',
+          bookings: [{ ...baseBooking, id: 'big-party', guestCount: 4, fareharborAvailabilityPk: 2 }],
+        }),
+      ]
+
+      const candidates = findCrossDayConsolidationCandidates(shifts, { Curaçao: 12 })
+
+      expect(candidates).toHaveLength(1)
+      const c = candidates[0]
+      expect(c.booking.id).toBe('small-party')
+      expect(c.receivingBooking.id).toBe('big-party')
+      expect(c.fromDate).toBe('2026-08-25') // the earlier day, moving forward onto Wed
+      expect(c.toDate).toBe('2026-08-26')
+    })
+
+    it('defaults to the later day moving when both parties are the same size (a tie)', () => {
+      const shifts: ConsolidationShift[] = [
+        shift({
+          shiftId: 'tue-shift',
+          date: '2026-08-25',
+          bookings: [{ ...baseBooking, id: 'tue-party', guestCount: 2, fareharborAvailabilityPk: 1 }],
+        }),
+        shift({
+          shiftId: 'wed-shift',
+          date: '2026-08-26',
+          bookings: [{ ...baseBooking, id: 'wed-party', guestCount: 2, fareharborAvailabilityPk: 2 }],
+        }),
+      ]
+
+      const candidates = findCrossDayConsolidationCandidates(shifts, { Curaçao: 12 })
+
+      expect(candidates).toHaveLength(1)
+      expect(candidates[0].booking.id).toBe('wed-party')
+      expect(candidates[0].fromDate).toBe('2026-08-26')
+    })
   })
 })
