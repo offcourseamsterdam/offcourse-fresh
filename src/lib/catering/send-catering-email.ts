@@ -9,6 +9,7 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { emitOpsEvent } from '@/lib/ops/events'
 import { filterFoodItems, type ExtrasLineItem } from './filter'
 import { buildCateringEmailText, buildCateringEmailSubject } from './email-template'
 import { buildFHBookingNote } from './build-fh-note'
@@ -122,6 +123,14 @@ export async function sendCateringOrderEmailForBooking(bookingId: string): Promi
     .eq('id', bookingId)
 
   if (updateErr) return { ok: false, reason: updateErr.message }
+
+  await emitOpsEvent({
+    eventType: 'catering_order_sent',
+    actorType: 'system',
+    bookingId,
+    payload: { resent: isResend, recipient },
+    source: 'catering/send-catering-email',
+  })
 
   return { ok: true, resent: isResend, recipient }
 }

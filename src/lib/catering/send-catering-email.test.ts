@@ -12,8 +12,10 @@ const h = vi.hoisted(() => ({
   updateArgs: [] as unknown[],
   sendNewEmail: vi.fn().mockResolvedValue({ id: 'gmail-msg-1', threadId: 'thread-new-1' }),
   postSlackText: vi.fn().mockResolvedValue(undefined),
+  emitOpsEvent: vi.fn().mockResolvedValue(undefined),
 }))
 
+vi.mock('@/lib/ops/events', () => ({ emitOpsEvent: h.emitOpsEvent }))
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from: () => ({
@@ -132,5 +134,34 @@ describe('sendCateringOrderEmailForBooking — Gmail thread tracking', () => {
 
     expect(result).toEqual({ ok: false, reason: 'GMAIL_USER not configured' })
     expect(h.updateArgs).toHaveLength(0)
+  })
+})
+
+describe('sendCateringOrderEmailForBooking — ops event for the booking timeline', () => {
+  it('emits a catering_order_sent ops event on a successful send', async () => {
+    h.single.mockResolvedValue({ data: { ...BOOKING, extras_selected: [food] }, error: null })
+
+    await sendCateringOrderEmailForBooking('b1')
+
+    expect(h.emitOpsEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'catering_order_sent', bookingId: 'b1' }),
+    )
+  })
+
+  it('does not emit an event when there is nothing to send', async () => {
+    h.single.mockResolvedValue({ data: { ...BOOKING, extras_selected: [drinks] }, error: null })
+
+    await sendCateringOrderEmailForBooking('b1')
+
+    expect(h.emitOpsEvent).not.toHaveBeenCalled()
+  })
+
+  it('does not emit an event when the Gmail send fails', async () => {
+    h.single.mockResolvedValue({ data: { ...BOOKING, extras_selected: [food] }, error: null })
+    h.sendNewEmail.mockRejectedValue(new Error('GMAIL_USER not configured'))
+
+    await sendCateringOrderEmailForBooking('b1')
+
+    expect(h.emitOpsEvent).not.toHaveBeenCalled()
   })
 })

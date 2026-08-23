@@ -29,6 +29,7 @@ export type OpsEventType =
   | 'guest_move_deferred'
   | 'guest_move_expired'
   | 'catering_confirmed'
+  | 'catering_order_sent'
   | 'ads_campaign_paused'
   | 'extras_upsell_sent'
   | 'availability_request_sent'
