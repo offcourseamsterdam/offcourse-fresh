@@ -22,17 +22,22 @@ const KIND_META: Record<OptimizerItem['kind'], { label: string; Icon: typeof Clo
 /**
  * Dedicated Optimizer panel (Beer, 2026-08-23: "a new, dedicated panel" —
  * not folded into /admin/ghost's review page). Every schedule inefficiency
- * for the dates Planning currently has in view: same-day paid gaps and
- * cross-boat merges (informational — the nightly ops review already
- * surfaces these in full on /admin/ghost, this is a fast glance, not a
- * second review UI to maintain) plus the new cross-day consolidation
+ * same-day paid gaps and cross-boat merges (informational — the nightly ops
+ * review already surfaces these in full on /admin/ghost, this is a fast
+ * glance, not a second review UI to maintain) plus cross-day consolidation
  * (actionable here — approve sends the drafted SMS/email straight away).
+ *
+ * Takes no date-range props on purpose (Beer, 2026-08-23: "always from the
+ * point of view of today, not the past week") — the route itself always
+ * scans today → today + the standard horizon, regardless of which week
+ * Planning happens to be scrolled to. `from`/`to` here are only what the
+ * route's response says it actually scanned, for the header label.
  *
  * See docs/plans/2026-08-23-cross-day-consolidation-optimizer.md.
  */
-export function OptimizerPanel({ from, to, onClose }: { from: string; to: string; onClose: () => void }) {
-  const { data, isLoading, error, refresh } = useAdminFetch<{ items: OptimizerItem[] }>(
-    `/api/admin/planning/optimizer?from=${from}&to=${to}`,
+export function OptimizerPanel({ onClose }: { onClose: () => void }) {
+  const { data, isLoading, error, refresh } = useAdminFetch<{ items: OptimizerItem[]; from: string; to: string }>(
+    '/api/admin/planning/optimizer',
   )
   const [sendingId, setSendingId] = useState<string | null>(null)
   const [sentIds, setSentIds] = useState<Set<string>>(new Set())
@@ -63,7 +68,7 @@ export function OptimizerPanel({ from, to, onClose }: { from: string; to: string
             <div>
               <h2 className="text-base font-semibold text-zinc-900">Optimizer</h2>
               <p className="text-xs text-zinc-400">
-                {formatItemDate(from)} – {formatItemDate(to)}
+                {data ? `${formatItemDate(data.from)} – ${formatItemDate(data.to)}` : 'Looking ahead from today'}
                 {totalSavingCents > 0 && ` · up to ${fmtCostEuros(totalSavingCents)} found`}
               </p>
             </div>

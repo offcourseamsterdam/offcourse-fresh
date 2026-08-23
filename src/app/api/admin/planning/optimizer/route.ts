@@ -9,21 +9,40 @@ import {
   type ConsolidationBooking,
 } from '@/lib/ghost/cross-day-consolidation'
 import { draftCrossDayConsolidation } from '@/lib/ghost/cross-day-move-drafter'
+import { OPTIMIZE_HORIZON_DAYS } from '@/lib/ghost/rulebook'
+import { emitOpsEvent } from '@/lib/ops/events'
+import { amsterdamToday } from '@/lib/utils'
 import type { ExtrasLineItem } from '@/lib/catering/filter'
 
 /**
- * GET /api/admin/planning/optimizer?from=&to= — every schedule inefficiency
- * the Optimizer panel can find for the given date range, all three kinds:
- * same-day paid gaps and same-day cross-boat merges (ops-review.ts's
- * existing, already-correct computeDayFacts — just never run on demand
- * across a range before, only once nightly for tomorrow), plus the new
- * cross-day consolidation. See
+ * GET /api/admin/planning/optimizer — every schedule inefficiency the
+ * Optimizer panel can find, all three kinds: same-day paid gaps and
+ * same-day cross-boat merges (ops-review.ts's existing, already-correct
+ * computeDayFacts — just never run on demand before, only once nightly for
+ * tomorrow), plus cross-day consolidation. See
  * docs/plans/2026-08-23-cross-day-consolidation-optimizer.md.
+ *
+ * The scan range is ALWAYS today → today + OPTIMIZE_HORIZON_DAYS, computed
+ * server-side — deliberately NOT a caller-supplied range (Beer, 2026-08-23:
+ * "always from the point of view of today, not the past week"). Optimizing
+ * a day that already happened is meaningless, and the Planning page can be
+ * scrolled to any week — this route must never inherit that as its scan
+ * window, or it starts reporting on cruises that have already sailed.
  *
  * Cross-day items are eagerly drafted (Claude writes the SMS/email) so the
  * panel can show the exact message without a second round-trip per row —
  * idempotent: a candidate whose booking already has an open drafted ask
  * reuses it instead of drafting (and calling Claude) again.
+ *
+ * Same-day findings are persisted too (Beer, 2026-08-23: "whatever it
+ * finds, it should store that information") — otherwise a gap or merge
+ * opportunity is recomputed and silently discarded every time the panel
+ * closes, with no record it was ever seen. Recorded as a `recommendation_
+ * created` ops_event (actorType 'system', not 'agent' — no AI judgment is
+ * involved here, it's plain math, same distinction the Ops Center draws
+ * between AI-judgment and zero-judgment automated findings), deduped per
+ * (date, boat, finding kind) so re-opening the panel doesn't re-log the
+ * same still-true finding on every request.
  */
 
 type AdminClient = ReturnType<typeof createAdminClient>
@@ -110,6 +129,45 @@ function bookingsForShift(
   return []
 }
 
+/** Has this exact (date, boat, finding kind) already been recorded? Ever —
+ *  not time-windowed. A still-true finding re-appearing on every scan isn't
+ *  new information; only a genuinely fresh finding_type/date/boat triple is. */
+async function sameDayFindingAlreadyRecorded(
+  supabase: AdminClient,
+  date: string,
+  boat: string,
+  findingType: 'same_day_gap' | 'same_day_merge',
+): Promise<boolean> {
+  const { data } = await supabase
+    .from('ops_events')
+    .select('id')
+    .eq('event_type', 'recommendation_created')
+    .eq('source', 'admin/planning/optimizer')
+    .eq('payload->>date', date)
+    .eq('payload->>boat', boat)
+    .eq('payload->>finding_type', findingType)
+    .limit(1)
+    .maybeSingle()
+  return !!data
+}
+
+async function recordSameDayFinding(supabase: AdminClient, item: OptimizerItem): Promise<void> {
+  if (item.kind !== 'same_day_gap' && item.kind !== 'same_day_merge') return
+  if (await sameDayFindingAlreadyRecorded(supabase, item.date, item.boat, item.kind)) return
+  await emitOpsEvent({
+    eventType: 'recommendation_created',
+    actorType: 'system',
+    source: 'admin/planning/optimizer',
+    payload: {
+      finding_type: item.kind,
+      date: item.date,
+      boat: item.boat,
+      est_saving_cents: item.estSavingCents,
+      summary: item.summary,
+    },
+  })
+}
+
 async function findOpenCrossDayProposal(supabase: AdminClient, bookingId: string) {
   const { data } = await supabase
     .from('agent_proposals')
@@ -141,16 +199,13 @@ export interface OptimizerItem {
   toDate?: string
 }
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   const denied = await requireAdmin()
   if (denied) return denied
   try {
-    const { searchParams } = new URL(request.url)
-    const from = searchParams.get('from')
-    const to = searchParams.get('to')
-    if (!from || !to || !/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
-      return apiError('from and to (YYYY-MM-DD) are required', 400)
-    }
+    // Deliberately not read from the query string — see the file doc comment.
+    const from = amsterdamToday()
+    const to = amsterdamToday(OPTIMIZE_HORIZON_DAYS)
 
     const supabase = createAdminClient()
     const [shiftsRes, bookingsRes] = await Promise.all([
@@ -237,6 +292,12 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Persist same-day findings — see the file doc comment on why. Runs
+    // after the loop (not inline per-gap) so the finding's own already-built
+    // OptimizerItem is what's recorded, rather than reconstructing the same
+    // fields twice.
+    await Promise.all(items.map(item => recordSameDayFinding(supabase, item)))
+
     // ── Cross-day consolidation (new). ──
     const consolidationShifts: ConsolidationShift[] = rawShifts.map(s => ({
       shiftId: s.id,
@@ -281,7 +342,7 @@ export async function GET(request: NextRequest) {
     )
     items.push(...crossDayItems)
 
-    return apiOk({ items })
+    return apiOk({ items, from, to })
   } catch (err) {
     return apiError(err instanceof Error ? err.message : 'Unknown error')
   }

@@ -1643,7 +1643,7 @@ export default function PlanningPage() {
       )}
 
       {showOptimizer && (
-        <OptimizerPanel from={days[0]} to={days[days.length - 1]} onClose={() => setShowOptimizer(false)} />
+        <OptimizerPanel onClose={() => setShowOptimizer(false)} />
       )}
     </div>
   )
