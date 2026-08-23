@@ -9,8 +9,8 @@ detect it, get Beer's approval, and ask one party (with an incentive) to move
 onto the other's departure — freeing an entire day's boat and captain cost
 instead of running two half-empty boats.
 
-**Status:** Design + findings, not yet a task-by-task build plan. Part 3 lists
-the decisions that need an answer before this becomes one.
+**Status:** Design finalized (Part 3 decided, 2026-08-23). Ready for a
+task-by-task TDD breakdown.
 
 ---
 
@@ -101,65 +101,69 @@ not just this one.
 
 ---
 
-## Part 3 — Open questions before this becomes a task list
+## Part 3 — Decisions (Beer, 2026-08-23)
 
-**Q1 — How far apart counts as "nearby"?** Tuesday→Wednesday is 1 day. Is a
-2-3 day window worth also proposing (e.g. a Monday booking asked to move to
-Thursday), or does asking a guest to shift more than a day feel too pushy?
-Recommend starting at ±1 day only, widen later if it proves too rare to matter.
+**Q1 — Day window: ±1 day only.** Tuesday↔Wednesday, Wednesday↔Thursday.
+Not 2-3 days — start narrow.
 
-**Q2 — Incentive: wine (existing) or champagne (what you said)?** The
-existing `guest-move-drafter.ts` hardcodes "a bottle of wine on the house."
-Recommend making the incentive line a single config value in `rulebook.ts`
-(where every other threshold already lives) rather than hardcoding champagne
-in a second place — one source, reusable by both the existing same-day
-drafter and the new cross-day one.
+**Q2 — Incentive: a bottle of Crémant de Bourgogne (sparkling wine), not the
+existing "bottle of wine on the house."** Kept as a single config value in
+`rulebook.ts` (same place every other threshold already lives), so it's one
+line to change again later — including differentiating it further by
+category if that turns out to matter once this is actually running (Beer's
+answer floated "it depends" on private vs. shared; v1 uses one incentive
+line for the cross-day ask specifically, since only shared cruises are
+eligible for it at all — private never merges, so there's no private-vs-
+shared incentive split to make *within this feature*).
 
-**Q3 — Where does the "Optimizer" button live?** You asked for "a panel
-button that says Optimizer" on the Planning page specifically. There's
-already a Ghost Activity panel (`GhostActivityPanel.tsx`) and the global AI
-Ops Center icon reviewing proposals. Recommend: a new "Optimizer" button in
-Planning's header (next to "Find captains") that runs the cross-day scan
-**on-demand for whatever date range is currently in view** and drops results
-into the same `agent_proposals` table the rest of Ghost already uses — so
-approval still happens on the one existing review surface, and Planning's
-button is just a fast, scoped trigger, not a second review UI to maintain.
+**Q3 — A new, dedicated Optimizer panel** — not folded into the existing
+Ghost Activity review page. Its own surface, purpose-built for these
+consolidation opportunities.
 
-**Q4 — Who executes the actual move once a guest says yes?** Every existing
-move (same-day time shift) still ends with a human doing the real FareHarbor
-rebook — the drafter never touches FareHarbor directly. A cross-day merge is
-the same, just bigger (cancel one whole booking's slot, add it to another
-day's departure, then mark the freed shift as no longer needed). Recommend
-keeping that human-does-the-real-move rule unchanged for v1 — this is a
-bigger, less reversible action than a same-day snap, not a good candidate for
-first-version automation.
+**Q4 — A human reviews and clicks approve, every time. No auto-send.** The
+panel shows, before anything goes anywhere: (a) the proposed move itself
+(which booking, from which date to which date, combined guest count vs.
+capacity, estimated saving) and (b) the exact SMS + email text that would be
+sent — both editable/cancelable, nothing sends on discovery alone.
+
+**How the guest's answer comes back:** reusing the existing mechanism
+verbatim — a unique tokened link in the SMS/email (`lib/ops/move-token.ts`),
+landing the guest on a page with Yes / Let me check / Keep-my-time buttons.
+Not a "reply YES to this text" flow — no inbound-SMS parsing to build; the
+click is the answer, recorded straight to `ops_events`
+(`guest_move_accepted`/`declined`/`deferred`).
 
 ---
 
-## Part 4 — Proposed shape, once Part 3 is answered
+## Part 4 — Proposed shape
 
 1. **`findCrossDayConsolidationCandidates`** (new, pure function, in
    `src/lib/ghost/` alongside `ops-review.ts`) — across the optimize horizon,
    find pairs of shared-category shifts where: both are single-booking
-   departures, same listing/product type, dates within the Q1 window,
+   departures, same listing/product type, dates exactly ±1 day apart,
    combined guest count ≤ the receiving boat's capacity, neither booking has
    catering (same rule as today — a placed food order means leave them
    alone). Outputs the same shape of "candidate + estimated saving" the
-   existing code already produces, so it slots into the same review pattern.
+   existing code already produces.
 
-2. **Extend `craftAndInsertMoveProposal`'s ask** (or a sibling function next
-   to it) to draft the cross-day version: "move to [other date], same boat,
-   same price, [incentive]" instead of "move to [time] today." Reuses the
-   tokened response link (`lib/ops/move-token.ts`) and the `agent_proposals`
-   + `ops_events` plumbing as-is.
+2. **A cross-day sibling to `craftAndInsertMoveProposal`** — drafts "move to
+   [other date], same boat, same price, a bottle of Crémant de Bourgogne on
+   us" instead of "move to [time] today." Reuses the tokened response link
+   and the `agent_proposals` + `ops_events` plumbing as-is. Inserted as a
+   `shadow` proposal — nothing sends until approved (Q4).
 
-3. **The Optimizer button** (Planning page header) — POST to a new route that
-   runs the scan for the visible date range and inserts any found candidates
-   as `shadow` proposals, same as tonight's cron does automatically. Existing
-   Ghost review surfaces pick them up with no further UI work.
+3. **New `OptimizerPanel` component** (Planning page — a header button opens
+   it, matching the `GhostActivityPanel`/`AiOpsCenter` slide-over pattern
+   already used elsewhere) listing candidates for the visible date range,
+   each row expandable to show the proposed move AND the exact drafted
+   message, with Approve (sends it) / Dismiss actions. Approve marks the
+   proposal `executed` and fires the actual send; the real FareHarbor
+   rebooking, once a guest says yes, stays a human action in
+   `/admin/ghost` — same as every other move type today (not revisited here;
+   no answer changed that).
 
 4. **Docs** — per this repo's rule, a `docs/features/` writeup once built.
 
-Not attempting a full TDD task breakdown yet (file-by-file, test-by-test) —
-that's the next step once Q1–Q4 have answers, following this repo's normal
-`writing-plans` format.
+Next step: a full TDD task breakdown (file-by-file, test-by-test), following
+this repo's normal `writing-plans` format, once Beer confirms this shape is
+ready to build.
