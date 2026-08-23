@@ -5,23 +5,14 @@ import { ChevronLeft, ChevronRight, ChevronDown, Loader2, Clock } from 'lucide-r
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { adminMutate } from '@/hooks/useAdminSave'
 import { amsterdamToday } from '@/lib/utils'
-import { availabilityDisplay, type AvailabilityDisplay } from '@/lib/scheduling/availability-status'
+import {
+  availabilityDisplay,
+  AVAILABILITY_TAP_CYCLE,
+  type AvailabilityDisplay,
+  type AvailabilityStatusValue,
+  type DayAvailabilityEntry,
+} from '@/lib/scheduling/availability-status'
 import { Unlinked, isUnlinked } from '../Unlinked'
-
-type Status = 'available' | 'unavailable'
-
-interface DayEntry {
-  status: Status
-  startTime: string | null
-  endTime: string | null
-}
-
-/** Tap cycle: unset → available → unavailable → unset. */
-const NEXT: Record<string, Status | null> = {
-  unset: 'available',
-  available: 'unavailable',
-  unavailable: null,
-}
 
 // Keyed by AvailabilityDisplay, not the raw status — 'available' with hours
 // set reads as 'partly_available' (Beer, 2026-08-23: "available, or partly
@@ -63,11 +54,11 @@ export default function CaptainAvailabilityPage() {
   }, [month])
 
   const { data, isLoading, error, mutate } = useAdminFetch<{
-    availability: { date: string; status: Status; startTime: string | null; endTime: string | null }[]
+    availability: { date: string; status: AvailabilityStatusValue; startTime: string | null; endTime: string | null }[]
   }>(`/api/captain/availability?from=${from}&to=${to}`)
 
   const byDate = useMemo(() => {
-    const map: Record<string, DayEntry> = {}
+    const map: Record<string, DayAvailabilityEntry> = {}
     for (const a of data?.availability ?? []) map[a.date] = { status: a.status, startTime: a.startTime, endTime: a.endTime }
     return map
   }, [data])
@@ -83,24 +74,21 @@ export default function CaptainAvailabilityPage() {
 
   async function cycle(date: string) {
     const current = byDate[date]?.status ?? 'unset'
-    const next = NEXT[current]
+    const next = AVAILABILITY_TAP_CYCLE[current]
     setSaveError(null)
 
-    // Unavailable and clearing always drop any hours already set for the
-    // day — same forcing rule the API itself applies.
-    const keepsHours = next === 'available'
-    const startTime = keepsHours ? (byDate[date]?.startTime ?? null) : null
-    const endTime = keepsHours ? (byDate[date]?.endTime ?? null) : null
-
-    // optimistic
+    // The tap-cycle only ever reaches 'available' by coming from 'unset',
+    // which never has an hours window to begin with — so every transition
+    // here starts and ends with a clean slate. Hours are set separately,
+    // via the day's own row below (applyHours).
     mutate(prev => {
       if (!prev) return prev
       const rest = prev.availability.filter(a => a.date !== date)
-      return { availability: next ? [...rest, { date, status: next, startTime, endTime }] : rest }
+      return { availability: next ? [...rest, { date, status: next, startTime: null, endTime: null }] : rest }
     }, { revalidate: false })
-    if (editingHours === date && !keepsHours) setEditingHours(null)
+    if (editingHours === date) setEditingHours(null)
     try {
-      await adminMutate('/api/captain/availability', 'PUT', { date, status: next, startTime, endTime })
+      await adminMutate('/api/captain/availability', 'PUT', { date, status: next, startTime: null, endTime: null })
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Could not save')
       mutate() // re-fetch truth

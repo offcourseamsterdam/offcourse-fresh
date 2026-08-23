@@ -46,8 +46,8 @@ beforeEach(() => {
 describe('GET /api/captain/availability', () => {
   it('trims Postgres TIME values ("HH:MM:SS") down to "HH:MM" for the UI', async () => {
     const sb = makeSupabase([
-      { date: '2026-09-05', status: 'available', note: null, start_time: '10:00:00', end_time: '18:00:00' },
-      { date: '2026-09-06', status: 'available', note: null, start_time: null, end_time: null },
+      { date: '2026-09-05', status: 'available', start_time: '10:00:00', end_time: '18:00:00' },
+      { date: '2026-09-06', status: 'available', start_time: null, end_time: null },
     ])
     vi.mocked(createAdminClient).mockReturnValue(sb.client)
 
@@ -106,6 +106,17 @@ describe('PUT /api/captain/availability', () => {
     vi.mocked(createAdminClient).mockReturnValue(sb.client)
 
     const res = await PUT(makeReq('/api/captain/availability', { date: '2026-09-05', status: 'available', startTime: '10:00' }))
+    expect(res.status).toBe(400)
+    expect(sb.upserts).toHaveLength(0)
+  })
+
+  it('rejects an out-of-range time even though it matches \\d{2}:\\d{2} — "25:99" is not an hour', async () => {
+    const sb = makeSupabase()
+    vi.mocked(createAdminClient).mockReturnValue(sb.client)
+
+    const res = await PUT(
+      makeReq('/api/captain/availability', { date: '2026-09-05', status: 'available', startTime: '25:99', endTime: '18:00' }),
+    )
     expect(res.status).toBe(400)
     expect(sb.upserts).toHaveLength(0)
   })

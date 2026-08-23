@@ -20,7 +20,7 @@ export interface CaptainMonthStatus {
   name: string
   slackMemberId: string | null
   slackNotificationsEnabled: boolean
-  /** Days with an explicit status set in the month (any of the three). */
+  /** Days with an explicit status set in the month (either one). */
   daysFilled: number
   /** True once they've marked at least one day — see the doc comment. */
   hasResponded: boolean
@@ -104,6 +104,20 @@ export function availabilityDisplay(entry: DayAvailabilityEntry | null | undefin
   if (!entry) return 'unset'
   if (entry.status === 'unavailable') return 'unavailable'
   return entry.startTime && entry.endTime ? 'partly_available' : 'available'
+}
+
+/**
+ * The captain calendar's tap cycle: unset → available → unavailable → unset.
+ * Exported and tested on its own — a silent change to this order is exactly
+ * the kind of thing that wouldn't show up until a captain is mid-tap and
+ * confused. 'available' is only ever reached FROM 'unset', which never has
+ * an hours window, so the cycle itself never needs to carry one forward —
+ * hours are set separately, via the day's own hours editor.
+ */
+export const AVAILABILITY_TAP_CYCLE: Record<'unset' | AvailabilityStatusValue, AvailabilityStatusValue | null> = {
+  unset: 'available',
+  available: 'unavailable',
+  unavailable: null,
 }
 
 const VALID_STATUS = new Set<string>(['available', 'unavailable'])

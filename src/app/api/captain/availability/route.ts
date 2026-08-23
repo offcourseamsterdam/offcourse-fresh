@@ -17,7 +17,9 @@ import { createAdminClient } from '@/lib/supabase/admin'
  * window to speak of when the day itself is off or unset.
  */
 
-const TIME_RE = /^\d{2}:\d{2}$/
+// Real HH:MM only (00-23 / 00-59) — a plain \d{2}:\d{2} would let "25:99"
+// through Zod and fail later as a raw Postgres error instead of a clean 400.
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/
 
 const putSchema = z
   .object({
@@ -48,7 +50,7 @@ export async function GET(request: NextRequest) {
     const supabase = createAdminClient()
     const { data, error } = await supabase
       .from('staff_availability')
-      .select('date, status, note, start_time, end_time')
+      .select('date, status, start_time, end_time')
       .eq('staff_id', auth.staff.id)
       .gte('date', from)
       .lte('date', to)

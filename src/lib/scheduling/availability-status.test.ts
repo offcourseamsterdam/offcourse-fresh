@@ -5,6 +5,7 @@ import {
   getMonthAvailabilityGrid,
   captainAvailabilityUrl,
   availabilityDisplay,
+  AVAILABILITY_TAP_CYCLE,
 } from './availability-status'
 
 describe('monthRange', () => {
@@ -142,5 +143,13 @@ describe('availabilityDisplay', () => {
 
   it('reads unavailable as unavailable even if hours are somehow set', () => {
     expect(availabilityDisplay({ status: 'unavailable', startTime: '10:00', endTime: '18:00' })).toBe('unavailable')
+  })
+})
+
+describe('AVAILABILITY_TAP_CYCLE', () => {
+  it('cycles unset -> available -> unavailable -> unset, terminating in null (not looping back on its own)', () => {
+    expect(AVAILABILITY_TAP_CYCLE.unset).toBe('available')
+    expect(AVAILABILITY_TAP_CYCLE.available).toBe('unavailable')
+    expect(AVAILABILITY_TAP_CYCLE.unavailable).toBeNull()
   })
 })
