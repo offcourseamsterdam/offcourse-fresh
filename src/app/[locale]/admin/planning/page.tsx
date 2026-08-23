@@ -1026,6 +1026,12 @@ export default function PlanningPage() {
   const nowTick = useTickingClock(true, 60_000)
   const nowPx = useMemo(() => nowLeftPx(nowTick), [nowTick])
   const days = useMemo(() => weekDateStrings(weekStart, weekCount * 7), [weekStart, weekCount])
+  // nowPx alone only says "the current time-of-day is within the grid's
+  // 09:00–00:00 window" — it says nothing about whether TODAY is one of the
+  // days currently on screen. Without this, the header floated a live time
+  // pill with no row below it to anchor to whenever you paged to a past or
+  // future week — a marker with nothing to extend down into.
+  const headerNowPx = days.includes(todayStr) ? nowPx : null
 
   // Group bookings by booking_date, then within each day collapse same-slot
   // bookings (same time + listing + category + customer type) into one block —
@@ -1410,10 +1416,10 @@ export default function PlanningPage() {
                   {m.label}
                 </span>
               ))}
-              {nowPx != null && (
+              {headerNowPx != null && (
                 <span
                   className="absolute -top-0.5 z-10 -translate-x-1/2 px-1 py-px rounded text-[9px] font-semibold tabular-nums bg-rose-500 text-white"
-                  style={{ left: nowPx }}
+                  style={{ left: headerNowPx }}
                 >
                   {fmtAdminTime(new Date(nowTick).toISOString())}
                 </span>
