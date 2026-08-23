@@ -2,16 +2,18 @@
 
 import { useState } from 'react'
 import { StaffTab } from './StaffTab'
-import { ShiftsTab } from './ShiftsTab'
 import { PayrollTab } from './PayrollTab'
+import { AvailabilityTab } from './AvailabilityTab'
 
 /**
- * Scheduling hub. Staff (M1), Shifts (M2), and Payroll (M5) all live here;
- * the tab bar is the one piece of chrome they share.
+ * Availability hub. Staff (M1), Payroll (M5) and the monthly availability
+ * roll-call live here. The old Shifts tab (a boat/time grid of who runs
+ * which cruise) was deleted — the Planning page's grid + captain overlay
+ * covers that now.
  */
 
 const TABS = [
-  { key: 'shifts', label: 'Shifts', ready: true },
+  { key: 'month', label: 'This month', ready: true },
   { key: 'staff', label: 'Staff', ready: true },
   { key: 'payroll', label: 'Payroll', ready: true },
 ] as const
@@ -19,14 +21,14 @@ const TABS = [
 type TabKey = (typeof TABS)[number]['key']
 
 export default function AdminSchedulingPage() {
-  const [tab, setTab] = useState<TabKey>('shifts')
+  const [tab, setTab] = useState<TabKey>('month')
 
   return (
     <div className="p-4 sm:p-8 max-w-5xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-zinc-900">Scheduling</h1>
+        <h1 className="text-2xl font-semibold text-zinc-900">Availability</h1>
         <p className="text-sm text-zinc-500 mt-1">
-          Who runs which cruise — staff, shifts, and hours.
+          Your captains — who they are, their rate, and their pay.
         </p>
       </div>
 
@@ -51,7 +53,7 @@ export default function AdminSchedulingPage() {
         ))}
       </div>
 
-      {tab === 'shifts' && <ShiftsTab />}
+      {tab === 'month' && <AvailabilityTab />}
       {tab === 'staff' && <StaffTab />}
       {tab === 'payroll' && <PayrollTab />}
     </div>

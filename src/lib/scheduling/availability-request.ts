@@ -1,5 +1,5 @@
 import { amsterdamToday } from '@/lib/utils'
-import { AVAILABILITY_REQUEST_LEAD_DAYS } from '@/lib/ghost/rulebook'
+import { AVAILABILITY_REQUEST_LEAD_DAYS, AVAILABILITY_REMINDER_LEAD_DAYS } from '@/lib/ghost/rulebook'
 
 export interface AvailabilityRequestCheck {
   /** The month captains are being asked to fill in, as YYYY-MM. */
@@ -9,21 +9,36 @@ export interface AvailabilityRequestCheck {
 }
 
 /**
- * True exactly once per month, AVAILABILITY_REQUEST_LEAD_DAYS before that
- * month's 1st — every calendar month has exactly one date that many days
- * before it, so this needs no separate "already sent" tracking the way a
- * booking-triggered auto-send does; the date match itself is the guard.
+ * True exactly once per month, `leadDays` before that month's 1st — every
+ * calendar month has exactly one date that many days before it, so this
+ * needs no separate "already sent" tracking the way a booking-triggered
+ * auto-send does; the date match itself is the guard.
  */
-export function checkAvailabilityRequest(now: Date = new Date()): AvailabilityRequestCheck | null {
+function checkLeadDays(now: Date, leadDays: number): AvailabilityRequestCheck | null {
   const today = amsterdamToday(0, now)
   const [y, m, d] = today.split('-').map(Number)
-  const target = new Date(Date.UTC(y, m - 1, d + AVAILABILITY_REQUEST_LEAD_DAYS))
+  const target = new Date(Date.UTC(y, m - 1, d + leadDays))
   if (target.getUTCDate() !== 1) return null
 
   const targetYear = target.getUTCFullYear()
   const targetMonthNum = target.getUTCMonth() + 1
   const targetMonth = `${targetYear}-${String(targetMonthNum).padStart(2, '0')}`
   return { targetMonth, targetMonthStart: `${targetMonth}-01` }
+}
+
+/** The FIRST ask — goes to every active captain. */
+export function checkAvailabilityRequest(now: Date = new Date()): AvailabilityRequestCheck | null {
+  return checkLeadDays(now, AVAILABILITY_REQUEST_LEAD_DAYS)
+}
+
+/**
+ * The FOLLOW-UP nudge (Beer, 2026-08-23) — same once-per-month date logic,
+ * a shorter lead. Unlike the first ask this one is NOT sent to everybody:
+ * the caller filters to captains who still have nothing filled in, so a
+ * captain who already responded is never chased.
+ */
+export function checkAvailabilityReminder(now: Date = new Date()): AvailabilityRequestCheck | null {
+  return checkLeadDays(now, AVAILABILITY_REMINDER_LEAD_DAYS)
 }
 
 export interface NextAvailabilityRequest extends AvailabilityRequestCheck {

@@ -182,7 +182,7 @@ describe('admin route auth contract', () => {
     // 146 = 145 + /api/admin/reviews/backfill-bonus-scan (2026-08-22: manual
     // re-trigger for the staff-mention scan on any not-yet-checked review).
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`148`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`149`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {

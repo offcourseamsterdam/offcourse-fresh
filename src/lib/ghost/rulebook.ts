@@ -32,6 +32,8 @@ export const CATERING_LOOKAHEAD_DAYS = 3
 export const UPSELL_LEAD_DAYS = 2
 /** Monthly availability request: how many days before a month starts captains get asked to fill it in. */
 export const AVAILABILITY_REQUEST_LEAD_DAYS = 42
+/** Monthly availability FOLLOW-UP: days before the month a second nudge goes out, to non-responders ONLY (Beer, 2026-08-23 — the original single ask had no chase at all). Must be < AVAILABILITY_REQUEST_LEAD_DAYS. */
+export const AVAILABILITY_REMINDER_LEAD_DAYS = 21
 /** Captain schedule digest: the Amsterdam-local hour it goes out, checked DST-safe against the real clock (not a fixed UTC cron time). */
 export const SCHEDULE_DIGEST_HOUR_AMSTERDAM = 18
 /** Guest-move (every variant): never contact a guest about a departure less than this many hours away — not enough runway for them to notice, decide, and for us to act on a yes (Beer, 2026-08-23: "18 hours, the earlier the better though"). The underlying inefficiency still surfaces as a read-only finding; only the ask itself is withheld. */
