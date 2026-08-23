@@ -356,4 +356,129 @@ describe('findCrossDayConsolidationCandidates', () => {
       expect(candidates[0].fromDate).toBe('2026-08-26')
     })
   })
+
+  describe('every booking appears in at most one candidate (Beer, 2026-08-23: "highest-saving wins" — a real bug, confirmed by tracing the code)', () => {
+    it('a booking exactly 1 day from BOTH neighbors is never offered twice, even though both pairings are individually valid', () => {
+      // Tuesday's small party sits exactly 1 day from both Monday and
+      // Wednesday — geometrically two separate valid pairings, both with
+      // Tuesday as the (smaller, so moving) party. Before the fix, this
+      // produced two candidates for the SAME booking; the second one's
+      // idempotency lookup (keyed only on booking_id) would silently reuse
+      // the first one's drafted message, showing the WRONG destination.
+      const shifts: ConsolidationShift[] = [
+        shift({
+          shiftId: 'mon-shift',
+          date: '2026-08-24',
+          bookings: [{ ...baseBooking, id: 'monday-party', guestCount: 4, fareharborAvailabilityPk: 1 }],
+        }),
+        shift({
+          shiftId: 'tue-shift',
+          date: '2026-08-25',
+          bookings: [{ ...baseBooking, id: 'tuesday-party', guestCount: 2, fareharborAvailabilityPk: 2 }],
+        }),
+        shift({
+          shiftId: 'wed-shift',
+          date: '2026-08-26',
+          bookings: [{ ...baseBooking, id: 'wednesday-party', guestCount: 4, fareharborAvailabilityPk: 3 }],
+        }),
+      ]
+
+      const candidates = findCrossDayConsolidationCandidates(shifts, { Curaçao: 12 })
+
+      const bookingIdAppearances = candidates.flatMap(c => [c.booking.id, c.receivingBooking.id])
+      const counts = new Map<string, number>()
+      for (const id of bookingIdAppearances) counts.set(id, (counts.get(id) ?? 0) + 1)
+      expect(Math.max(...counts.values())).toBe(1)
+      // Tuesday's own vacate-cost is identical whichever neighbor receives it
+      // (same shift being removed either way) — a genuine tie, so only the
+      // COUNT invariant is asserted here, not which specific neighbor wins.
+      expect(candidates).toHaveLength(1)
+    })
+
+    it('two DIFFERENT movers wanting the SAME receiving day keep only the higher-saving one', () => {
+      // Monday and Wednesday are each exactly 1 day from Tuesday but 2 days
+      // from each other, so they never pair with one another — the only
+      // conflict is both wanting Tuesday's spare capacity. Wednesday's
+      // shift costs more per hour, so moving it away saves more.
+      const shifts: ConsolidationShift[] = [
+        shift({
+          shiftId: 'mon-shift',
+          date: '2026-08-24',
+          startAt: '2026-08-24T14:15:00Z',
+          endAt: '2026-08-24T17:30:00Z',
+          hourlyRateCents: 3000,
+          bookings: [{ ...baseBooking, id: 'monday-mover', guestCount: 2, fareharborAvailabilityPk: 1, startTime: '2026-08-24T15:00:00Z', endTime: '2026-08-24T16:30:00Z' }],
+        }),
+        shift({
+          shiftId: 'tue-shift',
+          date: '2026-08-25',
+          bookings: [{ ...baseBooking, id: 'tuesday-receiver', guestCount: 2, fareharborAvailabilityPk: 2 }],
+        }),
+        shift({
+          shiftId: 'wed-shift',
+          date: '2026-08-26',
+          startAt: '2026-08-26T14:15:00Z',
+          endAt: '2026-08-26T17:30:00Z',
+          hourlyRateCents: 5000,
+          bookings: [{ ...baseBooking, id: 'wednesday-mover', guestCount: 2, fareharborAvailabilityPk: 3, startTime: '2026-08-26T15:00:00Z', endTime: '2026-08-26T16:30:00Z' }],
+        }),
+      ]
+
+      const candidates = findCrossDayConsolidationCandidates(shifts, { Curaçao: 12 })
+
+      expect(candidates).toHaveLength(1)
+      expect(candidates[0].booking.id).toBe('wednesday-mover') // higher hourly rate → bigger saving
+      expect(candidates[0].receivingBooking.id).toBe('tuesday-receiver')
+    })
+  })
+
+  describe('food only excludes the MOVING side, never the stationary receiver (Beer, 2026-08-23)', () => {
+    it('a receiving party with a food order is still a valid target — their own booking never changes', () => {
+      const shifts: ConsolidationShift[] = [
+        // Deliberately the SMALLER party so it's unambiguously the mover
+        // (Beer's "smaller party moves" rule) regardless of date order.
+        shift({
+          shiftId: 's1',
+          date: '2026-08-25',
+          bookings: [{ ...baseBooking, id: 'mover', guestCount: 2, fareharborAvailabilityPk: 1 }],
+        }),
+        shift({
+          shiftId: 's2',
+          date: '2026-08-26',
+          bookings: [
+            {
+              ...baseBooking,
+              id: 'receiver-with-food',
+              guestCount: 4,
+              fareharborAvailabilityPk: 2,
+              extrasSelected: [{ name: 'Cheese board', category: 'food', amount_cents: 1000, quantity: 1 }],
+            },
+          ],
+        }),
+      ]
+
+      const candidates = findCrossDayConsolidationCandidates(shifts, { Curaçao: 12 })
+
+      expect(candidates).toHaveLength(1)
+      expect(candidates[0].booking.id).toBe('mover')
+      expect(candidates[0].receivingBooking.id).toBe('receiver-with-food')
+    })
+
+    it('a receiving party flagged no_reschedule_ask is still excluded — their OWN experience changes when a stranger joins', () => {
+      const shifts: ConsolidationShift[] = [
+        shift({
+          shiftId: 's1',
+          date: '2026-08-25',
+          bookings: [{ ...baseBooking, id: 'mover', guestCount: 2, fareharborAvailabilityPk: 1 }],
+        }),
+        shift({
+          shiftId: 's2',
+          date: '2026-08-26',
+          bookings: [{ ...baseBooking, id: 'protected-receiver', guestCount: 2, fareharborAvailabilityPk: 2, noRescheduleAsk: true }],
+        }),
+      ]
+
+      expect(findCrossDayConsolidationCandidates(shifts, { Curaçao: 12 })).toEqual([])
+    })
+  })
 })

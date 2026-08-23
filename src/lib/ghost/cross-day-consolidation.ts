@@ -128,18 +128,33 @@ function departureGroups(shift: ConsolidationShift): DepartureGroup[] {
 }
 
 /**
- * Eligible to be ASKED TO MOVE: exactly one booking (this drafter only ever
- * asks one party at a time — same sequential rule guest-move-drafter.ts
- * enforces), shared category (private never merges — Beer, 2026-07-04,
- * enforced elsewhere too via deriveOperationalProfile.allowMerge), no FOOD
- * order placed (drinks-only is fine — see the file doc comment), and not
- * admin-flagged no_reschedule_ask (Beer, 2026-08-23: anniversary/birthday
- * bookings).
+ * Eligible to be PART OF A PAIR AT ALL — either side, moving or receiving:
+ * exactly one booking (this drafter only ever asks one party at a time —
+ * same sequential rule guest-move-drafter.ts enforces), shared category
+ * (private never merges — Beer, 2026-07-04, enforced elsewhere too via
+ * deriveOperationalProfile.allowMerge), and not admin-flagged
+ * no_reschedule_ask (Beer, 2026-08-23: anniversary/birthday bookings — this
+ * one DOES apply to the receiving side too, unlike food: gaining an unasked
+ * companion changes a flagged guest's own experience on a shared cruise,
+ * even though their own booking never moves).
  */
-function eligibleToMove(group: DepartureGroup): boolean {
+function eligibleToReceive(group: DepartureGroup): boolean {
   if (group.bookings.length !== 1) return false
   const b = group.bookings[0]
-  return b.category === 'shared' && !hasFood(b.extrasSelected) && !b.noRescheduleAsk
+  return b.category === 'shared' && !b.noRescheduleAsk
+}
+
+/**
+ * Eligible to be the one ASKED TO MOVE specifically: everything
+ * eligibleToReceive requires, plus no FOOD order placed (Beer, 2026-08-23:
+ * food catering only ever exists on private cruises in practice, but the
+ * check stays as a safety net) — drinks-only is fine (see the file doc
+ * comment). Food only matters for the side whose OWN departure is changing;
+ * a stationary receiving party's food order is untouched by someone else
+ * joining them, so this check does NOT apply there.
+ */
+function eligibleToMove(group: DepartureGroup): boolean {
+  return eligibleToReceive(group) && !hasFood(group.bookings[0].extrasSelected)
 }
 
 /**
@@ -225,8 +240,12 @@ export function findCrossDayConsolidationCandidates(
       // one departure" when some other, ineligible departure stays behind.
       const laterAllGroups = departureGroups(laterShift)
       const earlierAllGroups = departureGroups(earlierShift)
-      const laterGroups = laterAllGroups.filter(eligibleToMove)
-      const earlierGroups = earlierAllGroups.filter(eligibleToMove)
+      // Receive-eligible pool (weaker requirement — food doesn't matter on
+      // this side yet, since we don't know who's moving until sizes are
+      // compared below). Whichever one turns out to be the mover gets the
+      // stricter eligibleToMove check at that point.
+      const laterGroups = laterAllGroups.filter(eligibleToReceive)
+      const earlierGroups = earlierAllGroups.filter(eligibleToReceive)
 
       // Every eligible departure on the later day, paired with every
       // eligible departure on the earlier day — in practice almost always
@@ -253,6 +272,11 @@ export function findCrossDayConsolidationCandidates(
             ? { shift: earlierShift, booking: earlierBooking }
             : { shift: laterShift, booking: laterBooking }
 
+          // The mover — not the receiver — needs the stricter check (no food
+          // aboard their own departure). A receiving party with food is
+          // untouched either way, so it never disqualified the pair at all.
+          if (!eligibleToMove(moving.group)) continue
+
           candidates.push({
             fromShiftId: moving.shift.shiftId,
             fromDate: moving.shift.date,
@@ -271,5 +295,22 @@ export function findCrossDayConsolidationCandidates(
     }
   }
 
-  return candidates.sort((a, b) => b.estSavingCents - a.estSavingCents)
+  // A booking can legitimately match more than one pairing — e.g. Tuesday's
+  // small party sits exactly 1 day from BOTH Monday and Wednesday, so it
+  // shows up as a candidate mover in each. Worse, two DIFFERENT movers could
+  // both target the SAME receiving booking's spare capacity, which was only
+  // ever checked pairwise (never against a second candidate also claiming
+  // it). Beer, 2026-08-23: highest-saving wins — keep at most ONE candidate
+  // per booking, whichever role (moving or receiving) it plays in, dropping
+  // any other pairing that would touch an already-used booking.
+  const sorted = candidates.sort((a, b) => b.estSavingCents - a.estSavingCents)
+  const usedBookingIds = new Set<string>()
+  const deduped: CrossDayConsolidationCandidate[] = []
+  for (const c of sorted) {
+    if (usedBookingIds.has(c.booking.id) || usedBookingIds.has(c.receivingBooking.id)) continue
+    usedBookingIds.add(c.booking.id)
+    usedBookingIds.add(c.receivingBooking.id)
+    deduped.push(c)
+  }
+  return deduped
 }

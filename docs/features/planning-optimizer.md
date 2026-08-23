@@ -33,7 +33,10 @@ currently in view:
   shown inline, and Approve sends it immediately. Prices a SHRINK, not just
   full elimination, when the moving shift also covers an unrelated departure
   that stays behind (Beer, 2026-08-23: "you are saving costs" even when a
-  shift doesn't disappear entirely — it can still get shorter).
+  shift doesn't disappear entirely — it can still get shorter). At most one
+  candidate per booking, ever (fixed a real bug 2026-08-23 — see below);
+  food catering only ever disqualifies the party actually MOVING, never the
+  stationary party receiving them.
 
 Once a guest accepts any of these asks, the accepting admin can click **Mark
 rebooked in FareHarbor** on the `/admin/ghost` card after doing the real
@@ -99,6 +102,33 @@ human, then confirmed via `mark_rebooked`, exactly like a time or date move.
 2026-08-23): for cross-day, whichever party is SMALLER is asked to move (a
 tie defaults to the later day) — not "the later day always moves". For a
 same-day boat swap there's only one party involved, so this doesn't apply.
+
+**A booking never appears in more than one cross-day candidate** (Beer,
+2026-08-23 — a real bug, found by re-tracing the pairing logic, not just a
+theoretical worry). `CROSS_DAY_WINDOW_DAYS = 1` means a booking can sit
+exactly 1 day from BOTH neighbors at once, and two different movers can both
+target the same receiving day's spare capacity — both scenarios produced
+multiple candidates touching the same booking. The idempotency lookup
+(`findOpenCrossDayProposal`) is keyed only on `booking_id`, so a
+later-processed candidate would silently reuse an earlier one's already-
+drafted message — showing the WRONG destination in the guest-facing text
+while the panel's own summary/toDate fields (built fresh per candidate)
+still showed the right one. Fixed with a dedup pass at the end of
+`findCrossDayConsolidationCandidates`: sort by `estSavingCents` descending,
+keep the first candidate touching each booking (as either mover or
+receiver), drop every other candidate that reuses either of its two
+bookings.
+
+**Food only disqualifies the party actually moving, never the stationary
+receiver** (Beer, 2026-08-23): a receiving party's own food order is
+untouched by someone else joining their departure, so it was never a valid
+reason to exclude them as a *target*. `eligibleToReceive` (weaker — shared,
+single booking, not `no_reschedule_ask`) gates pool membership for both
+sides; `eligibleToMove` (`eligibleToReceive` + no food) is only checked
+against whichever side turns out to be the mover, decided by size, after
+pairing. `no_reschedule_ask` stays a two-sided exclusion, unlike food — an
+unasked companion joining a flagged guest's shared departure changes their
+own experience even though their booking itself never moves.
 
 ## How to extend
 
