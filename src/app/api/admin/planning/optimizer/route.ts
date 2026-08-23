@@ -10,6 +10,7 @@ import {
 } from '@/lib/ghost/cross-day-consolidation'
 import { draftCrossDayConsolidation } from '@/lib/ghost/cross-day-move-drafter'
 import { validateBoatSwap, draftBoatSwap, type BoatSwapBooking } from '@/lib/ghost/boat-swap-drafter'
+import { openMoveRequestExists } from '@/lib/ghost/guest-move-drafter'
 import { OPTIMIZE_HORIZON_DAYS, hasEnoughNotice } from '@/lib/ghost/rulebook'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { amsterdamToday } from '@/lib/utils'
@@ -366,6 +367,10 @@ export async function GET(_request: NextRequest) {
           const payload = (existing.payload ?? {}) as { sms_text?: string; email_subject?: string; email_body?: string }
           return { ...base, proposalId: existing.id, guestName: booking.customer_name, smsText: payload.sms_text, emailSubject: payload.email_subject, emailBody: payload.email_body }
         }
+        // Sequential, across every move type (Beer, 2026-08-23): a day
+        // already mid-conversation with one guest never gets a second,
+        // different guest asked to rework it too.
+        if (await openMoveRequestExists(supabase, merge.date)) return base
 
         const { data: listing } = await supabase.from('cruise_listings').select('slug').eq('id', booking.listing_id).single()
         if (!listing?.slug) return base
@@ -424,6 +429,13 @@ export async function GET(_request: NextRequest) {
         const drafted =
           existing ??
           (await (async () => {
+            // Sequential, across every move type (Beer, 2026-08-23): a day
+            // already mid-conversation with one guest never gets a second,
+            // different guest asked to rework it too — check BOTH days this
+            // move touches, not just the one being vacated.
+            const dayClaimed =
+              (await openMoveRequestExists(supabase, c.fromDate)) || (await openMoveRequestExists(supabase, c.toDate))
+            if (dayClaimed) return null
             const outcome = await draftCrossDayConsolidation(supabase, c, { source: 'admin/planning/optimizer' })
             return outcome === 'drafted' ? await findOpenCrossDayProposal(supabase, c.booking.id) : null
           })())

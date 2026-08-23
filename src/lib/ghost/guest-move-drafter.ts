@@ -427,8 +427,16 @@ function candidateFromDayRows(rawShifts: RawShiftRow[], dayBookings: MoveBooking
   return candidate
 }
 
-/** Sequential invariant: any not-yet-settled move request blocks a new one for that date. */
-async function openMoveRequestExists(supabase: AdminClient, targetDate: string): Promise<boolean> {
+/**
+ * Sequential invariant: any not-yet-settled move request blocks a new one
+ * for that date — ACROSS EVERY MOVE TYPE (Beer, 2026-08-23: "max one open
+ * ask per day, any type"), not just this drafter's own same-day asks. Every
+ * move-type drafter writes payload.target_date, so this one query already
+ * covers same-day, cross-day, and boat-swap without needing a move_type
+ * filter — exported so the Optimizer route can call it before drafting a
+ * cross-day or boat-swap candidate too.
+ */
+export async function openMoveRequestExists(supabase: AdminClient, targetDate: string): Promise<boolean> {
   const { data } = await supabase
     .from('agent_proposals')
     .select('id')

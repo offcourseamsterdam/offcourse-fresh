@@ -110,6 +110,7 @@ function makeSupabase({
   alreadyRecordedFindings = false,
   insertedOpsEvents = [] as Record<string, unknown>[],
   listingSlug = null as string | null,
+  datesWithAnOpenAsk = [] as string[],
 }: {
   shifts: unknown[]
   bookings: unknown[]
@@ -118,6 +119,8 @@ function makeSupabase({
   insertedOpsEvents?: Record<string, unknown>[]
   /** Same-day boat-swap candidates look up cruise_listings.slug by listing_id — null means "not found" (falls back to a read-only finding). */
   listingSlug?: string | null
+  /** Dates openMoveRequestExists (the cross-type sequential guard) should report as already claimed by some other ask. */
+  datesWithAnOpenAsk?: string[]
 }) {
   const from = vi.fn((table: string) => {
     if (table === 'ops_events') {
@@ -152,28 +155,31 @@ function makeSupabase({
       return { select: () => ({ eq: () => ({ single: async () => ({ data: listingSlug ? { slug: listingSlug } : null }) }) }) }
     }
     if (table === 'agent_proposals') {
-      return {
-        select: () => ({
-          eq: () => ({
-            eq: () => ({
-              eq: () => ({
-                in: () => ({
-                  order: () => ({
-                    limit: () => ({
-                      maybeSingle: async () => {
-                        // Any one bookingId match is enough for these tests —
-                        // real filtering already covered by the pure functions.
-                        const match = Object.values(existingProposalByBookingId)[0]
-                        return { data: match ?? null }
-                      },
-                    }),
-                  }),
-                }),
-              }),
-            }),
-          }),
-        }),
-      }
+      // Self-referential chain supporting TWO distinct real query shapes on
+      // this table: findOpenCrossDayProposal/findOpenBoatSwapProposal (3x eq
+      // + in + order + limit + maybeSingle, keyed by booking) and
+      // openMoveRequestExists (2x eq + in + limit, awaited directly — no
+      // maybeSingle — keyed by date). Filters are captured across .eq() calls
+      // so the `then` resolution can tell which query is actually running.
+      const chain = (filters: Record<string, unknown> = {}): Record<string, unknown> => ({
+        select: () => chain(filters),
+        eq: (col: string, val: unknown) => chain({ ...filters, [col]: val }),
+        in: () => chain(filters),
+        order: () => chain(filters),
+        limit: () => chain(filters),
+        maybeSingle: async () => {
+          // Any one bookingId match is enough for these tests — real
+          // filtering already covered by the pure functions.
+          const match = Object.values(existingProposalByBookingId)[0]
+          return { data: match ?? null }
+        },
+        then: (resolve: (v: { data: unknown[]; error: null }) => unknown) => {
+          const date = filters['payload->>target_date'] as string | undefined
+          const claimed = !!date && datesWithAnOpenAsk.includes(date)
+          resolve({ data: claimed ? [{ id: 'blocked-by-other-ask' }] : [], error: null })
+        },
+      })
+      return { select: () => chain() }
     }
     throw new Error(`unexpected table: ${table}`)
   })
@@ -305,6 +311,44 @@ describe('GET /api/admin/planning/optimizer', () => {
     expect(crossDay.proposalId).toBeUndefined()
     expect(crossDay.smsText).toBeUndefined()
     expect(h.draftCrossDayConsolidation).not.toHaveBeenCalled()
+  })
+
+  describe('sequential across move types (Beer, 2026-08-23: "max one open ask per day, any type")', () => {
+    it('does not draft a cross-day ask when the FROM date already has some other open ask', async () => {
+      vi.mocked(createAdminClient).mockReturnValue(
+        makeSupabase({
+          shifts: [PAIGE_SHIFT, SOPHIE_SHIFT],
+          bookings: [PAIGE_BOOKING, SOPHIE_BOOKING],
+          datesWithAnOpenAsk: ['2026-08-26'], // Sophie's own (fromDate)
+        }) as never,
+      )
+
+      const res = await GET(makeReq('2026-08-25', '2026-08-26'))
+      const body = await res.json()
+
+      const crossDay = body.data.items.find((i: { kind: string }) => i.kind === 'cross_day_consolidation')
+      expect(crossDay).toBeTruthy()
+      expect(crossDay.proposalId).toBeUndefined()
+      expect(h.draftCrossDayConsolidation).not.toHaveBeenCalled()
+    })
+
+    it('does not draft a cross-day ask when the TO date already has some other open ask', async () => {
+      vi.mocked(createAdminClient).mockReturnValue(
+        makeSupabase({
+          shifts: [PAIGE_SHIFT, SOPHIE_SHIFT],
+          bookings: [PAIGE_BOOKING, SOPHIE_BOOKING],
+          datesWithAnOpenAsk: ['2026-08-25'], // Paige's day (toDate) — receiving the move
+        }) as never,
+      )
+
+      const res = await GET(makeReq('2026-08-25', '2026-08-26'))
+      const body = await res.json()
+
+      const crossDay = body.data.items.find((i: { kind: string }) => i.kind === 'cross_day_consolidation')
+      expect(crossDay).toBeTruthy()
+      expect(crossDay.proposalId).toBeUndefined()
+      expect(h.draftCrossDayConsolidation).not.toHaveBeenCalled()
+    })
   })
 
   it('surfaces a same-day gap as its own item, separate from cross-day candidates', async () => {
@@ -467,6 +511,26 @@ describe('GET /api/admin/planning/optimizer', () => {
           shifts: [dianaShift, curacaoShift],
           bookings: [privateDianaBooking, otherCuracaoBooking],
           listingSlug: 'private-hidden-gems-cruise',
+        }) as never,
+      )
+
+      const res = await GET(makeReq('2026-08-28', '2026-08-28'))
+      const body = await res.json()
+
+      const swap = body.data.items.find((i: { kind: string; boat: string }) => i.kind === 'same_day_merge' && i.boat === 'Diana')
+      expect(swap).toBeTruthy()
+      expect(swap.proposalId).toBeUndefined()
+      expect(h.validateBoatSwap).not.toHaveBeenCalled()
+      expect(h.draftBoatSwap).not.toHaveBeenCalled()
+    })
+
+    it('stays a read-only finding when that day already has some other open ask (Beer, 2026-08-23: "max one open ask per day, any type")', async () => {
+      vi.mocked(createAdminClient).mockReturnValue(
+        makeSupabase({
+          shifts: [dianaShift, curacaoShift],
+          bookings: [privateDianaBooking, otherCuracaoBooking],
+          listingSlug: 'private-hidden-gems-cruise',
+          datesWithAnOpenAsk: ['2026-08-28'],
         }) as never,
       )
 
