@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
-import { monthRange, getMonthAvailabilityStatus, getMonthAvailabilityGrid, captainAvailabilityUrl } from './availability-status'
+import {
+  monthRange,
+  getMonthAvailabilityStatus,
+  getMonthAvailabilityGrid,
+  captainAvailabilityUrl,
+  availabilityDisplay,
+} from './availability-status'
 
 describe('monthRange', () => {
   it('covers the whole month, whatever its length', () => {
@@ -73,7 +79,9 @@ describe('getMonthAvailabilityStatus', () => {
 })
 
 /** Single-query stub for the grid — only staff_availability, no staff table. */
-function makeGridSupabase(rows: { staff_id: string; date: string; status: string }[]) {
+function makeGridSupabase(
+  rows: { staff_id: string; date: string; status: string; start_time?: string | null; end_time?: string | null }[],
+) {
   return {
     from: () => ({ select: () => ({ gte: () => ({ lte: async () => ({ data: rows }) }) }) }),
   } as never
@@ -87,27 +95,52 @@ describe('getMonthAvailabilityGrid — the day-by-day, everyone-at-once view (Be
     expect(grid[29]).toEqual({ date: '2026-09-30', byStaffId: {} })
   })
 
-  it('places each captain\'s status on the right day, multiple captains per day', async () => {
+  it('places each captain\'s status on the right day, multiple captains per day, hours trimmed to HH:MM', async () => {
     const grid = await getMonthAvailabilityGrid(
       makeGridSupabase([
-        { staff_id: 'bas', date: '2026-09-15', status: 'available' },
+        { staff_id: 'bas', date: '2026-09-15', status: 'available', start_time: '10:00:00', end_time: '18:00:00' },
         { staff_id: 'mare', date: '2026-09-15', status: 'unavailable' },
-        { staff_id: 'bas', date: '2026-09-16', status: 'prefer_not' },
       ]),
       '2026-09',
     )
 
     const day15 = grid.find(d => d.date === '2026-09-15')!
-    expect(day15.byStaffId).toEqual({ bas: 'available', mare: 'unavailable' })
-    const day16 = grid.find(d => d.date === '2026-09-16')!
-    expect(day16.byStaffId).toEqual({ bas: 'prefer_not' })
+    expect(day15.byStaffId).toEqual({
+      bas: { status: 'available', startTime: '10:00', endTime: '18:00' },
+      mare: { status: 'unavailable', startTime: null, endTime: null },
+    })
   })
 
-  it('drops a row with an unrecognized status rather than showing bad data', async () => {
-    const grid = await getMonthAvailabilityGrid(
+  it('drops a row with an unrecognized status rather than showing bad data — covers legacy \'prefer_not\' rows too, now that the status was removed', async () => {
+    const madeUp = await getMonthAvailabilityGrid(
       makeGridSupabase([{ staff_id: 'bas', date: '2026-09-15', status: 'made_up_value' }]),
       '2026-09',
     )
-    expect(grid.find(d => d.date === '2026-09-15')!.byStaffId).toEqual({})
+    expect(madeUp.find(d => d.date === '2026-09-15')!.byStaffId).toEqual({})
+
+    const legacy = await getMonthAvailabilityGrid(
+      makeGridSupabase([{ staff_id: 'bas', date: '2026-09-15', status: 'prefer_not' }]),
+      '2026-09',
+    )
+    expect(legacy.find(d => d.date === '2026-09-15')!.byStaffId).toEqual({})
+  })
+})
+
+describe('availabilityDisplay', () => {
+  it('reads no entry as unset', () => {
+    expect(availabilityDisplay(undefined)).toBe('unset')
+    expect(availabilityDisplay(null)).toBe('unset')
+  })
+
+  it('reads available with no hours as plain available', () => {
+    expect(availabilityDisplay({ status: 'available', startTime: null, endTime: null })).toBe('available')
+  })
+
+  it('reads available WITH hours as partly available (Beer, 2026-08-23: "available, or partly available")', () => {
+    expect(availabilityDisplay({ status: 'available', startTime: '10:00', endTime: '18:00' })).toBe('partly_available')
+  })
+
+  it('reads unavailable as unavailable even if hours are somehow set', () => {
+    expect(availabilityDisplay({ status: 'unavailable', startTime: '10:00', endTime: '18:00' })).toBe('unavailable')
   })
 })

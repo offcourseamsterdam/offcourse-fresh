@@ -10,10 +10,11 @@ import { createAdminClient } from '@/lib/supabase/admin'
  *     set one day; status null clears the day back to "no preference".
  *
  * startTime/endTime (Beer, 2026-08-23: "available between these and these
- * times") are OPTIONAL and only meaningful on 'available'/'prefer_not' —
- * both null/omitted means "all day", the unchanged default. 'unavailable'
- * and clearing (status: null) always force them to null: there's no
- * partial-day window to speak of when the day itself is off or unset.
+ * times") are OPTIONAL and only meaningful on 'available' — both null/omitted
+ * means "all day", the unchanged default; set, they mean "partly available"
+ * (Beer, same day: "available, or partly available"). 'unavailable' and
+ * clearing (status: null) always force them to null: there's no partial-day
+ * window to speak of when the day itself is off or unset.
  */
 
 const TIME_RE = /^\d{2}:\d{2}$/
@@ -21,7 +22,7 @@ const TIME_RE = /^\d{2}:\d{2}$/
 const putSchema = z
   .object({
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    status: z.enum(['available', 'prefer_not', 'unavailable']).nullable(),
+    status: z.enum(['available', 'unavailable']).nullable(),
     startTime: z.string().regex(TIME_RE).nullable().optional(),
     endTime: z.string().regex(TIME_RE).nullable().optional(),
   })

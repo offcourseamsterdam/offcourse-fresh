@@ -5,9 +5,10 @@ import { ChevronLeft, ChevronRight, ChevronDown, Loader2, Clock } from 'lucide-r
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { adminMutate } from '@/hooks/useAdminSave'
 import { amsterdamToday } from '@/lib/utils'
+import { availabilityDisplay, type AvailabilityDisplay } from '@/lib/scheduling/availability-status'
 import { Unlinked, isUnlinked } from '../Unlinked'
 
-type Status = 'available' | 'prefer_not' | 'unavailable'
+type Status = 'available' | 'unavailable'
 
 interface DayEntry {
   status: Status
@@ -15,25 +16,28 @@ interface DayEntry {
   endTime: string | null
 }
 
-/** Tap cycle: unset → available → prefer_not → unavailable → unset. */
+/** Tap cycle: unset → available → unavailable → unset. */
 const NEXT: Record<string, Status | null> = {
   unset: 'available',
-  available: 'prefer_not',
-  prefer_not: 'unavailable',
+  available: 'unavailable',
   unavailable: null,
 }
 
-const CELL_STYLE: Record<string, string> = {
+// Keyed by AvailabilityDisplay, not the raw status — 'available' with hours
+// set reads as 'partly_available' (Beer, 2026-08-23: "available, or partly
+// available"), sharing the same amber slot the old manual 'prefer_not' used.
+const CELL_STYLE: Record<AvailabilityDisplay, string> = {
   available: 'bg-emerald-100 border-emerald-300 text-emerald-800',
-  prefer_not: 'bg-amber-100 border-amber-300 text-amber-800',
+  partly_available: 'bg-amber-100 border-amber-300 text-amber-800',
   unavailable: 'bg-red-100 border-red-300 text-red-700',
   unset: 'bg-white border-zinc-200 text-zinc-700',
 }
 
-const LABEL: Record<string, string> = {
+const LABEL: Record<AvailabilityDisplay, string> = {
   available: 'Available',
-  prefer_not: 'Prefer not',
+  partly_available: 'Partly available',
   unavailable: 'Unavailable',
+  unset: 'Unset',
 }
 
 function monthLabel(ym: string): string {
@@ -70,10 +74,7 @@ export default function CaptainAvailabilityPage() {
 
   // Days where setting specific hours is meaningful — a day that's unset or
   // unavailable has no window to narrow.
-  const hoursEligibleDays = useMemo(
-    () => days.filter(d => byDate[d]?.status === 'available' || byDate[d]?.status === 'prefer_not'),
-    [days, byDate],
-  )
+  const hoursEligibleDays = useMemo(() => days.filter(d => byDate[d]?.status === 'available'), [days, byDate])
 
   const [saveError, setSaveError] = useState<string | null>(null)
   const [editingHours, setEditingHours] = useState<string | null>(null)
@@ -85,10 +86,9 @@ export default function CaptainAvailabilityPage() {
     const next = NEXT[current]
     setSaveError(null)
 
-    // Toggling available ↔ prefer not keeps any hours already set for the
-    // day; unavailable and clearing always drop them — same forcing rule
-    // the API itself applies.
-    const keepsHours = next === 'available' || next === 'prefer_not'
+    // Unavailable and clearing always drop any hours already set for the
+    // day — same forcing rule the API itself applies.
+    const keepsHours = next === 'available'
     const startTime = keepsHours ? (byDate[date]?.startTime ?? null) : null
     const endTime = keepsHours ? (byDate[date]?.endTime ?? null) : null
 
@@ -139,7 +139,7 @@ export default function CaptainAvailabilityPage() {
       <div>
         <h1 className="text-2xl font-semibold text-zinc-900">Availability</h1>
         <p className="text-sm text-zinc-500 mt-1">
-          Tap a day to cycle: available → prefer not → unavailable → clear.
+          Tap a day to cycle: available → unavailable → clear. Add hours below for partly available.
         </p>
       </div>
 
@@ -183,12 +183,12 @@ export default function CaptainAvailabilityPage() {
               <div key={`blank-${i}`} />
             ))}
             {days.map(date => {
-              const status = byDate[date]?.status ?? 'unset'
+              const display = availabilityDisplay(byDate[date])
               return (
                 <button
                   key={date}
                   onClick={() => cycle(date)}
-                  className={`aspect-square min-h-[44px] rounded-xl border text-sm font-medium transition-colors ${CELL_STYLE[status]} ${date === today ? 'ring-2 ring-zinc-900 ring-offset-1' : ''}`}
+                  className={`aspect-square min-h-[44px] rounded-xl border text-sm font-medium transition-colors ${CELL_STYLE[display]} ${date === today ? 'ring-2 ring-zinc-900 ring-offset-1' : ''}`}
                 >
                   {Number(date.slice(8))}
                 </button>
@@ -212,7 +212,7 @@ export default function CaptainAvailabilityPage() {
                         className="w-full flex items-center justify-between gap-3 px-4 py-3 min-h-[44px] text-left hover:bg-zinc-50"
                       >
                         <span className="flex items-center gap-2 text-sm text-zinc-800">
-                          <span className={`w-2 h-2 rounded-full ${entry.status === 'available' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                          <span className={`w-2 h-2 rounded-full ${availabilityDisplay(entry) === 'partly_available' ? 'bg-amber-400' : 'bg-emerald-400'}`} />
                           {new Date(`${date}T12:00`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
                         </span>
                         <span className="flex items-center gap-1.5 text-sm text-zinc-500">
@@ -274,7 +274,7 @@ export default function CaptainAvailabilityPage() {
           )}
 
           <div className="flex flex-wrap items-center gap-3 text-[11px] text-zinc-500 pt-1">
-            {(['available', 'prefer_not', 'unavailable'] as const).map(s => (
+            {(['available', 'partly_available', 'unavailable'] as const).map(s => (
               <span key={s} className="inline-flex items-center gap-1.5">
                 <span className={`w-3 h-3 rounded border ${CELL_STYLE[s]}`} />
                 {LABEL[s]}

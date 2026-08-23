@@ -76,15 +76,37 @@ export async function getMonthAvailabilityStatus(
   })
 }
 
-export type AvailabilityStatusValue = 'available' | 'prefer_not' | 'unavailable'
+export type AvailabilityStatusValue = 'available' | 'unavailable'
+
+export interface DayAvailabilityEntry {
+  status: AvailabilityStatusValue
+  /** HH:MM, or null on "all day" (the default) or on 'unavailable'. */
+  startTime: string | null
+  endTime: string | null
+}
 
 export interface DayAvailability {
   /** YYYY-MM-DD */
   date: string
-  byStaffId: Record<string, AvailabilityStatusValue>
+  byStaffId: Record<string, DayAvailabilityEntry>
 }
 
-const VALID_STATUS = new Set<string>(['available', 'prefer_not', 'unavailable'])
+/**
+ * What to actually show for a day: 'available' with a time window set reads
+ * as "partly available", not plain "available" — Beer, 2026-08-23: "available,
+ * or partly available. if people make it red we know not to call them for
+ * last minutes". One function so the captain's own calendar and the admin
+ * day-by-day grid can never draw this distinction differently.
+ */
+export type AvailabilityDisplay = 'available' | 'partly_available' | 'unavailable' | 'unset'
+
+export function availabilityDisplay(entry: DayAvailabilityEntry | null | undefined): AvailabilityDisplay {
+  if (!entry) return 'unset'
+  if (entry.status === 'unavailable') return 'unavailable'
+  return entry.startTime && entry.endTime ? 'partly_available' : 'available'
+}
+
+const VALID_STATUS = new Set<string>(['available', 'unavailable'])
 
 /**
  * Day-by-day, every captain at once — Beer, 2026-08-23: "I also want to see
@@ -102,15 +124,21 @@ export async function getMonthAvailabilityGrid(supabase: AdminClient, month: str
   const { from, to } = monthRange(month)
   const { data } = await supabase
     .from('staff_availability')
-    .select('staff_id, date, status')
+    .select('staff_id, date, status, start_time, end_time')
     .gte('date', from)
     .lte('date', to)
 
-  const byDate = new Map<string, Record<string, AvailabilityStatusValue>>()
+  const byDate = new Map<string, Record<string, DayAvailabilityEntry>>()
   for (const row of data ?? []) {
     if (!VALID_STATUS.has(row.status)) continue // defensive — column is free-text, not an enum
     const entry = byDate.get(row.date) ?? {}
-    entry[row.staff_id] = row.status as AvailabilityStatusValue
+    entry[row.staff_id] = {
+      status: row.status as AvailabilityStatusValue,
+      // Postgres TIME comes back as "HH:MM:SS" — trim to "HH:MM" (same as
+      // the captain-facing GET route) so callers never see the seconds.
+      startTime: row.start_time?.slice(0, 5) ?? null,
+      endTime: row.end_time?.slice(0, 5) ?? null,
+    }
     byDate.set(row.date, entry)
   }
 

@@ -82,12 +82,13 @@ describe('PUT /api/captain/availability', () => {
     expect(sb.upserts[0]).toMatchObject({ status: 'available', start_time: '10:00', end_time: '18:00' })
   })
 
-  it('allows a time window on "prefer_not" too — a partial-day maybe is real information', async () => {
+  it('rejects "prefer_not" — the status was removed in favor of available + hours ("partly available")', async () => {
     const sb = makeSupabase()
     vi.mocked(createAdminClient).mockReturnValue(sb.client)
 
-    await PUT(makeReq('/api/captain/availability', { date: '2026-09-05', status: 'prefer_not', startTime: '14:00', endTime: '18:00' }))
-    expect(sb.upserts[0]).toMatchObject({ status: 'prefer_not', start_time: '14:00', end_time: '18:00' })
+    const res = await PUT(makeReq('/api/captain/availability', { date: '2026-09-05', status: 'prefer_not' }))
+    expect(res.status).toBe(400)
+    expect(sb.upserts).toHaveLength(0)
   })
 
   it('forces the time window to null on "unavailable" — the whole day is out regardless of what was sent', async () => {

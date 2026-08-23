@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { ChevronLeft, ChevronRight, Loader2, CheckCircle2, CircleDashed, AlertTriangle, CalendarClock } from 'lucide-react'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { amsterdamToday } from '@/lib/utils'
-import type { CaptainMonthStatus, DayAvailability, AvailabilityStatusValue } from '@/lib/scheduling/availability-status'
+import { availabilityDisplay, type AvailabilityDisplay, type CaptainMonthStatus, type DayAvailability } from '@/lib/scheduling/availability-status'
 
 interface StatusResponse {
   month: string
@@ -16,18 +16,22 @@ interface StatusResponse {
   nextRequest: { targetMonth: string; triggerDate: string; daysUntil: number }
 }
 
-// Same three states and colors as the captain's own calendar
+// Same availabilityDisplay() call as the captain's own calendar
 // (captain/availability/page.tsx) — an admin looking at both must never see
-// a different color mean a different thing.
-const CELL_STYLE: Record<AvailabilityStatusValue, string> = {
+// a different color mean a different thing. 'partly_available' (Beer,
+// 2026-08-23: "available, or partly available") is derived from the hours
+// window, not a status a captain picks directly.
+const CELL_STYLE: Record<AvailabilityDisplay, string> = {
   available: 'bg-emerald-100 border-emerald-200',
-  prefer_not: 'bg-amber-100 border-amber-200',
+  partly_available: 'bg-amber-100 border-amber-200',
   unavailable: 'bg-red-100 border-red-200',
+  unset: '',
 }
-const STATUS_LABEL: Record<AvailabilityStatusValue, string> = {
+const STATUS_LABEL: Record<AvailabilityDisplay, string> = {
   available: 'Available',
-  prefer_not: 'Prefer not',
+  partly_available: 'Partly available',
   unavailable: 'Unavailable',
+  unset: 'Not marked',
 }
 const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -180,19 +184,29 @@ export function AvailabilityTab() {
                         {Number(day.date.slice(-2))} <span className="text-zinc-400">{weekdayShort(day.date)}</span>
                       </td>
                       {captains.map(c => {
-                        const status = day.byStaffId[c.staffId]
+                        const entry = day.byStaffId[c.staffId]
+                        const display = availabilityDisplay(entry)
+                        if (display === 'unset') {
+                          return (
+                            <td key={c.staffId} className="px-2 py-1.5 text-center">
+                              <span className="text-zinc-200">—</span>
+                            </td>
+                          )
+                        }
+                        // Partly available: show the actual window, not just the
+                        // label — Beer, 2026-08-23: "if people make it red we know
+                        // not to call them for last minutes", the amber case is
+                        // exactly where the hours are the decision-relevant fact.
+                        const cellText =
+                          display === 'partly_available' && entry ? `${entry.startTime}–${entry.endTime}` : STATUS_LABEL[display]
                         return (
                           <td key={c.staffId} className="px-2 py-1.5 text-center">
-                            {status ? (
-                              <span
-                                title={`${c.name}: ${STATUS_LABEL[status]}`}
-                                className={`inline-block w-full min-w-[2.5rem] rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${CELL_STYLE[status]}`}
-                              >
-                                {STATUS_LABEL[status]}
-                              </span>
-                            ) : (
-                              <span className="text-zinc-200">—</span>
-                            )}
+                            <span
+                              title={`${c.name}: ${STATUS_LABEL[display]}`}
+                              className={`inline-block w-full min-w-[2.5rem] rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${CELL_STYLE[display]}`}
+                            >
+                              {cellText}
+                            </span>
                           </td>
                         )
                       })}
@@ -203,7 +217,7 @@ export function AvailabilityTab() {
             </table>
           </div>
           <div className="flex items-center gap-4 mt-2 text-[11px] text-zinc-400">
-            {(['available', 'prefer_not', 'unavailable'] as const).map(s => (
+            {(['available', 'partly_available', 'unavailable'] as const).map(s => (
               <span key={s} className="flex items-center gap-1.5">
                 <span className={`inline-block w-3 h-3 rounded border ${CELL_STYLE[s]}`} />
                 {STATUS_LABEL[s]}
