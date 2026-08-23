@@ -12,9 +12,9 @@ const BOOKING = {
   id: 'b1',
   status: 'confirmed',
   created_at: '2026-08-01T10:00:00Z',
-  extras_selected: [],
-  catering_email_sent_at: null,
-  catering_confirmed_at: null,
+  extras_selected: [] as Array<{ name: string; category: string; amount_cents: number; quantity: number }>,
+  catering_email_sent_at: null as string | null,
+  catering_confirmed_at: null as string | null,
   fareharbor_availability_pk: 42,
 }
 

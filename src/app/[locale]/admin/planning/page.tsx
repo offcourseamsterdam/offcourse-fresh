@@ -1,9 +1,11 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Loader2, RefreshCw, ChevronLeft, ChevronRight, List, Plus, X, Ghost, Search } from 'lucide-react'
+import { Loader2, RefreshCw, ChevronLeft, ChevronRight, List, Plus, X, Ghost, Search, UserCheck, UserX, Phone, UtensilsCrossed, MessageCircle } from 'lucide-react'
+import { useVoice } from '@/components/admin/VoiceProvider'
+import { normalizePhoneE164 } from '@/lib/phone/normalize'
 import { adminMutate } from '@/hooks/useAdminSave'
 import { BookingDetailRow } from '@/components/admin/BookingDetailRow'
 import { GhostActivityPanel } from './GhostActivityPanel'
@@ -14,8 +16,8 @@ import { useBookingsChangedSignal } from '@/hooks/useBookingsChangedSignal'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { fmtAdminTime } from '@/lib/admin/format'
 import { getWeekStart, addDays, weekDateStrings, formatWeekRangeLabel, amsDateString } from '@/lib/admin/week'
-import { groupBookingsForPlanning, splitGroupsByBoat, resolveBoatForGroup, boatAccentClasses, type PlanningGroup } from '@/lib/admin/planning-groups'
-import { topPx, blockMinHeightPx, hourMarks, GRID_HEIGHT_PX, RAIL_WIDTH_PX } from '@/lib/admin/planning-time-grid'
+import { groupBookingsForPlanning, splitGroupsByBoat, resolveBoatForGroup, type PlanningGroup } from '@/lib/admin/planning-groups'
+import { topPx, blockMinHeightPx, hourMarks, GRID_HEIGHT_PX, RAIL_WIDTH_PX, leftPx, blockMinWidthPx, hourMarksRow, GRID_WIDTH_PX, DATE_RAIL_WIDTH_PX } from '@/lib/admin/planning-time-grid'
 import type { SharedCapacityResult } from '@/lib/admin/shared-capacity'
 import { filterCateringItems } from '@/lib/catering/filter'
 import type { AdminBooking } from '@/lib/admin/types'
@@ -30,95 +32,339 @@ function timeRangeLabel(startTime: string | null, endTime: string | null): strin
   return hasRealEnd ? `${start} – ${fmtAdminTime(endTime)}` : start
 }
 
-/** One departure — the shared header (time, cruise, boat/duration) plus one
- *  row per booking (party) on it. Reused both in the plain day list and
- *  inside a per-boat sub-column.
+/** One departure card, built around the only question this page exists to
+ *  answer: *does this sailing have a captain, and what does that captain need
+ *  to know?* Everything on the card earns its place against that job —
  *
- *  `compact` (set when a day is split into boat sub-columns, ~100-150px
- *  wide) drops everything that's redundant with context already visible
- *  elsewhere — the category and boat/duration line repeat what the column
- *  header already says — and everything secondary (extras, notes, status)
- *  that's one click away in the detail panel. What's left (start time,
- *  accent color, guest name + count) always fits without truncating to a
- *  single letter. Every booking row stays individually clickable either way.
+ *    when      time range, the anchor for moving work around
+ *    what      boat + private/shared, the two things that decide who can run it
+ *    WHO       the captain strip — assigned (green) or needs one (amber).
+ *              Deliberately the loudest element: an unassigned sailing is the
+ *              only thing on this page that requires an action.
+ *    load      parties + guests (+ spots left on a shared departure), for
+ *              capacity and upsell decisions
+ *    per party name, size, phone, catering and the guest's own note — what
+ *              the crew actually needs on the day, and how to reach them
  *
- *  `capacity` (shared cruises only) is a live FareHarbor lookup, not
- *  anything stored — see the shared-capacity route. `spotsLeft` is hard
- *  data straight from FareHarbor; `boatGuess` is an inferred hint (capacity
- *  math, not a real resource ID — FareHarbor doesn't expose one), so it
- *  renders muted and clearly separate from the real number. */
-function DepartureBlock({ group, onSelectBooking, compact = false, capacity, captainByBookingId }: { group: PlanningGroup; onSelectBooking: (id: string) => void; compact?: boolean; capacity?: SharedCapacityResult; captainByBookingId?: Map<string, { name: string; startAt: string; endAt: string }> }) {
+ *  Everything else (email, payment, source, status chips for normal bookings)
+ *  is one click away in the detail modal and would only dilute the scan.
+ *
+ *  `dense` (a day split into per-boat sub-columns) tightens spacing only — it
+ *  no longer hides fields, because the columns are now wide enough to read.
+ *
+ *  `capacity` (shared cruises only) is a live FareHarbor lookup, not anything
+ *  stored — see the shared-capacity route. */
+function DepartureBlock({ group, onSelectBooking, onSelectGroup, onContact, dense = false, capacity, boatName, captainByBookingId }: { group: PlanningGroup; onSelectBooking: (id: string) => void; onSelectGroup?: (group: PlanningGroup) => void; onContact: (booking: AdminBooking, mode: ContactMode) => void; dense?: boolean; capacity?: SharedCapacityResult; boatName?: string | null; captainByBookingId?: Map<string, { name: string; startAt: string; endAt: string }> }) {
   const first = group.bookings[0]
   const isMulti = group.bookings.length > 1
+  // A SHARED departure never lists names on the card — not even when only one
+  // party has booked so far. A lone "Jason Tully" reads as "one person on a
+  // boat" when it's really one booking of two people on a twelve-seat shared
+  // cruise, and it goes stale the moment a second party books. What a planner
+  // needs here is the load (parties + guests + spots left); who's actually on
+  // board is one click away in the group modal. Private cruises are the
+  // opposite — one party IS the whole boat, so the name stays.
+  const rosterCollapsed = first.category === 'shared'
   // Any booking in this departure resolves the same shift/captain — a shared
   // cruise's several bookings all ride the same boat with the same captain.
   const captain = group.bookings.map(b => captainByBookingId?.get(b.id)).find(Boolean)
   const crewCall = captain ? fmtAdminTime(new Date(new Date(captain.startAt).getTime() - 60 * 60_000).toISOString()) : null
+  const categoryLabel = first.category === 'private' ? 'Private' : first.category === 'shared' ? 'Shared' : null
+  // Boat identity is text now, not a coloured edge — a name survives being
+  // scanned, printed or described out loud in a way a colour bar doesn't.
+  const subtitle = [boatName && boatName !== 'Other' ? boatName : null, categoryLabel].filter(Boolean).join(' · ')
+  const pad = dense ? 'py-0.5' : 'py-1'
+
   return (
-    <div className="rounded-md border border-zinc-200 bg-white h-full overflow-hidden shadow-sm">
-      <div className={`px-2.5 border-b border-zinc-100 bg-zinc-50/60 ${compact ? 'py-1' : 'pt-2 pb-1.5'}`}>
-        <p className="font-semibold text-zinc-900 text-xs">
-          {compact ? fmtAdminTime(first.start_time) : timeRangeLabel(first.start_time, first.end_time)}
-        </p>
-        {captain && (
-          <p className={`truncate font-medium text-teal-700 ${compact ? 'text-[10px]' : 'text-[11px]'}`} title={`Crew call ${crewCall}`}>
-            🧑‍✈️ {compact ? captain.name.split(' ')[0] : `${captain.name} · from ${crewCall}`}
-          </p>
-        )}
-        {!compact && (
-          <>
-            <p className="truncate text-zinc-700 text-xs">
-              {first.category === 'private' ? 'Private' : first.category === 'shared' ? 'Shared' : '—'}
-            </p>
-            {first.customer_type_name && (
-              <p className="truncate text-zinc-400 text-[11px]">{first.customer_type_name}</p>
-            )}
-          </>
-        )}
-        {capacity && (
-          <p className="text-[11px] font-medium text-emerald-700">
-            {compact ? `${capacity.spotsLeft} left` : `${capacity.spotsLeft} spots left`}
-            {!compact && capacity.boatGuess && <span className="text-zinc-400 font-normal"> · likely {capacity.boatGuess}</span>}
-          </p>
-        )}
-        {isMulti && (
-          <p className="text-[11px] font-medium text-indigo-600 mt-0.5">
-            {compact ? `${group.bookings.length} bookings` : `${group.bookings.length} bookings · ${group.totalGuestCount} guests total`}
-          </p>
-        )}
+    // h-full: the card fills its slot exactly, so its height on the grid IS the
+    // cruise's duration — a 1.5h cruise reads as 1.5h of water at a glance,
+    // whether the card carries three lines or ten. Content that doesn't fit is
+    // clipped rather than stretching the card past the cruise's end time.
+    <div className="h-full rounded-lg border border-zinc-200 bg-white overflow-hidden shadow-sm">
+      {/* When + which boat */}
+      <div
+        onClick={isMulti ? () => onSelectGroup?.(group) : undefined}
+        className={`flex items-baseline justify-between gap-2 px-2.5 ${dense ? 'py-1' : 'py-1.5'} border-b border-zinc-100 bg-zinc-50/70 ${isMulti ? 'cursor-pointer hover:bg-zinc-100 transition-colors' : ''}`}
+      >
+        <span className="font-semibold text-zinc-900 text-xs tabular-nums whitespace-nowrap">
+          {timeRangeLabel(first.start_time, first.end_time)}
+        </span>
+        {subtitle && <span className="text-[11px] text-zinc-500 truncate">{subtitle}</span>}
       </div>
-      <div className="divide-y divide-zinc-100">
-        {group.bookings.map(b => {
-          const cateringItems = filterCateringItems(b.extras_selected ?? [])
-          const showStatus = b.status !== 'confirmed' && b.status !== 'booked'
-          return (
-            <button
-              key={b.id}
-              onClick={() => onSelectBooking(b.id)}
-              className={`w-full text-left px-2.5 text-xs hover:bg-zinc-50 transition-colors ${compact ? 'py-1' : 'py-1.5'}`}
-            >
-              <p className="text-zinc-900 font-medium truncate">
-                {compact
-                  ? `${b.customer_name ?? '—'} · ${b.guest_count ?? '—'}`
-                  : `${b.customer_name ?? '—'} · ${b.guest_count ?? '—'} guest${b.guest_count !== 1 ? 's' : ''}`}
-              </p>
-              {!compact && cateringItems.length > 0 && (
-                <p className="truncate text-zinc-500">
-                  🍽️ {cateringItems.map(i => i.name).join(', ')}
-                </p>
-              )}
-              {!compact && b.guest_note && (
-                <p className="truncate text-zinc-400 italic">&ldquo;{b.guest_note}&rdquo;</p>
-              )}
-              {!compact && showStatus && (
-                <div className="mt-1 flex items-center gap-1 flex-wrap">
-                  <BookingStatusBadge status={b.status} />
+
+      {/* Who's running it — the actionable line */}
+      {captain ? (
+        <div className={`flex items-center gap-1.5 px-2.5 ${pad} border-b border-emerald-100 bg-emerald-50 text-[11px]`}>
+          <UserCheck className="w-3 h-3 text-emerald-600 shrink-0" />
+          <span className="font-medium text-emerald-800 truncate">{captain.name}</span>
+          {crewCall && <span className="text-emerald-600/80 tabular-nums whitespace-nowrap ml-auto">from {crewCall}</span>}
+        </div>
+      ) : (
+        <div className={`flex items-center gap-1.5 px-2.5 ${pad} border-b border-amber-200 bg-amber-50 text-[11px]`}>
+          <UserX className="w-3 h-3 text-amber-600 shrink-0" />
+          <span className="font-semibold text-amber-800">Needs a captain</span>
+        </div>
+      )}
+
+      {/* How full it is — and, for a shared departure, the entry point into
+          the roster collapsed away below, so this line doubles as "tap to see
+          who's on board". Always rendered for a shared cruise: load IS the
+          headline on a boat several parties share. */}
+      {(rosterCollapsed || isMulti || capacity) && (
+        <div
+          onClick={rosterCollapsed ? () => onSelectGroup?.(group) : undefined}
+          className={`flex items-center gap-x-2 flex-wrap px-2.5 ${pad} border-b border-zinc-100 text-[11px] ${rosterCollapsed ? 'cursor-pointer hover:bg-zinc-50 transition-colors' : ''}`}
+        >
+          {(rosterCollapsed || isMulti) && (
+            <span className="font-medium text-indigo-600">
+              {group.bookings.length} part{group.bookings.length === 1 ? 'y' : 'ies'} · {group.totalGuestCount} guest{group.totalGuestCount === 1 ? '' : 's'}
+            </span>
+          )}
+          {capacity && <span className="font-medium text-emerald-700">{capacity.spotsLeft} spots left</span>}
+        </div>
+      )}
+
+      {/* Each party on board — collapsed away above for a busy shared
+          departure; see rosterCollapsed. */}
+      {!rosterCollapsed && (
+        <div className="divide-y divide-zinc-100">
+          {group.bookings.map(b => {
+            const cateringItems = filterCateringItems(b.extras_selected ?? [])
+            const showStatus = b.status !== 'confirmed' && b.status !== 'booked'
+            return (
+              // A <div>, not a <button>: the call/WhatsApp buttons below are
+              // themselves interactive, and a button can't nest a button.
+              <div
+                key={b.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => onSelectBooking(b.id)}
+                onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && onSelectBooking(b.id)}
+                className={`w-full text-left px-2.5 ${dense ? 'py-1' : 'py-1.5'} text-xs hover:bg-zinc-50 transition-colors cursor-pointer`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-zinc-900 truncate">{b.customer_name ?? '—'}</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-zinc-500 tabular-nums whitespace-nowrap">
+                      {b.guest_count ?? '—'} guest{b.guest_count !== 1 ? 's' : ''}
+                    </span>
+                    {/* Icons, never the raw digits — the crew calls and
+                        messages through the numbers we already dial from
+                        (softphone) and chat from (WhatsApp), not by reading
+                        a phone number off the grid and dialling by hand. */}
+                    <ContactActions booking={b} onContact={onContact} />
+                  </div>
                 </div>
-              )}
-            </button>
-          )
-        })}
+                {/* Catering and the guest's own note wrap to two lines rather
+                    than ellipsing: "Bites Box Small (1-2 gu…" tells the crew
+                    nothing, and these two lines are the whole reason a captain
+                    reads the card before the day starts. Full text on hover. */}
+                {cateringItems.length > 0 && (
+                  <p className="flex items-start gap-1 text-zinc-600" title={cateringItems.map(i => i.name).join(', ')}>
+                    <UtensilsCrossed className="w-3 h-3 mt-[3px] shrink-0" />
+                    <span className="line-clamp-2">{cateringItems.map(i => i.name).join(', ')}</span>
+                  </p>
+                )}
+                {b.guest_note && (
+                  <p className="line-clamp-2 text-zinc-400 italic" title={b.guest_note}>
+                    &ldquo;{b.guest_note}&rdquo;
+                  </p>
+                )}
+                {showStatus && (
+                  <div className="mt-1 flex items-center gap-1 flex-wrap">
+                    <BookingStatusBadge status={b.status} />
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export type ContactMode = 'call' | 'message'
+
+/** Call and WhatsApp, icon-only — never the raw number, so a busy card doesn't
+ *  turn into a phone book. Neither icon acts directly: both open the contact
+ *  drawer, which is where the number, the guest's booking and the actual
+ *  call/message controls live. `stopPropagation` on both, since they sit
+ *  inside a clickable party row that would otherwise also fire. */
+function ContactActions({ booking, onContact }: { booking: AdminBooking; onContact: (booking: AdminBooking, mode: ContactMode) => void }) {
+  if (!booking.customer_phone || !normalizePhoneE164(booking.customer_phone)) return null
+  const open = (mode: ContactMode) => (e: React.MouseEvent) => {
+    e.stopPropagation()
+    onContact(booking, mode)
+  }
+  return (
+    <span className="flex items-center gap-0.5">
+      <button
+        type="button"
+        title={`Call ${booking.customer_name ?? 'guest'}`}
+        onClick={open('call')}
+        className="p-1 rounded-md text-teal-700 hover:bg-teal-100 transition-colors"
+      >
+        <Phone className="w-3 h-3" />
+      </button>
+      <button
+        type="button"
+        title={`Message ${booking.customer_name ?? 'guest'}`}
+        onClick={open('message')}
+        className="p-1 rounded-md text-emerald-700 hover:bg-emerald-100 transition-colors"
+      >
+        <MessageCircle className="w-3 h-3" />
+      </button>
+    </span>
+  )
+}
+
+/**
+ * Full-height drawer from the right for reaching one guest — the surface both
+ * contact icons open. A drawer rather than a modal because reaching a guest is
+ * a task you do WHILE reading the week: the grid stays visible and in place
+ * behind it, so you don't lose your position on the board mid-call.
+ *
+ * Calling goes through the softphone we already run in the admin shell
+ * (VoiceProvider), the same one the inbox dials from — the number never has to
+ * be read off the screen and typed into a phone.
+ */
+function ContactDrawer({ booking, mode, onClose }: { booking: AdminBooking; mode: ContactMode; onClose: () => void }) {
+  const voice = useVoice()
+  const e164 = booking.customer_phone ? normalizePhoneE164(booking.customer_phone) : null
+  const inCall = !!voice && voice.state !== 'idle'
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
+      <aside
+        className="bg-white w-full max-w-sm h-full shadow-xl flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-zinc-100">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-zinc-900 truncate">{booking.customer_name ?? 'Guest'}</h2>
+            <p className="text-xs text-zinc-400 truncate">
+              {timeRangeLabel(booking.start_time, booking.end_time)} · {booking.guest_count ?? '—'} guest{booking.guest_count === 1 ? '' : 's'}
+            </p>
+            {booking.listing_title && <p className="text-xs text-zinc-400 truncate">{booking.listing_title}</p>}
+          </div>
+          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600 transition-colors shrink-0" aria-label="Close">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 mb-1">Phone</p>
+            <p className="text-sm text-zinc-900 tabular-nums">{booking.customer_phone}</p>
+          </div>
+
+          {/* BOTH ways to reach the guest, always — which icon you clicked only
+              decides which one leads. Once the drawer is open you've already
+              got the guest in front of you, and "they didn't pick up, message
+              them" shouldn't mean closing this and starting again. */}
+          {(mode === 'call' ? ['call', 'message'] : ['message', 'call']).map(action =>
+            action === 'call' ? (
+              <div key="call" className="space-y-2">
+                {voice ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={!e164 || inCall}
+                      onClick={() => e164 && voice.startCall(e164)}
+                      className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-teal-600 px-4 py-3 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Phone className="w-4 h-4" />
+                      {inCall ? 'Call in progress…' : 'Call now'}
+                    </button>
+                    <p className="text-xs text-zinc-400">
+                      {inCall
+                        ? 'Answer and hang up on the phone widget in the corner.'
+                        : 'Rings through the admin softphone — the same line the inbox calls from.'}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-xs text-zinc-500">
+                    Calling isn&apos;t set up in this environment, so there&apos;s no line to dial from here.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div key="message" className="space-y-2">
+                <a
+                  href={e164 ? `https://wa.me/${e164.replace('+', '')}` : undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-700 transition-colors"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  Open in WhatsApp
+                </a>
+                {/* Honest about which number this comes from — this opens YOUR
+                    WhatsApp, not the business inbox thread, so the guest sees a
+                    different sender than they would from a reply in the inbox. */}
+                <p className="text-xs text-zinc-400">
+                  Opens WhatsApp on this device. Replies land in your own WhatsApp, not the shared inbox.
+                </p>
+              </div>
+            ),
+          )}
+        </div>
+      </aside>
+    </div>
+  )
+}
+
+/** Departures of one kind on a day. Counts GROUPS, not bookings — three
+ *  parties sharing one sailing is one departure to crew and one slot of water. */
+function countDepartures(groups: PlanningGroup[], category: 'shared' | 'private'): number {
+  return groups.filter(g => g.bookings[0]?.category === category).length
+}
+
+/** The day-name block (Mon / 17 Aug / who's available), used on mobile only —
+ *  each day stacks full-width there with nothing to freeze against, so it
+ *  sits inside its own day card. The desktop row layout has its own compact
+ *  date-rail cell instead (see DayRow) since there's no room here for
+ *  wrapped name chips at row height. */
+function DayHeader({ label, dateObj, isToday, availableStaff, sharedCount = 0, privateCount = 0, className = '' }: { label: string; dateObj: Date; isToday: boolean; availableStaff: string[]; sharedCount?: number; privateCount?: number; className?: string }) {
+  return (
+    <div className={`px-3 py-2 border-b ${isToday ? 'border-indigo-200 bg-indigo-50' : 'border-zinc-200 bg-zinc-50'} ${className}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className={`text-xs font-semibold uppercase tracking-wider ${isToday ? 'text-indigo-700' : 'text-zinc-500'}`}>
+            {label}
+          </p>
+          <p className={`text-sm font-medium ${isToday ? 'text-indigo-900' : 'text-zinc-900'}`}>
+            {dateObj.getDate()} {dateObj.toLocaleDateString('en-GB', { month: 'short', timeZone: 'Europe/Amsterdam' })}
+          </p>
+        </div>
+        {/* The day's shape at a glance: how many DEPARTURES of each kind, not
+            how many bookings — several parties sharing one sailing is still
+            one trip to crew and one slot of water. */}
+        {(sharedCount > 0 || privateCount > 0) && (
+          <div className="text-right text-[10px] leading-tight text-zinc-500 shrink-0">
+            {privateCount > 0 && (
+              <p><span className="font-semibold tabular-nums text-zinc-700">{privateCount}</span> private</p>
+            )}
+            {sharedCount > 0 && (
+              <p><span className="font-semibold tabular-nums text-zinc-700">{sharedCount}</span> shared</p>
+            )}
+          </div>
+        )}
       </div>
+      {availableStaff.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {availableStaff.map(name => (
+            <span
+              key={name}
+              title={`${name} — available`}
+              className="text-[10px] leading-tight px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium truncate max-w-full"
+            >
+              {name}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -199,7 +445,7 @@ function computeCaptainWindows(
  * whether it has a label, or its hours would drift out of sync with the
  * shared hour rail and every other (unlabeled) day column.
  */
-function TimeGridColumn({ groups, onSelectBooking, boatLabel, compact = false, sharedCapacity, captainByBookingId }: { groups: PlanningGroup[]; onSelectBooking: (id: string) => void; boatLabel?: string; compact?: boolean; sharedCapacity?: Record<number, SharedCapacityResult>; captainByBookingId?: Map<string, { name: string; startAt: string; endAt: string }> }) {
+function TimeGridColumn({ groups, onSelectBooking, onSelectGroup, onContact, boatLabel, compact = false, sharedCapacity, captainByBookingId }: { groups: PlanningGroup[]; onSelectBooking: (id: string) => void; onSelectGroup?: (group: PlanningGroup) => void; onContact: (booking: AdminBooking, mode: ContactMode) => void; boatLabel?: string; compact?: boolean; sharedCapacity?: Record<number, SharedCapacityResult>; captainByBookingId?: Map<string, { name: string; startAt: string; endAt: string }> }) {
   const captainWindows = useMemo(() => computeCaptainWindows(groups, captainByBookingId), [groups, captainByBookingId])
   return (
     <div className="relative" style={{ height: GRID_HEIGHT_PX }}>
@@ -222,30 +468,216 @@ function TimeGridColumn({ groups, onSelectBooking, boatLabel, compact = false, s
       )}
       {groups.map(group => {
         const first = group.bookings[0]
-        const boat = resolveBoatForGroup(group, sharedCapacity) ?? 'Other'
-        const accent = boatAccentClasses(boat)
+        const boat = resolveBoatForGroup(group, sharedCapacity)
         return (
           <div
             key={group.key}
-            className="absolute left-1.5 right-1 z-10 hover:z-20 transition-shadow"
+            className="absolute left-1 right-1 z-10 hover:z-30"
+            // height, never minHeight: a card must stop exactly at the cruise's
+            // real end time, or the grid stops being readable as "when is the
+            // water free". Room for content comes from the grid's scale
+            // (PX_PER_HOUR) instead — see planning-time-grid.ts.
             style={{ top: topPx(first.start_time), height: blockMinHeightPx(first.start_time, first.end_time) }}
           >
-            {/* height (not minHeight): the block must stop exactly at the
-                cruise's real end time on the grid — content that doesn't fit
-                is clipped (via overflow-hidden below) rather than pushing the
-                box past its true end line. */}
-            <div className={`h-full border-l-2 pl-1 ${accent.border}`}>
-              <DepartureBlock
-                group={group}
-                onSelectBooking={onSelectBooking}
-                compact={compact}
-                capacity={first.category === 'shared' && first.fareharbor_availability_pk ? sharedCapacity?.[first.fareharbor_availability_pk] : undefined}
-                captainByBookingId={captainByBookingId}
-              />
-            </div>
+            <DepartureBlock
+              group={group}
+              onSelectBooking={onSelectBooking}
+              onSelectGroup={onSelectGroup}
+              onContact={onContact}
+              dense={compact}
+              boatName={boat}
+              capacity={first.category === 'shared' && first.fareharbor_availability_pk ? sharedCapacity?.[first.fareharbor_availability_pk] : undefined}
+              captainByBookingId={captainByBookingId}
+            />
           </div>
         )
       })}
+    </div>
+  )
+}
+
+// ── Desktop row layout: dates on the y-axis, time across the top ───────────
+//
+// The vertical grid above (TimeGridColumn) gives one day a full column
+// 09:00–00:00 tall — great for reading one day's detail, expensive when you
+// want to scan a whole week: 15 hours * 100px is a lot of scrolling per day.
+// This is the same data, rotated 90°: one THIN ROW per day, time flowing
+// left-to-right along the top instead of top-to-bottom down the side. A
+// departure becomes a small chip (time + guest count + captain status) —
+// full detail is one click away in the same booking/group modal the
+// vertical cards already open, never lost, just not shown inline.
+
+/** Vertical hour gridlines for one row-lane — the row-layout counterpart to
+ *  GridLines (which draws horizontal lines for the vertical column layout). */
+function RowGridLines() {
+  return (
+    <>
+      {hourMarksRow().map(m => (
+        <div key={m.hour} className="absolute top-0 bottom-0 border-l border-zinc-100" style={{ left: m.leftPx }} />
+      ))}
+    </>
+  )
+}
+
+/** One departure, compacted to a single-line chip that fits inside a short
+ *  row: a captain-status icon, the start time, and (space permitting) a
+ *  guest label. Everything else that DepartureBlock shows inline — names,
+ *  phone/WhatsApp, catering, guest notes — is in the title tooltip on hover
+ *  and the full booking/group modal on click, per Beer's call on the
+ *  compact-chip vs full-card tradeoff (2026-08-23). */
+function CompactDepartureChip({
+  group, onSelectBooking, onSelectGroup, boatName, capacity, captainByBookingId,
+}: {
+  group: PlanningGroup
+  onSelectBooking: (id: string) => void
+  onSelectGroup: (group: PlanningGroup) => void
+  boatName?: string
+  capacity?: SharedCapacityResult
+  captainByBookingId?: Map<string, { name: string; startAt: string; endAt: string }>
+}) {
+  const first = group.bookings[0]
+  const isMulti = group.bookings.length > 1
+  const isShared = first.category === 'shared'
+  const captain = group.bookings.map(b => captainByBookingId?.get(b.id)).find(Boolean)
+  const guestLabel = isShared
+    ? `${group.bookings.length}p·${group.totalGuestCount}g`
+    : (first.customer_name ?? '—')
+
+  const detailLines = [
+    timeRangeLabel(first.start_time, first.end_time),
+    [boatName && boatName !== 'Other' ? boatName : null, first.category === 'private' ? 'Private' : isShared ? 'Shared' : null].filter(Boolean).join(' · '),
+    captain ? `Captain: ${captain.name}` : 'Needs a captain',
+    isShared
+      ? `${group.bookings.length} part${group.bookings.length === 1 ? 'y' : 'ies'} · ${group.totalGuestCount} guest${group.totalGuestCount === 1 ? '' : 's'}${capacity ? ` · ${capacity.spotsLeft} spots left` : ''}`
+      : group.bookings.map(b => `${b.customer_name ?? '—'} (${b.guest_count ?? '—'} guests)`).join(', '),
+  ].filter(Boolean)
+
+  return (
+    <button
+      type="button"
+      onClick={() => (isMulti ? onSelectGroup(group) : onSelectBooking(first.id))}
+      title={detailLines.join('\n')}
+      style={{ left: leftPx(first.start_time), width: blockMinWidthPx(first.start_time, first.end_time) }}
+      className={`absolute top-0.5 bottom-0.5 z-10 hover:z-30 flex items-center gap-1 px-1.5 rounded border text-[10px] font-medium overflow-hidden whitespace-nowrap transition-colors ${
+        captain
+          ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+          : 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100'
+      }`}
+    >
+      {captain ? <UserCheck className="w-2.5 h-2.5 shrink-0" /> : <UserX className="w-2.5 h-2.5 shrink-0" />}
+      <span className="tabular-nums shrink-0">{fmtAdminTime(first.start_time)}</span>
+      <span className="truncate">{guestLabel}</span>
+    </button>
+  )
+}
+
+/** One lane of chips — a whole day when it isn't split by boat, or one boat's
+ *  lane when it is (stacked lanes within the day's row instead of the
+ *  vertical layout's side-by-side sub-columns, since a row has no spare
+ *  width to spend on a second column). Same fixed-width-spanning-the-full-
+ *  grid contract as TimeGridColumn, just on the horizontal axis. */
+function TimeGridRowLane({
+  groups, onSelectBooking, onSelectGroup, boatLabel, sharedCapacity, captainByBookingId,
+}: {
+  groups: PlanningGroup[]
+  onSelectBooking: (id: string) => void
+  onSelectGroup: (group: PlanningGroup) => void
+  boatLabel?: string
+  sharedCapacity?: Record<number, SharedCapacityResult>
+  captainByBookingId?: Map<string, { name: string; startAt: string; endAt: string }>
+}) {
+  const captainWindows = useMemo(() => computeCaptainWindows(groups, captainByBookingId), [groups, captainByBookingId])
+  return (
+    <div className="relative h-8 shrink-0" style={{ width: GRID_WIDTH_PX }}>
+      <RowGridLines />
+      {captainWindows.map(w => (
+        <div
+          key={w.name}
+          className="absolute top-0 bottom-0 z-[1] bg-emerald-100/70 border-x border-emerald-200 pointer-events-none"
+          style={{ left: leftPx(w.startIso), width: blockMinWidthPx(w.startIso, w.endIso) }}
+          title={`${w.name} working ${fmtAdminTime(w.startIso)}–${fmtAdminTime(w.endIso)}`}
+        />
+      ))}
+      {boatLabel && (
+        <p className="absolute top-0 left-0.5 z-20 text-[8px] font-semibold uppercase tracking-wider text-zinc-400 pointer-events-none">
+          {boatLabel}
+        </p>
+      )}
+      {groups.map(group => {
+        const boat = resolveBoatForGroup(group, sharedCapacity)
+        const first = group.bookings[0]
+        return (
+          <CompactDepartureChip
+            key={group.key}
+            group={group}
+            onSelectBooking={onSelectBooking}
+            onSelectGroup={onSelectGroup}
+            boatName={boatLabel ?? boat ?? undefined}
+            capacity={first.category === 'shared' && first.fareharbor_availability_pk ? sharedCapacity?.[first.fareharbor_availability_pk] : undefined}
+            captainByBookingId={captainByBookingId}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+/** One day, as a row: a compact date cell (sticky left, so it stays readable
+ *  however far right the grid scrolls) plus one lane per boat the day needs.
+ *  Counts and staff availability that DayHeader shows as wrapped chips
+ *  become a single tooltip line here — there's no vertical room in a
+ *  row this short to show them inline without inflating every row back
+ *  toward the height this layout exists to avoid. */
+function DayRow({
+  label, dateObj, isToday, dayGroups, sharedCapacity, availableStaff, captainByBookingId, onSelectBooking, onSelectGroup,
+}: {
+  label: string
+  dateObj: Date
+  isToday: boolean
+  dayGroups: PlanningGroup[]
+  sharedCapacity?: Record<number, SharedCapacityResult>
+  availableStaff: string[]
+  captainByBookingId?: Map<string, { name: string; startAt: string; endAt: string }>
+  onSelectBooking: (id: string) => void
+  onSelectGroup: (group: PlanningGroup) => void
+}) {
+  const boatColumns = splitGroupsByBoat(dayGroups, sharedCapacity)
+  const isSplit = boatColumns.length > 1
+  const sharedCount = countDepartures(dayGroups, 'shared')
+  const privateCount = countDepartures(dayGroups, 'private')
+  const countsLabel = [privateCount > 0 ? `${privateCount} private` : null, sharedCount > 0 ? `${sharedCount} shared` : null].filter(Boolean).join(', ')
+  const staffLabel = availableStaff.length > 0 ? `${availableStaff.length} avail` : null
+
+  return (
+    <div className={`flex ${isToday ? 'bg-indigo-50/40' : ''}`}>
+      <div
+        className={`sticky left-0 z-20 shrink-0 flex flex-col justify-center gap-0.5 px-2 py-1 border-r ${isToday ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-zinc-100'}`}
+        style={{ width: DATE_RAIL_WIDTH_PX }}
+        title={[countsLabel, availableStaff.length > 0 ? `Available: ${availableStaff.join(', ')}` : null].filter(Boolean).join(' — ') || undefined}
+      >
+        <p className={`text-[9px] font-semibold uppercase tracking-wider leading-none ${isToday ? 'text-indigo-700' : 'text-zinc-400'}`}>{label}</p>
+        <p className={`text-xs font-medium leading-tight ${isToday ? 'text-indigo-900' : 'text-zinc-900'}`}>
+          {dateObj.getDate()} {dateObj.toLocaleDateString('en-GB', { month: 'short', timeZone: 'Europe/Amsterdam' })}
+        </p>
+        {(countsLabel || staffLabel) && (
+          <p className="text-[9px] leading-none text-zinc-400 truncate">
+            {countsLabel}
+            {countsLabel && staffLabel ? ' · ' : ''}
+            {staffLabel && <span className="text-emerald-600 font-medium">{staffLabel}</span>}
+          </p>
+        )}
+      </div>
+      <div className="flex flex-col divide-y divide-zinc-50">
+        {dayGroups.length === 0 ? (
+          <div className="h-8 shrink-0 flex items-center pl-2 text-[10px] text-zinc-300" style={{ width: GRID_WIDTH_PX }}>—</div>
+        ) : !isSplit ? (
+          <TimeGridRowLane groups={dayGroups} onSelectBooking={onSelectBooking} onSelectGroup={onSelectGroup} sharedCapacity={sharedCapacity} captainByBookingId={captainByBookingId} />
+        ) : (
+          boatColumns.map(col => (
+            <TimeGridRowLane key={col.boat} groups={col.groups} onSelectBooking={onSelectBooking} onSelectGroup={onSelectGroup} boatLabel={col.boat} sharedCapacity={sharedCapacity} captainByBookingId={captainByBookingId} />
+          ))
+        )}
+      </div>
     </div>
   )
 }
@@ -261,10 +693,34 @@ export default function PlanningPage() {
 
   const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()))
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  // A shared departure's own summary modal — one level up from a single
+  // booking's detail. Stores the booking ids at click time (not the
+  // PlanningGroup object itself) so the list stays correct across a refetch
+  // instead of holding a stale group reference.
+  const [expandedGroupIds, setExpandedGroupIds] = useState<string[] | null>(null)
+  // Which guest the contact drawer is open for, and whether it opened to call
+  // or to message. One piece of state for both — only ever one guest at a time.
+  const [contactTarget, setContactTarget] = useState<{ booking: AdminBooking; mode: ContactMode } | null>(null)
+  const openContact = (booking: AdminBooking, mode: ContactMode) => setContactTarget({ booking, mode })
+
+  // The frozen day-name strip and the hours below it are two separate
+  // horizontal scrollers (see the grid comment), so their scrollLeft has to be
+  // mirrored or the day names would drift out of line with their columns.
+  // Assigning scrollLeft fires the other one's onScroll, so guard against the
+  // resulting ping-pong by only writing when the value actually differs.
+  const headerScrollRef = useRef<HTMLDivElement>(null)
+  const bodyScrollRef = useRef<HTMLDivElement>(null)
+  function syncScroll(from: React.RefObject<HTMLDivElement | null>, to: React.RefObject<HTMLDivElement | null>) {
+    if (!from.current || !to.current) return
+    if (to.current.scrollLeft !== from.current.scrollLeft) to.current.scrollLeft = from.current.scrollLeft
+  }
   const [showGhostActivity, setShowGhostActivity] = useState(false)
   const [findingCaptains, setFindingCaptains] = useState(false)
   const [findCaptainsResult, setFindCaptainsResult] = useState<string | null>(null)
   const selectedBooking = bookings?.find(b => b.id === expandedId) ?? null
+  const expandedGroupBookings = expandedGroupIds
+    ? (bookings ?? []).filter(b => expandedGroupIds.includes(b.id))
+    : null
 
   const todayStr = useMemo(() => amsDateString(new Date()), [])
   const days = useMemo(() => weekDateStrings(weekStart), [weekStart])
@@ -325,7 +781,7 @@ export default function PlanningPage() {
   const { data: staffData, refresh: refreshStaffData } = useAdminFetch<{
     staff: { id: string; name: string }[]
     availability: { staff_id: string; date: string; status: string }[]
-    shifts: { staff_id: string | null; booking_id: string | null; start_at: string; end_at: string; staff: { name: string } | null }[]
+    shifts: { staff_id: string | null; booking_id: string | null; start_at: string; end_at: string; staff: { name: string } | null; fareharbor_availability_pk: number | null }[]
   }>(`/api/admin/scheduling/shifts?from=${days[0]}&to=${days[days.length - 1]}`)
 
   const availableStaffByDate = useMemo(() => {
@@ -344,14 +800,28 @@ export default function PlanningPage() {
   // shift, and their crew-call time (1h before departure — the same "arrive
   // by" moment notifyShiftAssigned DMs them). Only assigned shifts (a real
   // staff_id) produce a badge — an open shift shows nothing, same as today.
+  //
+  // A shared cruise's shift is never linked to one specific booking_id (several
+  // parties can share the same departure slot, so there's no single "the"
+  // booking) — generate-shifts.ts links it by fareharbor_availability_pk
+  // instead, leaving booking_id null. Match on that as a fallback, or a
+  // shared-cruise assignment silently never shows an overlay at all.
   const captainByBookingId = useMemo(() => {
     const map = new Map<string, { name: string; startAt: string; endAt: string }>()
+    const byAvailabilityPk = new Map<number, { name: string; startAt: string; endAt: string }>()
     for (const s of staffData?.shifts ?? []) {
-      if (!s.staff_id || !s.booking_id || !s.staff) continue
-      map.set(s.booking_id, { name: s.staff.name, startAt: s.start_at, endAt: s.end_at })
+      if (!s.staff_id || !s.staff) continue
+      const captain = { name: s.staff.name, startAt: s.start_at, endAt: s.end_at }
+      if (s.booking_id) map.set(s.booking_id, captain)
+      if (s.fareharbor_availability_pk) byAvailabilityPk.set(s.fareharbor_availability_pk, captain)
+    }
+    for (const b of bookings ?? []) {
+      if (map.has(b.id)) continue
+      const captain = b.fareharbor_availability_pk ? byAvailabilityPk.get(b.fareharbor_availability_pk) : undefined
+      if (captain) map.set(b.id, captain)
     }
     return map
-  }, [staffData])
+  }, [staffData, bookings])
 
   // Captains the proactive scheduler has actually assigned this week (auto
   // autonomy, no human click) — see docs/plans/2026-08-06 scheduling plan.
@@ -388,7 +858,7 @@ export default function PlanningPage() {
   return (
     <div className="p-8 max-w-none space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="shrink-0 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-900">Planning</h1>
           <p className="text-sm text-zinc-500 mt-1">Week view · {weekTotal} booking{weekTotal !== 1 ? 's' : ''} this week</p>
@@ -422,10 +892,10 @@ export default function PlanningPage() {
         </div>
       </div>
 
-      <AdminErrorBanner error={error} />
+      <div className="shrink-0"><AdminErrorBanner error={error} /></div>
 
       {findCaptainsResult && (
-        <div className="flex items-center justify-between gap-3 text-sm text-zinc-700 bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2.5">
+        <div className="shrink-0 flex items-center justify-between gap-3 text-sm text-zinc-700 bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2.5">
           <span>{findCaptainsResult}</span>
           <button onClick={() => setFindCaptainsResult(null)} className="text-zinc-400 hover:text-zinc-600 shrink-0">
             <X className="w-3.5 h-3.5" />
@@ -434,7 +904,7 @@ export default function PlanningPage() {
       )}
 
       {/* Week navigation */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="shrink-0 flex items-center justify-between gap-4">
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => setWeekStart(w => addDays(w, -7))}
@@ -462,105 +932,207 @@ export default function PlanningPage() {
 
       {/* Loading */}
       {loading && !bookings && (
-        <div className="flex items-center gap-2 text-sm text-zinc-400 py-8">
+        <div className="shrink-0 flex items-center gap-2 text-sm text-zinc-400 py-8">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading bookings…
         </div>
       )}
 
-      {/* Week grid — a shared 09:00–00:00 hour rail on the left (one for the
-          whole week, not repeated per day/boat column), then 7 day columns.
-          Flex, not CSS grid: a day running two boats gets proportionally more
-          width (flexGrow = boat count) instead of squeezing a second boat
-          column into a fixed-width cell where it'd silently overflow off-screen. */}
+      {/* Mobile — each day stacks full-width, its own header, time flowing
+          top-to-bottom (unchanged from before the desktop row layout below;
+          a horizontal Gantt bar would be unreadably thin on a phone screen). */}
       {bookings && (
-        <div className="flex gap-2">
-          {/* Hour rail — mirrors a day column's exact box model (1px border,
-              px-3/py-2 two-line header, p-2 body) with invisible filler instead
-              of a hardcoded header-height offset, so its gridline positions can
-              never drift out of sync with the day columns' own gridlines even if
-              the header's font size, padding, or line count ever changes. */}
-          <div className="w-10 shrink-0 rounded-lg border border-transparent flex flex-col">
-            <div className="px-3 py-2 border-b border-transparent" aria-hidden="true">
-              <p className="text-xs font-semibold uppercase tracking-wider invisible">&nbsp;</p>
-              <p className="text-sm font-medium invisible">&nbsp;</p>
-            </div>
-            <div className="p-2">
-              <div className="relative" style={{ height: GRID_HEIGHT_PX }}>
-                {hourMarks().map(m => (
-                  // Fixed height + flex-centered content, not line-height-based
-                  // text centering: `-translate-y-1/2` shifts by half of
-                  // WHATEVER the box renders at, and a 10px font's default
-                  // 1.5 line-height renders a 15px box — so the glyph itself
-                  // sits 7.5px above the gridline it's meant to label. Giving
-                  // the box an explicit small height makes the 50% shift (and
-                  // the glyph's position within it) exact, not font-metric-dependent.
-                  <div
-                    key={m.hour}
-                    className="absolute right-0 flex items-center justify-end text-[10px] text-zinc-400 -translate-y-1/2"
-                    style={{ top: m.topPx, width: RAIL_WIDTH_PX, height: 12 }}
-                  >
-                    {m.label}
+        <div className="lg:hidden flex flex-col gap-3">
+          {days.map((day, i) => {
+            const dayGroups = byDay.get(day) ?? []
+            const boatColumns = splitGroupsByBoat(dayGroups, sharedCapacity)
+            const isToday = day === todayStr
+            const isSplit = boatColumns.length > 1
+            return (
+              <div
+                key={day}
+                className={`rounded-lg border flex flex-col w-full ${isToday ? 'border-indigo-300 bg-indigo-50/30' : 'border-zinc-200 bg-white'}`}
+              >
+                <DayHeader
+                  label={DAY_LABELS[i]}
+                  dateObj={new Date(day + 'T12:00:00')}
+                  isToday={isToday}
+                  availableStaff={availableStaffByDate[day] ?? []}
+                  sharedCount={countDepartures(dayGroups, 'shared')}
+                  privateCount={countDepartures(dayGroups, 'private')}
+                  className="rounded-t-lg"
+                />
+                <div className="p-2 flex gap-2">
+                  <div className="w-10 shrink-0">
+                    <div className="relative" style={{ height: GRID_HEIGHT_PX }}>
+                      {hourMarks().map(m => (
+                        // Fixed height + flex-centered content, not line-height-based
+                        // text centering: `-translate-y-1/2` shifts by half of
+                        // WHATEVER the box renders at, and a 10px font's default
+                        // 1.5 line-height renders a 15px box — so the glyph itself
+                        // sits 7.5px above the gridline it's meant to label.
+                        <div
+                          key={m.hour}
+                          className="absolute right-0 flex items-center justify-end text-[10px] text-zinc-400 -translate-y-1/2"
+                          style={{ top: m.topPx, width: RAIL_WIDTH_PX, height: 12 }}
+                        >
+                          {m.label}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-col lg:flex-row gap-3 items-stretch flex-1">
-            {days.map((day, i) => {
-              const dayGroups = byDay.get(day) ?? []
-              const boatColumns = splitGroupsByBoat(dayGroups, sharedCapacity)
-              const isToday = day === todayStr
-              const dateObj = new Date(day + 'T12:00:00')
-              const isSplit = boatColumns.length > 1
-              return (
-                <div
-                  key={day}
-                  style={{ flexGrow: Math.max(1, boatColumns.length), flexBasis: 0 }}
-                  className={`rounded-lg border flex flex-col lg:min-w-[150px] ${
-                    isToday ? 'border-indigo-300 bg-indigo-50/30' : 'border-zinc-200 bg-white'
-                  }`}
-                >
-                  <div className={`px-3 py-2 border-b rounded-t-lg ${isToday ? 'border-indigo-200 bg-indigo-50' : 'border-zinc-200 bg-zinc-50'}`}>
-                    <p className={`text-xs font-semibold uppercase tracking-wider ${isToday ? 'text-indigo-700' : 'text-zinc-500'}`}>
-                      {DAY_LABELS[i]}
-                    </p>
-                    <p className={`text-sm font-medium ${isToday ? 'text-indigo-900' : 'text-zinc-900'}`}>
-                      {dateObj.getDate()} {dateObj.toLocaleDateString('en-GB', { month: 'short', timeZone: 'Europe/Amsterdam' })}
-                    </p>
-                    {(availableStaffByDate[day] ?? []).length > 0 && (
-                      <div className="mt-1.5 flex flex-wrap gap-1">
-                        {availableStaffByDate[day].map(name => (
-                          <span
-                            key={name}
-                            title={`${name} — available`}
-                            className="text-[10px] leading-tight px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium truncate max-w-full"
-                          >
-                            {name}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-2">
+                  <div className="flex-1 min-w-0">
                     {!isSplit && (
-                      <TimeGridColumn groups={dayGroups} onSelectBooking={setExpandedId} sharedCapacity={sharedCapacity} captainByBookingId={captainByBookingId} />
+                      <TimeGridColumn groups={dayGroups} onSelectBooking={setExpandedId} onSelectGroup={group => setExpandedGroupIds(group.bookings.map(b => b.id))} onContact={openContact} sharedCapacity={sharedCapacity} captainByBookingId={captainByBookingId} />
                     )}
                     {isSplit && (
                       <div className="flex gap-2 divide-x divide-zinc-100">
                         {boatColumns.map(col => (
                           <div key={col.boat} className="flex-1 min-w-0 pl-2 first:pl-0">
-                            <TimeGridColumn groups={col.groups} onSelectBooking={setExpandedId} boatLabel={col.boat} compact sharedCapacity={sharedCapacity} captainByBookingId={captainByBookingId} />
+                            <TimeGridColumn groups={col.groups} onSelectBooking={setExpandedId} onSelectGroup={group => setExpandedGroupIds(group.bookings.map(b => b.id))} onContact={openContact} boatLabel={col.boat} compact sharedCapacity={sharedCapacity} captainByBookingId={captainByBookingId} />
                           </div>
                         ))}
                       </div>
                     )}
                   </div>
                 </div>
-              )
-            })}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Desktop — dates down the side, time across the top. One thin row per
+          day instead of a 1500px-tall column, so a full week fits without
+          scrolling vertically through empty hours. The hour header and the
+          day rows are two separate horizontally-scrolling strips whose
+          scrollLeft mirror each other (same reason as the old day-name
+          strip did: a single box can't scroll sideways AND let something
+          inside it stick to the page, since overflow-x:auto makes that box
+          its own scrollport for both axes). */}
+      {bookings && (
+        <div className="hidden lg:block">
+          <div
+            ref={headerScrollRef}
+            onScroll={() => syncScroll(headerScrollRef, bodyScrollRef)}
+            className="flex sticky top-0 z-30 -mx-8 px-8 pt-2 pb-1 bg-zinc-50 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {/* Matches the date rail's width below so the columns align. */}
+            <div className="shrink-0" style={{ width: DATE_RAIL_WIDTH_PX }} aria-hidden="true" />
+            <div className="relative h-4 shrink-0" style={{ width: GRID_WIDTH_PX }}>
+              {hourMarksRow().map(m => (
+                <span
+                  key={m.hour}
+                  className="absolute top-0 text-[10px] text-zinc-400 -translate-x-1/2"
+                  style={{ left: m.leftPx }}
+                >
+                  {m.label}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div
+            ref={bodyScrollRef}
+            onScroll={() => syncScroll(bodyScrollRef, headerScrollRef)}
+            className="overflow-x-auto border border-zinc-200 rounded-lg divide-y divide-zinc-100 bg-white"
+          >
+            {days.map((day, i) => (
+              <DayRow
+                key={day}
+                label={DAY_LABELS[i]}
+                dateObj={new Date(day + 'T12:00:00')}
+                isToday={day === todayStr}
+                dayGroups={byDay.get(day) ?? []}
+                sharedCapacity={sharedCapacity}
+                availableStaff={availableStaffByDate[day] ?? []}
+                captainByBookingId={captainByBookingId}
+                onSelectBooking={setExpandedId}
+                onSelectGroup={group => setExpandedGroupIds(group.bookings.map(b => b.id))}
+              />
+            ))}
           </div>
         </div>
+      )}
+
+      {/* Shared-departure summary modal — clicking a "3 bookings" card header
+          opens this first (a quick "who's on this trip" list) rather than
+          jumping straight into one arbitrary booking's full detail. Each row
+          opens the same single-booking modal below. */}
+      {expandedGroupBookings && expandedGroupBookings.length > 0 && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setExpandedGroupIds(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100">
+              <div>
+                <h2 className="text-base font-semibold text-zinc-900">
+                  {timeRangeLabel(expandedGroupBookings[0].start_time, expandedGroupBookings[0].end_time)}
+                </h2>
+                <p className="text-xs text-zinc-400">
+                  {expandedGroupBookings.length} bookings · {expandedGroupBookings.reduce((sum, b) => sum + (b.guest_count ?? 0), 0)} guests total
+                </p>
+              </div>
+              <button
+                onClick={() => setExpandedGroupIds(null)}
+                className="text-zinc-400 hover:text-zinc-600 transition-colors"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto divide-y divide-zinc-100">
+              {expandedGroupBookings.map(b => (
+                // A <div>, not a <button> — the contact icons are themselves
+                // buttons, and a button can't nest one.
+                <div
+                  key={b.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    setExpandedGroupIds(null)
+                    setExpandedId(b.id)
+                  }}
+                  onKeyDown={e => {
+                    if (e.key !== 'Enter' && e.key !== ' ') return
+                    setExpandedGroupIds(null)
+                    setExpandedId(b.id)
+                  }}
+                  className="w-full text-left px-5 py-3 hover:bg-zinc-50 transition-colors flex items-center justify-between gap-3 cursor-pointer"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-zinc-900 truncate">
+                      {b.customer_name ?? '—'} · {b.guest_count ?? '—'} guest{b.guest_count !== 1 ? 's' : ''}
+                    </p>
+                    <p className="text-xs text-zinc-400 truncate">
+                      {b.booking_source ?? 'website'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {/* Reaching a specific party is the main reason to open
+                        this list at all on a shared departure. */}
+                    <ContactActions booking={b} onContact={openContact} />
+                    <BookingStatusBadge status={b.status} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Contact drawer — call or WhatsApp one guest without losing your place
+          on the board. Rendered last so it layers over the group modal it can
+          be opened from. */}
+      {contactTarget && (
+        <ContactDrawer
+          booking={contactTarget.booking}
+          mode={contactTarget.mode}
+          onClose={() => setContactTarget(null)}
+        />
       )}
 
       {/* Detail modal — BookingDetailRow is a wide, multi-column layout built for a
