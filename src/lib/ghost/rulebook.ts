@@ -32,6 +32,10 @@ export const UPSELL_LEAD_DAYS = 2
 export const AVAILABILITY_REQUEST_LEAD_DAYS = 42
 /** Captain schedule digest: the Amsterdam-local hour it goes out, checked DST-safe against the real clock (not a fixed UTC cron time). */
 export const SCHEDULE_DIGEST_HOUR_AMSTERDAM = 18
+/** Cross-day consolidation: how many days apart two shared departures can still be asked to merge. Beer, 2026-08-23: start narrow. */
+export const CROSS_DAY_WINDOW_DAYS = 1
+/** Cross-day consolidation: the incentive offered for moving onto another day's departure — distinct from GUEST_MOVE_PROMPT's same-day wine, Beer's own pick 2026-08-23. */
+export const CROSS_DAY_INCENTIVE = 'a bottle of Crémant de Bourgogne (sparkling wine) on the house'
 
 // ── Shared prompt blocks (imported by the drafters) ─────────────────────────
 
@@ -176,6 +180,7 @@ export const RULEBOOK: RulebookEntry[] = [
       { rule: 'DRY-RUN: no ask exists until FareHarbor confirmed the target slot. The geometric ideal is snapped to a REAL availability (same boat, same duration, whole party validated non-mutatingly), and the send button re-validates the slot again immediately before dispatch — a stale slot expires the request instead of sending it.', enforcedIn: 'guest-move-drafter.ts (pickSnapSlot/validateMoveSlot/revalidateStoredMove) + proposals/[id]:send_move' },
       { rule: 'Sending is a human click (SMS + email with a personal HMAC link). A guest YES never rebooks anything — Slack pings the team to rebook via admin.', enforcedIn: 'proposals/[id]/route.ts + api/move/respond' },
       { rule: `Unanswered asks expire after ${GUEST_MOVE_EXPIRY_HOURS}h.`, enforcedIn: 'src/lib/ghost/guest-move-drafter.ts (expiry sweep)' },
+      { rule: `CROSS-DAY variant (same kind, different opportunity — Beer 2026-08-23): two single-booking shared departures exactly ${CROSS_DAY_WINDOW_DAYS} day apart, same product, combined guests within the receiving boat's capacity, no catering aboard either. Private cruises never eligible (they never merge at all). Same human-approval-then-send flow and tokened response link as the same-day ask — no new send/response code, only a new candidate source and a different incentive (${CROSS_DAY_INCENTIVE}).`, enforcedIn: 'src/lib/ghost/cross-day-consolidation.ts + cross-day-move-drafter.ts' },
     ],
     prompt: GUEST_MOVE_PROMPT,
     promptShared: true,
@@ -232,6 +237,20 @@ export const RULEBOOK: RulebookEntry[] = [
     prompt: 'Emitted by the inbox agent via its terminal submit_booking_proposal tool — see the Inbox reply draft entry; there is no separate prompt.',
     promptShared: false,
     dataInjected: ['validated slot (listing, date, time, option, party size) from check_booking'],
+  },
+  {
+    kind: 'cancellation_request',
+    agentKey: 'cancellation',
+    title: 'Cancellation request (one-click cancel + refund)',
+    hardRules: [
+      { rule: 'The refund € is NEVER the model\'s number. check_cancellation_terms (in-loop) and the stored payload both come from calculateRefundCents() in src/lib/cancellation/policy.ts — the model only supplies which booking, never the amount.', enforcedIn: 'src/lib/ghost/cancellation-terms.ts' },
+      { rule: 'Recomputed again at the moment of the click, not read from the payload — a proposal drafted yesterday may have crossed a refund-tier boundary overnight.', enforcedIn: 'proposals/[id]/route.ts (cancel_booking action)' },
+      { rule: 'Never proposed for an OTA-sourced booking (Withlocals/GetYourGuide/etc.) — that platform holds the customer relationship and must be cancelled there.', enforcedIn: 'cancellation-terms.ts (isOtaBooking) + the route\'s refusal' },
+      { rule: 'The one-click action reuses the existing, already-guarded /api/admin/bookings/[id]/cancel route (FareHarbor cancel + Stripe refund) — never a second, forked money path.', enforcedIn: 'proposals/[id]/route.ts (cancel_booking) calling bookings/[id]/cancel' },
+    ],
+    prompt: 'Emitted by the inbox agent via its terminal submit_cancellation_request tool — see the Inbox reply draft entry; there is no separate prompt.',
+    promptShared: false,
+    dataInjected: ['the matched booking (from get_customer_bookings/search_bookings_by_details)', 'cancellation terms from check_cancellation_terms — hours until departure, refund tier, refund €, all policy-computed'],
   },
 ]
 

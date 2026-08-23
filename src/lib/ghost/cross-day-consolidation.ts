@@ -1,5 +1,6 @@
 import { hasCatering, type ExtrasLineItem } from '@/lib/catering/filter'
 import { shiftCostCents } from '@/lib/scheduling/shift-cost'
+import { CROSS_DAY_WINDOW_DAYS } from './rulebook'
 
 /**
  * Cross-day consolidation — the third kind of schedule optimization,
@@ -131,8 +132,14 @@ export function findCrossDayConsolidationCandidates(
     // produces exactly one candidate instead of one from each shift's
     // perspective (which would say both "Tue could join Wed" and "Wed could
     // join Tue" for the same real pair).
+    //
+    // Checks EXACTLY CROSS_DAY_WINDOW_DAYS apart, not "anywhere within" it —
+    // fine at the current value of 1 (there's no day in between to miss).
+    // Raising it later to admit a real range (e.g. 1 OR 2 days apart) needs
+    // this loop widened to check every offset up to the window, not just
+    // reading a bigger single offset.
     for (const [date, laterShift] of byDate) {
-      const earlierShift = byDate.get(addDaysToDateStr(date, -1))
+      const earlierShift = byDate.get(addDaysToDateStr(date, -CROSS_DAY_WINDOW_DAYS))
       if (!earlierShift) continue
 
       const movingInfo = asSingleDepartureShift(laterShift)
