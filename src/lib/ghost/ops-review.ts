@@ -5,6 +5,7 @@ import { CLAUDE_DRAFTER_MODEL } from '@/lib/ai/clients'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { deriveOperationalProfile } from '@/lib/ops/profile'
 import { emitOpsEvent } from '@/lib/ops/events'
+import { shiftCostCents } from '@/lib/scheduling/shift-cost'
 import { amsterdamToday, formatAmsterdamTime } from '@/lib/utils'
 
 /**
@@ -21,10 +22,16 @@ import { amsterdamToday, formatAmsterdamTime } from '@/lib/utils'
  *     which gap is worth closing, what to tell the planner, what to leave be.
  *
  * Hard rules live here, not in the prompt: private cruises never merge onto
- * another boat's schedule (deriveOperationalProfile.allowMerge — they CAN
- * still be time/boat moved, just never combined with another party); savings
- * cents are precomputed per gap so every € the Ghost cites traces back to a
- * number in this file. Shadow-only: status 'propose' on the autonomy ladder.
+ * another party's departure (deriveOperationalProfile.allowMerge — nothing
+ * in this file combines two parties' guest counts onto one departure at all,
+ * that's cross-day-consolidation.ts's job, shared-only). What THIS file's
+ * mergeCandidates pool actually checks is whether a shift's own departure
+ * could run on a DIFFERENT boat instead — a boat swap, gated on allowBoatSwap
+ * (Beer, 2026-08-23: "private cruises can definitely swap Diana for
+ * Curaçao" — true for both categories today, since a private party doesn't
+ * care which specific boat, just capacity and no overlap); savings cents are
+ * precomputed per gap/swap so every € the Ghost cites traces back to a number
+ * in this file. Shadow-only: status 'propose' on the autonomy ladder.
  */
 
 // ── Deterministic facts ──────────────────────────────────────────────────────
@@ -65,6 +72,10 @@ export interface MergeCandidate {
   toBoat: string
   /** Why this is even a candidate (fits capacity, no overlap, flexible). */
   note: string
+  /** The boat swap's saving: fromBoat's shift disappears entirely for the day
+   *  ("one boat, one day, one shift" — the shift being moved is the only one
+   *  fromBoat has). null when fromBoat's shift has no captain assigned yet. */
+  estSavingCents: number | null
 }
 
 export interface DayFacts {
@@ -81,7 +92,9 @@ export interface DayFacts {
   distinctCaptains: number
   /** Captains marked available tomorrow but not on any shift. */
   spareCaptains: string[]
-  /** Shifts whose profile forbids merging (private cruises) — excluded from mergeCandidates. */
+  /** Shifts whose profile forbids a boat swap — excluded from mergeCandidates.
+   *  Empty today (both categories allow it); kept for a future profile that
+   *  doesn't. */
   nonMergeableShiftIds: string[]
 }
 
@@ -130,16 +143,19 @@ export function computeDayFacts(
     }
   }
 
-  // Merge candidates: a shift whose profile allows merging onto another
-  // in-use boat's schedule — no time overlap there, guests within capacity.
-  // Private cruises never merge (Beer 2026-07-04: they can be time/boat
-  // moved, but never combined onto a shared departure — that breaks the
-  // exclusivity the guest paid for) — allowMerge, not the broader 'kind',
-  // is the actual hard rule here (a prompt-only rule would just be a request).
+  // Boat-swap candidates: a shift whose profile allows swapping boats could
+  // run on a DIFFERENT in-use boat's day instead — no time overlap there,
+  // guests within capacity. This never combines two parties onto one
+  // departure (that's allowMerge's job, enforced in cross-day-consolidation.ts
+  // instead) — it only asks "could this shift's own departure run on a
+  // different boat", which both categories are cleared for (Beer, 2026-08-23:
+  // a private party doesn't care which specific boat, just that it fits) —
+  // gated on allowBoatSwap, not the broader 'kind' (a prompt-only rule would
+  // just be a request).
   const mergeCandidates: MergeCandidate[] = []
   const nonMergeableShiftIds: string[] = []
   for (const s of shifts) {
-    if (!deriveOperationalProfile(s.category).allowMerge) {
+    if (!deriveOperationalProfile(s.category).allowBoatSwap) {
       nonMergeableShiftIds.push(s.id)
       continue
     }
@@ -156,6 +172,9 @@ export function computeDayFacts(
         fromBoat: s.boat,
         toBoat: otherBoat,
         note: `fits ${otherBoat}'s schedule (no overlap${capacity != null ? `, ≤ ${capacity} seats` : ''})`,
+        // "one boat, one day, one shift" — s is fromBoat's ONLY shift that
+        // day, so swapping it onto otherBoat frees fromBoat's captain entirely.
+        estSavingCents: s.hourlyRateCents != null ? shiftCostCents(s.hourlyRateCents, s.startAt, s.endAt) : null,
       })
     }
   }
@@ -207,9 +226,12 @@ export function renderFacts(facts: DayFacts, shifts: OpsReviewShift[]): string {
 
   const mergeLines = facts.mergeCandidates.length
     ? facts.mergeCandidates
-        .map(m => `- shift ${m.shiftId} (${m.cruise ?? '?'}, ${m.guests ?? '?'} guests) could move ${m.fromBoat} → ${m.toBoat}: ${m.note}`)
+        .map(
+          m =>
+            `- shift ${m.shiftId} (${m.cruise ?? '?'}, ${m.guests ?? '?'} guests) could move ${m.fromBoat} → ${m.toBoat}: ${m.note}${m.estSavingCents != null ? ` ≈ €${(m.estSavingCents / 100).toFixed(2)} saved (frees ${m.fromBoat}'s captain for the day)` : ' (captain unassigned)'}`,
+        )
         .join('\n')
-    : '- none (every cross-boat move is blocked by overlap, capacity, or the private no-merge rule)'
+    : '- none (every cross-boat move is blocked by overlap or capacity)'
 
   const maintLines = facts.maintenanceConflicts.length
     ? facts.maintenanceConflicts.map(c => `- ${c.boat} has an OPEN BLOCKING maintenance task: "${c.task}"`).join('\n')

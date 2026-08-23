@@ -304,8 +304,8 @@ export async function GET(_request: NextRequest) {
           kind: 'same_day_merge',
           date,
           boat: merge.fromBoat,
-          summary: `${merge.cruise ?? 'Departure'} (${merge.guests ?? '?'} guests) could move ${merge.fromBoat} → ${merge.toBoat}`,
-          estSavingCents: null,
+          summary: `${merge.cruise ?? 'Departure'} (${merge.guests ?? '?'} guests) could move ${merge.fromBoat} → ${merge.toBoat} — frees ${merge.fromBoat}'s captain for the day.`,
+          estSavingCents: merge.estSavingCents,
         })
       }
     }

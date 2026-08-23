@@ -97,12 +97,37 @@ describe('computeDayFacts — gaps & idle cost', () => {
   })
 })
 
-describe('computeDayFacts — merge candidates & the private-cruise hard rule', () => {
-  it('a shared cruise that fits the other boat with no overlap is a merge candidate', () => {
+describe('computeDayFacts — boat-swap candidates (never combines two parties onto one departure)', () => {
+  it('a shared cruise that fits the other boat with no overlap is a boat-swap candidate, priced at the full shift cost', () => {
     const facts = computeDayFacts(
       DATE,
       [
-        shift({ id: 'a', boat: 'Diana', category: 'shared', guestCount: 4 }),
+        shift({ id: 'a', boat: 'Diana', category: 'shared', guestCount: 4, hourlyRateCents: 3500 }),
+        shift({
+          id: 'b',
+          boat: 'Curaçao',
+          boatCapacity: 12,
+          startAt: '2026-07-05T14:00:00Z',
+          endAt: '2026-07-05T16:00:00Z',
+        }),
+      ],
+      [],
+      [],
+    )
+    const candidate = facts.mergeCandidates.find(m => m.shiftId === 'a')
+    expect(candidate).toBeTruthy()
+    expect(candidate!.fromBoat).toBe('Diana')
+    expect(candidate!.toBoat).toBe('Curaçao')
+    // 2h at €35/h = €70.00 — "one boat, one day, one shift" means moving a's
+    // only departure onto Curaçao frees Diana's captain for the whole day.
+    expect(candidate!.estSavingCents).toBe(7000)
+  })
+
+  it('a PRIVATE cruise IS a boat-swap candidate when it fits (Beer, 2026-08-23: "private cruises can definitely swap Diana for Curaçao" — allowBoatSwap, not allowMerge, gates this pool)', () => {
+    const facts = computeDayFacts(
+      DATE,
+      [
+        shift({ id: 'a', boat: 'Diana', category: 'private', guestCount: 4 }),
         shift({
           id: 'b',
           boat: 'Curaçao',
@@ -120,11 +145,11 @@ describe('computeDayFacts — merge candidates & the private-cruise hard rule', 
     expect(candidate!.toBoat).toBe('Curaçao')
   })
 
-  it('a PRIVATE cruise is never a merge candidate, even when it would fit (hard rule in code — it can still be time/boat moved, just never combined with another party)', () => {
+  it('estSavingCents is null (not 0, not invented) when the moving shift has no captain assigned', () => {
     const facts = computeDayFacts(
       DATE,
       [
-        shift({ id: 'a', boat: 'Diana', category: 'private', guestCount: 4 }),
+        shift({ id: 'a', boat: 'Diana', staffId: null, staffName: null, hourlyRateCents: null }),
         shift({
           id: 'b',
           boat: 'Curaçao',
@@ -136,8 +161,7 @@ describe('computeDayFacts — merge candidates & the private-cruise hard rule', 
       [],
       [],
     )
-    expect(facts.mergeCandidates.find(m => m.shiftId === 'a')).toBeUndefined()
-    expect(facts.nonMergeableShiftIds).toContain('a')
+    expect(facts.mergeCandidates.find(m => m.shiftId === 'a')?.estSavingCents).toBeNull()
   })
 
   it('no candidate when the target boat overlaps in time or lacks capacity', () => {

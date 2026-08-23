@@ -70,7 +70,7 @@ export const OPS_REVIEW_SYSTEM = `You are the shadow operations optimizer for Of
 
 export const OPS_REVIEW_INSTRUCTIONS = `HARD RULES (enforced by the system, repeated so you reason within them)
 - One captain sails one boat per shift — never propose splitting a captain across boats.
-- PRIVATE cruises are protected: they are never merge candidates (already excluded from MERGE CANDIDATES above). If touching one is unavoidable, say so with requires_guest_contact: true and guest_impact honestly set — a human decides.
+- PRIVATE cruises can appear in MERGE CANDIDATES above (Beer, 2026-08-23: they can swap boats, just never combine with another party's departure — that combining never happens in this pool at all, for either category). Touching one always needs requires_guest_contact: true and guest_impact honestly set — a human decides.
 - Prefer the least invasive option: an internal shuffle (no guest notices) beats anything requiring guest contact.
 - Every € you cite must come from the FACTS above — never invent numbers. est_saving_cents derives from the printed idle costs / avoided second-boat staffing.
 - If the plan is already good, submit exactly one recommendation of type 'none' explaining why (cite the numbers that show it's tight).
@@ -167,7 +167,7 @@ export const RULEBOOK: RulebookEntry[] = [
     title: 'Nightly operations review',
     hardRules: [
       { rule: 'All numbers are computed in TypeScript before the model sees them (gaps, idle €, merge candidates, staffing) — every € in a recommendation traces to a computed fact.', enforcedIn: 'src/lib/ghost/ops-review.ts (computeDayFacts)' },
-      { rule: 'Private cruises never appear as merge candidates — filtered out before the model looks.', enforcedIn: 'src/lib/ops/profile.ts + computeDayFacts' },
+      { rule: 'A "merge candidate" here is a boat swap (this shift\'s own departure could run on a different boat instead), never combining two parties onto one departure — private cruises are included (Beer, 2026-08-23: allowBoatSwap, not allowMerge, gates this pool).', enforcedIn: 'src/lib/ops/profile.ts + computeDayFacts' },
       { rule: 'Read-only tool loop (max 6 turns); the only write is the shadow proposal itself.', enforcedIn: 'src/lib/ghost/agent-runtime.ts' },
       { rule: 'Malformed recommendations are dropped, never repaired or guessed at.', enforcedIn: 'src/lib/ghost/ops-review.ts (validateRecommendations)' },
     ],
