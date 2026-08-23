@@ -766,7 +766,12 @@ function DayRow({
   ].join('\n')
 
   return (
-    <div className={`flex ${isToday ? 'bg-indigo-50/40' : isWeekend ? 'bg-zinc-50/60' : ''}`}>
+    // py-1.5 + a real (not hairline) border between days — with several
+    // stacked shift lanes per day, a plain 1px divider let one day's block
+    // blend straight into the next. This is deliberately heavier than the
+    // divide-y between LANES inside a day (see the lanes container below),
+    // so the two boundaries read as different things at a glance.
+    <div className={`flex py-1.5 border-b-4 border-zinc-100 last:border-b-0 ${isToday ? 'bg-indigo-50/40' : isWeekend ? 'bg-zinc-50/60' : ''}`}>
       <div
         className={`sticky left-0 z-20 shrink-0 flex items-center gap-1.5 px-2 border-r ${
           isToday ? 'bg-indigo-50 border-indigo-200' : isWeekend ? 'bg-zinc-50 border-zinc-100' : 'bg-white border-zinc-100'
@@ -1409,7 +1414,9 @@ export default function PlanningPage() {
           <div
             ref={bodyScrollRef}
             onScroll={() => syncScroll(bodyScrollRef, headerScrollRef)}
-            className="overflow-x-auto border border-zinc-200 rounded-lg divide-y divide-zinc-100 bg-white"
+            // Each DayRow draws its own (heavier) bottom border now — a
+            // container-level divide-y here would double up with it.
+            className="overflow-x-auto border border-zinc-200 rounded-lg bg-white"
           >
             {days.map((day, i) => (
               <DayRow
