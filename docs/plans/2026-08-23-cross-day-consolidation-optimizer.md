@@ -10,8 +10,8 @@ shown anywhere Beer asked for it) AND the new cross-day consolidation (two
 under-full shared cruises on adjacent days). Every row previews the real
 action before anything happens; nothing sends or executes without a click.
 
-**Status:** Design finalized (Part 3 decided, 2026-08-23; same-day scope
-added 2026-08-23). Ready for a task-by-task TDD breakdown.
+**Status:** Built and committed, 2026-08-23. See
+`docs/features/planning-optimizer.md` for the as-built writeup.
 
 ---
 
