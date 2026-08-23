@@ -805,7 +805,14 @@ function DayRow({
           </div>
         </div>
       </div>
-      <div className="flex flex-col divide-y divide-zinc-50">
+      {/* zinc-100, not zinc-50 — a divider between two shifts on the same day
+          needs to read as an intentional line the full width of the lane,
+          not fade into near-invisibility except where it happens to graze a
+          card's edge (which looked like a stray half-drawn fragment, not a
+          line). Same tone as RowGridLines' vertical hour rules, on purpose —
+          one "structural grid" language, distinct from the heavier border
+          between DIFFERENT days above. */}
+      <div className="flex flex-col divide-y divide-zinc-100">
         {dayShifts.length === 0 && orphanGroups.length === 0 ? (
           <div className={`${ROW_LANE_HEIGHT} relative shrink-0`} style={{ width: GRID_WIDTH_PX }}>
             <RowGridLines />
