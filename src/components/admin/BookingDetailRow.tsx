@@ -2,11 +2,12 @@
 
 import { useState } from 'react'
 import { Pencil, Ban, CalendarDays, UtensilsCrossed, Megaphone, Tag, MapPin } from 'lucide-react'
-import { EXTRAS_CATEGORIES } from '@/lib/constants'
+import { EXTRAS_CATEGORIES, OTA_BOOKING_SOURCES } from '@/lib/constants'
 import { fmtAdminAmount } from '@/lib/admin/format'
 import { BookingSourceBadge } from '@/components/admin/BookingSourceBadge'
 import { formatTrafficSource } from '@/lib/tracking/traffic-source'
 
+import { BookingTimeline } from '@/components/admin/BookingTimeline'
 import { CancelBookingModal } from '@/components/admin/booking-actions/CancelBookingModal'
 import { EditBookingModal } from '@/components/admin/booking-actions/EditBookingModal'
 import { RescheduleBookingModal } from '@/components/admin/booking-actions/RescheduleBookingModal'
@@ -53,7 +54,7 @@ interface BookingDetailRowProps {
 
 export function BookingDetailRow({
   bookingId,
-  bookingUuid: _bookingUuid,
+  bookingUuid,
   listingId,
   status,
   stripePaymentIntentId: _stripePaymentIntentId,
@@ -89,6 +90,18 @@ export function BookingDetailRow({
   const [showAddCatering, setShowAddCatering] = useState(false)
 
   const isCancelled = status === 'cancelled'
+  // Booked ON a third-party platform, which is the merchant of record and owns
+  // the customer relationship. We can read these bookings, but moving or
+  // cancelling one here would change OUR calendar without changing THEIR
+  // record — the guest's voucher would still say the old time. Per the
+  // propose-only decision in docs/plans/2026-08-04-ota-autonomous-agent.md,
+  // those actions belong on the platform that sold the trip.
+  const isOtaBooking = !!bookingSource && (OTA_BOOKING_SOURCES as readonly string[]).includes(bookingSource)
+  // No uuid means FareHarbor has no handle we can act on — it addresses
+  // bookings by uuid only. Cancel/reschedule would either no-op silently or
+  // double-book, so both server routes now refuse; don't offer the button.
+  const canActInFareharbor = !!bookingUuid
+  const showMutatingActions = !isOtaBooking && canActInFareharbor
   const isInternal = bookingSource && bookingSource !== 'website'
   const isWebsiteBooking = !bookingSource || bookingSource === 'website' || bookingSource === 'payment_link'
   // Stripe recovery + payment links both involve real Stripe money — display like
@@ -304,6 +317,12 @@ export function BookingDetailRow({
 
       </div>
 
+      {/* Timeline — where this booking actually is in its journey */}
+      <div className="pt-3 border-t border-zinc-100 mt-4">
+        <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Timeline</p>
+        <BookingTimeline bookingId={bookingId} />
+      </div>
+
       {/* Action buttons — only for non-cancelled bookings */}
       {!isCancelled && (
         <div className="flex items-center gap-2 pt-3 border-t border-zinc-100 mt-4 flex-wrap">
@@ -314,13 +333,15 @@ export function BookingDetailRow({
             <Pencil className="w-3.5 h-3.5" />
             Edit details
           </button>
-          <button
-            onClick={() => setShowReschedule(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-blue-600 hover:bg-blue-50 transition-colors"
-          >
-            <CalendarDays className="w-3.5 h-3.5" />
-            Reschedule
-          </button>
+          {showMutatingActions && (
+            <button
+              onClick={() => setShowReschedule(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-blue-600 hover:bg-blue-50 transition-colors"
+            >
+              <CalendarDays className="w-3.5 h-3.5" />
+              Reschedule
+            </button>
+          )}
           <button
             onClick={() => setShowAddCatering(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-amber-600 hover:bg-amber-50 transition-colors"
@@ -328,13 +349,26 @@ export function BookingDetailRow({
             <UtensilsCrossed className="w-3.5 h-3.5" />
             {cateringCents > 0 ? 'Edit catering' : 'Add catering'}
           </button>
-          <button
-            onClick={() => setShowCancel(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
-          >
-            <Ban className="w-3.5 h-3.5" />
-            Cancel booking
-          </button>
+          {showMutatingActions && (
+            <button
+              onClick={() => setShowCancel(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
+            >
+              <Ban className="w-3.5 h-3.5" />
+              Cancel booking
+            </button>
+          )}
+
+          {/* Why the two buttons above are missing. Stating it beats leaving a
+              gap where an admin expects a button — or worse, offering one that
+              silently fails to reach FareHarbor. */}
+          {!showMutatingActions && (
+            <p className="text-xs text-zinc-500 px-1 py-1.5 max-w-xl">
+              {isOtaBooking
+                ? `Booked through ${bookingSource}, so they hold the customer's reservation — reschedule or cancel it there and it syncs back here. Changing it on our side alone would leave the guest's voucher pointing at the old trip.`
+                : 'No FareHarbor reference on this booking, so cancelling or rescheduling here could not reach the real slot. Do it in FareHarbor and it syncs back.'}
+            </p>
+          )}
         </div>
       )}
 
