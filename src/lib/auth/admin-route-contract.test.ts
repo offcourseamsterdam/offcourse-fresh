@@ -174,8 +174,15 @@ describe('admin route auth contract', () => {
     // admin browser softphone).
     // 143 = 142 + /api/admin/ops-center/summary (Ops Center badge count +
     // recent-activity feed across agent_proposals + ops_events).
+    // 144 = 145 - /api/admin/reviews/conflicts + /api/admin/reviews/conflicts/[id]
+    // (2026-08-22, plan §3.2: generalized into the single
+    // /api/admin/reviews/[id]/assign route below, which replaces both).
+    // 145 = 144 + /api/admin/reviews/[id]/draft-reply (2026-08-22, plan
+    // Phase 4: AI-drafted copy-paste review replies, no platform auto-post).
+    // 146 = 145 + /api/admin/reviews/backfill-bonus-scan (2026-08-22: manual
+    // re-trigger for the staff-mention scan on any not-yet-checked review).
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`145`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`147`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {
