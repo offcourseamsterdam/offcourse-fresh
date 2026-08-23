@@ -347,6 +347,8 @@ export default function BookingsPage() {
                             partnerName={b.partner_name}
                             category={b.category}
                             customerTypeName={b.customer_type_name}
+                            noRescheduleAsk={b.no_reschedule_ask ?? false}
+                            noRescheduleReason={b.no_reschedule_reason}
                           />
                         </td>
                       </tr>

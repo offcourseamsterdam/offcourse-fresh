@@ -26,6 +26,7 @@ function shift(overrides: Partial<ShiftWithBooking> & { id: string }): ShiftWith
     category: 'shared',
     guestCount: 4,
     listingTitle: 'Canal Cruise',
+    noRescheduleAsk: false,
     bookingId: null,
     availabilityPk: null,
     ...overrides,
@@ -44,6 +45,7 @@ function booking(overrides: Partial<MoveBooking> & { id: string }): MoveBooking 
     guestCount: 4,
     totalCents: 12000,
     fareharborAvailabilityPk: null,
+    noRescheduleAsk: false,
     ...overrides,
   }
 }
@@ -131,6 +133,12 @@ describe('selectMoveCandidate — the hard rules', () => {
   it('never asks a booking without email AND phone', () => {
     const { shifts, byId, byPk } = gappyDay({ customerEmail: null, customerPhone: null })
     byId.set('b1', booking({ id: 'b1', customerEmail: null, customerPhone: null }))
+    expect(selectMoveCandidate(shifts, byId, byPk)).toBeNull()
+  })
+
+  it('never asks a booking flagged no_reschedule_ask — anniversary/birthday etc (Beer, 2026-08-23)', () => {
+    const { shifts, byId, byPk } = gappyDay({ noRescheduleAsk: true })
+    byId.set('b1', booking({ id: 'b1', noRescheduleAsk: true }))
     expect(selectMoveCandidate(shifts, byId, byPk)).toBeNull()
   })
 

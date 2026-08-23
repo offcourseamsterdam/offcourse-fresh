@@ -1626,6 +1626,8 @@ export default function PlanningPage() {
                 customerTypeName={selectedBooking.customer_type_name}
                 trafficSource={selectedBooking.traffic_source}
                 trafficDetail={selectedBooking.traffic_detail}
+                noRescheduleAsk={selectedBooking.no_reschedule_ask ?? false}
+                noRescheduleReason={selectedBooking.no_reschedule_reason}
               />
             </div>
           </div>

@@ -74,6 +74,8 @@ export interface MoveBooking {
   guestCount: number | null
   totalCents: number | null
   fareharborAvailabilityPk: number | null
+  /** Admin-set "never propose a move on this one" (Beer, 2026-08-23: anniversary/birthday bookings). */
+  noRescheduleAsk: boolean
 }
 
 export interface MoveCandidate {
@@ -142,6 +144,7 @@ export function selectMoveCandidate(
       // candidate here would still respect the profile.
       if (!deriveOperationalProfile(booking.category).allowTimeChange) continue
       if (hasCatering(booking.extrasSelected)) continue // drinks/catering aboard: leave them alone
+      if (booking.noRescheduleAsk) continue // admin flagged this one — anniversary/birthday etc (Beer, 2026-08-23)
       if (!booking.customerEmail && !booking.customerPhone) continue // nobody to ask
 
       return {
@@ -335,7 +338,7 @@ type AdminClient = ReturnType<typeof createAdminClient>
 const SHIFT_SELECT =
   'id, date, start_at, end_at, status, staff_id, booking_id, fareharbor_availability_pk, staff(name, hourly_rate_cents), boats(name, max_capacity)'
 const BOOKING_SELECT =
-  'id, booking_date, category, customer_name, customer_email, customer_phone, extras_selected, listing_id, listing_title, guest_count, receipt_total, base_amount_cents, extras_amount_cents, fareharbor_availability_pk'
+  'id, booking_date, category, customer_name, customer_email, customer_phone, extras_selected, listing_id, listing_title, guest_count, receipt_total, base_amount_cents, extras_amount_cents, fareharbor_availability_pk, no_reschedule_ask'
 
 type RawShiftRow = {
   id: string
@@ -362,6 +365,7 @@ type RawBookingRow = {
   base_amount_cents: number | null
   extras_amount_cents: number | null
   fareharbor_availability_pk: number | null
+  no_reschedule_ask: boolean | null
 }
 
 function toMoveBooking(b: RawBookingRow): MoveBooking {
@@ -377,6 +381,7 @@ function toMoveBooking(b: RawBookingRow): MoveBooking {
     guestCount: b.guest_count,
     totalCents: b.receipt_total ?? (b.base_amount_cents ?? 0) + (b.extras_amount_cents ?? 0),
     fareharborAvailabilityPk: b.fareharbor_availability_pk,
+    noRescheduleAsk: b.no_reschedule_ask ?? false,
   }
 }
 
@@ -419,6 +424,7 @@ async function candidateFromDayRows(
       category: booking?.category ?? null,
       guestCount: booking?.guestCount ?? null,
       listingTitle: booking?.listingTitle ?? null,
+      noRescheduleAsk: booking?.noRescheduleAsk ?? false,
       bookingId: s.booking_id,
       availabilityPk: s.fareharbor_availability_pk,
     }

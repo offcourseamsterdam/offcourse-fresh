@@ -12,6 +12,7 @@ const baseBooking = {
   extrasSelected: null,
   startTime: '2026-08-25T15:00:00Z',
   endTime: '2026-08-25T16:30:00Z',
+  noRescheduleAsk: false,
 }
 
 function shift(overrides: Partial<ConsolidationShift> & { shiftId: string }): ConsolidationShift {
@@ -159,6 +160,23 @@ describe('findCrossDayConsolidationCandidates', () => {
         shiftId: 's2',
         date: '2026-08-26',
         bookings: [{ ...baseBooking, id: 'b', category: 'private', guestCount: 2, fareharborAvailabilityPk: 2 }],
+      }),
+    ]
+
+    expect(findCrossDayConsolidationCandidates(shifts, { Curaçao: 12 })).toEqual([])
+  })
+
+  it('skips a booking flagged no_reschedule_ask, even though it would otherwise be a clean match (Beer, 2026-08-23: anniversary/birthday bookings)', () => {
+    const shifts: ConsolidationShift[] = [
+      shift({
+        shiftId: 's1',
+        date: '2026-08-25',
+        bookings: [{ ...baseBooking, id: 'a', guestCount: 2, fareharborAvailabilityPk: 1, noRescheduleAsk: true }],
+      }),
+      shift({
+        shiftId: 's2',
+        date: '2026-08-26',
+        bookings: [{ ...baseBooking, id: 'b', guestCount: 2, fareharborAvailabilityPk: 2 }],
       }),
     ]
 

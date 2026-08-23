@@ -54,6 +54,8 @@ export interface AdminBooking {
   discount_amount_cents: number | null
   partner_name: string | null
   fareharbor_availability_pk: number | null
+  no_reschedule_ask: boolean | null
+  no_reschedule_reason: string | null
 }
 
 export interface AdminPromoCode {

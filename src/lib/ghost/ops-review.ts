@@ -51,6 +51,8 @@ export interface OpsReviewShift {
   category: string | null
   guestCount: number | null
   listingTitle: string | null
+  /** Admin-set "never propose a move on this one" (Beer, 2026-08-23: anniversary/birthday bookings) — the representative booking's flag. */
+  noRescheduleAsk: boolean
 }
 
 export interface BoatGap {
@@ -156,7 +158,7 @@ export function computeDayFacts(
   const mergeCandidates: MergeCandidate[] = []
   const nonMergeableShiftIds: string[] = []
   for (const s of shifts) {
-    if (!deriveOperationalProfile(s.category).allowBoatSwap) {
+    if (!deriveOperationalProfile(s.category).allowBoatSwap || s.noRescheduleAsk) {
       nonMergeableShiftIds.push(s.id)
       continue
     }
@@ -362,7 +364,7 @@ export async function draftOpsReview(): Promise<'drafted' | 'skipped'> {
       supabase
         .from('shifts')
         .select(
-          'id, start_at, end_at, status, staff_id, staff(name, hourly_rate_cents), boats(name, max_capacity), bookings(listing_title, guest_count, category)',
+          'id, start_at, end_at, status, staff_id, staff(name, hourly_rate_cents), boats(name, max_capacity), bookings(listing_title, guest_count, category, no_reschedule_ask)',
         )
         .eq('date', tomorrow)
         .in('status', ['open', 'assigned', 'confirmed'])
@@ -386,6 +388,7 @@ export async function draftOpsReview(): Promise<'drafted' | 'skipped'> {
         listing_title?: string | null
         guest_count?: number | null
         category?: string | null
+        no_reschedule_ask?: boolean | null
       } | null
       return {
         id: s.id,
@@ -400,6 +403,7 @@ export async function draftOpsReview(): Promise<'drafted' | 'skipped'> {
         category: booking?.category ?? null,
         guestCount: booking?.guest_count ?? null,
         listingTitle: booking?.listing_title ?? null,
+        noRescheduleAsk: booking?.no_reschedule_ask ?? false,
       }
     })
     if (!shifts.length) return 'skipped' // nothing on the water = no review, no cost

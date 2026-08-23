@@ -13,7 +13,7 @@ export async function PATCH(
   try {
     const { id } = await params
     const body = await request.json()
-    const { customer_name, customer_email, customer_phone, guest_note, deposit_amount_cents, extras_selected, extras_amount_cents, extras_vat_amount_cents } = body
+    const { customer_name, customer_email, customer_phone, guest_note, deposit_amount_cents, extras_selected, extras_amount_cents, extras_vat_amount_cents, no_reschedule_ask, no_reschedule_reason } = body
 
     const supabase = createAdminClient()
 
@@ -49,6 +49,13 @@ export async function PATCH(
     }
     if (typeof extras_vat_amount_cents === 'number') {
       updates.extras_vat_amount_cents = extras_vat_amount_cents
+    }
+    if (typeof no_reschedule_ask === 'boolean') {
+      updates.no_reschedule_ask = no_reschedule_ask
+      // Clearing the flag clears the reason too — a stale "anniversary" note
+      // must not silently reappear if the flag gets turned back on later for
+      // an unrelated reason.
+      updates.no_reschedule_reason = no_reschedule_ask ? (typeof no_reschedule_reason === 'string' ? no_reschedule_reason.trim() || null : null) : null
     }
 
     if (Object.keys(updates).length === 1) {

@@ -41,6 +41,8 @@ function makeBooking(overrides: Partial<AdminBooking>): AdminBooking {
     discount_amount_cents: null,
     partner_name: null,
     fareharbor_availability_pk: null,
+    no_reschedule_ask: null,
+    no_reschedule_reason: null,
     ...overrides,
   }
 }
@@ -55,6 +57,40 @@ describe('groupBookingsForPlanning', () => {
     expect(groups).toHaveLength(1)
     expect(groups[0].bookings.map(x => x.id).sort()).toEqual(['a', 'b'])
     expect(groups[0].totalGuestCount).toBe(5)
+  })
+
+  it('groups two shared bookings with the same fareharbor_availability_pk into one block even when listing_id/customer_type_name differ — real case: a normal website booking and an OTA-imported booking (which never gets a listing_id) landing on the identical FareHarbor slot', () => {
+    const a = makeBooking({
+      id: 'a',
+      customer_name: 'Richard Frazier',
+      listing_id: 'c419659a-a021-42ef-bfb7-77bde2a0a82a',
+      customer_type_name: 'Adult (13+)',
+      fareharbor_availability_pk: 2010496220,
+      guest_count: 4,
+    })
+    const b = makeBooking({
+      id: 'b',
+      customer_name: 'emma paepa',
+      listing_id: null,
+      customer_type_name: null,
+      fareharbor_availability_pk: 2010496220,
+      guest_count: 3,
+    })
+
+    const groups = groupBookingsForPlanning([a, b])
+
+    expect(groups).toHaveLength(1)
+    expect(groups[0].bookings.map(x => x.id).sort()).toEqual(['a', 'b'])
+    expect(groups[0].totalGuestCount).toBe(7)
+  })
+
+  it('does NOT merge two shared bookings across different fareharbor_availability_pk values, even with identical listing/customer type', () => {
+    const a = makeBooking({ id: 'a', fareharbor_availability_pk: 111 })
+    const b = makeBooking({ id: 'b', fareharbor_availability_pk: 222 })
+
+    const groups = groupBookingsForPlanning([a, b])
+
+    expect(groups).toHaveLength(2)
   })
 
   it('keeps two private bookings on different slots as separate groups (the common case)', () => {

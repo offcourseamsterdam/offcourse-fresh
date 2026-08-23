@@ -52,7 +52,7 @@ type AdminClient = ReturnType<typeof createAdminClient>
 const SHIFT_SELECT =
   'id, date, start_at, end_at, status, staff_id, booking_id, fareharbor_availability_pk, boat_id, staff(name, hourly_rate_cents), boats(name, max_capacity), shift_bookings(booking_id)'
 const BOOKING_SELECT =
-  'id, booking_date, category, customer_name, customer_email, customer_phone, extras_selected, listing_id, listing_title, guest_count, receipt_total, base_amount_cents, extras_amount_cents, fareharbor_availability_pk, customer_type_name, start_time, end_time'
+  'id, booking_date, category, customer_name, customer_email, customer_phone, extras_selected, listing_id, listing_title, guest_count, receipt_total, base_amount_cents, extras_amount_cents, fareharbor_availability_pk, customer_type_name, start_time, end_time, no_reschedule_ask'
 
 interface RawStaff {
   name?: string
@@ -94,6 +94,7 @@ interface RawBookingRow {
   customer_type_name: string | null
   start_time: string | null
   end_time: string | null
+  no_reschedule_ask: boolean | null
 }
 
 function toConsolidationBooking(b: RawBookingRow): ConsolidationBooking {
@@ -111,6 +112,7 @@ function toConsolidationBooking(b: RawBookingRow): ConsolidationBooking {
     listingTitle: b.listing_title,
     startTime: b.start_time,
     endTime: b.end_time,
+    noRescheduleAsk: b.no_reschedule_ask ?? false,
   }
 }
 
@@ -324,6 +326,7 @@ export async function GET(_request: NextRequest) {
           category: rep?.category ?? null,
           guestCount: rep?.guest_count ?? null,
           listingTitle: rep?.listing_title ?? null,
+          noRescheduleAsk: rep?.no_reschedule_ask ?? false,
         }
       })
       const facts = computeDayFacts(date, opsShifts, [], [])

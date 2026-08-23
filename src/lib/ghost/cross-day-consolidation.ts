@@ -53,6 +53,8 @@ export interface ConsolidationBooking {
    *  message quotes. */
   startTime: string | null
   endTime: string | null
+  /** Admin-set "never propose a move on this one" (Beer, 2026-08-23: anniversary/birthday bookings). */
+  noRescheduleAsk: boolean
 }
 
 export interface ConsolidationShift {
@@ -130,12 +132,14 @@ function departureGroups(shift: ConsolidationShift): DepartureGroup[] {
  * asks one party at a time — same sequential rule guest-move-drafter.ts
  * enforces), shared category (private never merges — Beer, 2026-07-04,
  * enforced elsewhere too via deriveOperationalProfile.allowMerge), no FOOD
- * order placed (drinks-only is fine — see the file doc comment).
+ * order placed (drinks-only is fine — see the file doc comment), and not
+ * admin-flagged no_reschedule_ask (Beer, 2026-08-23: anniversary/birthday
+ * bookings).
  */
 function eligibleToMove(group: DepartureGroup): boolean {
   if (group.bookings.length !== 1) return false
   const b = group.bookings[0]
-  return b.category === 'shared' && !hasFood(b.extrasSelected)
+  return b.category === 'shared' && !hasFood(b.extrasSelected) && !b.noRescheduleAsk
 }
 
 /**

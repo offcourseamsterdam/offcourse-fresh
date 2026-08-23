@@ -523,6 +523,8 @@ export type Database = {
           invoice_number: string | null
           listing_id: string | null
           listing_title: string | null
+          no_reschedule_ask: boolean
+          no_reschedule_reason: string | null
           partner_id: string | null
           payment_link_expires_at: string | null
           payment_reminder_sent: boolean | null
@@ -583,6 +585,8 @@ export type Database = {
           invoice_number?: string | null
           listing_id?: string | null
           listing_title?: string | null
+          no_reschedule_ask?: boolean
+          no_reschedule_reason?: string | null
           partner_id?: string | null
           payment_link_expires_at?: string | null
           payment_reminder_sent?: boolean | null
@@ -643,6 +647,8 @@ export type Database = {
           invoice_number?: string | null
           listing_id?: string | null
           listing_title?: string | null
+          no_reschedule_ask?: boolean
+          no_reschedule_reason?: string | null
           partner_id?: string | null
           payment_link_expires_at?: string | null
           payment_reminder_sent?: boolean | null

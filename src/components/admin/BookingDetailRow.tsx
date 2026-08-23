@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Pencil, Ban, CalendarDays, UtensilsCrossed, Megaphone, Tag, MapPin } from 'lucide-react'
+import { Pencil, Ban, CalendarDays, UtensilsCrossed, Megaphone, Tag, MapPin, ShieldOff } from 'lucide-react'
 import { EXTRAS_CATEGORIES, OTA_BOOKING_SOURCES } from '@/lib/constants'
 import { fmtAdminAmount } from '@/lib/admin/format'
 import { BookingSourceBadge } from '@/components/admin/BookingSourceBadge'
@@ -47,6 +47,8 @@ interface BookingDetailRowProps {
   partnerName: string | null
   category: string | null
   customerTypeName: string | null
+  noRescheduleAsk?: boolean
+  noRescheduleReason?: string | null
   className?: string
 }
 
@@ -82,6 +84,8 @@ export function BookingDetailRow({
   partnerName,
   category,
   customerTypeName,
+  noRescheduleAsk = false,
+  noRescheduleReason = null,
   className = '',
 }: BookingDetailRowProps) {
   const [showCancel, setShowCancel] = useState(false)
@@ -143,6 +147,14 @@ export function BookingDetailRow({
           {customerPhone && <p className="text-sm text-zinc-500">{customerPhone}</p>}
           {guestNote && (
             <p className="text-sm text-zinc-400 italic mt-1">&quot;{guestNote}&quot;</p>
+          )}
+          {noRescheduleAsk && (
+            <div className="flex items-center gap-1.5 mt-1.5">
+              <ShieldOff className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+              <span className="text-xs text-rose-700 font-medium">
+                Never propose a move{noRescheduleReason ? ` — ${noRescheduleReason}` : ''}
+              </span>
+            </div>
           )}
 
           {/* Source — always shown */}
@@ -393,6 +405,8 @@ export function BookingDetailRow({
           initialNote={guestNote}
           isInternalBooking={!!isInternal}
           initialDepositCents={depositAmountCents}
+          initialNoRescheduleAsk={noRescheduleAsk}
+          initialNoRescheduleReason={noRescheduleReason}
           onClose={() => setShowEdit(false)}
           onSuccess={() => { setShowEdit(false); onRefresh() }}
         />

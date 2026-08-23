@@ -28,6 +28,7 @@ function shift(overrides: Partial<OpsReviewShift> & { id: string }): OpsReviewSh
     category: 'shared',
     guestCount: 4,
     listingTitle: 'Canal Cruise',
+    noRescheduleAsk: false,
     ...overrides,
   }
 }
@@ -162,6 +163,26 @@ describe('computeDayFacts — boat-swap candidates (never combines two parties o
       [],
     )
     expect(facts.mergeCandidates.find(m => m.shiftId === 'a')?.estSavingCents).toBeNull()
+  })
+
+  it('a shift flagged no_reschedule_ask is never a boat-swap candidate, even when it would otherwise fit (Beer, 2026-08-23: anniversary/birthday bookings)', () => {
+    const facts = computeDayFacts(
+      DATE,
+      [
+        shift({ id: 'a', boat: 'Diana', category: 'private', guestCount: 4, noRescheduleAsk: true }),
+        shift({
+          id: 'b',
+          boat: 'Curaçao',
+          boatCapacity: 12,
+          startAt: '2026-07-05T14:00:00Z',
+          endAt: '2026-07-05T16:00:00Z',
+        }),
+      ],
+      [],
+      [],
+    )
+    expect(facts.mergeCandidates.find(m => m.shiftId === 'a')).toBeUndefined()
+    expect(facts.nonMergeableShiftIds).toContain('a')
   })
 
   it('no candidate when the target boat overlaps in time or lacks capacity', () => {
