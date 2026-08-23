@@ -4,16 +4,32 @@ import { useState } from 'react'
 import { ChevronLeft, ChevronRight, Loader2, CheckCircle2, CircleDashed, AlertTriangle, CalendarClock } from 'lucide-react'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { amsterdamToday } from '@/lib/utils'
-import type { CaptainMonthStatus } from '@/lib/scheduling/availability-status'
+import type { CaptainMonthStatus, DayAvailability, AvailabilityStatusValue } from '@/lib/scheduling/availability-status'
 
 interface StatusResponse {
   month: string
   captains: CaptainMonthStatus[]
+  days: DayAvailability[]
   responded: number
   total: number
   unreachable: number
   nextRequest: { targetMonth: string; triggerDate: string; daysUntil: number }
 }
+
+// Same three states and colors as the captain's own calendar
+// (captain/availability/page.tsx) — an admin looking at both must never see
+// a different color mean a different thing.
+const CELL_STYLE: Record<AvailabilityStatusValue, string> = {
+  available: 'bg-emerald-100 border-emerald-200',
+  prefer_not: 'bg-amber-100 border-amber-200',
+  unavailable: 'bg-red-100 border-red-200',
+}
+const STATUS_LABEL: Record<AvailabilityStatusValue, string> = {
+  available: 'Available',
+  prefer_not: 'Prefer not',
+  unavailable: 'Unavailable',
+}
+const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 function monthLabel(ym: string): string {
   return new Date(`${ym}-15T12:00`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
@@ -23,6 +39,13 @@ function shiftMonth(ym: string, delta: number): string {
   const [y, m] = ym.split('-').map(Number)
   const d = new Date(y, m - 1 + delta, 15)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+/** Monday-first weekday abbreviation for a YYYY-MM-DD, parsed as a plain
+ *  calendar date (not UTC-shifted — a date string has no time zone to slip). */
+function weekdayShort(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return WEEKDAY_SHORT[(new Date(y, m - 1, d).getDay() + 6) % 7]
 }
 
 /**
@@ -126,6 +149,71 @@ export function AvailabilityTab() {
 
       {data && captains.length === 0 && !isLoading && (
         <p className="text-sm text-zinc-400 py-8 text-center">No active captains.</p>
+      )}
+
+      {/* Day-by-day, everyone at once (Beer, 2026-08-23: "I also want to see
+          the calendar where I can see everyone's availability each day") —
+          a different question from the rows above: not "who's responded"
+          but "who's actually around on the 15th". */}
+      {data && captains.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Day by day</p>
+          <div className="overflow-x-auto rounded-xl border border-zinc-200">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="bg-zinc-50 border-b border-zinc-200">
+                  <th className="text-left font-medium text-zinc-500 px-3 py-2 sticky left-0 bg-zinc-50 whitespace-nowrap">Day</th>
+                  {captains.map(c => (
+                    <th key={c.staffId} className="text-center font-medium text-zinc-500 px-2 py-2 whitespace-nowrap">
+                      {c.name.split(' ')[0]}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.days.map(day => {
+                  const isToday = day.date === amsterdamToday()
+                  const isWeekend = weekdayShort(day.date) === 'Sat' || weekdayShort(day.date) === 'Sun'
+                  return (
+                    <tr key={day.date} className={`border-b border-zinc-100 last:border-0 ${isToday ? 'bg-indigo-50/60' : isWeekend ? 'bg-zinc-50/60' : ''}`}>
+                      <td className={`px-3 py-1.5 whitespace-nowrap sticky left-0 ${isToday ? 'bg-indigo-50/60 font-semibold text-indigo-700' : isWeekend ? 'bg-zinc-50/60 text-zinc-500' : 'bg-white text-zinc-500'}`}>
+                        {Number(day.date.slice(-2))} <span className="text-zinc-400">{weekdayShort(day.date)}</span>
+                      </td>
+                      {captains.map(c => {
+                        const status = day.byStaffId[c.staffId]
+                        return (
+                          <td key={c.staffId} className="px-2 py-1.5 text-center">
+                            {status ? (
+                              <span
+                                title={`${c.name}: ${STATUS_LABEL[status]}`}
+                                className={`inline-block w-full min-w-[2.5rem] rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${CELL_STYLE[status]}`}
+                              >
+                                {STATUS_LABEL[status]}
+                              </span>
+                            ) : (
+                              <span className="text-zinc-200">—</span>
+                            )}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center gap-4 mt-2 text-[11px] text-zinc-400">
+            {(['available', 'prefer_not', 'unavailable'] as const).map(s => (
+              <span key={s} className="flex items-center gap-1.5">
+                <span className={`inline-block w-3 h-3 rounded border ${CELL_STYLE[s]}`} />
+                {STATUS_LABEL[s]}
+              </span>
+            ))}
+            <span className="flex items-center gap-1.5">
+              <span className="text-zinc-200">—</span> Not marked
+            </span>
+          </div>
+        </div>
       )}
 
       {/* When the next automatic ask goes out — so you know whether to nudge yourself. */}

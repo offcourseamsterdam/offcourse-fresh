@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { monthRange, getMonthAvailabilityStatus, captainAvailabilityUrl } from './availability-status'
+import { monthRange, getMonthAvailabilityStatus, getMonthAvailabilityGrid, captainAvailabilityUrl } from './availability-status'
 
 describe('monthRange', () => {
   it('covers the whole month, whatever its length', () => {
@@ -69,5 +69,45 @@ describe('getMonthAvailabilityStatus', () => {
 
   it('survives empty tables without throwing', async () => {
     expect(await getMonthAvailabilityStatus(makeSupabase([], []), '2026-10')).toEqual([])
+  })
+})
+
+/** Single-query stub for the grid — only staff_availability, no staff table. */
+function makeGridSupabase(rows: { staff_id: string; date: string; status: string }[]) {
+  return {
+    from: () => ({ select: () => ({ gte: () => ({ lte: async () => ({ data: rows }) }) }) }),
+  } as never
+}
+
+describe('getMonthAvailabilityGrid — the day-by-day, everyone-at-once view (Beer, 2026-08-23)', () => {
+  it('returns every day of the month, even ones nobody marked', async () => {
+    const grid = await getMonthAvailabilityGrid(makeGridSupabase([]), '2026-09')
+    expect(grid).toHaveLength(30) // September
+    expect(grid[0]).toEqual({ date: '2026-09-01', byStaffId: {} })
+    expect(grid[29]).toEqual({ date: '2026-09-30', byStaffId: {} })
+  })
+
+  it('places each captain\'s status on the right day, multiple captains per day', async () => {
+    const grid = await getMonthAvailabilityGrid(
+      makeGridSupabase([
+        { staff_id: 'bas', date: '2026-09-15', status: 'available' },
+        { staff_id: 'mare', date: '2026-09-15', status: 'unavailable' },
+        { staff_id: 'bas', date: '2026-09-16', status: 'prefer_not' },
+      ]),
+      '2026-09',
+    )
+
+    const day15 = grid.find(d => d.date === '2026-09-15')!
+    expect(day15.byStaffId).toEqual({ bas: 'available', mare: 'unavailable' })
+    const day16 = grid.find(d => d.date === '2026-09-16')!
+    expect(day16.byStaffId).toEqual({ bas: 'prefer_not' })
+  })
+
+  it('drops a row with an unrecognized status rather than showing bad data', async () => {
+    const grid = await getMonthAvailabilityGrid(
+      makeGridSupabase([{ staff_id: 'bas', date: '2026-09-15', status: 'made_up_value' }]),
+      '2026-09',
+    )
+    expect(grid.find(d => d.date === '2026-09-15')!.byStaffId).toEqual({})
   })
 })

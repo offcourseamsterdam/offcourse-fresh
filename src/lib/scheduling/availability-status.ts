@@ -76,6 +76,51 @@ export async function getMonthAvailabilityStatus(
   })
 }
 
+export type AvailabilityStatusValue = 'available' | 'prefer_not' | 'unavailable'
+
+export interface DayAvailability {
+  /** YYYY-MM-DD */
+  date: string
+  byStaffId: Record<string, AvailabilityStatusValue>
+}
+
+const VALID_STATUS = new Set<string>(['available', 'prefer_not', 'unavailable'])
+
+/**
+ * Day-by-day, every captain at once — Beer, 2026-08-23: "I also want to see
+ * the calendar where I can see everyone's availability each day", distinct
+ * from getMonthAvailabilityStatus's "has each captain responded at all" —
+ * this answers "who's actually around on the 15th", which matters when
+ * you're the one deciding who to ask for a shift.
+ *
+ * A separate query from getMonthAvailabilityStatus (not folded into it,
+ * even though both read staff_availability for the same month) so the cron
+ * path — which only ever needs the response-count summary — never pays for
+ * or depends on the per-day shape.
+ */
+export async function getMonthAvailabilityGrid(supabase: AdminClient, month: string): Promise<DayAvailability[]> {
+  const { from, to } = monthRange(month)
+  const { data } = await supabase
+    .from('staff_availability')
+    .select('staff_id, date, status')
+    .gte('date', from)
+    .lte('date', to)
+
+  const byDate = new Map<string, Record<string, AvailabilityStatusValue>>()
+  for (const row of data ?? []) {
+    if (!VALID_STATUS.has(row.status)) continue // defensive — column is free-text, not an enum
+    const entry = byDate.get(row.date) ?? {}
+    entry[row.staff_id] = row.status as AvailabilityStatusValue
+    byDate.set(row.date, entry)
+  }
+
+  const lastDay = Number(to.slice(-2))
+  return Array.from({ length: lastDay }, (_, i) => {
+    const date = `${month}-${String(i + 1).padStart(2, '0')}`
+    return { date, byStaffId: byDate.get(date) ?? {} }
+  })
+}
+
 /** The captain-facing availability calendar, opened to a specific month. */
 export function captainAvailabilityUrl(siteUrl: string, locale = 'en'): string {
   return `${siteUrl.replace(/\/$/, '')}/${locale}/captain/availability`
