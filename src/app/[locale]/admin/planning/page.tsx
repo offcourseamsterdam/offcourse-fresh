@@ -3,12 +3,13 @@
 import { useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Loader2, RefreshCw, ChevronLeft, ChevronRight, List, Plus, X, Ghost, Search, UserCheck, UserX, Phone, UtensilsCrossed, MessageCircle } from 'lucide-react'
+import { Loader2, RefreshCw, ChevronLeft, ChevronRight, List, Plus, X, Ghost, Search, UserCheck, UserX, Phone, UtensilsCrossed, MessageCircle, Sparkles } from 'lucide-react'
 import { useVoice } from '@/components/admin/VoiceProvider'
 import { normalizePhoneE164 } from '@/lib/phone/normalize'
 import { adminMutate } from '@/hooks/useAdminSave'
 import { BookingDetailRow } from '@/components/admin/BookingDetailRow'
 import { GhostActivityPanel } from './GhostActivityPanel'
+import { OptimizerPanel } from './OptimizerPanel'
 import type { GhostActivityItem } from '@/app/api/admin/planning/ghost-activity/route'
 import { BookingStatusBadge } from '@/components/admin/BookingStatusBadge'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
@@ -1012,6 +1013,7 @@ export default function PlanningPage() {
     if (to.current.scrollLeft !== from.current.scrollLeft) to.current.scrollLeft = from.current.scrollLeft
   }
   const [showGhostActivity, setShowGhostActivity] = useState(false)
+  const [showOptimizer, setShowOptimizer] = useState(false)
   const [findingCaptains, setFindingCaptains] = useState(false)
   const [findCaptainsResult, setFindCaptainsResult] = useState<string | null>(null)
   const selectedBooking = bookings?.find(b => b.id === expandedId) ?? null
@@ -1239,6 +1241,10 @@ export default function PlanningPage() {
                 {ghostActivity!.length}
               </span>
             )}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setShowOptimizer(true)}>
+            <Sparkles className="w-3.5 h-3.5" />
+            Optimizer
           </Button>
           <Button variant="outline" size="sm" onClick={() => router.push(`/${locale}/admin/bookings`)}>
             <List className="w-3.5 h-3.5" />
@@ -1634,6 +1640,10 @@ export default function PlanningPage() {
           onClose={() => setShowGhostActivity(false)}
           onConfirmed={refreshGhostActivity}
         />
+      )}
+
+      {showOptimizer && (
+        <OptimizerPanel from={days[0]} to={days[days.length - 1]} onClose={() => setShowOptimizer(false)} />
       )}
     </div>
   )

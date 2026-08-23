@@ -1,0 +1,155 @@
+'use client'
+
+import { useState } from 'react'
+import { X, Sparkles, Loader2, Send, CheckCircle2, Clock, Merge } from 'lucide-react'
+import { fmtCostEuros } from '@/lib/scheduling/shift-cost'
+import { adminMutate } from '@/hooks/useAdminSave'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
+import type { OptimizerItem } from '@/app/api/admin/planning/optimizer/route'
+
+/** "Wed 26 Aug" from a plain YYYY-MM-DD. */
+function formatItemDate(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00Z`)
+  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
+}
+
+const KIND_META: Record<OptimizerItem['kind'], { label: string; Icon: typeof Clock; color: string }> = {
+  same_day_gap: { label: 'Paid gap', Icon: Clock, color: 'text-amber-600' },
+  same_day_merge: { label: 'Could consolidate boats', Icon: Merge, color: 'text-amber-600' },
+  cross_day_consolidation: { label: 'Cross-day consolidation', Icon: Sparkles, color: 'text-violet-500' },
+}
+
+/**
+ * Dedicated Optimizer panel (Beer, 2026-08-23: "a new, dedicated panel" —
+ * not folded into /admin/ghost's review page). Every schedule inefficiency
+ * for the dates Planning currently has in view: same-day paid gaps and
+ * cross-boat merges (informational — the nightly ops review already
+ * surfaces these in full on /admin/ghost, this is a fast glance, not a
+ * second review UI to maintain) plus the new cross-day consolidation
+ * (actionable here — approve sends the drafted SMS/email straight away).
+ *
+ * See docs/plans/2026-08-23-cross-day-consolidation-optimizer.md.
+ */
+export function OptimizerPanel({ from, to, onClose }: { from: string; to: string; onClose: () => void }) {
+  const { data, isLoading, error, refresh } = useAdminFetch<{ items: OptimizerItem[] }>(
+    `/api/admin/planning/optimizer?from=${from}&to=${to}`,
+  )
+  const [sendingId, setSendingId] = useState<string | null>(null)
+  const [sentIds, setSentIds] = useState<Set<string>>(new Set())
+  const [sendError, setSendError] = useState<{ id: string; message: string } | null>(null)
+
+  async function approveAndSend(proposalId: string) {
+    setSendingId(proposalId)
+    setSendError(null)
+    try {
+      await adminMutate(`/api/admin/ghost/proposals/${proposalId}`, 'POST', { action: 'send_move' })
+      setSentIds(prev => new Set(prev).add(proposalId))
+    } catch (err) {
+      setSendError({ id: proposalId, message: err instanceof Error ? err.message : 'Could not send — try again.' })
+    } finally {
+      setSendingId(null)
+    }
+  }
+
+  const items = data?.items ?? []
+  const totalSavingCents = items.reduce((sum, i) => sum + (i.estSavingCents ?? 0), 0)
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
+      <div className="relative h-full w-full max-w-md bg-white shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-violet-500" />
+            <div>
+              <h2 className="text-base font-semibold text-zinc-900">Optimizer</h2>
+              <p className="text-xs text-zinc-400">
+                {formatItemDate(from)} – {formatItemDate(to)}
+                {totalSavingCents > 0 && ` · up to ${fmtCostEuros(totalSavingCents)} found`}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 rounded hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {isLoading && (
+            <div className="flex items-center gap-2 text-sm text-zinc-400 px-5 py-8">
+              <Loader2 className="w-4 h-4 animate-spin" /> Scanning the schedule…
+            </div>
+          )}
+
+          {error && <p className="px-5 py-4 text-sm text-red-600">{error}</p>}
+
+          {!isLoading && !error && items.length === 0 && (
+            <div className="px-5 py-12 text-center text-zinc-400 text-sm">
+              <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-zinc-300" />
+              <p>Nothing to optimize in this range — every shift looks tight already.</p>
+            </div>
+          )}
+
+          {items.map((item, i) => {
+            const meta = KIND_META[item.kind]
+            const isCrossDay = item.kind === 'cross_day_consolidation'
+            const sent = !!item.proposalId && sentIds.has(item.proposalId)
+            return (
+              <div key={`${item.kind}-${item.date}-${item.boat}-${i}`} className="px-5 py-4 border-b border-zinc-50 last:border-0">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <span className={`inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide ${meta.color}`}>
+                    <meta.Icon className="w-3 h-3" /> {meta.label}
+                  </span>
+                  {item.estSavingCents != null && item.estSavingCents > 0 && (
+                    <span className="text-xs font-semibold text-emerald-700 shrink-0">{fmtCostEuros(item.estSavingCents)}</span>
+                  )}
+                </div>
+                <p className="text-xs text-zinc-400 mb-1">{formatItemDate(item.date)} · {item.boat}</p>
+                <p className="text-sm text-zinc-800 mb-2">{item.summary}</p>
+
+                {isCrossDay && (
+                  <>
+                    {(item.smsText || item.emailBody) && (
+                      <div className="rounded-lg bg-violet-50 border border-violet-100 px-3 py-2 text-xs text-violet-800 space-y-1 mb-2">
+                        {item.smsText && (
+                          <p><span className="font-semibold">SMS:</span> {item.smsText}</p>
+                        )}
+                        {item.emailSubject && (
+                          <p><span className="font-semibold">Email:</span> {item.emailSubject}</p>
+                        )}
+                      </div>
+                    )}
+                    {sent ? (
+                      <p className="text-xs text-teal-700 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2 inline-flex items-center gap-1.5">
+                        <Send className="w-3.5 h-3.5" /> Sent to {item.guestName ?? 'the guest'} — awaiting their answer
+                      </p>
+                    ) : item.proposalId ? (
+                      <button
+                        onClick={() => approveAndSend(item.proposalId!)}
+                        disabled={sendingId === item.proposalId}
+                        className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-md bg-zinc-900 text-white hover:bg-zinc-800 disabled:opacity-50 transition-colors"
+                      >
+                        {sendingId === item.proposalId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                        {sendingId === item.proposalId ? 'Sending…' : `Approve & send to ${item.guestName ?? 'guest'}`}
+                      </button>
+                    ) : (
+                      <p className="text-xs text-zinc-400 italic">Drafting…</p>
+                    )}
+                    {sendError && sendError.id === item.proposalId && (
+                      <p className="text-xs text-red-600 mt-1.5">{sendError.message}</p>
+                    )}
+                  </>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="px-5 py-2.5 border-t border-zinc-100">
+          <button onClick={refresh} className="text-xs font-medium text-zinc-500 hover:text-zinc-700">
+            Refresh
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
