@@ -692,6 +692,11 @@ export default function PlanningPage() {
   useBookingsChangedSignal(fetchBookings)
 
   const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()))
+  // How many weeks of days to show at once — the compact row layout (one
+  // thin row per day, not a full 1500px column) is what makes showing more
+  // than a single week actually usable on screen. Prev/Today/Next all step
+  // by this same span, so paging never re-shows a day you just saw.
+  const [weekCount, setWeekCount] = useState(2)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   // A shared departure's own summary modal — one level up from a single
   // booking's detail. Stores the booking ids at click time (not the
@@ -723,7 +728,7 @@ export default function PlanningPage() {
     : null
 
   const todayStr = useMemo(() => amsDateString(new Date()), [])
-  const days = useMemo(() => weekDateStrings(weekStart), [weekStart])
+  const days = useMemo(() => weekDateStrings(weekStart, weekCount * 7), [weekStart, weekCount])
 
   // Group bookings by booking_date, then within each day collapse same-slot
   // bookings (same time + listing + category + customer type) into one block —
@@ -861,7 +866,9 @@ export default function PlanningPage() {
       <div className="shrink-0 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-900">Planning</h1>
-          <p className="text-sm text-zinc-500 mt-1">Week view · {weekTotal} booking{weekTotal !== 1 ? 's' : ''} this week</p>
+          <p className="text-sm text-zinc-500 mt-1">
+            {weekCount === 1 ? 'Week view' : `${weekCount}-week view`} · {weekTotal} booking{weekTotal !== 1 ? 's' : ''} shown
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={findCaptains} disabled={findingCaptains}>
@@ -904,12 +911,12 @@ export default function PlanningPage() {
       )}
 
       {/* Week navigation */}
-      <div className="shrink-0 flex items-center justify-between gap-4">
+      <div className="shrink-0 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-1.5">
           <button
-            onClick={() => setWeekStart(w => addDays(w, -7))}
+            onClick={() => setWeekStart(w => addDays(w, -weekCount * 7))}
             className="p-1.5 rounded-lg text-zinc-500 hover:bg-zinc-100 transition-colors"
-            aria-label="Previous week"
+            aria-label="Previous"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -920,14 +927,31 @@ export default function PlanningPage() {
             Today
           </button>
           <button
-            onClick={() => setWeekStart(w => addDays(w, 7))}
+            onClick={() => setWeekStart(w => addDays(w, weekCount * 7))}
             className="p-1.5 rounded-lg text-zinc-500 hover:bg-zinc-100 transition-colors"
-            aria-label="Next week"
+            aria-label="Next"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
+          {/* How many weeks to show at once — only worth offering on the
+              compact desktop row layout; on mobile each day is still a full
+              card, so more weeks just means more scrolling, not more useful
+              at-a-glance range. */}
+          <div className="hidden lg:flex items-center gap-0.5 ml-1 p-0.5 rounded-lg bg-zinc-100">
+            {[1, 2, 4].map(n => (
+              <button
+                key={n}
+                onClick={() => setWeekCount(n)}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  weekCount === n ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
+                }`}
+              >
+                {n}w
+              </button>
+            ))}
+          </div>
         </div>
-        <p className="text-sm font-medium text-zinc-700">{formatWeekRangeLabel(weekStart)}</p>
+        <p className="text-sm font-medium text-zinc-700">{formatWeekRangeLabel(weekStart, weekCount * 7)}</p>
       </div>
 
       {/* Loading */}
@@ -939,10 +963,14 @@ export default function PlanningPage() {
 
       {/* Mobile — each day stacks full-width, its own header, time flowing
           top-to-bottom (unchanged from before the desktop row layout below;
-          a horizontal Gantt bar would be unreadably thin on a phone screen). */}
+          a horizontal Gantt bar would be unreadably thin on a phone screen).
+          Always just the first week regardless of the desktop-only week-count
+          selector above — more weeks there means more useful rows on screen,
+          but on mobile it would only mean more full-height cards to scroll
+          past, which isn't the same win. */}
       {bookings && (
         <div className="lg:hidden flex flex-col gap-3">
-          {days.map((day, i) => {
+          {days.slice(0, 7).map((day, i) => {
             const dayGroups = byDay.get(day) ?? []
             const boatColumns = splitGroupsByBoat(dayGroups, sharedCapacity)
             const isToday = day === todayStr
@@ -1039,7 +1067,10 @@ export default function PlanningPage() {
             {days.map((day, i) => (
               <DayRow
                 key={day}
-                label={DAY_LABELS[i]}
+                // weekStart is always a Monday (getWeekStart) and `days` is
+                // always a whole number of 7-day blocks from there, so `i %
+                // 7` cycles Mon..Sun correctly even past the first week.
+                label={DAY_LABELS[i % 7]}
                 dateObj={new Date(day + 'T12:00:00')}
                 isToday={day === todayStr}
                 dayGroups={byDay.get(day) ?? []}

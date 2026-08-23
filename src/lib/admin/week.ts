@@ -27,14 +27,17 @@ export function addDays(date: Date, days: number): Date {
   return result
 }
 
-/** The 7 Amsterdam-local YYYY-MM-DD strings (Mon–Sun) for the week starting at `weekStart`. */
-export function weekDateStrings(weekStart: Date): string[] {
-  return Array.from({ length: 7 }, (_, i) => toAmsDateStr(addDays(weekStart, i)))
+/** The Amsterdam-local YYYY-MM-DD strings for `days` consecutive days (default
+ *  7, Mon–Sun) starting at `weekStart`. Pass a multiple of 7 to span several
+ *  weeks — the Planning view's "show more days" span selector does this. */
+export function weekDateStrings(weekStart: Date, days = 7): string[] {
+  return Array.from({ length: days }, (_, i) => toAmsDateStr(addDays(weekStart, i)))
 }
 
-/** Human label for a week range, e.g. "6 – 12 Jul 2026" or "29 Jun – 5 Jul 2026" across a month boundary. */
-export function formatWeekRangeLabel(weekStart: Date): string {
-  const end = addDays(weekStart, 6)
+/** Human label for a date range of `days` days (default 7), e.g.
+ *  "6 – 12 Jul 2026" or "29 Jun – 5 Jul 2026" across a month boundary. */
+export function formatWeekRangeLabel(weekStart: Date, days = 7): string {
+  const end = addDays(weekStart, days - 1)
   const startMonth = weekStart.toLocaleDateString('en-GB', { month: 'short', timeZone: 'Europe/Amsterdam' })
   const endMonth = end.toLocaleDateString('en-GB', { month: 'short', timeZone: 'Europe/Amsterdam' })
   const startDay = toAmsDateStr(weekStart).slice(-2).replace(/^0/, '')

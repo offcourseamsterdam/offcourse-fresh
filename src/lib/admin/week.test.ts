@@ -56,17 +56,25 @@ describe('addDays', () => {
 })
 
 describe('weekDateStrings', () => {
-  it('returns 7 consecutive Mon–Sun date strings', () => {
+  it('returns 7 consecutive Mon–Sun date strings by default', () => {
     const monday = new Date('2026-07-06T00:00:00Z')
     expect(weekDateStrings(monday)).toEqual([
       '2026-07-06', '2026-07-07', '2026-07-08', '2026-07-09',
       '2026-07-10', '2026-07-11', '2026-07-12',
     ])
   })
+
+  it('returns 14 consecutive dates spanning two weeks when asked', () => {
+    const monday = new Date('2026-07-06T00:00:00Z')
+    const result = weekDateStrings(monday, 14)
+    expect(result).toHaveLength(14)
+    expect(result[0]).toBe('2026-07-06')
+    expect(result[13]).toBe('2026-07-19')
+  })
 })
 
 describe('formatWeekRangeLabel', () => {
-  it('formats a week within a single month', () => {
+  it('formats a week within a single month by default', () => {
     const monday = new Date('2026-07-06T00:00:00Z')
     expect(formatWeekRangeLabel(monday)).toBe('6 – 12 Jul 2026')
   })
@@ -74,5 +82,10 @@ describe('formatWeekRangeLabel', () => {
   it('formats a week that crosses a month boundary', () => {
     const monday = new Date('2026-06-29T00:00:00Z')
     expect(formatWeekRangeLabel(monday)).toBe('29 Jun – 5 Jul 2026')
+  })
+
+  it('formats a longer multi-week span when given a day count', () => {
+    const monday = new Date('2026-07-06T00:00:00Z')
+    expect(formatWeekRangeLabel(monday, 14)).toBe('6 – 19 Jul 2026')
   })
 })
