@@ -224,6 +224,42 @@ describe('GET /api/admin/planning/optimizer', () => {
     expect(crossDay.smsText).toBe('existing sms {{link}}')
   })
 
+  it("resolves a shift's full membership via shift_bookings, not just its primary booking_id — real bug, 2026-08-23: a Wednesday Curaçao shift's booking_id pointed at an unrelated PRIVATE cruise, silently hiding that Sophie's shared cruise was on the same shift", async () => {
+    const privateBooking = {
+      ...PAIGE_BOOKING,
+      id: 'gurkan',
+      category: 'private',
+      customer_name: 'Gurkan Celik',
+      guest_count: 10,
+      fareharbor_availability_pk: 9999,
+      customer_type_name: 'Curaçao - 1.5 Hours',
+    }
+    // The shift's OWN booking_id/fareharbor_availability_pk point at the
+    // private booking (its primary departure) — shift_bookings is the only
+    // place Sophie's shared cruise is visible on this shift at all.
+    const wedShiftWithHiddenSecondBooking = {
+      ...SOPHIE_SHIFT,
+      booking_id: 'gurkan',
+      fareharbor_availability_pk: null,
+      shift_bookings: [{ booking_id: 'gurkan' }, { booking_id: 'sophie' }],
+    }
+
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeSupabase({
+        shifts: [PAIGE_SHIFT, wedShiftWithHiddenSecondBooking],
+        bookings: [PAIGE_BOOKING, SOPHIE_BOOKING, privateBooking],
+      }) as never,
+    )
+
+    const res = await GET(makeReq('2026-08-25', '2026-08-26'))
+    const body = await res.json()
+
+    // Wednesday's shift genuinely covers two departures (Gurkan's private
+    // cruise stays on the water regardless of Sophie) — moving her away
+    // would NOT free the shift, so this must NOT be offered as a candidate.
+    expect(body.data.items.find((i: { kind: string }) => i.kind === 'cross_day_consolidation')).toBeUndefined()
+  })
+
   it('surfaces a same-day gap as its own item, separate from cross-day candidates', async () => {
     const morning = {
       id: 'morning-shift',

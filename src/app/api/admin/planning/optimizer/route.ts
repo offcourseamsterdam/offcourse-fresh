@@ -48,7 +48,7 @@ import type { ExtrasLineItem } from '@/lib/catering/filter'
 type AdminClient = ReturnType<typeof createAdminClient>
 
 const SHIFT_SELECT =
-  'id, date, start_at, end_at, status, staff_id, booking_id, fareharbor_availability_pk, boat_id, staff(name, hourly_rate_cents), boats(name, max_capacity)'
+  'id, date, start_at, end_at, status, staff_id, booking_id, fareharbor_availability_pk, boat_id, staff(name, hourly_rate_cents), boats(name, max_capacity), shift_bookings(booking_id)'
 const BOOKING_SELECT =
   'id, booking_date, category, customer_name, customer_email, customer_phone, extras_selected, listing_title, guest_count, receipt_total, base_amount_cents, extras_amount_cents, fareharbor_availability_pk, customer_type_name, start_time, end_time'
 
@@ -72,6 +72,7 @@ interface RawShiftRow {
   boat_id: string | null
   staff: RawStaff | null
   boats: RawBoat | null
+  shift_bookings: { booking_id: string }[] | null
 }
 interface RawBookingRow {
   id: string
@@ -110,15 +111,32 @@ function toConsolidationBooking(b: RawBookingRow): ConsolidationBooking {
   }
 }
 
-/** Every booking a shift covers — by its primary booking_id, or (shared) every
- *  booking sharing its fareharbor_availability_pk. Same resolution technique
- *  guest-move-drafter.ts's resolveSingleBooking already uses; this just
- *  returns the whole matched list instead of only when there's exactly one. */
+/**
+ * Every booking a shift covers. Prefers `shift_bookings` — the REAL
+ * membership (127_shift_bookings.sql, whose own index comment names this
+ * exact lookup) — because `booking_id`/`fareharbor_availability_pk` are only
+ * the shift's PRIMARY departure, not its full membership. That distinction
+ * is not academic: a real live bug here (2026-08-23) was a Wednesday
+ * Curaçao shift covering BOTH a private cruise (its primary booking_id) AND
+ * an unrelated shared cruise — the old booking_id/availability_pk-only
+ * resolution saw only the private booking and never even noticed the shared
+ * one existed, so a real multi-departure day silently looked like a clean
+ * single-departure one.
+ *
+ * Falls back to the booking_id/availability_pk heuristic (same technique
+ * guest-move-drafter.ts's resolveSingleBooking already uses) only for rows
+ * predating the shift_bookings backfill, where membership is empty.
+ */
 function bookingsForShift(
   shift: RawShiftRow,
   bookingsById: Map<string, RawBookingRow>,
   bookingsByAvailPk: Map<number, RawBookingRow[]>,
 ): RawBookingRow[] {
+  if (shift.shift_bookings?.length) {
+    return shift.shift_bookings
+      .map(m => bookingsById.get(m.booking_id))
+      .filter((b): b is RawBookingRow => !!b)
+  }
   if (shift.booking_id) {
     const b = bookingsById.get(shift.booking_id)
     return b ? [b] : []
