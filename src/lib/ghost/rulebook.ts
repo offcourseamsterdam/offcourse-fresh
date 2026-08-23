@@ -1,3 +1,5 @@
+import { hasUnlimitedDrinks, type ExtrasLineItem } from '@/lib/catering/filter'
+
 /**
  * THE RULEBOOK — single source of truth for what the Ghost is told and what
  * the code enforces around it. Rendered verbatim on /admin/ghost/rulebook.
@@ -34,8 +36,24 @@ export const AVAILABILITY_REQUEST_LEAD_DAYS = 42
 export const SCHEDULE_DIGEST_HOUR_AMSTERDAM = 18
 /** Cross-day consolidation: how many days apart two shared departures can still be asked to merge. Beer, 2026-08-23: start narrow. */
 export const CROSS_DAY_WINDOW_DAYS = 1
-/** Cross-day consolidation: the incentive offered for moving onto another day's departure — distinct from GUEST_MOVE_PROMPT's same-day wine, Beer's own pick 2026-08-23. */
-export const CROSS_DAY_INCENTIVE = 'a bottle of Crémant de Bourgogne (sparkling wine) on the house'
+/** Reschedule incentive — private cruises (Beer, 2026-08-23). */
+export const PRIVATE_MOVE_INCENTIVE = 'a bottle of Crémant de Bourgogne (sparkling wine) on the house'
+/** Reschedule incentive — shared cruises without Unlimited Drinks already aboard (Beer, 2026-08-23: "the first drinks are free" — one per person, not the full unlimited package). */
+export const SHARED_MOVE_INCENTIVE = "everyone's first drink (wine or beer) on the house"
+
+/**
+ * The reschedule incentive for one booking — a deterministic lookup, not an
+ * AI guess (Beer, 2026-08-23): private cruises always get the sparkling
+ * wine bottle; shared cruises get free first drinks UNLESS the booking
+ * already has Unlimited Drinks, in which case offering more would be
+ * redundant — null (no incentive at all), not a fallback to something else.
+ * Used by every move-type drafter (same-day, cross-day, boat-swap) so the
+ * rule lives in exactly one place.
+ */
+export function moveIncentiveFor(category: string | null, extrasSelected: ExtrasLineItem[] | null): string | null {
+  if (category === 'private') return PRIVATE_MOVE_INCENTIVE
+  return hasUnlimitedDrinks(extrasSelected) ? null : SHARED_MOVE_INCENTIVE
+}
 
 // ── Shared prompt blocks (imported by the drafters) ─────────────────────────
 
@@ -86,7 +104,7 @@ You may call get_schedule for surrounding days (context on captain workloads) or
 export const GUEST_MOVE_PROMPT = `You write for Off Course Amsterdam ("your friend with a boat" — warm, casual, dry humour, never corporate). Draft a time-change request to a guest. This is a SHADOW draft: a human approves before anything is sent.
 
 - NEVER mention or imply occupancy, headcount, or that a cruise is quiet/empty/undersold — the guest must not be able to infer anything about how full any departure is. Frame this purely as us asking a favour, not as filling a gap.
-- Sweetener to offer: a bottle of wine on the house.
+- The request below states the exact incentive to offer, if any — some bookings genuinely get none. Offer it naturally if given; if none is given, don't invent one or apologize for its absence, just make the plain ask.
 - Reversibility, explicitly: if they say yes, we make the change; if they say no (or don't reply), their original time simply stays — either answer is completely fine, no follow-up pressure.
 - The message must include the literal placeholder {{link}} exactly once in the SMS and once in the email body — it becomes their personal response button/URL.
 - English. SMS max ~300 characters.`
@@ -94,7 +112,7 @@ export const GUEST_MOVE_PROMPT = `You write for Off Course Amsterdam ("your frie
 export const CROSS_DAY_MOVE_PROMPT = `You write for Off Course Amsterdam ("your friend with a boat" — warm, casual, dry humour, never corporate). Draft a DATE-change request to a guest: ask if they'd move their booking to a nearby day's departure of the exact same cruise instead — same boat, same time of day, same price. This is a SHADOW draft: a human approves before anything is sent.
 
 - NEVER mention or imply occupancy, headcount, or that a cruise is quiet/empty/undersold, on EITHER day — the guest must not be able to infer anything about how full any departure is (that reads as "this is secretly a private cruise", which it isn't). Frame this purely as us asking a favour, not as filling a gap.
-- Sweetener to offer: ${CROSS_DAY_INCENTIVE}.
+- The request below states the exact incentive to offer, if any — some bookings genuinely get none (they already have Unlimited Drinks). Offer it naturally if given; if none is given, don't invent one or apologize for its absence, just make the plain ask.
 - Reversibility, explicitly: if they say yes, we make the change; if they say no (or don't reply), their original date simply stays — either answer is completely fine, no follow-up pressure.
 - The message must include the literal placeholder {{link}} exactly once in the SMS and once in the email body — it becomes their personal response button/URL.
 - English. SMS max ~300 characters.`
@@ -102,7 +120,7 @@ export const CROSS_DAY_MOVE_PROMPT = `You write for Off Course Amsterdam ("your 
 export const BOAT_SWAP_PROMPT = `You write for Off Course Amsterdam ("your friend with a boat" — warm, casual, dry humour, never corporate). Draft a BOAT-change request to a guest: same date, same time, same price, same cruise — just a different one of our two electric boats (Diana, cosy for up to 8; Curaçao, roomier for up to 12), because it lets us run the day with one boat instead of two. This is a SHADOW draft: a human approves before anything is sent.
 
 - NEVER mention or imply occupancy, headcount, or that a cruise is quiet/empty/undersold — the guest must not be able to infer anything about how full any departure is. Frame this purely as us asking a favour, not as filling a gap.
-- Sweetener to offer: a bottle of wine on the house.
+- The request below states the exact incentive to offer, if any — some bookings genuinely get none. Offer it naturally if given; if none is given, don't invent one or apologize for its absence, just make the plain ask.
 - Reversibility, explicitly: if they say yes, we make the change; if they say no (or don't reply), their original boat simply stays — either answer is completely fine, no follow-up pressure.
 - The message must include the literal placeholder {{link}} exactly once in the SMS and once in the email body — it becomes their personal response button/URL.
 - English. SMS max ~300 characters.`
@@ -197,8 +215,9 @@ export const RULEBOOK: RulebookEntry[] = [
       { rule: 'DRY-RUN: no ask exists until FareHarbor confirmed the target slot. The geometric ideal is snapped to a REAL availability (same boat, same duration, whole party validated non-mutatingly), and the send button re-validates the slot again immediately before dispatch — a stale slot expires the request instead of sending it.', enforcedIn: 'guest-move-drafter.ts (pickSnapSlot/validateMoveSlot/revalidateStoredMove) + proposals/[id]:send_move' },
       { rule: 'Sending is a human click (SMS + email with a personal HMAC link). A guest YES never rebooks anything — Slack pings the team to rebook via admin.', enforcedIn: 'proposals/[id]/route.ts + api/move/respond' },
       { rule: `Unanswered asks expire after ${GUEST_MOVE_EXPIRY_HOURS}h.`, enforcedIn: 'src/lib/ghost/guest-move-drafter.ts (expiry sweep)' },
-      { rule: `CROSS-DAY variant (same kind, different opportunity — Beer 2026-08-23): two single-booking shared departures exactly ${CROSS_DAY_WINDOW_DAYS} day apart, same product, combined guests within the receiving boat's capacity, no FOOD order aboard either (drinks-only is fine — stocked on the boat, not a supplier delivery, so it travels with whichever day the boat sails). Private cruises never eligible (they never merge at all). Whichever party is SMALLER gets asked to move (a tie defaults to the later day) — not a fixed "later always moves". Same human-approval-then-send flow and tokened response link as the same-day ask — no new send/response code, only a new candidate source and a different incentive (${CROSS_DAY_INCENTIVE}).`, enforcedIn: 'src/lib/ghost/cross-day-consolidation.ts + cross-day-move-drafter.ts' },
+      { rule: `CROSS-DAY variant (same kind, different opportunity — Beer 2026-08-23): two single-booking shared departures exactly ${CROSS_DAY_WINDOW_DAYS} day apart, same product, combined guests within the receiving boat's capacity, no FOOD order aboard either (drinks-only is fine — stocked on the boat, not a supplier delivery, so it travels with whichever day the boat sails). Private cruises never eligible (they never merge at all). Whichever party is SMALLER gets asked to move (a tie defaults to the later day) — not a fixed "later always moves". Same human-approval-then-send flow and tokened response link as the same-day ask — no new send/response code, only a new candidate source and its own incentive rule (see below).`, enforcedIn: 'src/lib/ghost/cross-day-consolidation.ts + cross-day-move-drafter.ts' },
       { rule: `BOAT-SWAP variant (same kind, different opportunity — Beer 2026-08-23: "private cruises can definitely swap Diana for Curaçao"): a single-booking shift that fits cleanly onto another in-use boat's day with no overlap — private AND shared both eligible (allowBoatSwap, never combines two parties onto one departure). DRY-RUN like the same-day ask, but for the SAME time on the OTHER boat rather than a different time on the same one. Priced at the moving boat's full shift cost ("one boat, one day, one shift" — the swap frees that boat's captain entirely).`, enforcedIn: 'src/lib/ghost/ops-review.ts (computeDayFacts) + boat-swap-drafter.ts' },
+      { rule: `INCENTIVE (every variant — Beer 2026-08-23): private cruises always get ${PRIVATE_MOVE_INCENTIVE}; shared cruises get ${SHARED_MOVE_INCENTIVE} UNLESS the booking already has Unlimited Drinks, in which case there is NO incentive at all (offering more drinks would be redundant, not a fallback to something else). A deterministic lookup, not an AI guess — the drafter computes it and hands Claude the exact value (or none) to work into the message.`, enforcedIn: 'src/lib/ghost/rulebook.ts (moveIncentiveFor) + every *-move-drafter.ts / boat-swap-drafter.ts' },
     ],
     prompt: GUEST_MOVE_PROMPT,
     promptShared: true,

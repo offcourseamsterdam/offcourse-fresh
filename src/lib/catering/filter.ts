@@ -48,8 +48,15 @@ export function isDrinksOnlyBooking(extras: ExtrasLineItem[] | null | undefined)
   const catering = filterCateringItems(extras)
   if (!catering.length) return false
   const allDrinks = catering.every(e => e.category === 'drinks')
-  const hasUnlimited = catering.some(e => /unlimited/i.test(e.name))
-  return allDrinks && hasUnlimited
+  return allDrinks && hasUnlimitedDrinks(extras)
+}
+
+/** True when the Unlimited Drinks extra is on the booking (regardless of
+ *  whatever else is also aboard) — used to decide whether "free drinks" is
+ *  a redundant reschedule incentive (Beer, 2026-08-23). */
+export function hasUnlimitedDrinks(extras: ExtrasLineItem[] | null | undefined): boolean {
+  if (!extras || !Array.isArray(extras)) return false
+  return extras.some(e => e.category === 'drinks' && /unlimited/i.test(e.name))
 }
 
 /** Sum the amount_cents of all catering items (food + drinks). */

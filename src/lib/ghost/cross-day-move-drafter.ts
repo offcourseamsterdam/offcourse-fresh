@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { formatAmsterdamTime } from '@/lib/utils'
 import { extractJson } from './ops-drafters'
-import { CROSS_DAY_INCENTIVE, CROSS_DAY_MOVE_PROMPT } from './rulebook'
+import { moveIncentiveFor, CROSS_DAY_MOVE_PROMPT } from './rulebook'
 import type { CrossDayConsolidationCandidate } from './cross-day-consolidation'
 
 type AdminClient = ReturnType<typeof createAdminClient>
@@ -35,6 +35,7 @@ export async function draftCrossDayConsolidation(
     const currentTime = formatAmsterdamTime(candidate.booking.startTime)
     const proposedTime = formatAmsterdamTime(candidate.receivingBooking.startTime)
     const totalEur = ((candidate.booking.totalCents ?? 0) / 100).toFixed(2)
+    const incentive = moveIncentiveFor(candidate.booking.category, candidate.booking.extrasSelected)
 
     const response = await meteredMessage('ghost_cross_day_move', {
       model: CLAUDE_DRAFTER_MODEL,
@@ -47,6 +48,7 @@ export async function draftCrossDayConsolidation(
 THE ASK
 - Guest: ${candidate.booking.customerName ?? 'guest'} · ${candidate.booking.guestCount ?? '?'} people · ${candidate.booking.listingTitle ?? 'cruise'}
 - Current date: ${candidate.fromDate} at ${currentTime} · proposed date: ${candidate.toDate} at ${proposedTime} (same boat: ${candidate.boat}, same time of day, same price: €${totalEur})
+- Incentive to offer: ${incentive ?? 'NONE — they already have Unlimited Drinks, so no sweetener this time; just make the plain ask'}
 
 Return JSON only:
 {"sms_text": "<SMS incl {{link}}>", "email_subject": "<subject>", "email_body": "<plain-text email incl {{link}}, with a one-line summary of their booking (${candidate.fromDate} ${currentTime} → ${candidate.toDate} ${proposedTime}, party size, price unchanged €${totalEur})>"}`,
@@ -82,7 +84,7 @@ Return JSON only:
             proposed_end_at: candidate.receivingBooking.endTime,
             est_saving_cents: candidate.estSavingCents,
             total_cents: candidate.booking.totalCents,
-            incentive: CROSS_DAY_INCENTIVE,
+            incentive,
             sms_text: smsText,
             email_subject: emailSubject,
             email_body: emailBody,

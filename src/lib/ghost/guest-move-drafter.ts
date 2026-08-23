@@ -17,6 +17,7 @@ import {
   OPTIMIZE_HORIZON_DAYS,
   GUEST_MOVE_EXPIRY_HOURS,
   GUEST_MOVE_PROMPT,
+  moveIncentiveFor,
 } from './rulebook'
 import { amsterdamToday, formatAmsterdamTime } from '@/lib/utils'
 
@@ -492,6 +493,7 @@ async function craftAndInsertMoveProposal(
   const currentTime = formatAmsterdamTime(candidate.currentStartAt)
   const proposedTime = formatAmsterdamTime(candidate.proposedStartAt)
   const totalEur = ((candidate.booking.totalCents ?? 0) / 100).toFixed(2)
+  const incentive = moveIncentiveFor(candidate.booking.category, candidate.booking.extrasSelected)
 
   const response = await meteredMessage('ghost_guest_move', {
     model: CLAUDE_DRAFTER_MODEL,
@@ -504,6 +506,7 @@ async function craftAndInsertMoveProposal(
 THE ASK
 - Guest: ${candidate.booking.customerName ?? 'guest'} · ${candidate.booking.guestCount ?? '?'} people · ${candidate.booking.listingTitle ?? 'cruise'} on ${targetDate}
 - Current departure: ${currentTime} · proposed: ${proposedTime} (same boat: ${candidate.boat}, same duration, same price: €${totalEur})
+- Incentive to offer: ${incentive ?? 'NONE — they already have Unlimited Drinks, so no sweetener this time; just make the plain ask'}
 
 Return JSON only:
 {"sms_text": "<SMS incl {{link}}>", "email_subject": "<subject>", "email_body": "<plain-text email incl {{link}}, with a one-line summary of their booking (date, time ${currentTime} → ${proposedTime}, party size, price unchanged €${totalEur})>"}`,
@@ -539,7 +542,7 @@ Return JSON only:
           gap_minutes: candidate.gapMinutes,
           est_saving_cents: candidate.estSavingCents,
           total_cents: candidate.booking.totalCents,
-          incentive: 'a bottle of wine on the house',
+          incentive,
           sms_text: smsText,
           email_subject: emailSubject,
           email_body: emailBody,

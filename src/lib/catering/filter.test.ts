@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { filterCateringItems, hasCatering, cateringAmountCents, isDrinksOnlyBooking } from './filter'
+import { filterCateringItems, hasCatering, cateringAmountCents, isDrinksOnlyBooking, hasUnlimitedDrinks } from './filter'
 import type { ExtrasLineItem } from './filter'
 
 // Catering = food + drinks (both need to be pre-ordered from the supplier).
@@ -130,5 +130,17 @@ describe('isDrinksOnlyBooking (the snackbox upsell audience)', () => {
     expect(isDrinksOnlyBooking([protection, taxItem])).toBe(false)
     expect(isDrinksOnlyBooking([])).toBe(false)
     expect(isDrinksOnlyBooking(null)).toBe(false)
+  })
+
+  it('hasUnlimitedDrinks: true even alongside food — unlike isDrinksOnlyBooking, this only asks "do they already have free drinks?"', () => {
+    expect(hasUnlimitedDrinks([unlimited])).toBe(true)
+    expect(hasUnlimitedDrinks([unlimited, food])).toBe(true)
+  })
+
+  it('hasUnlimitedDrinks: false for BYOD, other drinks, or nothing', () => {
+    expect(hasUnlimitedDrinks([byod])).toBe(false)
+    expect(hasUnlimitedDrinks([drinks])).toBe(false)
+    expect(hasUnlimitedDrinks([])).toBe(false)
+    expect(hasUnlimitedDrinks(null)).toBe(false)
   })
 })

@@ -7,7 +7,7 @@ import { fetchSearchResults } from '@/lib/search/fetch-search-results'
 import { PLACEHOLDER_CONTACT, toVerdict, type DryRunVerdict } from './dry-run'
 import { boatKeyFromName } from './guest-move-drafter'
 import { extractJson } from './ops-drafters'
-import { BOAT_SWAP_PROMPT } from './rulebook'
+import { BOAT_SWAP_PROMPT, moveIncentiveFor } from './rulebook'
 import { formatAmsterdamTime } from '@/lib/utils'
 import type { AvailabilitySlot } from '@/types'
 import type { MergeCandidate } from './ops-review'
@@ -142,6 +142,7 @@ export async function draftBoatSwap(
 
     const time = formatAmsterdamTime(booking.startTime)
     const totalEur = ((booking.totalCents ?? 0) / 100).toFixed(2)
+    const incentive = moveIncentiveFor(booking.category, booking.extrasSelected)
 
     const response = await meteredMessage('ghost_boat_swap', {
       model: CLAUDE_DRAFTER_MODEL,
@@ -154,6 +155,7 @@ export async function draftBoatSwap(
 THE ASK
 - Guest: ${booking.customerName ?? 'guest'} · ${booking.guestCount ?? '?'} people · ${booking.listingTitle ?? 'cruise'} on ${candidate.date} at ${time}
 - Current boat: ${candidate.fromBoat} · proposed boat: ${candidate.toBoat} (same date, same time, same price: €${totalEur})
+- Incentive to offer: ${incentive ?? 'NONE — they already have Unlimited Drinks, so no sweetener this time; just make the plain ask'}
 
 Return JSON only:
 {"sms_text": "<SMS incl {{link}}>", "email_subject": "<subject>", "email_body": "<plain-text email incl {{link}}, with a one-line summary of their booking (${candidate.date} ${time}, ${candidate.fromBoat} → ${candidate.toBoat}, party size, price unchanged €${totalEur})>"}`,
@@ -189,7 +191,7 @@ Return JSON only:
             proposed_end_at: booking.endTime,
             est_saving_cents: candidate.estSavingCents ?? 0,
             total_cents: booking.totalCents,
-            incentive: 'a bottle of wine on the house',
+            incentive,
             sms_text: smsText,
             email_subject: emailSubject,
             email_body: emailBody,
