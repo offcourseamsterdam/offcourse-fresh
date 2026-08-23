@@ -158,11 +158,14 @@ Two ways to run the app — pick whichever fits the task:
 **Option A — Beer's own Terminal (default for long sessions):**
 1. Beer runs `npm run dev` from his own Terminal.app
 2. Claude Code edits code and reads files as normal
-3. For visual verification, use Claude in Chrome MCP tools to browse `http://localhost:3000`
+3. For visual verification, use gstack's `/browse` skill (see "gstack" section above) to browse
+   `http://localhost:3000` — not the Claude in Chrome MCP tools
 
 **Option B — Claude Code preview server (try this first for verification):**
 - The previous Turbopack + macOS sandbox crash appears to be resolved.
-- `preview_start` is allowed again — use it when verifying UI changes via the `<verification_workflow>`.
+- `preview_start` is allowed again to launch the dev server itself.
+- For the actual visual verification of what it serves, use gstack's `/browse` skill instead of
+  the browser MCP tools described in `<verification_workflow>`.
 - If the dev server crashes mid-session, fall back to Option A and note it so we can re-disable preview.
 
 Do NOT spawn `next dev` directly from Bash — use `preview_start` if you want Claude Code to run the server.
@@ -217,6 +220,47 @@ routes rather than fail — it reports zero unguarded handlers because it found 
 which reads as "all clear" when it's actually blind. Whenever you add a new way of exporting a route
 handler, add a matching pattern to `findHandlers()` in the same change, and re-run the contract test
 file alone to confirm it now actually iterates the new routes instead of finding none.
+
+## gstack
+
+This project uses [gstack](https://github.com/garrytan/gstack) (Garry Tan's Claude Code skill
+suite), installed personally at `~/.claude/skills/gstack` — not vendored into this repo, so it's
+picked up automatically by any Claude Code session on Beer's machine.
+
+**Browser interaction (CRITICAL):** for all web browsing — QA, dogfooding, screenshotting,
+verifying UI changes — use the `/browse` skill (or the `$B` browse binary directly). **Never use**
+`mcp__claude-in-chrome__*` or `mcp__Claude_Browser__*` tools for this. Those are MCP-protocol
+tools that resend a full schema on every call (~1,500–2,000 tokens and 2–5s per call); gstack's
+compiled CLI talks to a local Chromium daemon over plain stdout (~100–200ms, ~0 token overhead).
+This supersedes the Dev Server section's old "Claude in Chrome MCP tools" guidance below — see
+`~/.claude/skills/gstack/BROWSER.md` for the full command reference.
+
+**Available skills:** `/office-hours`, `/plan-ceo-review`, `/plan-eng-review`,
+`/plan-design-review`, `/design-consultation`, `/design-shotgun`, `/design-html`, `/review`,
+`/ship`, `/land-and-deploy`, `/canary`, `/benchmark`, `/browse`, `/connect-chrome`, `/qa`,
+`/qa-only`, `/design-review`, `/setup-browser-cookies`, `/setup-deploy`, `/setup-gbrain`,
+`/retro`, `/investigate`, `/document-release`, `/document-generate`, `/codex`, `/cso`,
+`/autoplan`, `/plan-devex-review`, `/devex-review`, `/careful`, `/freeze`, `/guard`,
+`/unfreeze`, `/gstack-upgrade`, `/learn`.
+
+## Skill routing
+
+When the user's request matches an available skill, invoke it via the Skill tool. When in doubt, invoke the skill.
+
+Key routing rules:
+- Product ideas/brainstorming → invoke /office-hours
+- Strategy/scope → invoke /plan-ceo-review
+- Architecture → invoke /plan-eng-review
+- Design system/plan review → invoke /design-consultation or /plan-design-review
+- Full review pipeline → invoke /autoplan
+- Bugs/errors → invoke /investigate
+- QA/testing site behavior → invoke /qa or /qa-only
+- Code review/diff check → invoke /review
+- Visual polish → invoke /design-review
+- Ship/deploy/PR → invoke /ship or /land-and-deploy
+- Save progress → invoke /context-save
+- Resume context → invoke /context-restore
+- Author a backlog-ready spec/issue → invoke /spec
 
 ## How to Work
 
