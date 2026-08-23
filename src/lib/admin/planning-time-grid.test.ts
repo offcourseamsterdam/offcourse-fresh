@@ -7,6 +7,7 @@ import {
   leftPx,
   blockMinWidthPx,
   hourMarksRow,
+  nowLeftPx,
   GRID_START_HOUR,
   GRID_END_HOUR,
   GRID_HEIGHT_PX,
@@ -157,5 +158,26 @@ describe('hourMarksRow', () => {
     for (let i = 1; i < marks.length; i++) {
       expect(marks[i].leftPx - marks[i - 1].leftPx).toBe(PX_PER_HOUR_ROW)
     }
+  })
+})
+
+describe('nowLeftPx', () => {
+  it('returns the offset for a time inside the grid window', () => {
+    // 12:00 UTC = 14:00 Amsterdam (CEST) → 5 hours past the 09:00 start
+    expect(nowLeftPx(new Date('2026-07-09T12:00:00Z').getTime())).toBe(5 * PX_PER_HOUR_ROW)
+  })
+
+  it('returns 0 exactly at the grid start', () => {
+    expect(nowLeftPx(new Date('2026-07-09T07:00:00Z').getTime())).toBe(0)
+  })
+
+  it('returns null before the grid starts, rather than lying with a line pinned to 09:00', () => {
+    // 06:00 UTC = 08:00 Amsterdam, an hour before the grid opens
+    expect(nowLeftPx(new Date('2026-07-09T06:00:00Z').getTime())).toBeNull()
+  })
+
+  it('returns null in the small hours (00:00–09:00 reads as before the window, not after it)', () => {
+    // 01:00 UTC = 03:00 Amsterdam
+    expect(nowLeftPx(new Date('2026-07-09T01:00:00Z').getTime())).toBeNull()
   })
 })

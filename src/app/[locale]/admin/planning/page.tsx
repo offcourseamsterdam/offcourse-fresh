@@ -17,7 +17,8 @@ import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { fmtAdminTime } from '@/lib/admin/format'
 import { getWeekStart, addDays, weekDateStrings, formatWeekRangeLabel, amsDateString } from '@/lib/admin/week'
 import { groupBookingsForPlanning, splitGroupsByBoat, resolveBoatForGroup, type PlanningGroup } from '@/lib/admin/planning-groups'
-import { topPx, blockMinHeightPx, hourMarks, GRID_HEIGHT_PX, RAIL_WIDTH_PX, leftPx, blockMinWidthPx, hourMarksRow, GRID_WIDTH_PX, DATE_RAIL_WIDTH_PX } from '@/lib/admin/planning-time-grid'
+import { topPx, blockMinHeightPx, hourMarks, GRID_HEIGHT_PX, RAIL_WIDTH_PX, leftPx, blockMinWidthPx, hourMarksRow, nowLeftPx, GRID_WIDTH_PX, DATE_RAIL_WIDTH_PX, CHIP_DETAIL_MIN_PX } from '@/lib/admin/planning-time-grid'
+import { useTickingClock } from '@/hooks/useTickingClock'
 import type { SharedCapacityResult } from '@/lib/admin/shared-capacity'
 import { filterCateringItems } from '@/lib/catering/filter'
 import type { AdminBooking } from '@/lib/admin/types'
@@ -507,6 +508,13 @@ function TimeGridColumn({ groups, onSelectBooking, onSelectGroup, onContact, boa
 // full detail is one click away in the same booking/group modal the
 // vertical cards already open, never lost, just not shown inline.
 
+/** Height of one lane, and of the empty-day placeholder that stands in for
+ *  one — a single class so the two can never drift apart. Tall enough for the
+ *  chip's two lines of text; the vertical axis is the cheap one in this
+ *  layout (a row costs 40px where the old column cost 1500px), so it's the
+ *  right place to spend for legibility. */
+const ROW_LANE_HEIGHT = 'h-10'
+
 /** Vertical hour gridlines for one row-lane — the row-layout counterpart to
  *  GridLines (which draws horizontal lines for the vertical column layout). */
 function RowGridLines() {
@@ -519,12 +527,23 @@ function RowGridLines() {
   )
 }
 
-/** One departure, compacted to a single-line chip that fits inside a short
- *  row: a captain-status icon, the start time, and (space permitting) a
- *  guest label. Everything else that DepartureBlock shows inline — names,
- *  phone/WhatsApp, catering, guest notes — is in the title tooltip on hover
- *  and the full booking/group modal on click, per Beer's call on the
- *  compact-chip vs full-card tradeoff (2026-08-23). */
+/** One departure, compacted to a two-line chip that fits inside a short row:
+ *
+ *    line 1   start time · who (guest name, or "N parties" on a shared
+ *             departure) · guest count
+ *    line 2   boat · captain — or "no captain" — plus a catering icon
+ *
+ *  Everything else that DepartureBlock shows inline (phone/WhatsApp, catering
+ *  item names, guest notes) is in the title tooltip on hover and the full
+ *  booking/group modal on click, per Beer's call on the compact-chip vs
+ *  full-card tradeoff (2026-08-23).
+ *
+ *  Colour carries ONE meaning here, deliberately: amber fill = nobody is
+ *  running this yet, the only thing on the page that needs an action. An
+ *  assigned departure is plain white with a thin emerald edge, so a week
+ *  that's fully crewed reads as calm and the gaps jump out. (The earlier
+ *  version tinted assigned chips emerald too, which made a healthy week look
+ *  as loud as a broken one.) */
 function CompactDepartureChip({
   group, onSelectBooking, onSelectGroup, boatName, capacity, captainByBookingId,
 }: {
@@ -539,34 +558,69 @@ function CompactDepartureChip({
   const isMulti = group.bookings.length > 1
   const isShared = first.category === 'shared'
   const captain = group.bookings.map(b => captainByBookingId?.get(b.id)).find(Boolean)
-  const guestLabel = isShared
-    ? `${group.bookings.length}p·${group.totalGuestCount}g`
-    : (first.customer_name ?? '—')
+  const hasCatering = group.bookings.some(b => filterCateringItems(b.extras_selected ?? []).length > 0)
+  const width = blockMinWidthPx(first.start_time, first.end_time)
+  const boat = boatName && boatName !== 'Other' ? boatName : null
 
-  const detailLines = [
+  const headline = isShared
+    ? `${group.bookings.length} part${group.bookings.length === 1 ? 'y' : 'ies'}`
+    : (first.customer_name ?? '—')
+  const detail = [
+    boat,
+    captain ? captain.name : 'no captain',
+    isShared && capacity ? `${capacity.spotsLeft} left` : null,
+  ].filter(Boolean).join(' · ')
+
+  const tooltip = [
     timeRangeLabel(first.start_time, first.end_time),
-    [boatName && boatName !== 'Other' ? boatName : null, first.category === 'private' ? 'Private' : isShared ? 'Shared' : null].filter(Boolean).join(' · '),
+    [boat, first.category === 'private' ? 'Private' : isShared ? 'Shared' : null].filter(Boolean).join(' · '),
     captain ? `Captain: ${captain.name}` : 'Needs a captain',
     isShared
       ? `${group.bookings.length} part${group.bookings.length === 1 ? 'y' : 'ies'} · ${group.totalGuestCount} guest${group.totalGuestCount === 1 ? '' : 's'}${capacity ? ` · ${capacity.spotsLeft} spots left` : ''}`
       : group.bookings.map(b => `${b.customer_name ?? '—'} (${b.guest_count ?? '—'} guests)`).join(', '),
-  ].filter(Boolean)
+    hasCatering ? 'Catering ordered' : null,
+  ].filter(Boolean).join('\n')
 
   return (
     <button
       type="button"
       onClick={() => (isMulti ? onSelectGroup(group) : onSelectBooking(first.id))}
-      title={detailLines.join('\n')}
-      style={{ left: leftPx(first.start_time), width: blockMinWidthPx(first.start_time, first.end_time) }}
-      className={`absolute top-0.5 bottom-0.5 z-10 hover:z-30 flex items-center gap-1 px-1.5 rounded border text-[10px] font-medium overflow-hidden whitespace-nowrap transition-colors ${
+      title={tooltip}
+      style={{ left: leftPx(first.start_time), width }}
+      className={`group/chip absolute top-0.5 bottom-0.5 z-10 hover:z-30 flex flex-col justify-center overflow-hidden rounded-md border pl-2 pr-1.5 text-left leading-none whitespace-nowrap shadow-sm transition-colors ${
         captain
-          ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
-          : 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100'
+          ? 'bg-white border-zinc-200 hover:bg-zinc-50'
+          : 'bg-amber-50 border-amber-300 hover:bg-amber-100'
       }`}
     >
-      {captain ? <UserCheck className="w-2.5 h-2.5 shrink-0" /> : <UserX className="w-2.5 h-2.5 shrink-0" />}
-      <span className="tabular-nums shrink-0">{fmtAdminTime(first.start_time)}</span>
-      <span className="truncate">{guestLabel}</span>
+      {/* Status edge — the one place captain-assigned is encoded on an
+          otherwise-neutral chip, so it reads without competing with the text. */}
+      <span className={`absolute left-0 inset-y-0 w-1 ${captain ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+
+      <span className="flex items-baseline gap-1 min-w-0">
+        <span className={`text-[10px] font-semibold tabular-nums shrink-0 ${captain ? 'text-zinc-900' : 'text-amber-900'}`}>
+          {fmtAdminTime(first.start_time)}
+        </span>
+        <span className={`text-[10px] truncate min-w-0 ${captain ? 'text-zinc-600' : 'text-amber-800'}`}>
+          {headline}
+        </span>
+        {group.totalGuestCount > 0 && (
+          <span className={`text-[9px] tabular-nums shrink-0 ml-auto pl-1 ${captain ? 'text-zinc-400' : 'text-amber-600'}`}>
+            {group.totalGuestCount}g
+          </span>
+        )}
+      </span>
+
+      {width >= CHIP_DETAIL_MIN_PX && (
+        <span className="flex items-center gap-1 min-w-0 mt-1">
+          <span className={`text-[9px] truncate min-w-0 ${captain ? 'text-zinc-500' : 'text-amber-700 font-medium'}`}>
+            {detail}
+          </span>
+          {hasCatering && (
+            <UtensilsCrossed className={`w-2.5 h-2.5 shrink-0 ml-auto ${captain ? 'text-zinc-400' : 'text-amber-600'}`} />
+          )}
+        </span>
+      )}
     </button>
   )
 }
@@ -577,7 +631,7 @@ function CompactDepartureChip({
  *  width to spend on a second column). Same fixed-width-spanning-the-full-
  *  grid contract as TimeGridColumn, just on the horizontal axis. */
 function TimeGridRowLane({
-  groups, onSelectBooking, onSelectGroup, boatLabel, sharedCapacity, captainByBookingId,
+  groups, onSelectBooking, onSelectGroup, boatLabel, sharedCapacity, captainByBookingId, nowPx,
 }: {
   groups: PlanningGroup[]
   onSelectBooking: (id: string) => void
@@ -585,21 +639,29 @@ function TimeGridRowLane({
   boatLabel?: string
   sharedCapacity?: Record<number, SharedCapacityResult>
   captainByBookingId?: Map<string, { name: string; startAt: string; endAt: string }>
+  /** Set only on today's lanes — the live "right now" marker. */
+  nowPx?: number | null
 }) {
   const captainWindows = useMemo(() => computeCaptainWindows(groups, captainByBookingId), [groups, captainByBookingId])
   return (
-    <div className="relative h-8 shrink-0" style={{ width: GRID_WIDTH_PX }}>
+    <div className={`relative shrink-0 ${ROW_LANE_HEIGHT}`} style={{ width: GRID_WIDTH_PX }}>
       <RowGridLines />
+      {/* A captain's working window (crew call → wrap-up). Kept very faint:
+          it's context for the chips sitting on top of it, not a thing to
+          read in its own right — at full strength it out-shouted them. */}
       {captainWindows.map(w => (
         <div
           key={w.name}
-          className="absolute top-0 bottom-0 z-[1] bg-emerald-100/70 border-x border-emerald-200 pointer-events-none"
+          className="absolute inset-y-0 z-[1] bg-emerald-50 border-x border-emerald-100 pointer-events-none"
           style={{ left: leftPx(w.startIso), width: blockMinWidthPx(w.startIso, w.endIso) }}
           title={`${w.name} working ${fmtAdminTime(w.startIso)}–${fmtAdminTime(w.endIso)}`}
         />
       ))}
+      {nowPx != null && (
+        <div className="absolute inset-y-0 z-[2] w-px bg-rose-400 pointer-events-none" style={{ left: nowPx }} />
+      )}
       {boatLabel && (
-        <p className="absolute top-0 left-0.5 z-20 text-[8px] font-semibold uppercase tracking-wider text-zinc-400 pointer-events-none">
+        <p className="absolute top-0 left-0.5 z-20 text-[8px] font-semibold uppercase tracking-wider text-zinc-300 pointer-events-none">
           {boatLabel}
         </p>
       )}
@@ -622,14 +684,26 @@ function TimeGridRowLane({
   )
 }
 
+/** Departures nobody is assigned to yet — the day's actual to-do count, and
+ *  the reason this page exists. Counts GROUPS, like countDepartures: several
+ *  parties sharing one sailing still need exactly one captain. */
+function countUnassigned(
+  groups: PlanningGroup[],
+  captainByBookingId?: Map<string, { name: string; startAt: string; endAt: string }>,
+): number {
+  return groups.filter(g => !g.bookings.some(b => captainByBookingId?.get(b.id))).length
+}
+
 /** One day, as a row: a compact date cell (sticky left, so it stays readable
  *  however far right the grid scrolls) plus one lane per boat the day needs.
- *  Counts and staff availability that DayHeader shows as wrapped chips
- *  become a single tooltip line here — there's no vertical room in a
- *  row this short to show them inline without inflating every row back
- *  toward the height this layout exists to avoid. */
+ *
+ *  The rail shows what you can't get by looking at the chips: how many
+ *  departures still need a captain, and how many crew said they're free. The
+ *  private/shared split DayHeader shows on mobile is deliberately NOT here —
+ *  the chips themselves already spell that out, and rail width is the
+ *  scarcest space on this layout. Full staff names stay in the tooltip. */
 function DayRow({
-  label, dateObj, isToday, dayGroups, sharedCapacity, availableStaff, captainByBookingId, onSelectBooking, onSelectGroup,
+  label, dateObj, isToday, dayGroups, sharedCapacity, availableStaff, captainByBookingId, onSelectBooking, onSelectGroup, nowPx,
 }: {
   label: string
   dateObj: Date
@@ -640,41 +714,65 @@ function DayRow({
   captainByBookingId?: Map<string, { name: string; startAt: string; endAt: string }>
   onSelectBooking: (id: string) => void
   onSelectGroup: (group: PlanningGroup) => void
+  nowPx?: number | null
 }) {
   const boatColumns = splitGroupsByBoat(dayGroups, sharedCapacity)
   const isSplit = boatColumns.length > 1
-  const sharedCount = countDepartures(dayGroups, 'shared')
-  const privateCount = countDepartures(dayGroups, 'private')
-  const countsLabel = [privateCount > 0 ? `${privateCount} private` : null, sharedCount > 0 ? `${sharedCount} shared` : null].filter(Boolean).join(', ')
-  const staffLabel = availableStaff.length > 0 ? `${availableStaff.length} avail` : null
+  const unassigned = countUnassigned(dayGroups, captainByBookingId)
+  const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6
+
+  const tooltip = [
+    `${countDepartures(dayGroups, 'private')} private, ${countDepartures(dayGroups, 'shared')} shared`,
+    unassigned > 0 ? `${unassigned} still need a captain` : 'Every departure has a captain',
+    availableStaff.length > 0 ? `Available: ${availableStaff.join(', ')}` : 'Nobody marked available',
+  ].join('\n')
 
   return (
-    <div className={`flex ${isToday ? 'bg-indigo-50/40' : ''}`}>
+    <div className={`flex ${isToday ? 'bg-indigo-50/40' : isWeekend ? 'bg-zinc-50/60' : ''}`}>
       <div
-        className={`sticky left-0 z-20 shrink-0 flex flex-col justify-center gap-0.5 px-2 py-1 border-r ${isToday ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-zinc-100'}`}
+        className={`sticky left-0 z-20 shrink-0 flex items-center gap-1.5 px-2 border-r ${
+          isToday ? 'bg-indigo-50 border-indigo-200' : isWeekend ? 'bg-zinc-50 border-zinc-100' : 'bg-white border-zinc-100'
+        }`}
         style={{ width: DATE_RAIL_WIDTH_PX }}
-        title={[countsLabel, availableStaff.length > 0 ? `Available: ${availableStaff.join(', ')}` : null].filter(Boolean).join(' — ') || undefined}
+        title={tooltip}
       >
-        <p className={`text-[9px] font-semibold uppercase tracking-wider leading-none ${isToday ? 'text-indigo-700' : 'text-zinc-400'}`}>{label}</p>
-        <p className={`text-xs font-medium leading-tight ${isToday ? 'text-indigo-900' : 'text-zinc-900'}`}>
-          {dateObj.getDate()} {dateObj.toLocaleDateString('en-GB', { month: 'short', timeZone: 'Europe/Amsterdam' })}
-        </p>
-        {(countsLabel || staffLabel) && (
-          <p className="text-[9px] leading-none text-zinc-400 truncate">
-            {countsLabel}
-            {countsLabel && staffLabel ? ' · ' : ''}
-            {staffLabel && <span className="text-emerald-600 font-medium">{staffLabel}</span>}
+        <div className="shrink-0 text-center w-6">
+          <p className={`text-[9px] font-semibold uppercase tracking-wide leading-none ${isToday ? 'text-indigo-600' : 'text-zinc-400'}`}>
+            {label}
           </p>
-        )}
+          <p className={`text-sm font-semibold leading-tight ${isToday ? 'text-indigo-900' : 'text-zinc-900'}`}>
+            {dateObj.getDate()}
+          </p>
+        </div>
+        <div className="min-w-0 flex flex-col gap-0.5">
+          <p className="text-[9px] leading-none text-zinc-400">
+            {dateObj.toLocaleDateString('en-GB', { month: 'short', timeZone: 'Europe/Amsterdam' })}
+          </p>
+          <div className="flex items-center gap-1">
+            {unassigned > 0 && (
+              <span className="text-[9px] leading-none font-semibold px-1 py-0.5 rounded bg-amber-100 text-amber-800 tabular-nums">
+                {unassigned}
+              </span>
+            )}
+            {availableStaff.length > 0 && (
+              <span className="text-[9px] leading-none font-medium px-1 py-0.5 rounded bg-emerald-50 text-emerald-700 tabular-nums">
+                {availableStaff.length}
+              </span>
+            )}
+          </div>
+        </div>
       </div>
       <div className="flex flex-col divide-y divide-zinc-50">
         {dayGroups.length === 0 ? (
-          <div className="h-8 shrink-0 flex items-center pl-2 text-[10px] text-zinc-300" style={{ width: GRID_WIDTH_PX }}>—</div>
+          <div className={`${ROW_LANE_HEIGHT} relative shrink-0`} style={{ width: GRID_WIDTH_PX }}>
+            <RowGridLines />
+            {nowPx != null && <div className="absolute inset-y-0 z-[2] w-px bg-rose-400" style={{ left: nowPx }} />}
+          </div>
         ) : !isSplit ? (
-          <TimeGridRowLane groups={dayGroups} onSelectBooking={onSelectBooking} onSelectGroup={onSelectGroup} sharedCapacity={sharedCapacity} captainByBookingId={captainByBookingId} />
+          <TimeGridRowLane groups={dayGroups} onSelectBooking={onSelectBooking} onSelectGroup={onSelectGroup} sharedCapacity={sharedCapacity} captainByBookingId={captainByBookingId} nowPx={nowPx} />
         ) : (
           boatColumns.map(col => (
-            <TimeGridRowLane key={col.boat} groups={col.groups} onSelectBooking={onSelectBooking} onSelectGroup={onSelectGroup} boatLabel={col.boat} sharedCapacity={sharedCapacity} captainByBookingId={captainByBookingId} />
+            <TimeGridRowLane key={col.boat} groups={col.groups} onSelectBooking={onSelectBooking} onSelectGroup={onSelectGroup} boatLabel={col.boat} sharedCapacity={sharedCapacity} captainByBookingId={captainByBookingId} nowPx={nowPx} />
           ))
         )}
       </div>
@@ -728,6 +826,11 @@ export default function PlanningPage() {
     : null
 
   const todayStr = useMemo(() => amsDateString(new Date()), [])
+  // Live "right now" marker on today's row. A minute of drift is invisible at
+  // ~1px per minute, so a 60s tick is plenty — and it's a pure clock, no
+  // refetch involved. Null outside the grid's 09:00–00:00 window.
+  const nowTick = useTickingClock(true, 60_000)
+  const nowPx = useMemo(() => nowLeftPx(nowTick), [nowTick])
   const days = useMemo(() => weekDateStrings(weekStart, weekCount * 7), [weekStart, weekCount])
 
   // Group bookings by booking_date, then within each day collapse same-slot
@@ -1046,16 +1149,28 @@ export default function PlanningPage() {
           >
             {/* Matches the date rail's width below so the columns align. */}
             <div className="shrink-0" style={{ width: DATE_RAIL_WIDTH_PX }} aria-hidden="true" />
-            <div className="relative h-4 shrink-0" style={{ width: GRID_WIDTH_PX }}>
-              {hourMarksRow().map(m => (
+            <div className="relative h-5 shrink-0" style={{ width: GRID_WIDTH_PX }}>
+              {/* Labels sit at the START of the hour they name and are dropped
+                  for the final 00:00 edge — the old centred version pushed
+                  09:00 half outside the scrollport (translate -50% at left 0)
+                  and 00:00 past the right edge, so both end labels clipped. */}
+              {hourMarksRow().slice(0, -1).map(m => (
                 <span
                   key={m.hour}
-                  className="absolute top-0 text-[10px] text-zinc-400 -translate-x-1/2"
+                  className="absolute top-0 pl-1 text-[10px] tabular-nums text-zinc-400 border-l border-zinc-200 leading-none py-0.5"
                   style={{ left: m.leftPx }}
                 >
                   {m.label}
                 </span>
               ))}
+              {nowPx != null && (
+                <span
+                  className="absolute -top-0.5 z-10 -translate-x-1/2 px-1 py-px rounded text-[9px] font-semibold tabular-nums bg-rose-500 text-white"
+                  style={{ left: nowPx }}
+                >
+                  {fmtAdminTime(new Date(nowTick).toISOString())}
+                </span>
+              )}
             </div>
           </div>
 
@@ -1079,6 +1194,7 @@ export default function PlanningPage() {
                 captainByBookingId={captainByBookingId}
                 onSelectBooking={setExpandedId}
                 onSelectGroup={group => setExpandedGroupIds(group.bookings.map(b => b.id))}
+                nowPx={day === todayStr ? nowPx : null}
               />
             ))}
           </div>

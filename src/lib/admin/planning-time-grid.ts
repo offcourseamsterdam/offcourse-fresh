@@ -34,7 +34,11 @@ export const PX_PER_MINUTE_ROW = PX_PER_HOUR_ROW / 60
 // A chip must stay wide enough for its time label even at the shortest real
 // cruise duration — narrower than that and the label itself would clip.
 export const MIN_CHIP_PX = 56
-export const DATE_RAIL_WIDTH_PX = 84
+// Below this width a chip drops its second line (boat · captain · catering)
+// and shows only the headline — two lines of 9px text in less space than
+// this clip mid-word, which reads as broken rather than abbreviated.
+export const CHIP_DETAIL_MIN_PX = 100
+export const DATE_RAIL_WIDTH_PX = 96
 export const GRID_WIDTH_PX = (GRID_END_HOUR - GRID_START_HOUR) * PX_PER_HOUR_ROW
 
 /** Minutes since midnight, in Amsterdam local time, for a given ISO instant. */
@@ -92,6 +96,21 @@ export function leftPx(startIso: string | null): number {
 /** Width for a horizontal chip — see `sizePx`. */
 export function blockMinWidthPx(startIso: string | null, endIso: string | null): number {
   return sizePx(startIso, endIso, PX_PER_MINUTE_ROW, MIN_CHIP_PX)
+}
+
+/**
+ * Horizontal offset for the "right now" marker on today's row, or null when
+ * the current Amsterdam time falls outside the grid's 09:00–24:00 window
+ * (early morning, mostly). Null rather than a clamped 0 on purpose: the
+ * other offsets in this file clamp because a booking pinned to an edge is
+ * still better than one rendered off-grid, but a *now* line pinned to 09:00
+ * at 07:00 in the morning would actively lie about the time — callers draw
+ * nothing instead.
+ */
+export function nowLeftPx(nowMs: number): number | null {
+  const minutes = amsterdamMinutesSinceMidnight(new Date(nowMs).toISOString())
+  if (minutes < GRID_START_HOUR * 60 || minutes > GRID_END_HOUR * 60) return null
+  return (minutes - GRID_START_HOUR * 60) * PX_PER_MINUTE_ROW
 }
 
 export interface HourMark {
