@@ -13,6 +13,7 @@ One file per track or major feature. Written before every PR and kept up to date
 | Google Ads conversion tracking (server-side) | [google-ads-conversion-tracking.md](google-ads-conversion-tracking.md) | — | done |
 | Google Ads architecture overview (handoff/blueprint) | [google-ads-architecture-overview.md](google-ads-architecture-overview.md) | — | done |
 | Google Ads campaign management (create + control) | [google-ads-campaign-management.md](google-ads-campaign-management.md) | — | done |
+| Booking ops timeline (per-booking journey, Phase 1: visibility) | [booking-ops-timeline.md](booking-ops-timeline.md) | — | done |
 | Google Ads admin dashboard (monitor & maintain) | [google-ads-dashboard.md](google-ads-dashboard.md) | — | done |
 | AI referrals tracking (ChatGPT/Perplexity/Gemini citations) | [ai-referrals-tracking.md](ai-referrals-tracking.md) | — | done |
 | WhatsApp click tracking (button usage analytics) | [whatsapp-click-tracking.md](whatsapp-click-tracking.md) | — | done |
@@ -41,7 +42,7 @@ One file per track or major feature. Written before every PR and kept up to date
 | Notification Center (Slack catalog + message log + toggles) | [notification-center.md](notification-center.md) | — | done |
 | Booking double-create guard (PaymentIntent claim) | [booking-double-create-guard.md](booking-double-create-guard.md) | — | done |
 | Observability hardening + money-path tests | [observability-hardening.md](observability-hardening.md) | — | done |
-| AI Operations Engine — fase 1 + gastcontact (ops_events, profiles, operations optimizer, auto shift-sync, guest move requests) | [ai-operations-engine.md](ai-operations-engine.md) | — | done |
+| AI Operations Engine — fase 1 + gastcontact (ops_events, profiles, operations optimizer, auto shift-sync, guest move requests) · **+ cancellation/refund agent (spec only, not built)** | [ai-operations-engine.md](ai-operations-engine.md) | — | done + 1 spec |
 | Gmail inbox integration (email as a Ghost-drafted channel, poll + threaded send, catering supplier auto-confirmation) | [gmail-inbox-integration.md](gmail-inbox-integration.md) | — | done |
 | WhatsApp inbox channel (Twilio Sandbox, webhook ingestion, Ghost drafting, outbound send) | [whatsapp-twilio-integration.md](whatsapp-twilio-integration.md) | — | sandbox (pending Meta verification) |
 | Voice inbox channel (Twilio: ring browser softphone + phone simultaneously, voicemail + transcription, outbound calling) | [voice-twilio-integration.md](voice-twilio-integration.md) | — | done |
