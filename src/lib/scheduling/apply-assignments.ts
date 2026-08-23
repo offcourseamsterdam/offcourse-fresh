@@ -56,7 +56,7 @@ export async function applyScheduleAssignments(
       .eq('id', a.shift_id)
       .eq('status', 'open')
       .is('staff_id', null)
-      .select('id')
+      .select('id, booking_id')
 
     if (!updated?.length) {
       skipped.push({ shift_id: a.shift_id, reason: 'no longer open (manual change wins)' })
@@ -72,6 +72,7 @@ export async function applyScheduleAssignments(
       eventType: 'shift_assigned',
       actorType: actor.actorType,
       actorId: actor.actorId ?? null,
+      bookingId: updated[0].booking_id ?? null,
       shiftId: a.shift_id,
       staffId: a.staff_id,
       proposalId: actor.proposalId ?? null,

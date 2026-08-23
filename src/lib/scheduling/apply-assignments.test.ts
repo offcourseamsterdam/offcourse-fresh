@@ -9,11 +9,14 @@ vi.mock('@/lib/ops/events', () => ({ emitOpsEvent: vi.fn().mockResolvedValue(und
 /**
  * Stubs just the `shifts` update chain `applyScheduleAssignments` issues per
  * assignment: `.update(...).eq('id', X).eq('status','open').is('staff_id',
- * null).select('id')`. `openShiftIds` is the set of shifts still open and
- * unassigned when the claim runs — anything else simulates "a manual change
- * already won" and resolves to no matched rows.
+ * null).select('id, booking_id')`. `openShiftIds` is the set of shifts still
+ * open and unassigned when the claim runs — anything else simulates "a
+ * manual change already won" and resolves to no matched rows.
+ * `bookingIdByShift` supplies the `booking_id` a matched shift row carries;
+ * a shift not present in the map returns `booking_id: null` (a shared-cruise
+ * shift with no single owning booking).
  */
-function makeSupabase(openShiftIds: string[]) {
+function makeSupabase(openShiftIds: string[], bookingIdByShift: Record<string, string | null> = {}) {
   const updateCalls: Array<{ shiftId?: string; payload: Record<string, unknown> }> = []
   let currentShiftId: string | undefined
 
@@ -42,7 +45,10 @@ function makeSupabase(openShiftIds: string[]) {
               is: vi.fn(() => ({
                 select: vi.fn(() =>
                   Promise.resolve({
-                    data: currentShiftId && openShiftIds.includes(currentShiftId) ? [{ id: currentShiftId }] : [],
+                    data:
+                      currentShiftId && openShiftIds.includes(currentShiftId)
+                        ? [{ id: currentShiftId, booking_id: bookingIdByShift[currentShiftId] ?? null }]
+                        : [],
                   }),
                 ),
               })),
@@ -177,6 +183,32 @@ describe('applyScheduleAssignments', () => {
 
     expect(emitOpsEvent).toHaveBeenCalledWith(
       expect.objectContaining({ actorType: 'agent', actorId: 'ops_optimizer', source: 'cron/proactive-scheduling', proposalId: null }),
+    )
+  })
+
+  it("includes the shift's booking_id on the emitted event", async () => {
+    const sb = makeSupabase(['shift-1'], { 'shift-1': 'booking-99' })
+
+    await applyScheduleAssignments(sb.client as never, [{ shift_id: 'shift-1', staff_id: 'staff-1' }], {
+      actorType: 'agent',
+      source: 'test',
+    })
+
+    expect(emitOpsEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'shift_assigned', bookingId: 'booking-99' }),
+    )
+  })
+
+  it('passes bookingId: null through for a shared-cruise shift with no booking_id', async () => {
+    const sb = makeSupabase(['shift-1']) // no bookingIdByShift entry
+
+    await applyScheduleAssignments(sb.client as never, [{ shift_id: 'shift-1', staff_id: 'staff-1' }], {
+      actorType: 'agent',
+      source: 'test',
+    })
+
+    expect(emitOpsEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'shift_assigned', bookingId: null }),
     )
   })
 })
