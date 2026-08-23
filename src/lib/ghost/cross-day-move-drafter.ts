@@ -5,6 +5,7 @@ import { emitOpsEvent } from '@/lib/ops/events'
 import { formatAmsterdamTime } from '@/lib/utils'
 import { extractJson } from './ops-drafters'
 import { moveIncentiveFor, CROSS_DAY_MOVE_PROMPT } from './rulebook'
+import { isOptedOut } from './reschedule-opt-outs'
 import type { CrossDayConsolidationCandidate } from './cross-day-consolidation'
 
 type AdminClient = ReturnType<typeof createAdminClient>
@@ -31,6 +32,9 @@ export async function draftCrossDayConsolidation(
 ): Promise<'drafted' | 'skipped'> {
   try {
     if (!candidate.booking.customerEmail && !candidate.booking.customerPhone) return 'skipped'
+    if (await isOptedOut(supabase, { email: candidate.booking.customerEmail, phone: candidate.booking.customerPhone })) {
+      return 'skipped'
+    }
 
     const currentTime = formatAmsterdamTime(candidate.booking.startTime)
     const proposedTime = formatAmsterdamTime(candidate.receivingBooking.startTime)

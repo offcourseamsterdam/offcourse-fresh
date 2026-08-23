@@ -3,6 +3,7 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isValidMoveToken } from '@/lib/ops/move-token'
 import { emitOpsEvent } from '@/lib/ops/events'
+import { recordOptOut } from '@/lib/ghost/reschedule-opt-outs'
 import { postSlackText } from '@/lib/slack/send-notification'
 import { formatAmsterdamTime } from '@/lib/utils'
 
@@ -56,6 +57,8 @@ export async function POST(req: NextRequest) {
 
     const payload = (p.payload ?? {}) as {
       guest_name?: string | null
+      guest_email?: string | null
+      guest_phone?: string | null
       cruise_title?: string | null
       target_date?: string
       booking_id?: string
@@ -78,6 +81,18 @@ export async function POST(req: NextRequest) {
         ...(response === 'defer' ? {} : { status: 'executed' }),
       })
       .eq('id', proposalId)
+
+    // Permanent, guest-level opt-out (Beer, 2026-08-23: "one decline, never
+    // ask that guest again") — a decline on THIS booking blocks every future
+    // ask to this same email/phone, any booking, any move type.
+    if (response === 'decline') {
+      await recordOptOut(supabase, {
+        email: payload.guest_email ?? null,
+        phone: payload.guest_phone ?? null,
+        bookingId: payload.booking_id ?? null,
+        proposalId,
+      })
+    }
 
     const eventType =
       response === 'accept' ? 'guest_move_accepted' : response === 'decline' ? 'guest_move_declined' : 'guest_move_deferred'

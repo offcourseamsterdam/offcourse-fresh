@@ -204,6 +204,53 @@ describe('draftGuestMoveForNewBooking', () => {
     )
   })
 
+  it('drafts NOTHING when the guest previously declined a reschedule ask — permanent opt-out (Beer, 2026-08-23: "one decline, never ask that guest again")', async () => {
+    const { client, inserted } = makeSupabase({
+      agent_proposals: [{ data: [] }],
+      shifts: [
+        {
+          data: [
+            shiftRow('sh1', `${DATE}T10:00:00Z`, `${DATE}T12:00:00Z`, 'b1'),
+            shiftRow('sh2', `${DATE}T13:30:00Z`, `${DATE}T15:00:00Z`, 'b2'),
+          ],
+        },
+      ],
+      bookings: [{ data: [bookingRow('b1'), bookingRow('b2')] }],
+      cruise_listings: [{ data: { slug: 'canal-cruise' } }],
+      // isOptedOut checks email first — one match is enough to short-circuit.
+      reschedule_opt_outs: [{ data: [{ id: 'past-decline' }] }],
+    })
+    vi.mocked(createAdminClient).mockReturnValue(client as never)
+    vi.mocked(syncShiftsForRange).mockResolvedValue({ created: 1, updated: 0, skipped: [] })
+    vi.mocked(fetchSearchResults).mockResolvedValue([
+      {
+        listing: { slug: 'canal-cruise' },
+        availableSlots: [
+          {
+            pk: 999,
+            startAt: `${DATE}T12:00:00Z`,
+            startTime: '2pm',
+            endAt: `${DATE}T13:30:00Z`,
+            headline: '',
+            capacity: 12,
+            customerTypes: [
+              { pk: 555, boatId: 'diana', durationMinutes: 90, minimumParty: 1, maximumParty: 12, priceCents: 3500, name: 'Adult (13+)', totalCapacity: 12, customerTypePk: 1 },
+            ],
+          },
+        ],
+        date: DATE,
+        guests: 4,
+      },
+    ] as never)
+    fhValidate.mockResolvedValue({ is_bookable: true, receipt_total: 14000 })
+
+    const result = await draftGuestMoveForNewBooking(DATE)
+
+    expect(result).toBe('skipped')
+    expect(inserted).toHaveLength(0)
+    expect(meteredMessage).not.toHaveBeenCalled() // skip-first: opted out before ever calling Claude
+  })
+
   it('drafts NOTHING when FareHarbor has no bookable slot in the snap window', async () => {
     const { client, inserted } = makeSupabase({
       agent_proposals: [{ data: [] }],

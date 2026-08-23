@@ -8,6 +8,7 @@ import { PLACEHOLDER_CONTACT, toVerdict, type DryRunVerdict } from './dry-run'
 import { boatKeyFromName } from './guest-move-drafter'
 import { extractJson } from './ops-drafters'
 import { BOAT_SWAP_PROMPT, moveIncentiveFor } from './rulebook'
+import { isOptedOut } from './reschedule-opt-outs'
 import { formatAmsterdamTime } from '@/lib/utils'
 import type { AvailabilitySlot } from '@/types'
 import type { MergeCandidate } from './ops-review'
@@ -139,6 +140,7 @@ export async function draftBoatSwap(
 ): Promise<'drafted' | 'skipped'> {
   try {
     if (!booking.customerEmail && !booking.customerPhone) return 'skipped'
+    if (await isOptedOut(supabase, { email: booking.customerEmail, phone: booking.customerPhone })) return 'skipped'
 
     const time = formatAmsterdamTime(booking.startTime)
     const totalEur = ((booking.totalCents ?? 0) / 100).toFixed(2)

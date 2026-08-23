@@ -10,6 +10,7 @@ import { getFareHarborClient } from '@/lib/fareharbor/client'
 import type { AvailabilitySlot } from '@/types'
 import { computeDayFacts, type OpsReviewShift } from './ops-review'
 import { PLACEHOLDER_CONTACT, toVerdict, type DryRunVerdict } from './dry-run'
+import { isOptedOut } from './reschedule-opt-outs'
 import { extractJson } from './ops-drafters'
 import {
   MIN_GAP_MINUTES,
@@ -385,7 +386,11 @@ function toMoveBooking(b: RawBookingRow): MoveBooking {
  * single day, just fetched differently (one big batched query vs. one
  * targeted single-day query).
  */
-function candidateFromDayRows(rawShifts: RawShiftRow[], dayBookings: MoveBooking[]): MoveCandidate | null {
+async function candidateFromDayRows(
+  supabase: AdminClient,
+  rawShifts: RawShiftRow[],
+  dayBookings: MoveBooking[],
+): Promise<MoveCandidate | null> {
   if (rawShifts.length < 2) return null // nothing to compare against yet
 
   const bookingsById = new Map(dayBookings.map(b => [b.id, b]))
@@ -420,10 +425,17 @@ function candidateFromDayRows(rawShifts: RawShiftRow[], dayBookings: MoveBooking
   })
 
   const candidate = selectMoveCandidate(shifts, bookingsById, bookingsByAvailPk)
+  if (!candidate) return null
   // Not enough runway to bother the guest (Beer, 2026-08-23) — checked here,
   // not inside the pure selectMoveCandidate, so the underlying gap still
   // shows up in ops-review's read-only facts; only the ask is withheld.
-  if (candidate && !hasEnoughNotice(candidate.currentStartAt)) return null
+  if (!hasEnoughNotice(candidate.currentStartAt)) return null
+  // Permanent guest-level opt-out (Beer, 2026-08-23) — checked before the FH
+  // dry-run even runs, not just before drafting, so a guest who already said
+  // no never costs a wasted FareHarbor validate call either.
+  if (await isOptedOut(supabase, { email: candidate.booking.customerEmail, phone: candidate.booking.customerPhone })) {
+    return null
+  }
   return candidate
 }
 
@@ -641,7 +653,7 @@ export async function draftGuestMoveRequest(): Promise<'drafted' | 'skipped'> {
     // has no gap to close). Best saving across the whole window wins.
     const candidates: Array<{ date: string; candidate: MoveCandidate }> = []
     for (const [date, rawShifts] of rawShiftsByDate) {
-      const candidate = candidateFromDayRows(rawShifts, bookingsByDate.get(date) ?? [])
+      const candidate = await candidateFromDayRows(supabase, rawShifts, bookingsByDate.get(date) ?? [])
       if (candidate) candidates.push({ date, candidate })
     }
     if (!candidates.length) return 'skipped' // optimal (or unaskable) days are a good outcome
@@ -712,7 +724,7 @@ export async function draftGuestMoveForNewBooking(bookingDate: string): Promise<
 
     const rawShifts = (shiftsRes.data ?? []) as RawShiftRow[]
     const dayBookings = ((bookingsRes.data ?? []) as RawBookingRow[]).map(toMoveBooking)
-    const candidate = candidateFromDayRows(rawShifts, dayBookings)
+    const candidate = await candidateFromDayRows(supabase, rawShifts, dayBookings)
     if (!candidate) return 'skipped'
 
     // Dry-run gate: no ask exists until FareHarbor confirmed the target slot.

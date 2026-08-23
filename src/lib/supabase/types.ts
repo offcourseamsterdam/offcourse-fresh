@@ -3337,6 +3337,48 @@ export type Database = {
           },
         ]
       }
+      reschedule_opt_outs: {
+        Row: {
+          booking_id: string | null
+          created_at: string
+          email: string | null
+          id: string
+          phone: string | null
+          proposal_id: string | null
+        }
+        Insert: {
+          booking_id?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          phone?: string | null
+          proposal_id?: string | null
+        }
+        Update: {
+          booking_id?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          phone?: string | null
+          proposal_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reschedule_opt_outs_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reschedule_opt_outs_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "agent_proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       review_bonus_conflicts: {
         Row: {
           awarded_staff_id: string | null
@@ -3386,6 +3428,7 @@ export type Database = {
         Row: {
           amount_cents: number
           awarded_at: string
+          excluded_from_payroll: boolean
           id: string
           review_id: string
           staff_id: string
@@ -3393,6 +3436,7 @@ export type Database = {
         Insert: {
           amount_cents?: number
           awarded_at?: string
+          excluded_from_payroll?: boolean
           id?: string
           review_id: string
           staff_id: string
@@ -3400,6 +3444,7 @@ export type Database = {
         Update: {
           amount_cents?: number
           awarded_at?: string
+          excluded_from_payroll?: boolean
           id?: string
           review_id?: string
           staff_id?: string
@@ -3469,6 +3514,39 @@ export type Database = {
         }
         Relationships: []
       }
+      shift_bookings: {
+        Row: {
+          booking_id: string
+          created_at: string
+          shift_id: string
+        }
+        Insert: {
+          booking_id: string
+          created_at?: string
+          shift_id: string
+        }
+        Update: {
+          booking_id?: string
+          created_at?: string
+          shift_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shift_bookings_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shift_bookings_shift_id_fkey"
+            columns: ["shift_id"]
+            isOneToOne: false
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       shifts: {
         Row: {
           boat_id: string
@@ -3529,7 +3607,7 @@ export type Database = {
           {
             foreignKeyName: "shifts_booking_id_fkey"
             columns: ["booking_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "bookings"
             referencedColumns: ["id"]
           },
@@ -3598,7 +3676,10 @@ export type Database = {
       }
       social_proof_reviews: {
         Row: {
+          ai_draft_reply: string | null
           author_photo_url: string | null
+          bonus_checked_at: string | null
+          conversation_id: string | null
           created_at: string
           external_review_id: string | null
           google_profile_url: string | null
@@ -3609,6 +3690,7 @@ export type Database = {
           possible_duplicate_of: string | null
           publish_time: string | null
           rating: number
+          replied_at: string | null
           review_image_url: string | null
           review_text: string
           review_text_de: string | null
@@ -3623,7 +3705,10 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          ai_draft_reply?: string | null
           author_photo_url?: string | null
+          bonus_checked_at?: string | null
+          conversation_id?: string | null
           created_at?: string
           external_review_id?: string | null
           google_profile_url?: string | null
@@ -3634,6 +3719,7 @@ export type Database = {
           possible_duplicate_of?: string | null
           publish_time?: string | null
           rating?: number
+          replied_at?: string | null
           review_image_url?: string | null
           review_text: string
           review_text_de?: string | null
@@ -3648,7 +3734,10 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          ai_draft_reply?: string | null
           author_photo_url?: string | null
+          bonus_checked_at?: string | null
+          conversation_id?: string | null
           created_at?: string
           external_review_id?: string | null
           google_profile_url?: string | null
@@ -3659,6 +3748,7 @@ export type Database = {
           possible_duplicate_of?: string | null
           publish_time?: string | null
           rating?: number
+          replied_at?: string | null
           review_image_url?: string | null
           review_text?: string
           review_text_de?: string | null
@@ -3673,6 +3763,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "social_proof_reviews_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "social_proof_reviews_possible_duplicate_of_fkey"
             columns: ["possible_duplicate_of"]
@@ -3696,6 +3793,7 @@ export type Database = {
           phone: string | null
           role: string
           slack_member_id: string | null
+          slack_notifications_enabled: boolean
           user_id: string | null
         }
         Insert: {
@@ -3711,6 +3809,7 @@ export type Database = {
           phone?: string | null
           role: string
           slack_member_id?: string | null
+          slack_notifications_enabled?: boolean
           user_id?: string | null
         }
         Update: {
@@ -3726,6 +3825,7 @@ export type Database = {
           phone?: string | null
           role?: string
           slack_member_id?: string | null
+          slack_notifications_enabled?: boolean
           user_id?: string | null
         }
         Relationships: [
@@ -4424,6 +4524,8 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      ai_spend_summary: { Args: never; Returns: Json }
+      ai_usage_total_cents: { Args: never; Returns: number }
       allocate_invoice_number: {
         Args: { p_stripe_pi_id: string }
         Returns: string
