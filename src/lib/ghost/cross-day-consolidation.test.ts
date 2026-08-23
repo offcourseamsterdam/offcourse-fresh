@@ -165,14 +165,19 @@ describe('findCrossDayConsolidationCandidates', () => {
     expect(findCrossDayConsolidationCandidates(shifts, { Curaçao: 12 })).toEqual([])
   })
 
-  it('skips a shift covering more than one departure — moving it means asking several parties at once', () => {
+  it('skips a departure with more than one booking aboard it — moving it means asking several parties at once', () => {
     const shifts: ConsolidationShift[] = [
       shift({
         shiftId: 's1',
         date: '2026-08-25',
         bookings: [
+          // Two bookings sharing ONE departure (same pk) — not a second,
+          // independent sailing. eligibleToMove requires exactly one booking
+          // per departure group, so this group is excluded, but the shift's
+          // OTHER departure (pk 3, single booking) is still independently
+          // eligible — see the next test.
           { ...baseBooking, id: 'a1', guestCount: 2, fareharborAvailabilityPk: 1 },
-          { ...baseBooking, id: 'a2', guestCount: 2, fareharborAvailabilityPk: 3 },
+          { ...baseBooking, id: 'a1b', guestCount: 1, fareharborAvailabilityPk: 1 },
         ],
       }),
       shift({
@@ -183,6 +188,51 @@ describe('findCrossDayConsolidationCandidates', () => {
     ]
 
     expect(findCrossDayConsolidationCandidates(shifts, { Curaçao: 12 })).toEqual([])
+  })
+
+  it('treats each distinct departure on a multi-departure shift independently — a real Curaçao shape (Beer, 2026-08-23)', () => {
+    // Wednesday's Curaçao shift covers TWO separate sailings: an unrelated
+    // private cruise (never eligible to move) and Sophie's shared departure
+    // (eligible). Moving Sophie doesn't free the whole shift — the private
+    // departure still needs the boat — but it DOES shrink the shift's
+    // prep-to-wrap-up span, which is a real, smaller saving. This is the
+    // multi-departure case shift_bookings resolution exists to catch.
+    const shifts: ConsolidationShift[] = [
+      shift({
+        shiftId: 'tue-shift',
+        date: '2026-08-25',
+        bookings: [{ ...baseBooking, id: 'paige', guestCount: 4, fareharborAvailabilityPk: 1001 }],
+      }),
+      shift({
+        shiftId: 'wed-shift',
+        date: '2026-08-26',
+        startAt: '2026-08-26T12:15:00Z',
+        endAt: '2026-08-26T17:30:00Z',
+        bookings: [
+          {
+            ...baseBooking,
+            id: 'private-booking',
+            category: 'private',
+            guestCount: 6,
+            fareharborAvailabilityPk: null,
+            startTime: '2026-08-26T13:00:00Z',
+            endTime: '2026-08-26T14:30:00Z',
+          },
+          { ...baseBooking, id: 'sophie', guestCount: 2, fareharborAvailabilityPk: 1002 },
+        ],
+      }),
+    ]
+
+    const candidates = findCrossDayConsolidationCandidates(shifts, { Curaçao: 12 })
+
+    expect(candidates).toHaveLength(1)
+    const c = candidates[0]
+    expect(c.booking.id).toBe('sophie')
+    expect(c.receivingBooking.id).toBe('paige')
+    // Shrink, not elimination: the private departure (13:00-14:30) stays
+    // behind, so Wednesday's shift narrows around it instead of vanishing.
+    expect(c.estSavingCents).toBeGreaterThan(0)
+    expect(c.estSavingCents).toBeLessThan(18375)
   })
 
   it('does not propose a move for days more than 1 day apart', () => {

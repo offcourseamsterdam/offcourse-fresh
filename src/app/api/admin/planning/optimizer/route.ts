@@ -347,7 +347,7 @@ export async function GET(_request: NextRequest) {
           kind: 'cross_day_consolidation',
           date: c.fromDate,
           boat: c.boat,
-          summary: `${c.booking.customerName ?? 'Guest'} (${c.booking.guestCount ?? '?'} guests, ${c.fromDate}) could join ${c.toDate}'s ${c.boat} departure (${c.receivingBooking.guestCount ?? '?'} already booked, ${c.capacity - c.combinedGuestCount} spots would remain) — frees the whole ${c.fromDate} shift.`,
+          summary: `${c.booking.customerName ?? 'Guest'} (${c.booking.guestCount ?? '?'} guests, ${c.fromDate}) could join ${c.toDate}'s ${c.boat} departure (${c.receivingBooking.guestCount ?? '?'} already booked, ${c.capacity - c.combinedGuestCount} spots would remain) — ${c.eliminatesShift ? `frees the whole ${c.fromDate} shift` : `shortens the ${c.fromDate} shift`}.`,
           estSavingCents: c.estSavingCents,
           proposalId: drafted?.id,
           guestName: c.booking.customerName,

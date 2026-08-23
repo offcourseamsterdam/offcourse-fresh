@@ -256,8 +256,16 @@ describe('GET /api/admin/planning/optimizer', () => {
 
     // Wednesday's shift genuinely covers two departures (Gurkan's private
     // cruise stays on the water regardless of Sophie) — moving her away
-    // would NOT free the shift, so this must NOT be offered as a candidate.
-    expect(body.data.items.find((i: { kind: string }) => i.kind === 'cross_day_consolidation')).toBeUndefined()
+    // would NOT free the whole shift, but it still SHRINKS it (Beer,
+    // 2026-08-23: a shift shrinking is a real, valid saving even when it
+    // isn't eliminated entirely), so this must still be offered. No captain
+    // is assigned here (staff: null), so the shrink is unpriced (0), not a
+    // reason to hide the candidate.
+    const crossDay = body.data.items.find((i: { kind: string }) => i.kind === 'cross_day_consolidation')
+    expect(crossDay).toBeTruthy()
+    expect(crossDay.guestName).toBe('Sophie Russell')
+    expect(crossDay.estSavingCents).toBe(0)
+    expect(crossDay.summary).toContain('shortens the 2026-08-26 shift')
   })
 
   it('surfaces a same-day gap as its own item, separate from cross-day candidates', async () => {
