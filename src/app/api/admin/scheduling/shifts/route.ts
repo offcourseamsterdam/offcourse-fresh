@@ -28,8 +28,12 @@ export async function GET(request: NextRequest) {
     const [shiftsRes, boatsRes, staffRes, availabilityRes] = await Promise.all([
       supabase
         .from('shifts')
+        // shift_bookings is the real "which departures does this shift cover"
+        // membership (see 127_shift_bookings.sql) — the single booking_id
+        // column below is only the block's primary departure. Planning needs
+        // the full membership to place each booking chip in its shift's lane.
         .select(
-          '*, staff(name), bookings!shifts_booking_id_fkey(customer_name, guest_count, category, listing_title)',
+          '*, staff(name), shift_bookings(booking_id), bookings!shifts_booking_id_fkey(customer_name, guest_count, category, listing_title)',
         )
         .gte('date', from)
         .lte('date', to)

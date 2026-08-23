@@ -25,6 +25,23 @@ import type { AdminBooking } from '@/lib/admin/types'
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
+/** One row of `shifts` as the Planning view needs it — including the OPEN
+ *  ones (no captain yet), which the page used to throw away. */
+interface PlanningShift {
+  id: string
+  date: string
+  staff_id: string | null
+  booking_id: string | null
+  start_at: string
+  end_at: string
+  status: string
+  boat_id: string | null
+  staff: { name: string } | null
+  fareharbor_availability_pk: number | null
+  /** Real membership — every departure this shift covers. */
+  shift_bookings: { booking_id: string }[] | null
+}
+
 /** "14:00 – 16:30", or just "14:00" when there's no meaningful end time. */
 function timeRangeLabel(startTime: string | null, endTime: string | null): string {
   const start = fmtAdminTime(startTime)
@@ -545,41 +562,42 @@ function RowGridLines() {
  *  version tinted assigned chips emerald too, which made a healthy week look
  *  as loud as a broken one.) */
 function CompactDepartureChip({
-  group, onSelectBooking, onSelectGroup, boatName, capacity, captainByBookingId,
+  group, onSelectBooking, onSelectGroup, capacity,
 }: {
   group: PlanningGroup
   onSelectBooking: (id: string) => void
   onSelectGroup: (group: PlanningGroup) => void
-  boatName?: string
   capacity?: SharedCapacityResult
-  captainByBookingId?: Map<string, { name: string; startAt: string; endAt: string }>
 }) {
   const first = group.bookings[0]
   const isMulti = group.bookings.length > 1
   const isShared = first.category === 'shared'
-  const captain = group.bookings.map(b => captainByBookingId?.get(b.id)).find(Boolean)
   const hasCatering = group.bookings.some(b => filterCateringItems(b.extras_selected ?? []).length > 0)
   const width = blockMinWidthPx(first.start_time, first.end_time)
-  const boat = boatName && boatName !== 'Other' ? boatName : null
+  // Anything that isn't a normal confirmed booking — invisible before this
+  // and worth surfacing, since it's the one thing about a departure that
+  // can't be inferred from where the chip sits on the board.
+  const needsAttention = group.bookings.find(b => b.status !== 'confirmed' && b.status !== 'booked')
 
   const headline = isShared
     ? `${group.bookings.length} part${group.bookings.length === 1 ? 'y' : 'ies'}`
     : (first.customer_name ?? '—')
-  const detail = [
-    boat,
-    captain ? captain.name : 'no captain',
-    isShared && capacity ? `${capacity.spotsLeft} left` : null,
-  ].filter(Boolean).join(' · ')
+  // Boat and captain deliberately absent — the shift lane this chip sits in
+  // already carries both (Beer, 2026-08-23). Only what the lane can't say.
+  const detail = needsAttention?.status
+    ? needsAttention.status.replace(/_/g, ' ')
+    : (isShared && capacity ? `${capacity.spotsLeft} spots left` : null)
 
   const tooltip = [
     timeRangeLabel(first.start_time, first.end_time),
-    [boat, first.category === 'private' ? 'Private' : isShared ? 'Shared' : null].filter(Boolean).join(' · '),
-    captain ? `Captain: ${captain.name}` : 'Needs a captain',
+    first.category === 'private' ? 'Private' : isShared ? 'Shared' : null,
     isShared
       ? `${group.bookings.length} part${group.bookings.length === 1 ? 'y' : 'ies'} · ${group.totalGuestCount} guest${group.totalGuestCount === 1 ? '' : 's'}${capacity ? ` · ${capacity.spotsLeft} spots left` : ''}`
       : group.bookings.map(b => `${b.customer_name ?? '—'} (${b.guest_count ?? '—'} guests)`).join(', '),
     hasCatering ? 'Catering ordered' : null,
   ].filter(Boolean).join('\n')
+
+  const showDetail = width >= CHIP_DETAIL_MIN_PX && (detail || hasCatering)
 
   return (
     <button
@@ -587,38 +605,26 @@ function CompactDepartureChip({
       onClick={() => (isMulti ? onSelectGroup(group) : onSelectBooking(first.id))}
       title={tooltip}
       style={{ left: leftPx(first.start_time), width }}
-      className={`group/chip absolute top-0.5 bottom-0.5 z-10 hover:z-30 flex flex-col justify-center overflow-hidden rounded-md border pl-2 pr-1.5 text-left leading-none whitespace-nowrap shadow-sm transition-colors ${
-        captain
-          ? 'bg-white border-zinc-200 hover:bg-zinc-50'
-          : 'bg-amber-50 border-amber-300 hover:bg-amber-100'
-      }`}
+      className="absolute top-0.5 bottom-0.5 z-10 hover:z-30 flex flex-col justify-center overflow-hidden rounded-md border border-zinc-300 bg-white pl-1.5 pr-1.5 text-left leading-none whitespace-nowrap shadow-sm transition-colors hover:bg-zinc-50"
     >
-      {/* Status edge — the one place captain-assigned is encoded on an
-          otherwise-neutral chip, so it reads without competing with the text. */}
-      <span className={`absolute left-0 inset-y-0 w-1 ${captain ? 'bg-emerald-500' : 'bg-amber-400'}`} />
-
       <span className="flex items-baseline gap-1 min-w-0">
-        <span className={`text-[10px] font-semibold tabular-nums shrink-0 ${captain ? 'text-zinc-900' : 'text-amber-900'}`}>
+        <span className="text-[10px] font-semibold tabular-nums shrink-0 text-zinc-900">
           {fmtAdminTime(first.start_time)}
         </span>
-        <span className={`text-[10px] truncate min-w-0 ${captain ? 'text-zinc-600' : 'text-amber-800'}`}>
-          {headline}
-        </span>
+        <span className="text-[10px] truncate min-w-0 text-zinc-600">{headline}</span>
         {group.totalGuestCount > 0 && (
-          <span className={`text-[9px] tabular-nums shrink-0 ml-auto pl-1 ${captain ? 'text-zinc-400' : 'text-amber-600'}`}>
+          <span className="text-[9px] tabular-nums shrink-0 ml-auto pl-1 text-zinc-400">
             {group.totalGuestCount}g
           </span>
         )}
       </span>
 
-      {width >= CHIP_DETAIL_MIN_PX && (
+      {showDetail && (
         <span className="flex items-center gap-1 min-w-0 mt-1">
-          <span className={`text-[9px] truncate min-w-0 ${captain ? 'text-zinc-500' : 'text-amber-700 font-medium'}`}>
+          <span className={`text-[9px] truncate min-w-0 ${needsAttention ? 'text-amber-700 font-semibold' : 'text-zinc-400'}`}>
             {detail}
           </span>
-          {hasCatering && (
-            <UtensilsCrossed className={`w-2.5 h-2.5 shrink-0 ml-auto ${captain ? 'text-zinc-400' : 'text-amber-600'}`} />
-          )}
+          {hasCatering && <UtensilsCrossed className="w-2.5 h-2.5 shrink-0 ml-auto text-zinc-400" />}
         </span>
       )}
     </button>
@@ -630,43 +636,60 @@ function CompactDepartureChip({
  *  vertical layout's side-by-side sub-columns, since a row has no spare
  *  width to spend on a second column). Same fixed-width-spanning-the-full-
  *  grid contract as TimeGridColumn, just on the horizontal axis. */
-function TimeGridRowLane({
-  groups, onSelectBooking, onSelectGroup, boatLabel, sharedCapacity, captainByBookingId, nowPx,
+function ShiftLane({
+  shift, boatName, groups, onSelectBooking, onSelectGroup, onAssign, sharedCapacity, nowPx,
 }: {
+  /** Null for the fallback lane holding departures no shift covers yet. */
+  shift: PlanningShift | null
+  boatName?: string | null
   groups: PlanningGroup[]
   onSelectBooking: (id: string) => void
   onSelectGroup: (group: PlanningGroup) => void
-  boatLabel?: string
+  onAssign: (shift: PlanningShift) => void
   sharedCapacity?: Record<number, SharedCapacityResult>
-  captainByBookingId?: Map<string, { name: string; startAt: string; endAt: string }>
   /** Set only on today's lanes — the live "right now" marker. */
   nowPx?: number | null
 }) {
-  const captainWindows = useMemo(() => computeCaptainWindows(groups, captainByBookingId), [groups, captainByBookingId])
+  const captain = shift?.staff?.name ?? null
+  const label = [boatName, captain].filter(Boolean).join(' · ')
+
   return (
     <div className={`relative shrink-0 ${ROW_LANE_HEIGHT}`} style={{ width: GRID_WIDTH_PX }}>
       <RowGridLines />
-      {/* A captain's working window (crew call → wrap-up). Kept very faint:
-          it's context for the chips sitting on top of it, not a thing to
-          read in its own right — at full strength it out-shouted them. */}
-      {captainWindows.map(w => (
-        <div
-          key={w.name}
-          className="absolute inset-y-0 z-[1] bg-emerald-50 border-x border-emerald-100 pointer-events-none"
-          style={{ left: leftPx(w.startIso), width: blockMinWidthPx(w.startIso, w.endIso) }}
-          title={`${w.name} working ${fmtAdminTime(w.startIso)}–${fmtAdminTime(w.endIso)}`}
-        />
-      ))}
+
+      {/* The shift itself — a captain's block of work on one boat, prep
+          through wrap-up. It exists whether or not anyone is on it yet, and
+          it is the thing you click to put someone on it. Assigned shifts sit
+          back in faint emerald; an open one is amber, because an uncrewed
+          boat is the only thing on this page that needs an action. */}
+      {shift && (
+        <button
+          type="button"
+          onClick={() => onAssign(shift)}
+          title={`${boatName ?? 'Shift'} · ${fmtAdminTime(shift.start_at)}–${fmtAdminTime(shift.end_at)}\n${
+            captain ? `Captain: ${captain}` : 'No captain yet'
+          }\nClick to ${captain ? 'change' : 'assign'} the captain`}
+          style={{ left: leftPx(shift.start_at), width: blockMinWidthPx(shift.start_at, shift.end_at) }}
+          className={`absolute inset-y-0 z-[1] flex items-center gap-1 overflow-hidden rounded px-1.5 border text-left transition-colors ${
+            captain
+              ? 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100'
+              : 'bg-amber-50 border-amber-300 hover:bg-amber-100'
+          }`}
+        >
+          {captain
+            ? <UserCheck className="w-2.5 h-2.5 shrink-0 text-emerald-600" />
+            : <UserX className="w-2.5 h-2.5 shrink-0 text-amber-600" />}
+          <span className={`text-[9px] font-medium truncate min-w-0 ${captain ? 'text-emerald-800' : 'text-amber-800'}`}>
+            {captain ? label : `${boatName ? `${boatName} · ` : ''}assign`}
+          </span>
+        </button>
+      )}
+
       {nowPx != null && (
         <div className="absolute inset-y-0 z-[2] w-px bg-rose-400 pointer-events-none" style={{ left: nowPx }} />
       )}
-      {boatLabel && (
-        <p className="absolute top-0 left-0.5 z-20 text-[8px] font-semibold uppercase tracking-wider text-zinc-300 pointer-events-none">
-          {boatLabel}
-        </p>
-      )}
+
       {groups.map(group => {
-        const boat = resolveBoatForGroup(group, sharedCapacity)
         const first = group.bookings[0]
         return (
           <CompactDepartureChip
@@ -674,9 +697,7 @@ function TimeGridRowLane({
             group={group}
             onSelectBooking={onSelectBooking}
             onSelectGroup={onSelectGroup}
-            boatName={boatLabel ?? boat ?? undefined}
             capacity={first.category === 'shared' && first.fareharbor_availability_pk ? sharedCapacity?.[first.fareharbor_availability_pk] : undefined}
-            captainByBookingId={captainByBookingId}
           />
         )
       })}
@@ -684,46 +705,63 @@ function TimeGridRowLane({
   )
 }
 
-/** Departures nobody is assigned to yet — the day's actual to-do count, and
- *  the reason this page exists. Counts GROUPS, like countDepartures: several
- *  parties sharing one sailing still need exactly one captain. */
-function countUnassigned(
-  groups: PlanningGroup[],
-  captainByBookingId?: Map<string, { name: string; startAt: string; endAt: string }>,
-): number {
-  return groups.filter(g => !g.bookings.some(b => captainByBookingId?.get(b.id))).length
-}
-
 /** One day, as a row: a compact date cell (sticky left, so it stays readable
- *  however far right the grid scrolls) plus one lane per boat the day needs.
+ *  however far right the grid scrolls) plus ONE LANE PER SHIFT — a shift
+ *  being one boat's block of work for that day, which exists (status 'open')
+ *  from the moment the booking→shift sync runs, long before anyone is put on
+ *  it. Departures are placed in their own shift's lane via shift_bookings
+ *  membership; anything no shift covers falls into a labelled lane of its
+ *  own rather than silently vanishing.
  *
- *  The rail shows what you can't get by looking at the chips: how many
- *  departures still need a captain, and how many crew said they're free. The
+ *  The rail shows what you can't get by looking at the lanes: how many
+ *  shifts still need a captain, and how many crew said they're free. The
  *  private/shared split DayHeader shows on mobile is deliberately NOT here —
  *  the chips themselves already spell that out, and rail width is the
  *  scarcest space on this layout. Full staff names stay in the tooltip. */
 function DayRow({
-  label, dateObj, isToday, dayGroups, sharedCapacity, availableStaff, captainByBookingId, onSelectBooking, onSelectGroup, nowPx,
+  label, dateObj, isToday, dayGroups, dayShifts, boatNameById, shiftIdByBookingId, sharedCapacity, availableStaff, onSelectBooking, onSelectGroup, onAssign, nowPx,
 }: {
   label: string
   dateObj: Date
   isToday: boolean
   dayGroups: PlanningGroup[]
+  dayShifts: PlanningShift[]
+  boatNameById: Map<string, string>
+  shiftIdByBookingId: Map<string, string>
   sharedCapacity?: Record<number, SharedCapacityResult>
   availableStaff: string[]
-  captainByBookingId?: Map<string, { name: string; startAt: string; endAt: string }>
   onSelectBooking: (id: string) => void
   onSelectGroup: (group: PlanningGroup) => void
+  onAssign: (shift: PlanningShift) => void
   nowPx?: number | null
 }) {
-  const boatColumns = splitGroupsByBoat(dayGroups, sharedCapacity)
-  const isSplit = boatColumns.length > 1
-  const unassigned = countUnassigned(dayGroups, captainByBookingId)
+  // Every departure lands in exactly one lane: its shift's, or the fallback.
+  const { groupsByShift, orphanGroups } = useMemo(() => {
+    const byShift = new Map<string, PlanningGroup[]>()
+    const orphans: PlanningGroup[] = []
+    for (const g of dayGroups) {
+      const shiftId = g.bookings.map(b => shiftIdByBookingId.get(b.id)).find(Boolean)
+      if (!shiftId) {
+        orphans.push(g)
+        continue
+      }
+      const bucket = byShift.get(shiftId)
+      if (bucket) bucket.push(g)
+      else byShift.set(shiftId, [g])
+    }
+    return { groupsByShift: byShift, orphanGroups: orphans }
+  }, [dayGroups, shiftIdByBookingId])
+
+  const unassigned = dayShifts.filter(s => !s.staff_id).length
   const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6
 
   const tooltip = [
     `${countDepartures(dayGroups, 'private')} private, ${countDepartures(dayGroups, 'shared')} shared`,
-    unassigned > 0 ? `${unassigned} still need a captain` : 'Every departure has a captain',
+    dayShifts.length === 0
+      ? 'No shifts'
+      : unassigned > 0
+        ? `${unassigned} of ${dayShifts.length} shift${dayShifts.length === 1 ? '' : 's'} still need a captain`
+        : 'Every shift has a captain',
     availableStaff.length > 0 ? `Available: ${availableStaff.join(', ')}` : 'Nobody marked available',
   ].join('\n')
 
@@ -763,17 +801,156 @@ function DayRow({
         </div>
       </div>
       <div className="flex flex-col divide-y divide-zinc-50">
-        {dayGroups.length === 0 ? (
+        {dayShifts.length === 0 && orphanGroups.length === 0 ? (
           <div className={`${ROW_LANE_HEIGHT} relative shrink-0`} style={{ width: GRID_WIDTH_PX }}>
             <RowGridLines />
             {nowPx != null && <div className="absolute inset-y-0 z-[2] w-px bg-rose-400" style={{ left: nowPx }} />}
           </div>
-        ) : !isSplit ? (
-          <TimeGridRowLane groups={dayGroups} onSelectBooking={onSelectBooking} onSelectGroup={onSelectGroup} sharedCapacity={sharedCapacity} captainByBookingId={captainByBookingId} nowPx={nowPx} />
         ) : (
-          boatColumns.map(col => (
-            <TimeGridRowLane key={col.boat} groups={col.groups} onSelectBooking={onSelectBooking} onSelectGroup={onSelectGroup} boatLabel={col.boat} sharedCapacity={sharedCapacity} captainByBookingId={captainByBookingId} nowPx={nowPx} />
-          ))
+          <>
+            {dayShifts.map(shift => (
+              <ShiftLane
+                key={shift.id}
+                shift={shift}
+                boatName={shift.boat_id ? boatNameById.get(shift.boat_id) ?? null : null}
+                groups={groupsByShift.get(shift.id) ?? []}
+                onSelectBooking={onSelectBooking}
+                onSelectGroup={onSelectGroup}
+                onAssign={onAssign}
+                sharedCapacity={sharedCapacity}
+                nowPx={nowPx}
+              />
+            ))}
+            {/* Departures the sync hasn't covered with a shift yet — usually a
+                booking that landed since the last sync run. Shown rather than
+                dropped, so nothing can go missing from the board. */}
+            {orphanGroups.length > 0 && (
+              <ShiftLane
+                shift={null}
+                groups={orphanGroups}
+                onSelectBooking={onSelectBooking}
+                onSelectGroup={onSelectGroup}
+                onAssign={onAssign}
+                sharedCapacity={sharedCapacity}
+                nowPx={nowPx}
+              />
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Put a captain on a shift (or take one off), straight from the board.
+ *
+ * A modal rather than a popover anchored to the shift bar: the row strip is
+ * an `overflow-x-auto` scrollport, so anything absolutely positioned inside
+ * it gets clipped at the lane's edges — exactly where a dropdown needs to
+ * escape to.
+ *
+ * Crew who marked themselves available for that date are listed first and
+ * flagged; the rest stay pickable, because "nobody marked available" is a
+ * reason to ring round, not a reason the UI should refuse to assign.
+ *
+ * Saving hits PUT /api/admin/scheduling/shifts/[id], which DMs the captain
+ * immediately. That's deliberate and matches applyScheduleAssignments' own
+ * rule: a human clicking assign IS the confirm moment (only the automatic
+ * scheduler defers the DM, since its picks stay provisional as more bookings
+ * land).
+ */
+function AssignCaptainModal({
+  shift, boatName, staff, availableIds, onClose, onSaved,
+}: {
+  shift: PlanningShift
+  boatName: string | null
+  staff: { id: string; name: string }[]
+  availableIds: Set<string>
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const ordered = useMemo(() => {
+    return [...staff].sort((a, b) => {
+      const aFree = availableIds.has(a.id) ? 0 : 1
+      const bFree = availableIds.has(b.id) ? 0 : 1
+      return aFree - bFree || a.name.localeCompare(b.name)
+    })
+  }, [staff, availableIds])
+
+  async function assign(staffId: string | null) {
+    setBusyId(staffId ?? 'clear')
+    setError(null)
+    try {
+      await adminMutate(`/api/admin/scheduling/shifts/${shift.id}`, 'PUT', { staff_id: staffId })
+      onSaved()
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-zinc-100">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-zinc-900">
+              {shift.staff ? 'Change captain' : 'Assign a captain'}
+            </h2>
+            <p className="text-xs text-zinc-400 truncate">
+              {[boatName, `${fmtAdminTime(shift.start_at)}–${fmtAdminTime(shift.end_at)}`].filter(Boolean).join(' · ')}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600 shrink-0" aria-label="Close">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {error && <p className="px-5 pt-3 text-xs text-red-600">{error}</p>}
+
+        <div className="flex-1 overflow-y-auto p-2">
+          {ordered.length === 0 && <p className="p-3 text-sm text-zinc-400">No active crew.</p>}
+          {ordered.map(s => {
+            const isCurrent = s.id === shift.staff_id
+            const isFree = availableIds.has(s.id)
+            return (
+              <button
+                key={s.id}
+                onClick={() => assign(s.id)}
+                disabled={!!busyId || isCurrent}
+                className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors disabled:opacity-60 ${
+                  isCurrent ? 'bg-emerald-50 text-emerald-800' : 'hover:bg-zinc-50 text-zinc-800'
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isFree ? 'bg-emerald-500' : 'bg-zinc-300'}`} />
+                <span className="truncate">{s.name}</span>
+                {busyId === s.id && <Loader2 className="w-3.5 h-3.5 animate-spin ml-auto shrink-0" />}
+                {isCurrent && busyId !== s.id && <span className="ml-auto text-[10px] font-medium shrink-0">on this shift</span>}
+                {!isCurrent && isFree && busyId !== s.id && (
+                  <span className="ml-auto text-[10px] text-emerald-600 shrink-0">available</span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+
+        {shift.staff_id && (
+          <div className="px-5 py-3 border-t border-zinc-100">
+            <button
+              onClick={() => assign(null)}
+              disabled={!!busyId}
+              className="text-xs font-medium text-red-600 hover:text-red-700 disabled:opacity-60 inline-flex items-center gap-1.5"
+            >
+              {busyId === 'clear' && <Loader2 className="w-3 h-3 animate-spin" />}
+              Take {shift.staff?.name ?? 'them'} off this shift
+            </button>
+          </div>
         )}
       </div>
     </div>
@@ -805,6 +982,8 @@ export default function PlanningPage() {
   // or to message. One piece of state for both — only ever one guest at a time.
   const [contactTarget, setContactTarget] = useState<{ booking: AdminBooking; mode: ContactMode } | null>(null)
   const openContact = (booking: AdminBooking, mode: ContactMode) => setContactTarget({ booking, mode })
+  // Which shift the assign-a-captain modal is open for.
+  const [assignShift, setAssignShift] = useState<PlanningShift | null>(null)
 
   // The frozen day-name strip and the hours below it are two separate
   // horizontal scrollers (see the grid comment), so their scrollLeft has to be
@@ -888,9 +1067,62 @@ export default function PlanningPage() {
   // stay in sync automatically if the availability model ever changes.
   const { data: staffData, refresh: refreshStaffData } = useAdminFetch<{
     staff: { id: string; name: string }[]
+    boats: { id: string; name: string }[]
     availability: { staff_id: string; date: string; status: string }[]
-    shifts: { staff_id: string | null; booking_id: string | null; start_at: string; end_at: string; staff: { name: string } | null; fareharbor_availability_pk: number | null }[]
+    shifts: PlanningShift[]
   }>(`/api/admin/scheduling/shifts?from=${days[0]}&to=${days[days.length - 1]}`)
+
+  const boatNameById = useMemo(
+    () => new Map((staffData?.boats ?? []).map(b => [b.id, b.name])),
+    [staffData],
+  )
+
+  /**
+   * The day's real shifts — the object the row layout is actually built on.
+   * A shift is a captain's block of WORK on one boat (prep → cruises →
+   * wrap-up, "one boat, one day, one shift" per generate-shifts.ts), created
+   * automatically by the booking→shift sync with status 'open' and no captain
+   * yet. That's the point: an unassigned departure still HAS a shift, which
+   * is what you click to put someone on it.
+   *
+   * Cancelled shifts are dropped — the sync cancels rather than deletes them
+   * (append-only), so they'd otherwise linger as empty lanes forever.
+   */
+  const shiftsByDate = useMemo(() => {
+    const map = new Map<string, PlanningShift[]>()
+    for (const s of staffData?.shifts ?? []) {
+      if (s.status === 'cancelled') continue
+      const bucket = map.get(s.date)
+      if (bucket) bucket.push(s)
+      else map.set(s.date, [s])
+    }
+    for (const list of map.values()) list.sort((a, b) => a.start_at.localeCompare(b.start_at))
+    return map
+  }, [staffData])
+
+  /**
+   * Which shift covers a given booking. shift_bookings is the real membership
+   * (see 127_shift_bookings.sql, whose index comment names this exact
+   * lookup); the single booking_id column and the fareharbor_availability_pk
+   * are only the block's PRIMARY departure, kept here as fallbacks so a row
+   * that predates the membership backfill still lands in the right lane.
+   */
+  const shiftIdByBookingId = useMemo(() => {
+    const map = new Map<string, string>()
+    const byAvailabilityPk = new Map<number, string>()
+    for (const s of staffData?.shifts ?? []) {
+      if (s.status === 'cancelled') continue
+      for (const m of s.shift_bookings ?? []) map.set(m.booking_id, s.id)
+      if (s.booking_id && !map.has(s.booking_id)) map.set(s.booking_id, s.id)
+      if (s.fareharbor_availability_pk) byAvailabilityPk.set(s.fareharbor_availability_pk, s.id)
+    }
+    for (const b of bookings ?? []) {
+      if (map.has(b.id)) continue
+      const viaPk = b.fareharbor_availability_pk ? byAvailabilityPk.get(b.fareharbor_availability_pk) : undefined
+      if (viaPk) map.set(b.id, viaPk)
+    }
+    return map
+  }, [staffData, bookings])
 
   const availableStaffByDate = useMemo(() => {
     const statusByKey = new Map<string, string>()
@@ -1189,11 +1421,14 @@ export default function PlanningPage() {
                 dateObj={new Date(day + 'T12:00:00')}
                 isToday={day === todayStr}
                 dayGroups={byDay.get(day) ?? []}
+                dayShifts={shiftsByDate.get(day) ?? []}
+                boatNameById={boatNameById}
+                shiftIdByBookingId={shiftIdByBookingId}
                 sharedCapacity={sharedCapacity}
                 availableStaff={availableStaffByDate[day] ?? []}
-                captainByBookingId={captainByBookingId}
                 onSelectBooking={setExpandedId}
                 onSelectGroup={group => setExpandedGroupIds(group.bookings.map(b => b.id))}
+                onAssign={setAssignShift}
                 nowPx={day === todayStr ? nowPx : null}
               />
             ))}
@@ -1279,6 +1514,26 @@ export default function PlanningPage() {
           booking={contactTarget.booking}
           mode={contactTarget.mode}
           onClose={() => setContactTarget(null)}
+        />
+      )}
+
+      {assignShift && (
+        <AssignCaptainModal
+          shift={assignShift}
+          boatName={assignShift.boat_id ? boatNameById.get(assignShift.boat_id) ?? null : null}
+          staff={staffData?.staff ?? []}
+          availableIds={
+            new Set(
+              (staffData?.availability ?? [])
+                .filter(a => a.date === assignShift.date && a.status === 'available')
+                .map(a => a.staff_id),
+            )
+          }
+          onClose={() => setAssignShift(null)}
+          onSaved={() => {
+            refreshStaffData()
+            refreshGhostActivity()
+          }}
         />
       )}
 
