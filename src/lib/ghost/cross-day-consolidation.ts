@@ -34,6 +34,11 @@ export interface ConsolidationBooking {
   fareharborAvailabilityPk: number | null
   extrasSelected: ExtrasLineItem[] | null
   listingTitle: string | null
+  /** The booking's own departure window — NOT the shift's prep-to-wrap-up
+   *  span. This is what the guest actually experiences and what the drafted
+   *  message quotes. */
+  startTime: string | null
+  endTime: string | null
 }
 
 export interface ConsolidationShift {
@@ -56,6 +61,8 @@ export interface CrossDayConsolidationCandidate {
   boat: string
   /** The one booking being asked to move. */
   booking: ConsolidationBooking
+  /** The booking already on the receiving departure — whose slot the moving guest would join. */
+  receivingBooking: ConsolidationBooking
   combinedGuestCount: number
   capacity: number
   /** The full cost of the shift being eliminated — 0 when unassigned (no rate to price it by), never null (a candidate is still worth showing). */
@@ -144,6 +151,7 @@ export function findCrossDayConsolidationCandidates(
         toDate: earlierShift.date,
         boat,
         booking: movingInfo.booking,
+        receivingBooking: receivingInfo.booking,
         combinedGuestCount,
         capacity,
         estSavingCents: laterShift.hourlyRateCents != null ? shiftCostCents(laterShift.hourlyRateCents, laterShift.startAt, laterShift.endAt) : 0,

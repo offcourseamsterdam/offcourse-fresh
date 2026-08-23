@@ -10,6 +10,8 @@ const baseBooking = {
   totalCents: 6000,
   listingTitle: 'Shared Sunset Cruise',
   extrasSelected: null,
+  startTime: '2026-08-25T15:00:00Z',
+  endTime: '2026-08-25T16:30:00Z',
 }
 
 function shift(overrides: Partial<ConsolidationShift> & { shiftId: string }): ConsolidationShift {
@@ -50,6 +52,7 @@ describe('findCrossDayConsolidationCandidates', () => {
     // The LATER day's booking moves onto the earlier day's departure — same
     // bias as selectMoveCandidate's "pull the later sailing earlier" default.
     expect(c.booking.id).toBe('sophie')
+    expect(c.receivingBooking.id).toBe('paige')
     expect(c.fromDate).toBe('2026-08-26')
     expect(c.toDate).toBe('2026-08-25')
     expect(c.combinedGuestCount).toBe(6)
