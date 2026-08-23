@@ -22,6 +22,8 @@ vi.mock('@/lib/booking/send-confirmation-email', () => ({ sendConfirmationEmail:
 vi.mock('@/lib/ops/events', () => ({ emitOpsEvent: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/fareharbor/import-booking', () => ({ importFareharborBooking: vi.fn() }))
 vi.mock('@/lib/scheduling/sync-shifts', () => ({ syncShiftsForRange: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@/lib/realtime/notify-bookings-changed', () => ({ notifyBookingsChanged: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@/lib/ghost/cancellation-terms', () => ({ computeCancellationTerms: vi.fn() }))
 // after() requires a real Next.js request scope, absent when calling POST
 // directly in a unit test — run the callback inline instead (fire-and-forget → forget-now).
 vi.mock('next/server', async importOriginal => {
@@ -44,6 +46,8 @@ import { emitOpsEvent } from '@/lib/ops/events'
 import { autonomyForKind } from '@/lib/ghost/agents'
 import { importFareharborBooking } from '@/lib/fareharbor/import-booking'
 import { syncShiftsForRange } from '@/lib/scheduling/sync-shifts'
+import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
+import { computeCancellationTerms } from '@/lib/ghost/cancellation-terms'
 
 const PREP_BODY = { listingSlug: 'private-hidden-gems-cruise', availabilityPk: 9001, bookingSource: 'complimentary' }
 
@@ -744,6 +748,10 @@ describe('POST import_fh_booking action — happy path', () => {
       status: 'resolved',
       ai_summary: 'Imported — booking #369057638 now in Bookings, Scheduling and Planning.',
     })
+
+    // Planning/Bookings pages already open must refetch immediately instead
+    // of showing this import until a manual reload.
+    expect(notifyBookingsChanged).toHaveBeenCalled()
   })
 })
 
@@ -796,5 +804,304 @@ describe('POST import_fh_booking action — failure releases the claim for retry
     expect((await res.json()).error).toContain('was not found in FareHarbor')
     expect(sb.updates.map(u => u.status)).toEqual(['booking', 'shadow'])
     expect(syncShiftsForRange).not.toHaveBeenCalled()
+  })
+})
+
+// ── cancel_booking action — cancel a cruise + refund via the existing money path ──
+
+const cancellationProposal = {
+  id: 'c1',
+  kind: 'cancellation_request',
+  status: 'shadow',
+  payload: { cancellation: { booking_id: 'bk-1' }, reply: "No problem, we'll cancel that for you." },
+}
+
+const FULL_REFUND_TERMS = {
+  bookingId: 'bk-1',
+  bookingFound: true,
+  guestName: 'Paul Kehoe',
+  listingTitle: 'Private Hidden Gems Cruise',
+  departureAt: '2026-09-12T15:00:00.000Z',
+  hoursUntilDeparture: 51,
+  refundPercent: 100,
+  amountPaidCents: 31000,
+  refundCents: 31000,
+  policySummary: '51h before departure → full refund tier (100%)',
+  bookingSource: 'website',
+  isOtaBooking: false,
+  alreadyCancelled: false,
+  canCancelInFareharbor: true,
+}
+
+describe('POST cancel_booking action — happy path', () => {
+  it('claims, recomputes terms fresh, cancels via the existing money path with the recomputed €, and marks executed', async () => {
+    const sb = makeSupabase({ proposal: cancellationProposal, claimed: [{ id: 'c1' }] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(computeCancellationTerms).mockResolvedValue(FULL_REFUND_TERMS)
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, data: { cancelled: true } }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await POST(makeReq({ action: 'cancel_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, data: { cancelled: true, refund_cents: 31000 } })
+
+    // Terms were recomputed for THIS booking — never read off the stored payload.
+    expect(computeCancellationTerms).toHaveBeenCalledWith('bk-1', sb.client)
+
+    // Reused the existing, already-guarded cancel route verbatim.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(String(url)).toBe('http://localhost:3000/api/admin/bookings/bk-1/cancel')
+    expect(init.method).toBe('POST')
+    expect(init.headers.cookie).toBe('sb-access=secret')
+    // 100% tier → 'partial' at the FULL computed amount, never the blind 'full'
+    // option (which would refund stripe_amount regardless of tier).
+    expect(JSON.parse(init.body)).toEqual({ refundOption: 'partial', partialAmountCents: 31000 })
+
+    expect(sb.updates[0].status).toBe('booking')
+    expect(sb.updates[sb.updates.length - 1].status).toBe('executed')
+    expect((sb.updates[sb.updates.length - 1].outcome as { refund_cents: number }).refund_cents).toBe(31000)
+  })
+
+  it('uses a partial refund at a 50% tier, never the blind "full" option', async () => {
+    const sb = makeSupabase({ proposal: cancellationProposal, claimed: [{ id: 'c1' }] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(computeCancellationTerms).mockResolvedValue({ ...FULL_REFUND_TERMS, refundPercent: 50, refundCents: 15500 })
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, data: { cancelled: true } }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await POST(makeReq({ action: 'cancel_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(JSON.parse(init.body)).toEqual({ refundOption: 'partial', partialAmountCents: 15500 })
+  })
+
+  it('skips the refund call entirely at a 0% tier', async () => {
+    const sb = makeSupabase({ proposal: cancellationProposal, claimed: [{ id: 'c1' }] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(computeCancellationTerms).mockResolvedValue({ ...FULL_REFUND_TERMS, refundPercent: 0, refundCents: 0 })
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, data: { cancelled: true } }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await POST(makeReq({ action: 'cancel_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(JSON.parse(init.body)).toEqual({ refundOption: 'none' })
+  })
+
+  it('honours an explicit "no refund" override even when policy would suggest one', async () => {
+    const sb = makeSupabase({ proposal: cancellationProposal, claimed: [{ id: 'c1' }] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(computeCancellationTerms).mockResolvedValue(FULL_REFUND_TERMS) // 100%, €310
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, data: { cancelled: true } }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await POST(makeReq({ action: 'cancel_booking', refundOption: 'none' }), { params: Promise.resolve({ id: 'c1' }) })
+
+    expect((await res.json()).data.refund_cents).toBe(0)
+    const [, init] = fetchMock.mock.calls[0]
+    expect(JSON.parse(init.body)).toEqual({ refundOption: 'none' })
+  })
+})
+
+describe('POST cancel_booking action — guards (no real cancellation fires)', () => {
+  it('returns 400 for a non-cancellation proposal', async () => {
+    const sb = makeSupabase({ proposal: { ...cancellationProposal, kind: 'reply_draft' }, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'cancel_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(res.status).toBe(400)
+    expect(computeCancellationTerms).not.toHaveBeenCalled()
+  })
+
+  it('returns 409 and never cancels an already-executed proposal', async () => {
+    const sb = makeSupabase({ proposal: { ...cancellationProposal, status: 'executed' }, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'cancel_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(res.status).toBe(409)
+    expect(computeCancellationTerms).not.toHaveBeenCalled()
+  })
+
+  it('refuses an OTA booking — that platform holds the customer relationship', async () => {
+    const sb = makeSupabase({ proposal: cancellationProposal, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(computeCancellationTerms).mockResolvedValue({ ...FULL_REFUND_TERMS, isOtaBooking: true, bookingSource: 'getyourguide' })
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await POST(makeReq({ action: 'cancel_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toContain('getyourguide')
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(sb.updates).toHaveLength(0) // never even claimed
+  })
+
+  it('refuses when there is no FareHarbor reference to cancel with', async () => {
+    const sb = makeSupabase({ proposal: cancellationProposal, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(computeCancellationTerms).mockResolvedValue({ ...FULL_REFUND_TERMS, canCancelInFareharbor: false })
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await POST(makeReq({ action: 'cancel_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(res.status).toBe(409)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(sb.updates).toHaveLength(0)
+  })
+
+  it('refuses when the booking is already cancelled', async () => {
+    const sb = makeSupabase({ proposal: cancellationProposal, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(computeCancellationTerms).mockResolvedValue({ ...FULL_REFUND_TERMS, alreadyCancelled: true })
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await POST(makeReq({ action: 'cancel_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(res.status).toBe(409)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('returns 422 (no claim, no computeCancellationTerms call) when the proposal has no booking_id', async () => {
+    const sb = makeSupabase({ proposal: { ...cancellationProposal, payload: { reply: 'hi' } }, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'cancel_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(res.status).toBe(422)
+    expect(computeCancellationTerms).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 when the booking no longer exists', async () => {
+    const sb = makeSupabase({ proposal: cancellationProposal, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(computeCancellationTerms).mockResolvedValue({ ...FULL_REFUND_TERMS, bookingFound: false })
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await POST(makeReq({ action: 'cancel_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(res.status).toBe(404)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('returns 409 and DOES NOT cancel when the atomic claim matches zero rows (concurrent click)', async () => {
+    const sb = makeSupabase({ proposal: cancellationProposal, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(computeCancellationTerms).mockResolvedValue(FULL_REFUND_TERMS)
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await POST(makeReq({ action: 'cancel_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(res.status).toBe(409)
+    expect(fetchMock).not.toHaveBeenCalled() // never reached the money path
+    expect(sb.updates[0].status).toBe('booking') // claim was attempted (and lost)
+  })
+})
+
+describe('POST cancel_booking action — failure releases the claim for retry', () => {
+  it('releases shadow and reports the reason when the cancel route rejects it', async () => {
+    const sb = makeSupabase({ proposal: cancellationProposal, claimed: [{ id: 'c1' }] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(computeCancellationTerms).mockResolvedValue(FULL_REFUND_TERMS)
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, json: async () => ({ ok: false, error: 'Already refunded' }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await POST(makeReq({ action: 'cancel_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(res.status).toBe(502)
+    expect((await res.json()).error).toBe('Already refunded')
+    expect(sb.updates.map(u => u.status)).toEqual(['booking', 'shadow'])
+  })
+
+  it('releases shadow when the cancel route fetch throws', async () => {
+    const sb = makeSupabase({ proposal: cancellationProposal, claimed: [{ id: 'c1' }] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(computeCancellationTerms).mockResolvedValue(FULL_REFUND_TERMS)
+    const fetchMock = vi.fn().mockRejectedValue(new Error('network down'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await POST(makeReq({ action: 'cancel_booking' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(res.status).toBe(500)
+    expect(sb.updates.map(u => u.status)).toEqual(['booking', 'shadow'])
+  })
+})
+
+const acceptedMoveProposal = {
+  id: 'm1',
+  kind: 'guest_move_request',
+  payload: { target_date: '2026-08-25', guest_name: 'Sophie Russell', cruise_title: 'Hidden Gems Cruise' },
+  outcome: { guest_response: 'accept', responded_at: '2026-08-24T10:00:00Z' },
+}
+
+const crossDayAcceptedMoveProposal = {
+  ...acceptedMoveProposal,
+  id: 'm2',
+  payload: { ...acceptedMoveProposal.payload, to_date: '2026-08-26' },
+}
+
+describe('POST mark_rebooked action', () => {
+  it('records rebooked_at, resyncs every affected date, and never touches FareHarbor itself', async () => {
+    const sb = makeSupabase({ proposal: crossDayAcceptedMoveProposal, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'mark_rebooked' }), { params: Promise.resolve({ id: 'm2' }) })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.ok).toBe(true)
+    expect(typeof body.data.rebooked_at).toBe('string')
+
+    expect(sb.updates).toHaveLength(1)
+    expect(sb.updates[0].outcome).toMatchObject({ guest_response: 'accept', rebooked_at: expect.any(String) })
+
+    // Both the from-date and the cross-day to-date get resynced — nothing
+    // here calls FareHarbor directly, only our own shift/schedule tables.
+    expect(syncShiftsForRange).toHaveBeenCalledWith(sb.client, '2026-08-25', '2026-08-25')
+    expect(syncShiftsForRange).toHaveBeenCalledWith(sb.client, '2026-08-26', '2026-08-26')
+
+    expect(emitOpsEvent).toHaveBeenCalledWith(expect.objectContaining({ eventType: 'guest_move_rebooked', proposalId: 'm2' }))
+    expect(notifyBookingsChanged).toHaveBeenCalled()
+  })
+
+  it('resyncs only the one date for a same-day move (no to_date on the payload)', async () => {
+    const sb = makeSupabase({ proposal: acceptedMoveProposal, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    await POST(makeReq({ action: 'mark_rebooked' }), { params: Promise.resolve({ id: 'm1' }) })
+
+    expect(syncShiftsForRange).toHaveBeenCalledTimes(1)
+    expect(syncShiftsForRange).toHaveBeenCalledWith(sb.client, '2026-08-25', '2026-08-25')
+  })
+
+  it('returns 400 for a non-move proposal', async () => {
+    const sb = makeSupabase({ proposal: bookingProposal, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'mark_rebooked' }), PARAMS)
+    expect(res.status).toBe(400)
+    expect(sb.updates).toHaveLength(0)
+  })
+
+  it('refuses when the guest has not accepted yet', async () => {
+    const sb = makeSupabase({
+      proposal: { ...acceptedMoveProposal, outcome: { guest_response: 'defer' } },
+      claimed: [],
+    })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'mark_rebooked' }), { params: Promise.resolve({ id: 'm1' }) })
+    expect(res.status).toBe(409)
+    expect(sb.updates).toHaveLength(0)
+    expect(syncShiftsForRange).not.toHaveBeenCalled()
+  })
+
+  it('refuses a second mark_rebooked — already recorded', async () => {
+    const sb = makeSupabase({
+      proposal: { ...acceptedMoveProposal, outcome: { guest_response: 'accept', rebooked_at: '2026-08-24T12:00:00Z' } },
+      claimed: [],
+    })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'mark_rebooked' }), { params: Promise.resolve({ id: 'm1' }) })
+    expect(res.status).toBe(409)
+    expect(sb.updates).toHaveLength(0)
   })
 })

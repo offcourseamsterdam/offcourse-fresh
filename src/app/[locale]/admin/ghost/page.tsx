@@ -154,6 +154,7 @@ interface GhostProposal {
     channels?: string[]
     guest_response?: string
     responded_at?: string
+    rebooked_at?: string
     // schedule_day apply + evaluation
     applied_at?: string
     applied?: { shift_id: string; staff_name?: string }[]
@@ -802,10 +803,10 @@ function ProposalCard({ proposal: p, onChanged }: { proposal: GhostProposal; onC
   const agent = agentForKind(p.kind)
   const conversational = p.kind === 'reply_draft' || p.kind === 'booking_proposal'
   const reviewed = !!p.reviewed_at
-  const [busy, setBusy] = useState<'review' | 'redraft' | 'compare' | 'send' | 'send_move' | 'apply_schedule' | null>(null)
+  const [busy, setBusy] = useState<'review' | 'redraft' | 'compare' | 'send' | 'send_move' | 'apply_schedule' | 'mark_rebooked' | null>(null)
   const [confirmSend, setConfirmSend] = useState(false)
 
-  async function act(action: 'review' | 'redraft' | 'compare' | 'send' | 'send_move' | 'apply_schedule', extra: Record<string, unknown> = {}) {
+  async function act(action: 'review' | 'redraft' | 'compare' | 'send' | 'send_move' | 'apply_schedule' | 'mark_rebooked', extra: Record<string, unknown> = {}) {
     setBusy(action)
     try {
       await adminMutate(`/api/admin/ghost/proposals/${p.id}`, 'POST', { action, ...extra })
@@ -1292,17 +1293,36 @@ function ProposalCard({ proposal: p, onChanged }: { proposal: GhostProposal; onC
 
             {/* Answer status, or the send button */}
             {p.outcome?.guest_response ? (
-              <p className={`text-xs rounded-lg px-3 py-2 inline-flex items-center gap-1.5 border ${
-                p.outcome.guest_response === 'accept'
-                  ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
-                  : p.outcome.guest_response === 'decline'
-                    ? 'text-zinc-600 bg-zinc-50 border-zinc-200'
-                    : 'text-amber-700 bg-amber-50 border-amber-100'
-              }`}>
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Guest answered: {p.outcome.guest_response === 'accept' ? 'Yes, that\'s fine — rebook in FareHarbor now' : p.outcome.guest_response === 'decline' ? 'keeps the original time' : 'is checking'}
-                {p.outcome.responded_at ? ` · ${formatAmsterdamTime(p.outcome.responded_at)}` : ''}
-              </p>
+              <div className="space-y-2">
+                <p className={`text-xs rounded-lg px-3 py-2 inline-flex items-center gap-1.5 border ${
+                  p.outcome.guest_response === 'accept'
+                    ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
+                    : p.outcome.guest_response === 'decline'
+                      ? 'text-zinc-600 bg-zinc-50 border-zinc-200'
+                      : 'text-amber-700 bg-amber-50 border-amber-100'
+                }`}>
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Guest answered: {p.outcome.guest_response === 'accept' ? 'Yes, that\'s fine — rebook in FareHarbor now' : p.outcome.guest_response === 'decline' ? 'keeps the original time' : 'is checking'}
+                  {p.outcome.responded_at ? ` · ${formatAmsterdamTime(p.outcome.responded_at)}` : ''}
+                </p>
+                {p.outcome.guest_response === 'accept' && (
+                  p.outcome.rebooked_at ? (
+                    <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 inline-flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Rebooked in FareHarbor · {formatAmsterdamTime(p.outcome.rebooked_at)}
+                    </p>
+                  ) : (
+                    <button
+                      onClick={() => act('mark_rebooked')}
+                      disabled={busy === 'mark_rebooked'}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-md bg-zinc-900 text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                    >
+                      {busy === 'mark_rebooked' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                      Mark rebooked in FareHarbor
+                    </button>
+                  )
+                )}
+              </div>
             ) : p.status === 'approved' ? (
               <p className="text-xs text-sky-700 bg-sky-50 border border-sky-100 rounded-lg px-3 py-2 inline-flex items-center gap-1.5">
                 <Send className="w-3.5 h-3.5" /> Sent via {(p.outcome?.channels ?? []).join(' + ') || '—'}

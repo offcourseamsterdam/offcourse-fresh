@@ -17,6 +17,8 @@ import { applyScheduleAssignments } from '@/lib/scheduling/apply-assignments'
 import { sendConfirmationEmail, type ConfirmationEmailInput } from '@/lib/booking/send-confirmation-email'
 import { importFareharborBooking } from '@/lib/fareharbor/import-booking'
 import { syncAndScheduleShifts } from '@/lib/scheduling/proactive-scheduling'
+import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
+import { computeCancellationTerms } from '@/lib/ghost/cancellation-terms'
 import type { BookingSource } from '@/lib/constants'
 import type { BookingProposalInput, AltSlot } from '@/lib/ghost/dry-run'
 
@@ -47,8 +49,24 @@ import type { BookingProposalInput, AltSlot } from '@/lib/ghost/dry-run'
  *              the matching row into our own `bookings` table. Never creates
  *              or charges anything in FareHarbor — same atomic-claim shape as
  *              `book`; fires only on an explicit human click.
- * Everything except `book`, `send`, `correct_booking` and `import_fh_booking`
- * is read-only toward the outside world.
+ *   - cancel_booking: the human approves a cancellation_request → cancels the
+ *              matched booking in FareHarbor and refunds via Stripe, by
+ *              calling the existing /api/admin/bookings/[id]/cancel route
+ *              (never a second, forked money path). The refund € is
+ *              RECOMPUTED here, not read from the payload — see
+ *              cancellation-terms.ts. Same atomic-claim shape as `book`;
+ *              fires only on an explicit human click.
+ *   - mark_rebooked: the human confirms they completed the ACTUAL FareHarbor
+ *              rebook after a guest_move_request's guest answered 'accept'
+ *              (Beer 2026-08-23 — a guest yes only ever fires a Slack
+ *              reminder; nothing closed the loop on whether the human really
+ *              did the manual rebook). Records outcome.rebooked_at and
+ *              resyncs the affected date(s) so Planning/Scheduling reflect
+ *              the real change immediately. Never touches FareHarbor itself
+ *              — that rebook already happened by hand; this only confirms it.
+ * Everything except `book`, `send`, `correct_booking`, `import_fh_booking`,
+ * `cancel_booking` and `mark_rebooked`'s resync is read-only toward the
+ * outside world.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const denied = await requireAdmin()
@@ -385,6 +403,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         // docs/features/ota-notifications.md).
         after(() => syncAndScheduleShifts(supabase, result.date).catch(err => console.error('[import_fh_booking] shift sync failed:', err)))
 
+        // Every other route that writes a `bookings` row pings this so an
+        // already-open Bookings/Planning page refetches immediately instead
+        // of showing stale data until the next manual reload — this path was
+        // missing it (caught 2026-08-15: importing a booking here didn't
+        // make it appear on an already-open Planning page).
+        await notifyBookingsChanged()
+
         await emitOpsEvent({
           eventType: 'recommendation_approved',
           actorType: 'human',
@@ -397,6 +422,115 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       } catch (importErr) {
         await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
         throw importErr
+      }
+    }
+
+    if (body.action === 'cancel_booking') {
+      const { data: p } = await supabase
+        .from('agent_proposals')
+        .select('id, kind, status, payload, conversation_id')
+        .eq('id', id)
+        .single()
+      if (!p || p.kind !== 'cancellation_request') return apiError('Not a cancellation request', 400)
+      if (p.status === 'executed') return apiError('This cancellation was already processed.', 409)
+
+      const payload = (p.payload as { cancellation?: { booking_id?: string }; reply?: string } | null) ?? {}
+      const bookingId = payload.cancellation?.booking_id
+      if (!bookingId) return apiError('This proposal has no booking to cancel.', 422)
+
+      // Recompute fresh — NEVER trust the stored payload's numbers. A proposal
+      // drafted yesterday may have crossed a refund-tier boundary overnight;
+      // the guest gets today's honest terms, not yesterday's.
+      const terms = await computeCancellationTerms(bookingId, supabase)
+      if (!terms.bookingFound) return apiError('That booking no longer exists.', 404)
+      if (terms.alreadyCancelled) return apiError('This booking is already cancelled.', 409)
+      if (terms.isOtaBooking) {
+        return apiError(`This booking was made through ${terms.bookingSource} — cancel it there; it will sync back here.`, 409)
+      }
+      if (!terms.canCancelInFareharbor) {
+        return apiError('This booking has no FareHarbor reference we can cancel with — handle it directly in FareHarbor.', 409)
+      }
+
+      // Two buttons on the card: the policy-suggested refund, or an explicit
+      // no-refund override for the goodwill exceptions policy can't know about.
+      // 'suggested' is the default so a bare click does the right thing.
+      const { refundOption } = body as { refundOption?: 'suggested' | 'none' }
+      const refundCents = refundOption === 'none' ? 0 : terms.refundCents
+
+      // ATOMIC CLAIM before any real action — same double-click guard as `book`.
+      const { data: claimed } = await supabase
+        .from('agent_proposals')
+        .update({ status: 'booking' })
+        .eq('id', id)
+        .eq('status', 'shadow')
+        .select('id')
+      if (!claimed?.length) return apiError('This cancellation is already being processed (or was processed).', 409)
+
+      try {
+        // Reuse the existing, already-guarded cancel route verbatim — never a
+        // second, forked money path. It cancels in FareHarbor and issues the
+        // Stripe refund. 'partial' (not 'full') even at 100%: 'full' refunds
+        // the ENTIRE stripe_amount regardless of tier, which is only correct
+        // at the 100% tier — 'partial' with the exact computed € is correct
+        // at every tier, including 0% (below, we just skip the call entirely).
+        const cancelBody =
+          refundCents > 0
+            ? { refundOption: 'partial' as const, partialAmountCents: refundCents }
+            : { refundOption: 'none' as const }
+        const cancelRes = await fetch(new URL(`/api/admin/bookings/${bookingId}/cancel`, req.nextUrl.origin), {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: req.headers.get('cookie') ?? '' },
+          body: JSON.stringify(cancelBody),
+        })
+        const cancelJson = (await cancelRes.json().catch(() => null)) as
+          | { ok?: boolean; error?: string; data?: { cancelled?: boolean; refundError?: string | null } }
+          | null
+        if (!cancelRes.ok || !cancelJson?.data?.cancelled) {
+          // Release the claim so the human can retry after fixing the cause.
+          // NOTE: apiOk() nests the payload under `data` — read cancelJson.data.cancelled,
+          // never cancelJson.cancelled (that field never existed on a real response and
+          // made this branch fire on every success, silently reverting completed
+          // cancellations to "pending" while the booking stayed cancelled for real).
+          await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
+          return apiError(cancelJson?.error ?? 'Could not cancel the booking', 502)
+        }
+
+        await supabase
+          .from('agent_proposals')
+          .update({
+            status: 'executed',
+            outcome: JSON.parse(
+              JSON.stringify({
+                cancelled_at: new Date().toISOString(),
+                booking_id: bookingId,
+                refund_cents: refundCents,
+                refund_error: cancelJson.data.refundError ?? null,
+              }),
+            ),
+          })
+          .eq('id', id)
+
+        await notifyBookingsChanged()
+
+        // The freed slot may drop a shift's only departure, or shrink a merged
+        // one — resync that day rather than waiting for the nightly cron.
+        if (terms.departureAt) {
+          const date = terms.departureAt.slice(0, 10)
+          after(() => syncAndScheduleShifts(supabase, date).catch(err => console.error('[cancel_booking] shift sync failed:', err)))
+        }
+
+        await emitOpsEvent({
+          eventType: 'recommendation_approved',
+          actorType: 'human',
+          proposalId: id,
+          source: 'admin/ghost/proposals/[id]:cancel_booking',
+          payload: { booking_id: bookingId, refund_cents: refundCents },
+        })
+
+        return apiOk({ cancelled: true, refund_cents: refundCents })
+      } catch (cancelErr) {
+        await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
+        throw cancelErr
       }
     }
 
@@ -716,6 +850,60 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
         throw sendErr
       }
+    }
+
+    if (body.action === 'mark_rebooked') {
+      const { data: p } = await supabase
+        .from('agent_proposals')
+        .select('id, kind, payload, outcome')
+        .eq('id', id)
+        .single()
+      if (!p || p.kind !== 'guest_move_request') return apiError('Not a guest move request', 400)
+
+      const outcome = (p.outcome ?? {}) as { guest_response?: string; rebooked_at?: string }
+      if (outcome.guest_response !== 'accept') return apiError('The guest has not accepted this move yet.', 409)
+      if (outcome.rebooked_at) return apiError('Already marked as rebooked.', 409)
+
+      const payload = (p.payload ?? {}) as {
+        target_date?: string
+        to_date?: string
+        guest_name?: string | null
+        cruise_title?: string | null
+      }
+
+      const nextOutcome = JSON.parse(JSON.stringify({ ...outcome, rebooked_at: new Date().toISOString() }))
+      await supabase.from('agent_proposals').update({ outcome: nextOutcome }).eq('id', id)
+
+      // Resync whichever date(s) actually changed in FareHarbor — the
+      // from-day may have lost a departure entirely, the to-day (cross-day
+      // moves only) gained one. Fire-and-forget after the response, same as
+      // cancel_booking/import_fh_booking's own resyncs — the human's
+      // confirmation is what matters here, a resync hiccup shouldn't delay
+      // (or undo) it.
+      const dates = [...new Set([payload.target_date, payload.to_date].filter((d): d is string => !!d))]
+      for (const date of dates) {
+        after(() => syncAndScheduleShifts(supabase, date).catch(err => console.error('[mark_rebooked] shift sync failed:', date, err)))
+      }
+
+      await notifyBookingsChanged()
+
+      await emitOpsEvent({
+        eventType: 'guest_move_rebooked',
+        actorType: 'human',
+        proposalId: id,
+        source: 'admin/ghost/proposals/[id]:mark_rebooked',
+      })
+
+      try {
+        await postSlackText(
+          `✅ *Rebooking confirmed done* for ${payload.guest_name ?? 'guest'} (${payload.cruise_title ?? 'cruise'}) — schedule resynced.`,
+          { type: 'guest-move-rebooked', triggeredBy: 'admin' },
+        )
+      } catch {
+        /* swallow */
+      }
+
+      return apiOk({ rebooked_at: nextOutcome.rebooked_at })
     }
 
     return apiError('Unknown action', 400)
