@@ -798,7 +798,10 @@ function DayRow({
               </span>
             )}
             {availableStaff.length > 0 && (
-              <span className="text-[9px] leading-none font-medium px-1 py-0.5 rounded bg-emerald-50 text-emerald-700 tabular-nums">
+              // A solid fill, not the pale emerald-50/emerald-700 tint this
+              // started as — that read as barely-green next to the amber
+              // badge beside it (Beer, 2026-08-23: "not green enough").
+              <span className="text-[9px] leading-none font-semibold px-1 py-0.5 rounded bg-emerald-500 text-white tabular-nums">
                 {availableStaff.length}
               </span>
             )}
