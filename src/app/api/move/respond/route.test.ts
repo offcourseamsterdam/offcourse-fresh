@@ -102,18 +102,15 @@ describe('POST /api/move/respond', () => {
     expect(emitOpsEvent).toHaveBeenCalledWith(expect.objectContaining({ eventType: 'guest_move_declined' }))
   })
 
-  it('defer: stays open (no status flip), no opt-out recorded', async () => {
+  it('rejects "defer" as a new response — removed 2026-08-23, it never resolved to anything different from silence', async () => {
     const sb = makeSupabase({
       proposal: { id: PROPOSAL_ID, kind: 'guest_move_request', status: 'approved', payload: BASE_PAYLOAD, outcome: {} },
     })
     vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
 
     const res = await POST(makeReq({ proposalId: PROPOSAL_ID, token: TOKEN, response: 'defer' }))
-    expect(res.status).toBe(200)
-
-    expect(sb.updates[0]).not.toHaveProperty('status')
-    expect(sb.inserts.find(i => i.table === 'reschedule_opt_outs')).toBeUndefined()
-    expect(emitOpsEvent).toHaveBeenCalledWith(expect.objectContaining({ eventType: 'guest_move_deferred' }))
+    expect(res.status).toBe(400)
+    expect(sb.updates).toHaveLength(0)
   })
 
   it('idempotent: a second tap after accept/decline just echoes the recorded answer, no second write', async () => {
@@ -134,7 +131,7 @@ describe('POST /api/move/respond', () => {
     expect(sb.inserts).toHaveLength(0)
   })
 
-  it('a still-open defer CAN be answered again (not treated as already-final)', async () => {
+  it('a HISTORICAL "defer" outcome (from before 2026-08-23) can still be answered — not treated as already-final', async () => {
     const sb = makeSupabase({
       proposal: {
         id: PROPOSAL_ID,

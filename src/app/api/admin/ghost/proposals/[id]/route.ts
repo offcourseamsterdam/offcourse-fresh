@@ -739,11 +739,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         customer_type_rate_pk?: number
         fh_customer_count?: number
       }
-      if (!payload.sms_text || !payload.email_subject || !payload.email_body) {
-        return apiError('This proposal has no drafted message to send.', 422)
-      }
       if (!payload.guest_email && !payload.guest_phone) {
         return apiError('No guest contact details on this booking.', 422)
+      }
+      // SMS-first (Beer, 2026-08-23: "perhaps we should only start with SMS
+      // first") — email is a fallback only for a booking with no phone at
+      // all, never a backup for an SMS that fails to send.
+      const channel = payload.guest_phone ? 'sms' : 'email'
+      if (channel === 'sms' && !payload.sms_text) {
+        return apiError('This proposal has no drafted SMS to send.', 422)
+      }
+      if (channel === 'email' && (!payload.email_subject || !payload.email_body)) {
+        return apiError('This proposal has no drafted email to send.', 422)
       }
 
       // Execution-chokepoint rule: re-validate the promised slot IMMEDIATELY
@@ -781,10 +788,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
       try {
         const channels: string[] = []
-        let emailError: string | null = null
-        let smsError: string | null = null
+        let sendError: string | null = null
 
-        if (payload.guest_email) {
+        // SMS-first, no automatic fallback to email on failure (Beer,
+        // 2026-08-23) — a send failure is reported, not silently retried on
+        // a different channel; the admin decides what to do next.
+        if (channel === 'sms' && payload.guest_phone && payload.sms_text) {
+          try {
+            const sent = await sendSms(payload.guest_phone, payload.sms_text.replaceAll('{{link}}', link))
+            if (sent) channels.push('sms')
+          } catch (err) {
+            sendError = err instanceof Error ? err.message : 'sms failed'
+          }
+        } else if (payload.guest_email && payload.email_subject && payload.email_body) {
           try {
             const sent = await sendMaintenanceEmail({
               recipient: payload.guest_email,
@@ -793,30 +809,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             })
             if (sent) channels.push('email')
           } catch (err) {
-            emailError = err instanceof Error ? err.message : 'email failed'
-          }
-        }
-        if (payload.guest_phone) {
-          try {
-            const sent = await sendSms(payload.guest_phone, payload.sms_text.replaceAll('{{link}}', link))
-            if (sent) channels.push('sms')
-          } catch (err) {
-            smsError = err instanceof Error ? err.message : 'sms failed'
+            sendError = err instanceof Error ? err.message : 'email failed'
           }
         }
 
         if (!channels.length) {
           // Nothing actually reached the guest — release the claim, report why.
           await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
-          const detail = [emailError, smsError].filter(Boolean).join(' · ')
           return apiError(
-            detail || 'No channel configured (RESEND_API_KEY / TWILIO_*) — nothing was sent.',
+            sendError || `No ${channel === 'sms' ? 'SMS (TWILIO_*)' : 'email (RESEND_API_KEY)'} channel configured — nothing was sent.`,
             503,
           )
         }
 
         // 'approved' = sent, awaiting the guest's answer (the response page
         // flips it to 'executed'). The 48h expiry sweep watches outcome.sent_at.
+        // (sendError never reaches here non-null — a failed send leaves
+        // channels empty, which already returned above.)
         await supabase
           .from('agent_proposals')
           .update({
@@ -824,8 +833,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             outcome: JSON.parse(JSON.stringify({
               sent_at: new Date().toISOString(),
               channels,
-              ...(emailError ? { email_error: emailError } : {}),
-              ...(smsError ? { sms_error: smsError } : {}),
             })),
           })
           .eq('id', id)

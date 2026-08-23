@@ -24,6 +24,8 @@ vi.mock('@/lib/fareharbor/import-booking', () => ({ importFareharborBooking: vi.
 vi.mock('@/lib/scheduling/sync-shifts', () => ({ syncShiftsForRange: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/realtime/notify-bookings-changed', () => ({ notifyBookingsChanged: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/ghost/cancellation-terms', () => ({ computeCancellationTerms: vi.fn() }))
+vi.mock('@/lib/sms/send-sms', () => ({ sendSms: vi.fn() }))
+vi.mock('@/lib/ghost/guest-move-drafter', () => ({ revalidateStoredMove: vi.fn() }))
 // after() requires a real Next.js request scope, absent when calling POST
 // directly in a unit test — run the callback inline instead (fire-and-forget → forget-now).
 vi.mock('next/server', async importOriginal => {
@@ -48,6 +50,7 @@ import { importFareharborBooking } from '@/lib/fareharbor/import-booking'
 import { syncShiftsForRange } from '@/lib/scheduling/sync-shifts'
 import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
 import { computeCancellationTerms } from '@/lib/ghost/cancellation-terms'
+import { sendSms } from '@/lib/sms/send-sms'
 
 const PREP_BODY = { listingSlug: 'private-hidden-gems-cruise', availabilityPk: 9001, bookingSource: 'complimentary' }
 
@@ -1103,5 +1106,87 @@ describe('POST mark_rebooked action', () => {
     const res = await POST(makeReq({ action: 'mark_rebooked' }), { params: Promise.resolve({ id: 'm1' }) })
     expect(res.status).toBe(409)
     expect(sb.updates).toHaveLength(0)
+  })
+})
+
+describe('POST send_move action — SMS-first, email only as a no-phone fallback (Beer, 2026-08-23)', () => {
+  const smsOnlyProposal = {
+    id: 's1',
+    kind: 'guest_move_request',
+    status: 'shadow',
+    payload: {
+      guest_name: 'Sophie Russell',
+      guest_email: 'sophie@example.com',
+      guest_phone: '+31600000000',
+      sms_text: 'Hi Sophie! {{link}}',
+    },
+  }
+  const emailOnlyProposal = {
+    id: 's2',
+    kind: 'guest_move_request',
+    status: 'shadow',
+    payload: {
+      guest_name: 'No Phone Guest',
+      guest_email: 'nophone@example.com',
+      guest_phone: null,
+      email_subject: 'Quick question',
+      email_body: 'Would this work? {{link}}',
+    },
+  }
+
+  it('sends via SMS when the booking has a phone — never attempts email at all', async () => {
+    const sb = makeSupabase({ proposal: smsOnlyProposal, claimed: [{ id: 's1' }] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(sendSms).mockResolvedValue(true)
+
+    const res = await POST(makeReq({ action: 'send_move' }), { params: Promise.resolve({ id: 's1' }) })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, data: { channels: ['sms'] } })
+
+    expect(sendSms).toHaveBeenCalledTimes(1)
+    const [toArg, bodyArg] = vi.mocked(sendSms).mock.calls[0]
+    expect(toArg).toBe('+31600000000')
+    expect(bodyArg).toContain('Hi Sophie!')
+    expect(bodyArg).not.toContain('{{link}}') // the placeholder is always substituted before sending
+    expect(sendMaintenanceEmail).not.toHaveBeenCalled()
+    expect(sb.updates.at(-1)).toMatchObject({ status: 'approved', outcome: expect.objectContaining({ channels: ['sms'] }) })
+  })
+
+  it('falls back to email only when the booking has no phone at all', async () => {
+    const sb = makeSupabase({ proposal: emailOnlyProposal, claimed: [{ id: 's2' }] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(sendMaintenanceEmail).mockResolvedValue(true)
+
+    const res = await POST(makeReq({ action: 'send_move' }), { params: Promise.resolve({ id: 's2' }) })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, data: { channels: ['email'] } })
+
+    expect(sendMaintenanceEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ recipient: 'nophone@example.com', subject: 'Quick question' }),
+    )
+    expect(sendSms).not.toHaveBeenCalled()
+  })
+
+  it('does NOT fall back to email when SMS fails to send — reports the error instead of silently switching channels', async () => {
+    const sb = makeSupabase({ proposal: smsOnlyProposal, claimed: [{ id: 's1' }] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(sendSms).mockRejectedValue(new Error('Twilio 400: invalid number'))
+
+    const res = await POST(makeReq({ action: 'send_move' }), { params: Promise.resolve({ id: 's1' }) })
+    expect(res.status).toBe(503)
+    expect((await res.json()).error).toContain('Twilio 400')
+    expect(sendMaintenanceEmail).not.toHaveBeenCalled()
+    // Claim released back to 'shadow' so a retry is possible.
+    expect(sb.updates.at(-1)).toMatchObject({ status: 'shadow' })
+  })
+
+  it('422s before ever claiming when the phone-having booking has no drafted SMS text', async () => {
+    const sb = makeSupabase({ proposal: { ...smsOnlyProposal, payload: { ...smsOnlyProposal.payload, sms_text: undefined } }, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'send_move' }), { params: Promise.resolve({ id: 's1' }) })
+    expect(res.status).toBe(422)
+    expect(sb.updates).toHaveLength(0)
+    expect(sendSms).not.toHaveBeenCalled()
   })
 })

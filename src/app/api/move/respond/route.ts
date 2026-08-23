@@ -11,16 +11,23 @@ import { formatAmsterdamTime } from '@/lib/utils'
  * POST /api/move/respond { proposalId, token, response }
  *
  * The guest's answer to a move request — reached from the tokened link in
- * their SMS/email, no login. Three answers:
+ * their SMS/email, no login. Two answers, both final (Beer, 2026-08-23:
+ * dropped the "Let me check" middle option — it never resolved to a
+ * different outcome than silence anyway, both just sat until the 48h
+ * expiry, and the drafted copy already framed this as a plain yes/no):
  *   accept  — "Yes, that's fine"      → status 'executed'; Slack pings the team
  *             to perform the ACTUAL rebook in admin (a guest yes never touches
  *             FareHarbor by itself — the autonomy ceiling holds).
- *   defer   — "Let me check"          → stays 'approved' (awaiting); logged.
  *   decline — "Keep my original time" → status 'executed'; nothing changes for
- *             the guest; the ops slot is freed for other ideas.
+ *             the guest; permanently opts them out of every future ask too.
  *
- * Every answer lands in ops_events — the acceptance-probability training data.
- * Idempotent: a second tap returns the recorded answer instead of overwriting.
+ * A guest who never taps either button at all still lands in the same place
+ * as before: the 48h expiry sweep (guest-move-drafter.ts) eventually marks
+ * the request 'expired'. Every answer lands in ops_events — the
+ * acceptance-probability training data. Idempotent: a second tap returns the
+ * recorded answer instead of overwriting (a handful of already-sent links
+ * may still carry a historical 'defer' outcome from before this change —
+ * still handled, just never producible again).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -33,7 +40,13 @@ export async function POST(req: NextRequest) {
     if (!proposalId || !token || !isValidMoveToken(proposalId, token)) {
       return apiError('Invalid link', 403)
     }
-    if (response !== 'accept' && response !== 'defer' && response !== 'decline') {
+    // 'defer' ("Let me check") was removed 2026-08-23 — Beer: it never
+    // resolved to a different outcome than silence anyway (both just sat
+    // until the 48h expiry), and the drafted copy already frames this as a
+    // plain yes/no. Old already-sent links may still carry a stored 'defer'
+    // outcome (idempotency check below still handles that), but no NEW
+    // response can ever be 'defer' again.
+    if (response !== 'accept' && response !== 'decline') {
       return apiError('Invalid response', 400)
     }
 
@@ -73,13 +86,11 @@ export async function POST(req: NextRequest) {
         responded_at: new Date().toISOString(),
       }),
     )
+    // Both remaining answers are final now that 'defer' is gone — always
+    // flips to 'executed'.
     await supabase
       .from('agent_proposals')
-      .update({
-        outcome: nextOutcome,
-        // defer keeps the request open (awaiting a real answer / expiry sweep)
-        ...(response === 'defer' ? {} : { status: 'executed' }),
-      })
+      .update({ outcome: nextOutcome, status: 'executed' })
       .eq('id', proposalId)
 
     // Permanent, guest-level opt-out (Beer, 2026-08-23: "one decline, never
@@ -94,8 +105,7 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    const eventType =
-      response === 'accept' ? 'guest_move_accepted' : response === 'decline' ? 'guest_move_declined' : 'guest_move_deferred'
+    const eventType = response === 'accept' ? 'guest_move_accepted' : 'guest_move_declined'
     await emitOpsEvent({
       eventType,
       actorType: 'human',

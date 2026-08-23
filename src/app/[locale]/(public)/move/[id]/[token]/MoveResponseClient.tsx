@@ -45,7 +45,6 @@ const STRINGS = {
     sweetener: (s: string) => `And because you'd be helping us out: ${s}.`,
     price: (eur: string) => `Price stays ${eur} — nothing changes there.`,
     accept: "Yes, that's fine",
-    defer: 'Let me check',
     decline: 'Keep my original time',
     acceptedTitle: 'Great — thank you!',
     acceptedBody: "We'll move your booking and send you a confirmation email shortly. The wine is on us.",
@@ -66,7 +65,6 @@ const STRINGS = {
     sweetener: (s: string) => `En omdat je ons ermee helpt: ${s === 'a bottle of wine on the house' ? 'een fles wijn van het huis' : s}.`,
     price: (eur: string) => `De prijs blijft ${eur} — daar verandert niets aan.`,
     accept: 'Ja, dat is goed',
-    defer: 'Even checken',
     decline: 'Liever mijn originele tijd',
     acceptedTitle: 'Top — dank je wel!',
     acceptedBody: 'We verzetten je boeking en sturen zo een bevestigingsmail. De wijn staat koud.',
@@ -86,7 +84,7 @@ export default function MoveResponseClient({ locale, proposalId, token, offer, i
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState(false)
 
-  async function respond(answer: 'accept' | 'defer' | 'decline') {
+  async function respond(answer: 'accept' | 'decline') {
     setBusy(answer)
     setError(false)
     try {
@@ -154,7 +152,6 @@ export default function MoveResponseClient({ locale, proposalId, token, offer, i
 
         <div className="mt-6 space-y-3">
           <ResponseButton primary label={t.accept} busy={busy === 'accept'} onClick={() => respond('accept')} />
-          <ResponseButton label={t.defer} busy={busy === 'defer'} onClick={() => respond('defer')} />
           <ResponseButton label={t.decline} busy={busy === 'decline'} onClick={() => respond('decline')} />
         </div>
         {error && <p className="mt-3 text-sm text-red-600">{t.error}</p>}

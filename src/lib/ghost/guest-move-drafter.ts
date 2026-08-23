@@ -19,6 +19,7 @@ import {
   GUEST_MOVE_EXPIRY_HOURS,
   GUEST_MOVE_PROMPT,
   moveIncentiveFor,
+  moveContactChannel,
   hasEnoughNotice,
 } from './rulebook'
 import { amsterdamToday, formatAmsterdamTime } from '@/lib/utils'
@@ -526,6 +527,7 @@ async function craftAndInsertMoveProposal(
   const proposedTime = formatAmsterdamTime(candidate.proposedStartAt)
   const totalEur = ((candidate.booking.totalCents ?? 0) / 100).toFixed(2)
   const incentive = moveIncentiveFor(candidate.booking.category, candidate.booking.extrasSelected)
+  const channel = moveContactChannel(candidate.booking.customerPhone)
 
   const response = await meteredMessage('ghost_guest_move', {
     model: CLAUDE_DRAFTER_MODEL,
@@ -539,9 +541,12 @@ THE ASK
 - Guest: ${candidate.booking.customerName ?? 'guest'} · ${candidate.booking.guestCount ?? '?'} people · ${candidate.booking.listingTitle ?? 'cruise'} on ${targetDate}
 - Current departure: ${currentTime} · proposed: ${proposedTime} (same boat: ${candidate.boat}, same duration, same price: €${totalEur})
 - Incentive to offer: ${incentive ?? 'NONE — they already have Unlimited Drinks, so no sweetener this time; just make the plain ask'}
+- Channel: ${channel.toUpperCase()}
 
 Return JSON only:
-{"sms_text": "<SMS incl {{link}}>", "email_subject": "<subject>", "email_body": "<plain-text email incl {{link}}, with a one-line summary of their booking (date, time ${currentTime} → ${proposedTime}, party size, price unchanged €${totalEur})>"}`,
+${channel === 'sms'
+  ? '{"sms_text": "<SMS incl {{link}}>"}'
+  : `{"email_subject": "<subject>", "email_body": "<plain-text email incl {{link}}, with a one-line summary of their booking (date, time ${currentTime} → ${proposedTime}, party size, price unchanged €${totalEur})>"}`}`,
       },
     ],
   })
@@ -550,8 +555,8 @@ Return JSON only:
   const smsText = typeof parsed?.sms_text === 'string' ? parsed.sms_text : null
   const emailSubject = typeof parsed?.email_subject === 'string' ? parsed.email_subject : null
   const emailBody = typeof parsed?.email_body === 'string' ? parsed.email_body : null
-  if (!smsText || !emailSubject || !emailBody) return 'skipped'
-  if (!smsText.includes('{{link}}') || !emailBody.includes('{{link}}')) return 'skipped'
+  if (channel === 'sms' ? !smsText : !emailSubject || !emailBody) return 'skipped'
+  if (channel === 'sms' ? !smsText!.includes('{{link}}') : !emailBody!.includes('{{link}}')) return 'skipped'
 
   const { data: inserted, error: insertError } = await supabase
     .from('agent_proposals')

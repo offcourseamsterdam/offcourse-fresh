@@ -7,7 +7,7 @@ import { fetchSearchResults } from '@/lib/search/fetch-search-results'
 import { PLACEHOLDER_CONTACT, toVerdict, type DryRunVerdict } from './dry-run'
 import { boatKeyFromName } from './guest-move-drafter'
 import { extractJson } from './ops-drafters'
-import { BOAT_SWAP_PROMPT, moveIncentiveFor } from './rulebook'
+import { BOAT_SWAP_PROMPT, moveIncentiveFor, moveContactChannel } from './rulebook'
 import { isOptedOut } from './reschedule-opt-outs'
 import { formatAmsterdamTime } from '@/lib/utils'
 import type { AvailabilitySlot } from '@/types'
@@ -145,6 +145,7 @@ export async function draftBoatSwap(
     const time = formatAmsterdamTime(booking.startTime)
     const totalEur = ((booking.totalCents ?? 0) / 100).toFixed(2)
     const incentive = moveIncentiveFor(booking.category, booking.extrasSelected)
+    const channel = moveContactChannel(booking.customerPhone)
 
     const response = await meteredMessage('ghost_boat_swap', {
       model: CLAUDE_DRAFTER_MODEL,
@@ -158,9 +159,12 @@ THE ASK
 - Guest: ${booking.customerName ?? 'guest'} · ${booking.guestCount ?? '?'} people · ${booking.listingTitle ?? 'cruise'} on ${candidate.date} at ${time}
 - Current boat: ${candidate.fromBoat} · proposed boat: ${candidate.toBoat} (same date, same time, same price: €${totalEur})
 - Incentive to offer: ${incentive ?? 'NONE — they already have Unlimited Drinks, so no sweetener this time; just make the plain ask'}
+- Channel: ${channel.toUpperCase()}
 
 Return JSON only:
-{"sms_text": "<SMS incl {{link}}>", "email_subject": "<subject>", "email_body": "<plain-text email incl {{link}}, with a one-line summary of their booking (${candidate.date} ${time}, ${candidate.fromBoat} → ${candidate.toBoat}, party size, price unchanged €${totalEur})>"}`,
+${channel === 'sms'
+  ? '{"sms_text": "<SMS incl {{link}}>"}'
+  : `{"email_subject": "<subject>", "email_body": "<plain-text email incl {{link}}, with a one-line summary of their booking (${candidate.date} ${time}, ${candidate.fromBoat} → ${candidate.toBoat}, party size, price unchanged €${totalEur})>"}`}`,
         },
       ],
     })
@@ -169,8 +173,8 @@ Return JSON only:
     const smsText = typeof parsed?.sms_text === 'string' ? parsed.sms_text : null
     const emailSubject = typeof parsed?.email_subject === 'string' ? parsed.email_subject : null
     const emailBody = typeof parsed?.email_body === 'string' ? parsed.email_body : null
-    if (!smsText || !emailSubject || !emailBody) return 'skipped'
-    if (!smsText.includes('{{link}}') || !emailBody.includes('{{link}}')) return 'skipped'
+    if (channel === 'sms' ? !smsText : !emailSubject || !emailBody) return 'skipped'
+    if (channel === 'sms' ? !smsText!.includes('{{link}}') : !emailBody!.includes('{{link}}')) return 'skipped'
 
     const { data: inserted, error: insertError } = await supabase
       .from('agent_proposals')

@@ -70,6 +70,19 @@ export function hasEnoughNotice(departureIso: string | null | undefined): boolea
   return hoursUntil >= MIN_RESCHEDULE_NOTICE_HOURS
 }
 
+/**
+ * Every reschedule ask is SMS-first (Beer, 2026-08-23: "perhaps we should
+ * only start with SMS first; maybe that's just enough") — texts get seen
+ * and answered far faster than email, and drafting only one channel's copy
+ * instead of two halves the AI cost per ask. Email is a fallback ONLY for
+ * the rare booking with no phone on file at all, not a backup when SMS
+ * later fails to send — a send failure is reported, not silently retried
+ * on a different channel.
+ */
+export function moveContactChannel(phone: string | null | undefined): 'sms' | 'email' {
+  return phone ? 'sms' : 'email'
+}
+
 // ── Shared prompt blocks (imported by the drafters) ─────────────────────────
 
 export const SCHEDULE_DAY_PROMPT = `You are the scheduling assistant for Off Course Amsterdam (electric canal boats). Propose a captain for each OPEN shift on the target date below. When you can confidently fill a shift this assigns the captain for real and DMs them the details — there is no human review step first, so follow the rules exactly rather than leaving a borderline call for someone else to catch.
@@ -121,7 +134,7 @@ export const GUEST_MOVE_PROMPT = `You write for Off Course Amsterdam ("your frie
 - NEVER mention or imply occupancy, headcount, or that a cruise is quiet/empty/undersold — the guest must not be able to infer anything about how full any departure is. Frame this purely as us asking a favour, not as filling a gap.
 - The request below states the exact incentive to offer, if any — some bookings genuinely get none. Offer it naturally if given; if none is given, don't invent one or apologize for its absence, just make the plain ask.
 - Reversibility, explicitly: if they say yes, we make the change; if they say no (or don't reply), their original time simply stays — either answer is completely fine, no follow-up pressure.
-- The message must include the literal placeholder {{link}} exactly once in the SMS and once in the email body — it becomes their personal response button/URL.
+- Draft ONLY the channel named in the request below (SMS or email — never both, never guess which). The message must include the literal placeholder {{link}} exactly once — it becomes their personal response button/URL.
 - English. SMS max ~300 characters.`
 
 export const CROSS_DAY_MOVE_PROMPT = `You write for Off Course Amsterdam ("your friend with a boat" — warm, casual, dry humour, never corporate). Draft a DATE-change request to a guest: ask if they'd move their booking to a nearby day's departure of the exact same cruise instead — same boat, same time of day, same price. This is a SHADOW draft: a human approves before anything is sent.
@@ -129,7 +142,7 @@ export const CROSS_DAY_MOVE_PROMPT = `You write for Off Course Amsterdam ("your 
 - NEVER mention or imply occupancy, headcount, or that a cruise is quiet/empty/undersold, on EITHER day — the guest must not be able to infer anything about how full any departure is (that reads as "this is secretly a private cruise", which it isn't). Frame this purely as us asking a favour, not as filling a gap.
 - The request below states the exact incentive to offer, if any — some bookings genuinely get none (they already have Unlimited Drinks). Offer it naturally if given; if none is given, don't invent one or apologize for its absence, just make the plain ask.
 - Reversibility, explicitly: if they say yes, we make the change; if they say no (or don't reply), their original date simply stays — either answer is completely fine, no follow-up pressure.
-- The message must include the literal placeholder {{link}} exactly once in the SMS and once in the email body — it becomes their personal response button/URL.
+- Draft ONLY the channel named in the request below (SMS or email — never both, never guess which). The message must include the literal placeholder {{link}} exactly once — it becomes their personal response button/URL.
 - English. SMS max ~300 characters.`
 
 export const BOAT_SWAP_PROMPT = `You write for Off Course Amsterdam ("your friend with a boat" — warm, casual, dry humour, never corporate). Draft a BOAT-change request to a guest: same date, same time, same price, same cruise — just a different one of our two electric boats (Diana, cosy for up to 8; Curaçao, roomier for up to 12), because it lets us run the day with one boat instead of two. This is a SHADOW draft: a human approves before anything is sent.
@@ -137,7 +150,7 @@ export const BOAT_SWAP_PROMPT = `You write for Off Course Amsterdam ("your frien
 - NEVER mention or imply occupancy, headcount, or that a cruise is quiet/empty/undersold — the guest must not be able to infer anything about how full any departure is. Frame this purely as us asking a favour, not as filling a gap.
 - The request below states the exact incentive to offer, if any — some bookings genuinely get none. Offer it naturally if given; if none is given, don't invent one or apologize for its absence, just make the plain ask.
 - Reversibility, explicitly: if they say yes, we make the change; if they say no (or don't reply), their original boat simply stays — either answer is completely fine, no follow-up pressure.
-- The message must include the literal placeholder {{link}} exactly once in the SMS and once in the email body — it becomes their personal response button/URL.
+- Draft ONLY the channel named in the request below (SMS or email — never both, never guess which). The message must include the literal placeholder {{link}} exactly once — it becomes their personal response button/URL.
 - English. SMS max ~300 characters.`
 
 // ── The rulebook entries (rendered on /admin/ghost/rulebook) ─────────────────
@@ -228,7 +241,8 @@ export const RULEBOOK: RulebookEntry[] = [
       { rule: `Only gaps ≥ ${MIN_GAP_MINUTES} min AND ≥ €${(MIN_GAP_SAVING_CENTS / 100).toFixed(0)} paid waiting get an ask, same bar for private and shared; nightly horizon ${OPTIMIZE_HORIZON_DAYS} days, only days with a second booking.`, enforcedIn: 'src/lib/ghost/rulebook.ts (thresholds) + guest-move-drafter.ts' },
       { rule: 'Every new confirmed booking also checks its OWN date immediately (Beer 2026-07-04) — not just the nightly scan — so an opportunity is never left for the next cron.', enforcedIn: 'src/lib/ghost/guest-move-drafter.ts (draftGuestMoveForNewBooking) + webhooks/stripe + admin/booking-flow/book' },
       { rule: 'DRY-RUN: no ask exists until FareHarbor confirmed the target slot. The geometric ideal is snapped to a REAL availability (same boat, same duration, whole party validated non-mutatingly), and the send button re-validates the slot again immediately before dispatch — a stale slot expires the request instead of sending it.', enforcedIn: 'guest-move-drafter.ts (pickSnapSlot/validateMoveSlot/revalidateStoredMove) + proposals/[id]:send_move' },
-      { rule: 'Sending is a human click (SMS + email with a personal HMAC link). A guest YES never rebooks anything — Slack pings the team to rebook via admin.', enforcedIn: 'proposals/[id]/route.ts + api/move/respond' },
+      { rule: `Sending is a human click, via a personal HMAC link. SMS-FIRST (Beer, 2026-08-23: "perhaps we should only start with SMS first") — email is a fallback ONLY for a booking with no phone at all, never a backup when SMS fails to send (a failure is reported, not silently retried on the other channel). Only the channel that will actually be used gets drafted at all, halving the AI cost per ask. A guest YES never rebooks anything — Slack pings the team to rebook via admin.`, enforcedIn: 'src/lib/ghost/rulebook.ts (moveContactChannel) + proposals/[id]/route.ts (send_move) + api/move/respond' },
+      { rule: `TWO ANSWERS, BOTH FINAL (Beer, 2026-08-23: dropped "Let me check" — it never resolved to a different outcome than silence, both just sat until the 48h expiry, and the drafted copy already framed this as plain yes/no). Accept or decline only; a guest who never responds at all still falls through to the same 48h expiry sweep as before.`, enforcedIn: 'src/app/[locale]/(public)/move/[id]/[token]/MoveResponseClient.tsx + api/move/respond' },
       { rule: `Unanswered asks expire after ${GUEST_MOVE_EXPIRY_HOURS}h.`, enforcedIn: 'src/lib/ghost/guest-move-drafter.ts (expiry sweep)' },
       { rule: `CROSS-DAY variant (same kind, different opportunity — Beer 2026-08-23): two single-booking shared departures exactly ${CROSS_DAY_WINDOW_DAYS} day apart, same product, combined guests within the receiving boat's capacity. Private cruises never eligible (they never merge at all). Whichever party is SMALLER gets asked to move (a tie defaults to the later day) — not a fixed "later always moves". Same human-approval-then-send flow and tokened response link as the same-day ask — no new send/response code, only a new candidate source and its own incentive rule (see below).`, enforcedIn: 'src/lib/ghost/cross-day-consolidation.ts + cross-day-move-drafter.ts' },
       { rule: `CROSS-DAY: food only excludes the MOVING side (Beer 2026-08-23: food catering only exists on private cruises in practice, but the check stays as a safety net) — a stationary receiving party's own food order is untouched by someone else joining them, so it never disqualifies a pairing. Drinks-only is always fine either side (stocked on the boat, not a supplier delivery). no_reschedule_ask DOES apply to both sides, though — gaining an unasked companion changes a flagged guest's own experience.`, enforcedIn: 'src/lib/ghost/cross-day-consolidation.ts (eligibleToReceive vs eligibleToMove)' },
