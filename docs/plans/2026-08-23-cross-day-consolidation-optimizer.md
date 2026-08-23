@@ -1,16 +1,17 @@
-# Cross-Day Shared-Cruise Consolidation ("Optimizer") — Plan
+# Planning Optimizer Panel (same-day + cross-day) — Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans or
-> superpowers:subagent-driven-development to implement this plan task-by-task,
-> once the open questions in Part 3 are answered.
+> superpowers:subagent-driven-development to implement this plan task-by-task.
 
-**Goal:** When two shared cruises on nearby days are each running under-full,
-detect it, get Beer's approval, and ask one party (with an incentive) to move
-onto the other's departure — freeing an entire day's boat and captain cost
-instead of running two half-empty boats.
+**Goal:** One panel on the Planning page, opened on demand, that surfaces
+every schedule inefficiency it can find for the dates currently in view —
+same-day paid gaps and cross-boat merges (already computed nightly, just not
+shown anywhere Beer asked for it) AND the new cross-day consolidation (two
+under-full shared cruises on adjacent days). Every row previews the real
+action before anything happens; nothing sends or executes without a click.
 
-**Status:** Design finalized (Part 3 decided, 2026-08-23). Ready for a
-task-by-task TDD breakdown.
+**Status:** Design finalized (Part 3 decided, 2026-08-23; same-day scope
+added 2026-08-23). Ready for a task-by-task TDD breakdown.
 
 ---
 
@@ -137,6 +138,19 @@ click is the answer, recorded straight to `ops_events`
 
 ## Part 4 — Proposed shape
 
+**Q5 — Beer, 2026-08-23: "And also, of course, on the same day, if you see
+inefficiencies there."** The panel isn't cross-day-only — it's the one place
+that shows every kind of schedule inefficiency for the dates you're looking
+at. This has one real technical consequence worth naming up front:
+`ops-review.ts`'s same-day gap/merge analysis (`computeDayFacts`) is already
+built and already correct, but today it only ever runs for **tomorrow**,
+once, via the nightly cron (`draftOpsReview`). It was never built to run
+on-demand across an arbitrary multi-week range. Opening the panel needs it
+to run for *every visible day*, live — so that logic needs a thin
+range-scoped wrapper, not a rewrite: `computeDayFacts` itself is already a
+pure function that takes a date and its shifts, so this is "call it once per
+visible day" rather than new analysis logic.
+
 1. **`findCrossDayConsolidationCandidates`** (new, pure function, in
    `src/lib/ghost/` alongside `ops-review.ts`) — across the optimize horizon,
    find pairs of shared-category shifts where: both are single-booking
@@ -152,17 +166,27 @@ click is the answer, recorded straight to `ops_events`
    and the `agent_proposals` + `ops_events` plumbing as-is. Inserted as a
    `shadow` proposal — nothing sends until approved (Q4).
 
-3. **New `OptimizerPanel` component** (Planning page — a header button opens
-   it, matching the `GhostActivityPanel`/`AiOpsCenter` slide-over pattern
-   already used elsewhere) listing candidates for the visible date range,
-   each row expandable to show the proposed move AND the exact drafted
-   message, with Approve (sends it) / Dismiss actions. Approve marks the
-   proposal `executed` and fires the actual send; the real FareHarbor
-   rebooking, once a guest says yes, stays a human action in
-   `/admin/ghost` — same as every other move type today (not revisited here;
-   no answer changed that).
+3. **`GET /api/admin/planning/optimizer?from=&to=`** — for each day in the
+   range: runs the existing `computeDayFacts` (same-day gaps + cross-boat
+   merges, no new logic) plus the new `findCrossDayConsolidationCandidates`.
+   Returns one merged list, each item tagged with its kind (`same_day_gap` /
+   `same_day_merge` / `cross_day_consolidation`) so the panel can label them
+   distinctly without pretending they're the same thing.
 
-4. **Docs** — per this repo's rule, a `docs/features/` writeup once built.
+4. **New `OptimizerPanel` component** (Planning page — a header button opens
+   it, matching the `GhostActivityPanel`/`AiOpsCenter` slide-over pattern
+   already used elsewhere), fetching from the route above for whatever date
+   range Planning currently has in view. Each row expands to show the
+   proposed action AND — for the two kinds that involve contacting a guest —
+   the exact drafted SMS/email text, with Approve (sends it / applies it) /
+   Dismiss. A same-day cross-boat merge with no guest contact needed can
+   apply directly on approve; anything that texts a guest still goes through
+   the existing shadow-proposal + tokened-link flow. Approving marks the
+   proposal `executed`; the real FareHarbor rebooking, once a guest says yes,
+   stays a human action in `/admin/ghost` — same as every other move type
+   today.
+
+5. **Docs** — per this repo's rule, a `docs/features/` writeup once built.
 
 Next step: a full TDD task breakdown (file-by-file, test-by-test), following
 this repo's normal `writing-plans` format, once Beer confirms this shape is
