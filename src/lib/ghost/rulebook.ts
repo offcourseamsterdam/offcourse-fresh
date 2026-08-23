@@ -34,6 +34,8 @@ export const UPSELL_LEAD_DAYS = 2
 export const AVAILABILITY_REQUEST_LEAD_DAYS = 42
 /** Captain schedule digest: the Amsterdam-local hour it goes out, checked DST-safe against the real clock (not a fixed UTC cron time). */
 export const SCHEDULE_DIGEST_HOUR_AMSTERDAM = 18
+/** Guest-move (every variant): never contact a guest about a departure less than this many hours away — not enough runway for them to notice, decide, and for us to act on a yes (Beer, 2026-08-23: "18 hours, the earlier the better though"). The underlying inefficiency still surfaces as a read-only finding; only the ask itself is withheld. */
+export const MIN_RESCHEDULE_NOTICE_HOURS = 18
 /** Cross-day consolidation: how many days apart two shared departures can still be asked to merge. Beer, 2026-08-23: start narrow. */
 export const CROSS_DAY_WINDOW_DAYS = 1
 /** Reschedule incentive — private cruises (Beer, 2026-08-23). */
@@ -53,6 +55,19 @@ export const SHARED_MOVE_INCENTIVE = "everyone's first drink (wine or beer) on t
 export function moveIncentiveFor(category: string | null, extrasSelected: ExtrasLineItem[] | null): string | null {
   if (category === 'private') return PRIVATE_MOVE_INCENTIVE
   return hasUnlimitedDrinks(extrasSelected) ? null : SHARED_MOVE_INCENTIVE
+}
+
+/**
+ * Deliberately reads the real wall clock (not threaded through as a
+ * parameter) — this is an impure, "is it too late RIGHT NOW" check, called
+ * only from the drafter/route layer right before a candidate is contacted,
+ * never from the pure candidate-finder functions themselves (which stay
+ * fixture-testable with fixed dates). See MIN_RESCHEDULE_NOTICE_HOURS.
+ */
+export function hasEnoughNotice(departureIso: string | null | undefined): boolean {
+  if (!departureIso) return false
+  const hoursUntil = (new Date(departureIso).getTime() - Date.now()) / (1000 * 60 * 60)
+  return hoursUntil >= MIN_RESCHEDULE_NOTICE_HOURS
 }
 
 // ── Shared prompt blocks (imported by the drafters) ─────────────────────────

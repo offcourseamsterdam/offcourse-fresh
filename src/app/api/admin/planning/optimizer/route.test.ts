@@ -5,10 +5,20 @@ const h = vi.hoisted(() => ({
   draftCrossDayConsolidation: vi.fn(),
   validateBoatSwap: vi.fn().mockResolvedValue(null),
   draftBoatSwap: vi.fn(),
+  // Defaults to "plenty of notice" — real wall-clock time keeps advancing
+  // past hardcoded fixture dates, so this route's tests pin it explicitly
+  // rather than relying on the fixture dates always being >18h in the real
+  // future (see MIN_RESCHEDULE_NOTICE_HOURS, rulebook.ts). Individual tests
+  // override the return value to exercise the cutoff itself.
+  hasEnoughNotice: vi.fn().mockReturnValue(true),
 }))
 vi.mock('@/lib/auth/require-admin', () => ({ requireAdmin: h.requireAdmin }))
 vi.mock('@/lib/ghost/cross-day-move-drafter', () => ({ draftCrossDayConsolidation: h.draftCrossDayConsolidation }))
 vi.mock('@/lib/ghost/boat-swap-drafter', () => ({ validateBoatSwap: h.validateBoatSwap, draftBoatSwap: h.draftBoatSwap }))
+vi.mock('@/lib/ghost/rulebook', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/lib/ghost/rulebook')>()
+  return { ...actual, hasEnoughNotice: h.hasEnoughNotice }
+})
 // Pinned so the route's server-computed "today → today+horizon" range is
 // deterministic in tests, regardless of the real wall-clock date.
 vi.mock('@/lib/utils', async importOriginal => {
@@ -176,6 +186,10 @@ function makeReq(from: string, to: string) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // clearAllMocks wipes call-tracking but not a previously-set mockReturnValue
+  // — restore the "plenty of notice" default so one test's override of
+  // hasEnoughNotice never leaks into the next.
+  h.hasEnoughNotice.mockReturnValue(true)
 })
 
 describe('GET /api/admin/planning/optimizer', () => {
@@ -275,6 +289,22 @@ describe('GET /api/admin/planning/optimizer', () => {
     expect(crossDay.guestName).toBe('Sophie Russell')
     expect(crossDay.estSavingCents).toBe(0)
     expect(crossDay.summary).toContain('shortens the 2026-08-26 shift')
+  })
+
+  it('stays a read-only finding (no ask drafted) when the departure is inside the minimum-notice window', async () => {
+    h.hasEnoughNotice.mockReturnValue(false)
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeSupabase({ shifts: [PAIGE_SHIFT, SOPHIE_SHIFT], bookings: [PAIGE_BOOKING, SOPHIE_BOOKING] }) as never,
+    )
+
+    const res = await GET(makeReq('2026-08-25', '2026-08-26'))
+    const body = await res.json()
+
+    const crossDay = body.data.items.find((i: { kind: string }) => i.kind === 'cross_day_consolidation')
+    expect(crossDay).toBeTruthy()
+    expect(crossDay.proposalId).toBeUndefined()
+    expect(crossDay.smsText).toBeUndefined()
+    expect(h.draftCrossDayConsolidation).not.toHaveBeenCalled()
   })
 
   it('surfaces a same-day gap as its own item, separate from cross-day candidates', async () => {
@@ -428,6 +458,26 @@ describe('GET /api/admin/planning/optimizer', () => {
       expect(swap).toBeTruthy()
       expect(swap.proposalId).toBeUndefined()
       expect(h.validateBoatSwap).not.toHaveBeenCalled()
+    })
+
+    it('stays a read-only finding (no ask, no FH dry-run) when the departure is inside the minimum-notice window', async () => {
+      h.hasEnoughNotice.mockReturnValue(false)
+      vi.mocked(createAdminClient).mockReturnValue(
+        makeSupabase({
+          shifts: [dianaShift, curacaoShift],
+          bookings: [privateDianaBooking, otherCuracaoBooking],
+          listingSlug: 'private-hidden-gems-cruise',
+        }) as never,
+      )
+
+      const res = await GET(makeReq('2026-08-28', '2026-08-28'))
+      const body = await res.json()
+
+      const swap = body.data.items.find((i: { kind: string; boat: string }) => i.kind === 'same_day_merge' && i.boat === 'Diana')
+      expect(swap).toBeTruthy()
+      expect(swap.proposalId).toBeUndefined()
+      expect(h.validateBoatSwap).not.toHaveBeenCalled()
+      expect(h.draftBoatSwap).not.toHaveBeenCalled()
     })
   })
 

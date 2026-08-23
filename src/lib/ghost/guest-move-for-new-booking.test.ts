@@ -16,7 +16,10 @@ import { syncShiftsForRange } from '@/lib/scheduling/sync-shifts'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { fetchSearchResults } from '@/lib/search/fetch-search-results'
 
-const DATE = '2026-07-05'
+// Always safely in the future relative to whenever the suite actually runs —
+// a fixed past-looking date would trip the MIN_RESCHEDULE_NOTICE_HOURS check
+// (Beer, 2026-08-23) the moment real time caught up to it.
+const DATE = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
 /**
  * The new-booking trigger (Beer 2026-07-04: "every time a new booking comes
@@ -116,7 +119,7 @@ describe('draftGuestMoveForNewBooking', () => {
   it('skips when the date still has only one sailing (no second booking yet)', async () => {
     const { client } = makeSupabase({
       agent_proposals: [{ data: [] }],
-      shifts: [{ data: [shiftRow('sh1', '2026-07-05T10:00:00Z', '2026-07-05T12:00:00Z', 'b1')] }],
+      shifts: [{ data: [shiftRow('sh1', `${DATE}T10:00:00Z`, `${DATE}T12:00:00Z`, 'b1')] }],
       bookings: [{ data: [bookingRow('b1')] }],
     })
     vi.mocked(createAdminClient).mockReturnValue(client as never)
@@ -134,8 +137,8 @@ describe('draftGuestMoveForNewBooking', () => {
       shifts: [
         {
           data: [
-            shiftRow('sh1', '2026-07-05T10:00:00Z', '2026-07-05T12:00:00Z', 'b1'),
-            shiftRow('sh2', '2026-07-05T13:30:00Z', '2026-07-05T15:00:00Z', 'b2'),
+            shiftRow('sh1', `${DATE}T10:00:00Z`, `${DATE}T12:00:00Z`, 'b1'),
+            shiftRow('sh2', `${DATE}T13:30:00Z`, `${DATE}T15:00:00Z`, 'b2'),
           ],
         },
       ],
@@ -151,9 +154,9 @@ describe('draftGuestMoveForNewBooking', () => {
         availableSlots: [
           {
             pk: 999,
-            startAt: '2026-07-05T12:00:00Z',
+            startAt: `${DATE}T12:00:00Z`,
             startTime: '2pm',
-            endAt: '2026-07-05T13:30:00Z',
+            endAt: `${DATE}T13:30:00Z`,
             headline: '',
             capacity: 12,
             customerTypes: [
@@ -207,8 +210,8 @@ describe('draftGuestMoveForNewBooking', () => {
       shifts: [
         {
           data: [
-            shiftRow('sh1', '2026-07-05T10:00:00Z', '2026-07-05T12:00:00Z', 'b1'),
-            shiftRow('sh2', '2026-07-05T13:30:00Z', '2026-07-05T15:00:00Z', 'b2'),
+            shiftRow('sh1', `${DATE}T10:00:00Z`, `${DATE}T12:00:00Z`, 'b1'),
+            shiftRow('sh2', `${DATE}T13:30:00Z`, `${DATE}T15:00:00Z`, 'b2'),
           ],
         },
       ],

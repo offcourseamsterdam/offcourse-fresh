@@ -10,7 +10,7 @@ import {
 } from '@/lib/ghost/cross-day-consolidation'
 import { draftCrossDayConsolidation } from '@/lib/ghost/cross-day-move-drafter'
 import { validateBoatSwap, draftBoatSwap, type BoatSwapBooking } from '@/lib/ghost/boat-swap-drafter'
-import { OPTIMIZE_HORIZON_DAYS } from '@/lib/ghost/rulebook'
+import { OPTIMIZE_HORIZON_DAYS, hasEnoughNotice } from '@/lib/ghost/rulebook'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { amsterdamToday } from '@/lib/utils'
 import type { ExtrasLineItem } from '@/lib/catering/filter'
@@ -357,6 +357,9 @@ export async function GET(_request: NextRequest) {
         const rawShift = rawShifts.find(s => s.id === merge.shiftId)
         const booking = rawShift ? bookingsForShift(rawShift, bookingsById, bookingsByAvailPk)[0] : null
         if (!booking?.listing_id) return base // nothing to validate a swap against — read-only finding only
+        // Not enough runway to bother the guest — still worth reporting the
+        // finding, just never contacted about it.
+        if (!hasEnoughNotice(booking.start_time)) return base
 
         const existing = await findOpenBoatSwapProposal(supabase, booking.id)
         if (existing) {
@@ -405,6 +408,18 @@ export async function GET(_request: NextRequest) {
 
     const crossDayItems = await Promise.all(
       candidates.map(async (c): Promise<OptimizerItem> => {
+        const base: OptimizerItem = {
+          kind: 'cross_day_consolidation',
+          date: c.fromDate,
+          boat: c.boat,
+          summary: `${c.booking.customerName ?? 'Guest'} (${c.booking.guestCount ?? '?'} guests, ${c.fromDate}) could join ${c.toDate}'s ${c.boat} departure (${c.receivingBooking.guestCount ?? '?'} already booked, ${c.capacity - c.combinedGuestCount} spots would remain) — ${c.eliminatesShift ? `frees the whole ${c.fromDate} shift` : `shortens the ${c.fromDate} shift`}.`,
+          estSavingCents: c.estSavingCents,
+          toDate: c.toDate,
+        }
+        // Not enough runway to bother the guest — still worth reporting the
+        // finding, just never contacted about it.
+        if (!hasEnoughNotice(c.booking.startTime)) return base
+
         const existing = await findOpenCrossDayProposal(supabase, c.booking.id)
         const drafted =
           existing ??
@@ -415,17 +430,12 @@ export async function GET(_request: NextRequest) {
 
         const payload = (drafted?.payload ?? {}) as { sms_text?: string; email_subject?: string; email_body?: string }
         return {
-          kind: 'cross_day_consolidation',
-          date: c.fromDate,
-          boat: c.boat,
-          summary: `${c.booking.customerName ?? 'Guest'} (${c.booking.guestCount ?? '?'} guests, ${c.fromDate}) could join ${c.toDate}'s ${c.boat} departure (${c.receivingBooking.guestCount ?? '?'} already booked, ${c.capacity - c.combinedGuestCount} spots would remain) — ${c.eliminatesShift ? `frees the whole ${c.fromDate} shift` : `shortens the ${c.fromDate} shift`}.`,
-          estSavingCents: c.estSavingCents,
+          ...base,
           proposalId: drafted?.id,
           guestName: c.booking.customerName,
           smsText: payload.sms_text,
           emailSubject: payload.email_subject,
           emailBody: payload.email_body,
-          toDate: c.toDate,
         }
       }),
     )

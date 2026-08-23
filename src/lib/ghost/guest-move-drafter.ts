@@ -18,6 +18,7 @@ import {
   GUEST_MOVE_EXPIRY_HOURS,
   GUEST_MOVE_PROMPT,
   moveIncentiveFor,
+  hasEnoughNotice,
 } from './rulebook'
 import { amsterdamToday, formatAmsterdamTime } from '@/lib/utils'
 
@@ -418,7 +419,12 @@ function candidateFromDayRows(rawShifts: RawShiftRow[], dayBookings: MoveBooking
     }
   })
 
-  return selectMoveCandidate(shifts, bookingsById, bookingsByAvailPk)
+  const candidate = selectMoveCandidate(shifts, bookingsById, bookingsByAvailPk)
+  // Not enough runway to bother the guest (Beer, 2026-08-23) — checked here,
+  // not inside the pure selectMoveCandidate, so the underlying gap still
+  // shows up in ops-review's read-only facts; only the ask is withheld.
+  if (candidate && !hasEnoughNotice(candidate.currentStartAt)) return null
+  return candidate
 }
 
 /** Sequential invariant: any not-yet-settled move request blocks a new one for that date. */
