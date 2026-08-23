@@ -1,13 +1,19 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Loader2, Clock } from 'lucide-react'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { adminMutate } from '@/hooks/useAdminSave'
 import { amsterdamToday } from '@/lib/utils'
 import { Unlinked, isUnlinked } from '../Unlinked'
 
 type Status = 'available' | 'prefer_not' | 'unavailable'
+
+interface DayEntry {
+  status: Status
+  startTime: string | null
+  endTime: string | null
+}
 
 /** Tap cycle: unset → available → prefer_not → unavailable → unset. */
 const NEXT: Record<string, Status | null> = {
@@ -53,30 +59,73 @@ export default function CaptainAvailabilityPage() {
   }, [month])
 
   const { data, isLoading, error, mutate } = useAdminFetch<{
-    availability: { date: string; status: Status }[]
+    availability: { date: string; status: Status; startTime: string | null; endTime: string | null }[]
   }>(`/api/captain/availability?from=${from}&to=${to}`)
 
   const byDate = useMemo(() => {
-    const map: Record<string, Status> = {}
-    for (const a of data?.availability ?? []) map[a.date] = a.status
+    const map: Record<string, DayEntry> = {}
+    for (const a of data?.availability ?? []) map[a.date] = { status: a.status, startTime: a.startTime, endTime: a.endTime }
     return map
   }, [data])
 
+  // Days where setting specific hours is meaningful — a day that's unset or
+  // unavailable has no window to narrow.
+  const hoursEligibleDays = useMemo(
+    () => days.filter(d => byDate[d]?.status === 'available' || byDate[d]?.status === 'prefer_not'),
+    [days, byDate],
+  )
+
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [editingHours, setEditingHours] = useState<string | null>(null)
+  const [draftTimes, setDraftTimes] = useState({ start: '09:00', end: '18:00' })
   const today = amsterdamToday()
 
   async function cycle(date: string) {
-    const current = byDate[date] ?? 'unset'
+    const current = byDate[date]?.status ?? 'unset'
     const next = NEXT[current]
     setSaveError(null)
+
+    // Toggling available ↔ prefer not keeps any hours already set for the
+    // day; unavailable and clearing always drop them — same forcing rule
+    // the API itself applies.
+    const keepsHours = next === 'available' || next === 'prefer_not'
+    const startTime = keepsHours ? (byDate[date]?.startTime ?? null) : null
+    const endTime = keepsHours ? (byDate[date]?.endTime ?? null) : null
+
     // optimistic
     mutate(prev => {
       if (!prev) return prev
       const rest = prev.availability.filter(a => a.date !== date)
-      return { availability: next ? [...rest, { date, status: next }] : rest }
+      return { availability: next ? [...rest, { date, status: next, startTime, endTime }] : rest }
     }, { revalidate: false })
+    if (editingHours === date && !keepsHours) setEditingHours(null)
     try {
-      await adminMutate('/api/captain/availability', 'PUT', { date, status: next })
+      await adminMutate('/api/captain/availability', 'PUT', { date, status: next, startTime, endTime })
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Could not save')
+      mutate() // re-fetch truth
+    }
+  }
+
+  function toggleHoursEditor(date: string) {
+    const entry = byDate[date]
+    setDraftTimes({ start: entry?.startTime ?? '09:00', end: entry?.endTime ?? '18:00' })
+    setEditingHours(editingHours === date ? null : date)
+  }
+
+  async function applyHours(date: string, times: { start: string; end: string } | null) {
+    const entry = byDate[date]
+    if (!entry) return
+    setSaveError(null)
+    const startTime = times?.start ?? null
+    const endTime = times?.end ?? null
+    mutate(prev => {
+      if (!prev) return prev
+      return { availability: prev.availability.map(a => (a.date === date ? { ...a, startTime, endTime } : a)) }
+    }, { revalidate: false })
+    setEditingHours(null)
+    try {
+      await adminMutate('/api/captain/availability', 'PUT', { date, status: entry.status, startTime, endTime })
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Could not save')
       mutate() // re-fetch truth
@@ -134,7 +183,7 @@ export default function CaptainAvailabilityPage() {
               <div key={`blank-${i}`} />
             ))}
             {days.map(date => {
-              const status = byDate[date] ?? 'unset'
+              const status = byDate[date]?.status ?? 'unset'
               return (
                 <button
                   key={date}
@@ -146,6 +195,83 @@ export default function CaptainAvailabilityPage() {
               )
             })}
           </div>
+
+          {hoursEligibleDays.length > 0 && (
+            <div className="space-y-2 pt-1">
+              <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Set hours (optional)</p>
+              <div className="rounded-xl border border-zinc-200 divide-y divide-zinc-100 overflow-hidden">
+                {hoursEligibleDays.map(date => {
+                  const entry = byDate[date]!
+                  const isOpen = editingHours === date
+                  const summary = entry.startTime && entry.endTime ? `${entry.startTime}–${entry.endTime}` : 'All day'
+                  const invalidRange = draftTimes.end <= draftTimes.start
+                  return (
+                    <div key={date}>
+                      <button
+                        onClick={() => toggleHoursEditor(date)}
+                        className="w-full flex items-center justify-between gap-3 px-4 py-3 min-h-[44px] text-left hover:bg-zinc-50"
+                      >
+                        <span className="flex items-center gap-2 text-sm text-zinc-800">
+                          <span className={`w-2 h-2 rounded-full ${entry.status === 'available' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                          {new Date(`${date}T12:00`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                        </span>
+                        <span className="flex items-center gap-1.5 text-sm text-zinc-500">
+                          <Clock className="w-3.5 h-3.5" />
+                          {summary}
+                          <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                        </span>
+                      </button>
+                      {isOpen && (
+                        <div className="px-4 pb-4 space-y-3 bg-zinc-50">
+                          <div className="flex items-center gap-3">
+                            <label className="flex-1 text-xs text-zinc-500">
+                              From
+                              <input
+                                type="time"
+                                value={draftTimes.start}
+                                onChange={e => setDraftTimes(t => ({ ...t, start: e.target.value }))}
+                                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-sm min-h-[44px]"
+                              />
+                            </label>
+                            <label className="flex-1 text-xs text-zinc-500">
+                              Until
+                              <input
+                                type="time"
+                                value={draftTimes.end}
+                                onChange={e => setDraftTimes(t => ({ ...t, end: e.target.value }))}
+                                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-sm min-h-[44px]"
+                              />
+                            </label>
+                          </div>
+                          {invalidRange && <p className="text-xs text-red-600">End must be after start.</p>}
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => applyHours(date, draftTimes)}
+                              disabled={invalidRange}
+                              className="flex-1 min-h-[44px] rounded-lg bg-zinc-900 text-white text-sm font-medium disabled:opacity-40"
+                            >
+                              Save
+                            </button>
+                            {(entry.startTime || entry.endTime) && (
+                              <button
+                                onClick={() => applyHours(date, null)}
+                                className="min-h-[44px] px-3 rounded-lg border border-zinc-300 text-sm text-zinc-600"
+                              >
+                                All day instead
+                              </button>
+                            )}
+                            <button onClick={() => setEditingHours(null)} className="min-h-[44px] px-3 rounded-lg text-sm text-zinc-400">
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="flex flex-wrap items-center gap-3 text-[11px] text-zinc-500 pt-1">
             {(['available', 'prefer_not', 'unavailable'] as const).map(s => (

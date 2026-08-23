@@ -3848,25 +3848,31 @@ export type Database = {
         Row: {
           created_at: string
           date: string
+          end_time: string | null
           id: string
           note: string | null
           staff_id: string
+          start_time: string | null
           status: string
         }
         Insert: {
           created_at?: string
           date: string
+          end_time?: string | null
           id?: string
           note?: string | null
           staff_id: string
+          start_time?: string | null
           status: string
         }
         Update: {
           created_at?: string
           date?: string
+          end_time?: string | null
           id?: string
           note?: string | null
           staff_id?: string
+          start_time?: string | null
           status?: string
         }
         Relationships: [

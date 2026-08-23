@@ -6,14 +6,31 @@ import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
  * GET /api/captain/availability?from=YYYY-MM-DD&to=YYYY-MM-DD — own rows.
- * PUT /api/captain/availability { date, status } — set one day;
- *     status null clears the day back to "no preference".
+ * PUT /api/captain/availability { date, status, startTime?, endTime? } —
+ *     set one day; status null clears the day back to "no preference".
+ *
+ * startTime/endTime (Beer, 2026-08-23: "available between these and these
+ * times") are OPTIONAL and only meaningful on 'available'/'prefer_not' —
+ * both null/omitted means "all day", the unchanged default. 'unavailable'
+ * and clearing (status: null) always force them to null: there's no
+ * partial-day window to speak of when the day itself is off or unset.
  */
 
-const putSchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  status: z.enum(['available', 'prefer_not', 'unavailable']).nullable(),
-})
+const TIME_RE = /^\d{2}:\d{2}$/
+
+const putSchema = z
+  .object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    status: z.enum(['available', 'prefer_not', 'unavailable']).nullable(),
+    startTime: z.string().regex(TIME_RE).nullable().optional(),
+    endTime: z.string().regex(TIME_RE).nullable().optional(),
+  })
+  .refine(v => !!v.startTime === !!v.endTime, {
+    message: 'startTime and endTime must be given together, or not at all',
+  })
+  .refine(v => !v.startTime || !v.endTime || v.endTime > v.startTime, {
+    message: 'endTime must be after startTime',
+  })
 
 export async function GET(request: NextRequest) {
   const auth = await requireCaptain()
@@ -30,13 +47,22 @@ export async function GET(request: NextRequest) {
     const supabase = createAdminClient()
     const { data, error } = await supabase
       .from('staff_availability')
-      .select('date, status, note')
+      .select('date, status, note, start_time, end_time')
       .eq('staff_id', auth.staff.id)
       .gte('date', from)
       .lte('date', to)
     if (error) return apiError(error.message)
 
-    return apiOk({ availability: data })
+    return apiOk({
+      availability: (data ?? []).map(row => ({
+        date: row.date,
+        status: row.status,
+        // Postgres TIME comes back as "HH:MM:SS" — trim to "HH:MM" to match
+        // what <input type="time"> and this API's own PUT body expect.
+        startTime: row.start_time?.slice(0, 5) ?? null,
+        endTime: row.end_time?.slice(0, 5) ?? null,
+      })),
+    })
   } catch (err) {
     return apiError(err instanceof Error ? err.message : 'Unknown error')
   }
@@ -62,14 +88,18 @@ export async function PUT(request: NextRequest) {
       return apiOk({ date, status: null })
     }
 
+    // 'unavailable' never carries a time window — the whole day is out.
+    const startTime = status === 'unavailable' ? null : (parsed.data.startTime ?? null)
+    const endTime = status === 'unavailable' ? null : (parsed.data.endTime ?? null)
+
     const { error } = await supabase
       .from('staff_availability')
       .upsert(
-        { staff_id: auth.staff.id, date, status },
+        { staff_id: auth.staff.id, date, status, start_time: startTime, end_time: endTime },
         { onConflict: 'staff_id,date' },
       )
     if (error) return apiError(error.message)
-    return apiOk({ date, status })
+    return apiOk({ date, status, startTime, endTime })
   } catch (err) {
     return apiError(err instanceof Error ? err.message : 'Unknown error')
   }
