@@ -18,6 +18,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     .from('cruise_listings')
     .select('slug, updated_at, hero_image_url, hero_image_asset_id')
     .eq('is_published', true)
+    .eq('is_listed', true)
   const listings = listingsData as ListingSlug[] | null
 
   // Fetch hero image variants for all linked assets in one query

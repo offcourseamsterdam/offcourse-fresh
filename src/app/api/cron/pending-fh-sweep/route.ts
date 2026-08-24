@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
       .update({ status: 'fh_in_progress', updated_at: nowIso })
       .eq('id', cand.id)
       .eq('status', cand.status)
-      .select('id, stripe_payment_intent_id, created_at, extras_selected, customer_email, customer_name, customer_phone, listing_title, booking_date, start_time, end_time, guest_count, category, fareharbor_customer_type_rate_pk, base_amount_cents, discount_amount_cents, stripe_amount, fh_escalated_at')
+      .select('id, stripe_payment_intent_id, created_at, extras_selected, customer_email, customer_name, customer_phone, listing_title, listing_id, booking_date, start_time, end_time, guest_count, category, fareharbor_customer_type_rate_pk, base_amount_cents, discount_amount_cents, stripe_amount, fh_escalated_at')
       .maybeSingle()
     if (!claimed) continue // someone else claimed it
 
@@ -202,6 +202,7 @@ export async function GET(request: NextRequest) {
         startTimeStr: claimed.start_time || null,
         guestCount,
         extrasSelected: extras,
+        listingId: claimed.listing_id ?? null,
       }),
       ...(shouldAutoSendCateringNow ? [sendCateringOrderEmailForBooking(claimed.id)] : []),
     ])

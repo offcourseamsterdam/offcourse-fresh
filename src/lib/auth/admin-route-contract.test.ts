@@ -160,7 +160,7 @@ describe('admin route auth contract', () => {
     // and revoke temporary accountant tokens for the Finance tab — migration
     // 107, src/lib/auth/finance-share.ts).
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`116`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`117`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {

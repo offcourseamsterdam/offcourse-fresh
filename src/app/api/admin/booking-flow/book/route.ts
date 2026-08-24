@@ -458,6 +458,7 @@ export async function POST(request: NextRequest) {
         startTimeStr: startAt ?? null,
         guestCount: Number(guestCount),
         extrasSelected: (extrasSelected ?? []) as never,
+        listingId: listingId ?? null,
       }),
       sendSlackNotification({
         listingTitle: String(listingTitle ?? ''),

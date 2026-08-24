@@ -7,10 +7,11 @@
  * No-ops when there are no food items or Slack isn't configured.
  */
 
-import { postSlackText } from '@/lib/slack/send-notification'
+import { postSlackText, postSlackOps } from '@/lib/slack/send-notification'
 import { formatAmsterdamTime } from '@/lib/utils'
 import { filterFoodItems } from './filter'
 import type { ExtrasLineItem } from './filter'
+import { resolveCateringEmailRecipient, isExternalCateringRecipient } from './recipient'
 
 export interface CateringNotifyInput {
   cruiseName: string
@@ -19,6 +20,11 @@ export interface CateringNotifyInput {
   startTimeStr: string | null
   guestCount: number | null
   extrasSelected: ExtrasLineItem[] | null
+  /** The booked listing, if known — used to check for an external-caterer
+   *  override (cruise_listings.catering_email_recipient) and, when one
+   *  exists, additionally DM Beer directly (see below). Optional so existing
+   *  callers that don't have a listing id handy keep working unchanged. */
+  listingId?: string | null
 }
 
 export async function notifyCateringOrder(input: CateringNotifyInput): Promise<void> {
@@ -28,7 +34,7 @@ export async function notifyCateringOrder(input: CateringNotifyInput): Promise<v
   const items = filterFoodItems(input.extrasSelected)
   if (items.length === 0) return
 
-  const { cruiseName, dateStr, startTimeStr, guestCount } = input
+  const { cruiseName, dateStr, startTimeStr, guestCount, listingId } = input
 
   const dateLabel = dateStr
     ? new Date(dateStr + 'T12:00:00').toLocaleDateString('en-NL', {
@@ -59,5 +65,22 @@ export async function notifyCateringOrder(input: CateringNotifyInput): Promise<v
     ? `🚨 *URGENT CATERING ORDER — cruise in ${Math.round(hoursUntil!)}h!*\n*${cruiseName}* — ${dateLabel} at ${timeLabel}\n${guestLine}${itemLines}\n\n<${adminUrl}|→ Admin: review catering>`
     : `🍽️ *New catering order — review needed*\n*${cruiseName}* — ${dateLabel} at ${timeLabel}\n${guestLine}${itemLines}\n\n<${adminUrl}|→ Admin: review catering>`
 
-  await postSlackText(message)
+  const tasks: Promise<void>[] = [postSlackText(message)]
+
+  // Listings with their own external caterer (e.g. the Curaçao Jamaican Buffet
+  // Cruise — Ash's catering) get an EXTRA personal heads-up to Beer, alongside
+  // the normal #bookings alert above, since the order is going to someone
+  // outside the usual supplier and Beer wants eyes on that personally.
+  if (listingId) {
+    const recipient = await resolveCateringEmailRecipient(listingId)
+    if (isExternalCateringRecipient(recipient)) {
+      tasks.push(
+        postSlackOps(
+          `🍽️ *${cruiseName} booked* — food order going to *${recipient}*\n${dateLabel} at ${timeLabel}\n${guestLine}${itemLines}`
+        )
+      )
+    }
+  }
+
+  await Promise.all(tasks)
 }

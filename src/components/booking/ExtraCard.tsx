@@ -14,6 +14,8 @@ export interface ApiExtra extends Extra {
   name: string
   quantity_mode?: string
   min_quantity?: number
+  /** Only meaningful with min_people set — see extras.default_to_guest_count. */
+  default_to_guest_count?: boolean
 }
 
 export interface ExtraCardProps {

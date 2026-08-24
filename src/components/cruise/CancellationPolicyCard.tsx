@@ -5,6 +5,10 @@ interface CancellationPolicyCardProps {
   tiers: CancellationTier[]
   /** Pride-only styling: the full-refund checkmark becomes a 🌈 emoji instead. */
   isSpecialEvent?: boolean
+  /** Spans both columns of the surrounding grid. Default true (existing behavior).
+   *  Set false to sit side-by-side with the Drinks card instead — used when the
+   *  Food card above has already claimed the wide row (see ExtrasGrid). */
+  wide?: boolean
 }
 
 /**
@@ -14,11 +18,11 @@ interface CancellationPolicyCardProps {
  * Renders one row per tier: status icon + bold refund label + muted detail line.
  * Visual rhythm matches the Food / Drinks cards next to it.
  */
-export function CancellationPolicyCard({ tiers, isSpecialEvent }: CancellationPolicyCardProps) {
+export function CancellationPolicyCard({ tiers, isSpecialEvent, wide = true }: CancellationPolicyCardProps) {
   const lines = formatTierLines(tiers)
 
   return (
-    <div className="bg-white rounded-xl p-5 shadow-sm sm:col-span-2">
+    <div className={`bg-white rounded-xl p-5 shadow-sm ${wide ? 'sm:col-span-2' : ''}`}>
       <h3 className="font-avenir font-bold text-[18px] text-[var(--color-primary)] mb-4">
         Cancellation Policy
       </h3>

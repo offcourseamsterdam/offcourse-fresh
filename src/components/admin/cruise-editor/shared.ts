@@ -24,6 +24,12 @@ export interface CruiseListing {
   faqs: Array<{ question: string; answer: string }>
   cancellation_policy: { text?: string } | null
   boat_id: string | null
+  chef_name: string | null
+  chef_bio: string | null
+  chef_photo_url: string | null
+  chef_photo_asset_id: string | null
+  theme_primary_color: string | null
+  theme_accent_color: string | null
   allowed_resource_pks: number[]
   allowed_customer_type_pks: number[]
   availability_filters: Record<string, unknown>

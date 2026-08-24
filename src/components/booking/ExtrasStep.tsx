@@ -89,6 +89,22 @@ export function ExtrasStep({
                 next.set(e.id, prev.get(e.id) ?? (e.min_quantity ?? 1))
               } else if (e.quantity_mode === 'counter' && prev.has(e.id)) {
                 next.set(e.id, prev.get(e.id)!)
+              } else if (
+                !e.is_required && e.quantity_mode === 'counter' &&
+                e.default_to_guest_count && e.min_people && !prev.has(e.id)
+              ) {
+                // Opt-in "base food option" default (extras.default_to_guest_count) —
+                // e.g. a cruise's headline buffet defaults to the full party size
+                // the first time extras load, since "everyone eats" is the sane
+                // assumption. Only fires once: `prev.has(e.id)` is true forever
+                // after the customer touches it (even down to 0), so we never
+                // fight a manual change. Scoped per-extra so it doesn't silently
+                // change behavior for the many other per-person-pick platters
+                // (Cheese/Charcuterie/Brunch/...) used across other listings.
+                // (No adults_only cap here — that combination isn't a sensible
+                // product pairing: a dish gated to adults-only shouldn't also
+                // auto-fill from a party size that includes kids.)
+                next.set(e.id, Math.max(guestCount, e.min_people))
               }
             }
             return next
@@ -111,9 +127,16 @@ export function ExtrasStep({
 
   useEffect(() => {
     if (!extras.length) return
-    const allSelected = extras.filter(e =>
-      e.is_required || (e.price_type !== 'informational' && selectedIds.has(e.id))
-    )
+    const allSelected = extras.filter(e => {
+      if (e.is_required) return true
+      if (e.price_type === 'informational') return false
+      // Counter-mode extras are "selected" purely by having a positive quantity
+      // — this also covers a programmatic default_to_guest_count default (see
+      // the fetch effect above), which sets quantities directly without going
+      // through toggleExtra/handleQuantityChange's selectedIds bookkeeping.
+      if (e.quantity_mode === 'counter') return (quantities.get(e.id) ?? 0) > 0
+      return selectedIds.has(e.id)
+    })
     const calc = calculateExtras(baseAmountCents, guestCount, allSelected, durationMinutes, quantities, adults)
     onExtrasChange(allSelected.map(e => e.id), calc)
   }, [selectedIds, quantities, extras, baseAmountCents, guestCount, durationMinutes, adults, onExtrasChange])

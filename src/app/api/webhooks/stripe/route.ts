@@ -468,6 +468,7 @@ export async function POST(request: NextRequest) {
         startTimeStr: meta.start_at || null,
         guestCount,
         extrasSelected,
+        listingId: meta.listing_id ?? null,
       }),
       ...(shouldAutoSendCateringNow && insertedBookingId ? [sendCateringOrderEmailForBooking(insertedBookingId)] : []),
     ])

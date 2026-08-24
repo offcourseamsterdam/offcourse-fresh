@@ -42,6 +42,7 @@ export default async function CruisesPage({ params }: Props) {
       tagline, tagline_de, tagline_es, tagline_fr, tagline_nl, tagline_pt, tagline_zh
     `)
     .eq('is_published', true)
+    .eq('is_listed', true)
     .order('display_order', { ascending: true })
 
   const listings = (data as CruiseListing[] | null) ?? []

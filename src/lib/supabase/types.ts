@@ -495,7 +495,9 @@ export type Database = {
           booking_uuid: string | null
           campaign_id: string | null
           category: string | null
+          catering_confirmed_at: string | null
           catering_email_sent_at: string | null
+          catering_thread_id: string | null
           commission_amount_cents: number | null
           created_at: string | null
           currency: string | null
@@ -521,6 +523,8 @@ export type Database = {
           invoice_number: string | null
           listing_id: string | null
           listing_title: string | null
+          no_reschedule_ask: boolean
+          no_reschedule_reason: string | null
           partner_id: string | null
           payment_link_expires_at: string | null
           payment_reminder_sent: boolean | null
@@ -553,7 +557,9 @@ export type Database = {
           booking_uuid?: string | null
           campaign_id?: string | null
           category?: string | null
+          catering_confirmed_at?: string | null
           catering_email_sent_at?: string | null
+          catering_thread_id?: string | null
           commission_amount_cents?: number | null
           created_at?: string | null
           currency?: string | null
@@ -579,6 +585,8 @@ export type Database = {
           invoice_number?: string | null
           listing_id?: string | null
           listing_title?: string | null
+          no_reschedule_ask?: boolean
+          no_reschedule_reason?: string | null
           partner_id?: string | null
           payment_link_expires_at?: string | null
           payment_reminder_sent?: boolean | null
@@ -611,7 +619,9 @@ export type Database = {
           booking_uuid?: string | null
           campaign_id?: string | null
           category?: string | null
+          catering_confirmed_at?: string | null
           catering_email_sent_at?: string | null
+          catering_thread_id?: string | null
           commission_amount_cents?: number | null
           created_at?: string | null
           currency?: string | null
@@ -637,6 +647,8 @@ export type Database = {
           invoice_number?: string | null
           listing_id?: string | null
           listing_title?: string | null
+          no_reschedule_ask?: boolean
+          no_reschedule_reason?: string | null
           partner_id?: string | null
           payment_link_expires_at?: string | null
           payment_reminder_sent?: boolean | null
@@ -1027,6 +1039,7 @@ export type Database = {
       }
       conversations: {
         Row: {
+          ai_summary: string | null
           assignee_profile_id: string | null
           booking_id: string | null
           channel: string
@@ -1034,12 +1047,20 @@ export type Database = {
           created_at: string
           id: string
           last_message_at: string
+          ota_available: boolean | null
+          ota_booking_ref: string | null
+          ota_guest_name: string | null
+          ota_source: string | null
+          ota_status: string | null
+          provider_thread_id: string | null
           status: string
           subject: string | null
           unread_count: number
+          wa_window_expires_at: string | null
           webchat_token: string
         }
         Insert: {
+          ai_summary?: string | null
           assignee_profile_id?: string | null
           booking_id?: string | null
           channel: string
@@ -1047,12 +1068,20 @@ export type Database = {
           created_at?: string
           id?: string
           last_message_at?: string
+          ota_available?: boolean | null
+          ota_booking_ref?: string | null
+          ota_guest_name?: string | null
+          ota_source?: string | null
+          ota_status?: string | null
+          provider_thread_id?: string | null
           status?: string
           subject?: string | null
           unread_count?: number
+          wa_window_expires_at?: string | null
           webchat_token?: string
         }
         Update: {
+          ai_summary?: string | null
           assignee_profile_id?: string | null
           booking_id?: string | null
           channel?: string
@@ -1060,9 +1089,16 @@ export type Database = {
           created_at?: string
           id?: string
           last_message_at?: string
+          ota_available?: boolean | null
+          ota_booking_ref?: string | null
+          ota_guest_name?: string | null
+          ota_source?: string | null
+          ota_status?: string | null
+          provider_thread_id?: string | null
           status?: string
           subject?: string | null
           unread_count?: number
+          wa_window_expires_at?: string | null
           webchat_token?: string
         }
         Relationships: [
@@ -1099,6 +1135,11 @@ export type Database = {
           booking_cutoff_hours: number | null
           cancellation_policy: Json | null
           category: string | null
+          catering_email_recipient: string | null
+          chef_bio: string | null
+          chef_name: string | null
+          chef_photo_asset_id: string | null
+          chef_photo_url: string | null
           created_at: string | null
           departure_location: string | null
           description: string | null
@@ -1127,6 +1168,7 @@ export type Database = {
           inclusions: Json | null
           is_archived: boolean
           is_featured: boolean | null
+          is_listed: boolean
           is_published: boolean | null
           max_guests: number | null
           payment_mode: string
@@ -1156,6 +1198,8 @@ export type Database = {
           tagline_nl: string | null
           tagline_pt: string | null
           tagline_zh: string | null
+          theme_accent_color: string | null
+          theme_primary_color: string | null
           title: string
           title_de: string | null
           title_es: string | null
@@ -1175,6 +1219,11 @@ export type Database = {
           booking_cutoff_hours?: number | null
           cancellation_policy?: Json | null
           category?: string | null
+          catering_email_recipient?: string | null
+          chef_bio?: string | null
+          chef_name?: string | null
+          chef_photo_asset_id?: string | null
+          chef_photo_url?: string | null
           created_at?: string | null
           departure_location?: string | null
           description?: string | null
@@ -1203,6 +1252,7 @@ export type Database = {
           inclusions?: Json | null
           is_archived?: boolean
           is_featured?: boolean | null
+          is_listed?: boolean
           is_published?: boolean | null
           max_guests?: number | null
           payment_mode?: string
@@ -1232,6 +1282,8 @@ export type Database = {
           tagline_nl?: string | null
           tagline_pt?: string | null
           tagline_zh?: string | null
+          theme_accent_color?: string | null
+          theme_primary_color?: string | null
           title: string
           title_de?: string | null
           title_es?: string | null
@@ -1251,6 +1303,11 @@ export type Database = {
           booking_cutoff_hours?: number | null
           cancellation_policy?: Json | null
           category?: string | null
+          catering_email_recipient?: string | null
+          chef_bio?: string | null
+          chef_name?: string | null
+          chef_photo_asset_id?: string | null
+          chef_photo_url?: string | null
           created_at?: string | null
           departure_location?: string | null
           description?: string | null
@@ -1279,6 +1336,7 @@ export type Database = {
           inclusions?: Json | null
           is_archived?: boolean
           is_featured?: boolean | null
+          is_listed?: boolean
           is_published?: boolean | null
           max_guests?: number | null
           payment_mode?: string
@@ -1308,6 +1366,8 @@ export type Database = {
           tagline_nl?: string | null
           tagline_pt?: string | null
           tagline_zh?: string | null
+          theme_accent_color?: string | null
+          theme_primary_color?: string | null
           title?: string
           title_de?: string | null
           title_es?: string | null
@@ -1324,6 +1384,13 @@ export type Database = {
             columns: ["boat_id"]
             isOneToOne: false
             referencedRelation: "boats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cruise_listings_chef_photo_asset_id_fkey"
+            columns: ["chef_photo_asset_id"]
+            isOneToOne: false
+            referencedRelation: "image_assets"
             referencedColumns: ["id"]
           },
           {
@@ -1614,6 +1681,47 @@ export type Database = {
         }
         Relationships: []
       }
+      extra_hours_bonuses: {
+        Row: {
+          amount_charged_cents: number
+          commission_cents: number
+          created_at: string
+          date: string
+          extra_minutes: number
+          id: string
+          note: string | null
+          staff_id: string
+        }
+        Insert: {
+          amount_charged_cents: number
+          commission_cents: number
+          created_at?: string
+          date: string
+          extra_minutes: number
+          id?: string
+          note?: string | null
+          staff_id: string
+        }
+        Update: {
+          amount_charged_cents?: number
+          commission_cents?: number
+          created_at?: string
+          date?: string
+          extra_minutes?: number
+          id?: string
+          note?: string | null
+          staff_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "extra_hours_bonuses_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       extras: {
         Row: {
           adults_only: boolean
@@ -1627,6 +1735,7 @@ export type Database = {
           applicable_categories: string[] | null
           category: string
           created_at: string | null
+          default_to_guest_count: boolean
           description: string | null
           description_de: string | null
           description_es: string | null
@@ -1669,6 +1778,7 @@ export type Database = {
           applicable_categories?: string[] | null
           category: string
           created_at?: string | null
+          default_to_guest_count?: boolean
           description?: string | null
           description_de?: string | null
           description_es?: string | null
@@ -1711,6 +1821,7 @@ export type Database = {
           applicable_categories?: string[] | null
           category?: string
           created_at?: string | null
+          default_to_guest_count?: boolean
           description?: string | null
           description_de?: string | null
           description_es?: string | null
@@ -2763,6 +2874,7 @@ export type Database = {
         Row: {
           author_name: string | null
           body: string
+          body_html: string | null
           conversation_id: string
           created_at: string
           direction: string
@@ -2770,11 +2882,13 @@ export type Database = {
           id: string
           provider: string
           provider_message_id: string | null
+          recording_url: string | null
           status: string
         }
         Insert: {
           author_name?: string | null
           body: string
+          body_html?: string | null
           conversation_id: string
           created_at?: string
           direction: string
@@ -2782,11 +2896,13 @@ export type Database = {
           id?: string
           provider?: string
           provider_message_id?: string | null
+          recording_url?: string | null
           status?: string
         }
         Update: {
           author_name?: string | null
           body?: string
+          body_html?: string | null
           conversation_id?: string
           created_at?: string
           direction?: string
@@ -2794,6 +2910,7 @@ export type Database = {
           id?: string
           provider?: string
           provider_message_id?: string | null
+          recording_url?: string | null
           status?: string
         }
         Relationships: [
@@ -3301,6 +3418,48 @@ export type Database = {
           },
         ]
       }
+      reschedule_opt_outs: {
+        Row: {
+          booking_id: string | null
+          created_at: string
+          email: string | null
+          id: string
+          phone: string | null
+          proposal_id: string | null
+        }
+        Insert: {
+          booking_id?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          phone?: string | null
+          proposal_id?: string | null
+        }
+        Update: {
+          booking_id?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          phone?: string | null
+          proposal_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reschedule_opt_outs_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reschedule_opt_outs_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "agent_proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       review_bonus_conflicts: {
         Row: {
           awarded_staff_id: string | null
@@ -3350,6 +3509,7 @@ export type Database = {
         Row: {
           amount_cents: number
           awarded_at: string
+          excluded_from_payroll: boolean
           id: string
           review_id: string
           staff_id: string
@@ -3357,6 +3517,7 @@ export type Database = {
         Insert: {
           amount_cents?: number
           awarded_at?: string
+          excluded_from_payroll?: boolean
           id?: string
           review_id: string
           staff_id: string
@@ -3364,6 +3525,7 @@ export type Database = {
         Update: {
           amount_cents?: number
           awarded_at?: string
+          excluded_from_payroll?: boolean
           id?: string
           review_id?: string
           staff_id?: string
@@ -3433,6 +3595,39 @@ export type Database = {
         }
         Relationships: []
       }
+      shift_bookings: {
+        Row: {
+          booking_id: string
+          created_at: string
+          shift_id: string
+        }
+        Insert: {
+          booking_id: string
+          created_at?: string
+          shift_id: string
+        }
+        Update: {
+          booking_id?: string
+          created_at?: string
+          shift_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shift_bookings_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shift_bookings_shift_id_fkey"
+            columns: ["shift_id"]
+            isOneToOne: false
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       shifts: {
         Row: {
           boat_id: string
@@ -3443,6 +3638,7 @@ export type Database = {
           fareharbor_availability_pk: number | null
           id: string
           notes: string | null
+          notified_at: string | null
           reminder_sent_at: string | null
           staff_id: string | null
           start_at: string
@@ -3458,6 +3654,7 @@ export type Database = {
           fareharbor_availability_pk?: number | null
           id?: string
           notes?: string | null
+          notified_at?: string | null
           reminder_sent_at?: string | null
           staff_id?: string | null
           start_at: string
@@ -3473,6 +3670,7 @@ export type Database = {
           fareharbor_availability_pk?: number | null
           id?: string
           notes?: string | null
+          notified_at?: string | null
           reminder_sent_at?: string | null
           staff_id?: string | null
           start_at?: string
@@ -3490,7 +3688,7 @@ export type Database = {
           {
             foreignKeyName: "shifts_booking_id_fkey"
             columns: ["booking_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "bookings"
             referencedColumns: ["id"]
           },
@@ -3559,7 +3757,10 @@ export type Database = {
       }
       social_proof_reviews: {
         Row: {
+          ai_draft_reply: string | null
           author_photo_url: string | null
+          bonus_checked_at: string | null
+          conversation_id: string | null
           created_at: string
           external_review_id: string | null
           google_profile_url: string | null
@@ -3570,6 +3771,7 @@ export type Database = {
           possible_duplicate_of: string | null
           publish_time: string | null
           rating: number
+          replied_at: string | null
           review_image_url: string | null
           review_text: string
           review_text_de: string | null
@@ -3584,7 +3786,10 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          ai_draft_reply?: string | null
           author_photo_url?: string | null
+          bonus_checked_at?: string | null
+          conversation_id?: string | null
           created_at?: string
           external_review_id?: string | null
           google_profile_url?: string | null
@@ -3595,6 +3800,7 @@ export type Database = {
           possible_duplicate_of?: string | null
           publish_time?: string | null
           rating?: number
+          replied_at?: string | null
           review_image_url?: string | null
           review_text: string
           review_text_de?: string | null
@@ -3609,7 +3815,10 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          ai_draft_reply?: string | null
           author_photo_url?: string | null
+          bonus_checked_at?: string | null
+          conversation_id?: string | null
           created_at?: string
           external_review_id?: string | null
           google_profile_url?: string | null
@@ -3620,6 +3829,7 @@ export type Database = {
           possible_duplicate_of?: string | null
           publish_time?: string | null
           rating?: number
+          replied_at?: string | null
           review_image_url?: string | null
           review_text?: string
           review_text_de?: string | null
@@ -3634,6 +3844,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "social_proof_reviews_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "social_proof_reviews_possible_duplicate_of_fkey"
             columns: ["possible_duplicate_of"]
@@ -3657,6 +3874,7 @@ export type Database = {
           phone: string | null
           role: string
           slack_member_id: string | null
+          slack_notifications_enabled: boolean
           user_id: string | null
         }
         Insert: {
@@ -3672,6 +3890,7 @@ export type Database = {
           phone?: string | null
           role: string
           slack_member_id?: string | null
+          slack_notifications_enabled?: boolean
           user_id?: string | null
         }
         Update: {
@@ -3687,6 +3906,7 @@ export type Database = {
           phone?: string | null
           role?: string
           slack_member_id?: string | null
+          slack_notifications_enabled?: boolean
           user_id?: string | null
         }
         Relationships: [
@@ -3703,25 +3923,31 @@ export type Database = {
         Row: {
           created_at: string
           date: string
+          end_time: string | null
           id: string
           note: string | null
           staff_id: string
+          start_time: string | null
           status: string
         }
         Insert: {
           created_at?: string
           date: string
+          end_time?: string | null
           id?: string
           note?: string | null
           staff_id: string
+          start_time?: string | null
           status: string
         }
         Update: {
           created_at?: string
           date?: string
+          end_time?: string | null
           id?: string
           note?: string | null
           staff_id?: string
+          start_time?: string | null
           status?: string
         }
         Relationships: [
@@ -4385,6 +4611,8 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      ai_spend_summary: { Args: never; Returns: Json }
+      ai_usage_total_cents: { Args: never; Returns: number }
       allocate_invoice_number: {
         Args: { p_stripe_pi_id: string }
         Returns: string

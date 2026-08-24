@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Loader2, RefreshCw, Database, Plus, Check, Globe, Home, Pencil, Clock, Copy, ExternalLink, Trash2 } from 'lucide-react'
+import { Loader2, RefreshCw, Database, Plus, Check, Globe, Home, Pencil, Clock, Copy, ExternalLink, Trash2, Search } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────
 
@@ -21,6 +21,7 @@ interface CruiseListing {
   category: string
   is_published: boolean
   is_featured: boolean
+  is_listed: boolean
   display_order: number
   allowed_resource_pks: number[]
   allowed_customer_type_pks: number[]
@@ -120,7 +121,7 @@ export default function AdminCruisesPage() {
   const [deleting, setDeleting] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
-  async function toggleListingField(id: string, field: 'is_published' | 'is_featured', value: boolean) {
+  async function toggleListingField(id: string, field: 'is_published' | 'is_featured' | 'is_listed', value: boolean) {
     mutateListings(prev => prev ? { data: prev.data.map(l => l.id === id ? { ...l, [field]: value } : l) } : prev, { revalidate: false })
     await fetch(`/api/admin/cruise-listings/${id}`, {
       method: 'PATCH',
@@ -402,6 +403,11 @@ export default function AdminCruisesPage() {
                   </TableHead>
                   <TableHead className="text-center">
                     <span className="flex items-center gap-1.5 justify-center">
+                      <Search className="w-3.5 h-3.5" /> Listed
+                    </span>
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <span className="flex items-center gap-1.5 justify-center">
                       <Home className="w-3.5 h-3.5" /> Homepage
                     </span>
                   </TableHead>
@@ -439,6 +445,22 @@ export default function AdminCruisesPage() {
                         <span
                           className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
                             l.is_published ? 'translate-x-4' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </TableCell>
+                    {/* Listed toggle */}
+                    <TableCell className="text-center" onClick={e => e.stopPropagation()}>
+                      <button
+                        onClick={() => toggleListingField(l.id, 'is_listed', !l.is_listed)}
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${
+                          l.is_listed ? 'bg-emerald-500' : 'bg-zinc-200'
+                        }`}
+                        title={l.is_listed ? 'Shown in nav, /cruises and sitemap — click to make link-only' : 'Link-only — hidden from nav, /cruises and sitemap, but the direct URL still works'}
+                      >
+                        <span
+                          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                            l.is_listed ? 'translate-x-4' : 'translate-x-1'
                           }`}
                         />
                       </button>

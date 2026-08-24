@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { defineConfig, configDefaults } from 'vitest/config'
 import path from 'path'
 
 export default defineConfig({
@@ -6,6 +6,12 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     setupFiles: ['./src/test/setup.ts'],
+    // Claude Code checks out throwaway git worktrees under `.claude/worktrees/`.
+    // Those are full copies of the repo at some older commit, so without this the
+    // runner collects every test 2-4x over — inflating the suite (443 files instead
+    // of 122), reporting failures from stale code that no longer exists on main, and
+    // starving the genuinely slow tests of CPU until they trip the 5s timeout.
+    exclude: [...configDefaults.exclude, '**/.claude/**'],
   },
   resolve: {
     alias: {
