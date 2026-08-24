@@ -121,12 +121,23 @@ describe('PUT /api/captain/availability', () => {
     expect(sb.upserts).toHaveLength(0)
   })
 
-  it('rejects an end time at or before the start time', async () => {
+  it('allows an end time before the start time — that\'s a window crossing midnight, not an error (Beer, 2026-08-24)', async () => {
     const sb = makeSupabase()
     vi.mocked(createAdminClient).mockReturnValue(sb.client)
 
     const res = await PUT(
-      makeReq('/api/captain/availability', { date: '2026-09-05', status: 'available', startTime: '18:00', endTime: '10:00' }),
+      makeReq('/api/captain/availability', { date: '2026-09-05', status: 'available', startTime: '22:00', endTime: '00:30' }),
+    )
+    expect(res.status).toBe(200)
+    expect(sb.upserts[0]).toMatchObject({ status: 'available', start_time: '22:00', end_time: '00:30' })
+  })
+
+  it('rejects an end time equal to the start time — a zero-length window either way you read it', async () => {
+    const sb = makeSupabase()
+    vi.mocked(createAdminClient).mockReturnValue(sb.client)
+
+    const res = await PUT(
+      makeReq('/api/captain/availability', { date: '2026-09-05', status: 'available', startTime: '18:00', endTime: '18:00' }),
     )
     expect(res.status).toBe(400)
     expect(sb.upserts).toHaveLength(0)

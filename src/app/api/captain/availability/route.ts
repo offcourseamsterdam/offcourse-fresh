@@ -15,6 +15,13 @@ import { createAdminClient } from '@/lib/supabase/admin'
  * (Beer, same day: "available, or partly available"). 'unavailable' and
  * clearing (status: null) always force them to null: there's no partial-day
  * window to speak of when the day itself is off or unset.
+ *
+ * endTime <= startTime means the window crosses midnight (Beer, 2026-08-24:
+ * "window crossing midnight... it's just like 12:30" — a late cruise ending
+ * shortly after midnight, not a full overnight shift) — read as "ends that
+ * many minutes into the next day", same as migration 140's DB constraint.
+ * The only actually-invalid case is endTime === startTime, a zero-length
+ * window either way you read it.
  */
 
 // Real HH:MM only (00-23 / 00-59) — a plain \d{2}:\d{2} would let "25:99"
@@ -31,8 +38,8 @@ const putSchema = z
   .refine(v => !!v.startTime === !!v.endTime, {
     message: 'startTime and endTime must be given together, or not at all',
   })
-  .refine(v => !v.startTime || !v.endTime || v.endTime > v.startTime, {
-    message: 'endTime must be after startTime',
+  .refine(v => !v.startTime || !v.endTime || v.endTime !== v.startTime, {
+    message: 'endTime must differ from startTime (a window crossing midnight is fine — just not zero-length)',
   })
 
 export async function GET(request: NextRequest) {

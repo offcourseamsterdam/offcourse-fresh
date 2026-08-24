@@ -3,6 +3,7 @@ import { escapeLikePattern } from '@/lib/supabase/escape-like'
 import { fetchSearchResults } from '@/lib/search/fetch-search-results'
 import { amsterdamToday, fmtEuros } from '@/lib/utils'
 import { checkBookingViability } from './dry-run'
+import { computeCancellationTerms } from './cancellation-terms'
 import type { AgentTool } from './agent-runtime'
 
 /**
@@ -48,6 +49,63 @@ export function compactAvailability(
       })),
     })),
   }
+}
+
+/**
+ * The ALTERNATIVE dates check_shared_cruise_to_join offers: the 3 days
+ * AFTER centerDate — never centerDate itself (that's what search_availability
+ * already checked) and never a day before it (Beer, 2026-08-21: "check for
+ * hte 3 days that come after the requested date"). Never a day that's
+ * already passed, though with a forward-only window that only matters if
+ * centerDate itself is in the past.
+ */
+export function nearbyDates(centerDate: string, today: string): string[] {
+  // Date.UTC (not `new Date(centerDate + 'T00:00:00')`, which parses as LOCAL
+  // midnight) — on a machine east of UTC, local midnight is the previous UTC
+  // day, so toISOString() would silently shift every date back by one.
+  const [y, m, d] = centerDate.split('-').map(Number)
+  const centerUtcMs = Date.UTC(y, m - 1, d)
+  return [1, 2, 3]
+    .map(offset => new Date(centerUtcMs + offset * 86_400_000).toISOString().slice(0, 10))
+    .filter(date => date >= today)
+}
+
+/**
+ * Shared-category listings/slots with room for `guests` more people AND at
+ * least one existing confirmed booking on that exact departure — a guest
+ * joins a trip that's already happening, not an empty slot with no
+ * guarantee it'll actually run (Beer, 2026-08-21: "look for a cruise that
+ * he/she can join, which means an existing shared cruise should already
+ * exist"). Matched by listing id + departure time as real timestamps (not
+ * string equality) since search results carry FareHarbor's own ISO string
+ * while `bookings.start_time` is stamped by our own conversion — same
+ * instant, not necessarily the same literal string.
+ */
+export function sharedListingsAlreadyBooked(
+  results: {
+    listing: { id: string; title: string; slug: string; category: string | null; price_display?: string | null }
+    availableSlots: { startTime: string; startAt: string }[]
+  }[],
+  existingBookings: { listing_id: string | null; start_time: string | null }[],
+): { listing: string; slug: string; price?: string; times: string[] }[] {
+  const bookedKeys = new Set(
+    existingBookings
+      .filter((b): b is { listing_id: string; start_time: string } => !!b.listing_id && !!b.start_time)
+      .map(b => `${b.listing_id}|${new Date(b.start_time).getTime()}`),
+  )
+  return results
+    .filter(r => r.listing.category === 'shared')
+    .map(r => ({
+      listing: r.listing,
+      slots: r.availableSlots.filter(s => bookedKeys.has(`${r.listing.id}|${new Date(s.startAt).getTime()}`)),
+    }))
+    .filter(r => r.slots.length > 0)
+    .map(r => ({
+      listing: r.listing.title,
+      slug: r.listing.slug,
+      price: r.listing.price_display ?? undefined,
+      times: r.slots.slice(0, 6).map(s => s.startTime),
+    }))
 }
 
 /** Human-readable price for an extra, from its price_type + cents value. */
@@ -113,6 +171,62 @@ export function buildGhostTools(): AgentTool[] {
       },
     },
     {
+      name: 'check_shared_cruise_to_join',
+      description:
+        "THE tool for a solo traveller or small party who wants a SHARED cruise. Answers the only question that matters for them: is there a shared cruise ALREADY carrying other booked guests that they can join? A shared slot with every seat still free means nobody has booked it — that boat is not actually sailing, so we cannot take a single guest on it, no matter what search_availability says is 'available'. NEVER use search_availability alone to tell a solo guest a shared cruise is running — it only reports bookable seats, not whether the trip exists. This tool checks their requested date AND the 3 days after it, and reports each one as joinable or not. Only offer dates it actually returns as joinable.",
+      input_schema: {
+        type: 'object',
+        properties: {
+          date: DATE_SCHEMA,
+          guests: { type: 'number', description: 'Party size, 1-12 (usually 1 for this tool)' },
+        },
+        required: ['date', 'guests'],
+      },
+      run: async input => {
+        const requestedDate = String(input.date ?? '')
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) throw new Error(`Date must be YYYY-MM-DD; you sent '${requestedDate}'`)
+        const guests = Math.min(12, Math.max(1, Number(input.guests ?? 1)))
+        const supabase = createAdminClient()
+
+        // The requested date is evaluated by the SAME already-booked rule as
+        // the alternatives — the whole point is that "seats are free" is not
+        // the same as "the cruise is running". Without judging the requested
+        // date here too, the model falls back on search_availability's
+        // bookable-seat count and tells a solo guest a cruise is "going out"
+        // when in fact nobody has booked it (real failure, Jacob, 2026-08-21).
+        const joinableOn = async (date: string) => {
+          const [results, { data: existingBookings }] = await Promise.all([
+            fetchSearchResults(date, guests),
+            supabase.from('bookings').select('listing_id, start_time').eq('booking_date', date).eq('category', 'shared').eq('status', 'confirmed'),
+          ])
+          return sharedListingsAlreadyBooked(results, existingBookings ?? [])
+        }
+
+        const [requestedListings, alternativeDays] = await Promise.all([
+          joinableOn(requestedDate),
+          Promise.all(
+            nearbyDates(requestedDate, amsterdamToday()).map(async date => ({ date, listings: await joinableOn(date) })),
+          ),
+        ])
+        const alternatives = alternativeDays.filter(d => d.listings.length > 0)
+
+        return {
+          requested_date: {
+            date: requestedDate,
+            joinable: requestedListings.length > 0,
+            listings: requestedListings,
+            ...(requestedListings.length === 0 && {
+              why_not: 'No shared cruise on this date has any other guests booked yet, so there is no trip to join — we cannot sail it for a single booking.',
+            }),
+          },
+          alternatives,
+          ...(alternatives.length === 0 && {
+            note: `No shared cruise in the 3 days after ${requestedDate} has other guests booked either.`,
+          }),
+        }
+      },
+    },
+    {
       name: 'get_customer_bookings',
       description:
         "Look up a customer's booking history by email — dates, cruises, party sizes, status, catering extras. Call when you need to know if/what they booked (rescheduling, 'my booking', repeat guests).",
@@ -129,13 +243,16 @@ export function buildGhostTools(): AgentTool[] {
         const supabase = createAdminClient()
         const { data } = await supabase
           .from('bookings')
-          .select('booking_date, start_time, status, guest_count, listing_title, category, extras_selected')
+          .select('id, booking_date, start_time, status, guest_count, listing_title, category, extras_selected')
           .eq('customer_email', email)
           .order('booking_date', { ascending: false })
           .limit(5)
         if (!data?.length) return { bookings: [], note: 'No bookings found for this email.' }
         return {
           bookings: data.map(b => ({
+            // The id a cancellation/correction action would target — carried
+            // through so a later tool call never has to re-search for it.
+            booking_id: b.id,
             date: b.booking_date,
             time: b.start_time,
             cruise: b.listing_title,
@@ -192,7 +309,7 @@ export function buildGhostTools(): AgentTool[] {
     {
       name: 'get_schedule',
       description:
-        'See the shift schedule for a date range: every shift (boat, time, status, assigned captain) plus each captain\'s stated availability. Call when reasoning about who works when, open shifts, or whether a captain is free.',
+        'See the shift schedule for a date range: every shift (boat, time, status, assigned captain) plus each captain\'s stated availability. Availability rows may carry start_time/end_time ("partly available") — null on both means all day; if end_time is not after start_time, the window crosses midnight (e.g. 22:00-00:30). Call when reasoning about who works when, open shifts, or whether a captain is free.',
       input_schema: {
         type: 'object',
         properties: {
@@ -213,7 +330,7 @@ export function buildGhostTools(): AgentTool[] {
             .lte('date', to)
             .order('start_at'),
           supabase.from('staff').select('id, name, role, max_shifts_per_week').eq('is_active', true),
-          supabase.from('staff_availability').select('staff_id, date, status, note').gte('date', from).lte('date', to),
+          supabase.from('staff_availability').select('staff_id, date, status, note, start_time, end_time').gte('date', from).lte('date', to),
         ])
         return {
           shifts: (shifts.data ?? []).map(s => ({
@@ -225,7 +342,16 @@ export function buildGhostTools(): AgentTool[] {
             cruise: (s.bookings as { listing_title?: string | null } | null)?.listing_title ?? null,
           })),
           staff: staff.data ?? [],
-          availability: availability.data ?? [],
+          // start_time/end_time (partly available, Beer 2026-08-23/24) trimmed
+          // to HH:MM — a captain "available" with no hours is available all day.
+          availability: (availability.data ?? []).map(a => ({
+            staff_id: a.staff_id,
+            date: a.date,
+            status: a.status,
+            note: a.note,
+            start_time: a.start_time?.slice(0, 5) ?? null,
+            end_time: a.end_time?.slice(0, 5) ?? null,
+          })),
         }
       },
     },
@@ -271,6 +397,39 @@ export function buildGhostTools(): AgentTool[] {
                 })),
               }
             : {}),
+        }
+      },
+    },
+    {
+      name: 'check_cancellation_terms',
+      description:
+        'Before you offer a cancellation/refund, call this with the booking_id (from get_customer_bookings or search_bookings_by_details) to get the REAL policy terms — never state a refund % or € from memory. Returns hours_until_departure, refund_percent, refund_eur (computed from what was actually paid), policy_summary (a one-line explanation), is_ota_booking (true means this booking must be cancelled on that platform, not by us), and can_cancel_here (false means we have no FareHarbor reference to act on — tell the customer to check their confirmation email instead).',
+      input_schema: {
+        type: 'object',
+        properties: {
+          booking_id: { type: 'string', description: 'The exact booking id from get_customer_bookings/search_bookings_by_details' },
+        },
+        required: ['booking_id'],
+      },
+      run: async input => {
+        const bookingId = String(input.booking_id ?? '').trim()
+        if (!bookingId) throw new Error('booking_id is required')
+        const terms = await computeCancellationTerms(bookingId)
+        if (!terms.bookingFound) return { found: false, note: 'No booking found with that id.' }
+        return {
+          found: true,
+          guest_name: terms.guestName,
+          cruise: terms.listingTitle,
+          departure_at: terms.departureAt,
+          hours_until_departure: terms.hoursUntilDeparture != null ? Math.round(terms.hoursUntilDeparture) : null,
+          refund_percent: terms.refundPercent,
+          amount_paid_eur: terms.amountPaidCents / 100,
+          refund_eur: terms.refundCents / 100,
+          policy_summary: terms.policySummary,
+          is_ota_booking: terms.isOtaBooking,
+          booking_source: terms.bookingSource,
+          can_cancel_here: terms.canCancelInFareharbor && !terms.isOtaBooking,
+          already_cancelled: terms.alreadyCancelled,
         }
       },
     },

@@ -106,6 +106,41 @@ export function availabilityDisplay(entry: DayAvailabilityEntry | null | undefin
   return entry.startTime && entry.endTime ? 'partly_available' : 'available'
 }
 
+function toMinutes(hhmm: string): number {
+  const [h, m] = hhmm.split(':').map(Number)
+  return h * 60 + m
+}
+
+/** Expands "HH:MM"-"HH:MM" into a [start, end) range on a 0-2879 timeline,
+ *  pushing `end` past 1440 when it's not after `start` — the same "wraps to
+ *  the next day" reading a person gives a range like "22:00-00:30". */
+function expandRange(start: string, end: string): { start: number; end: number } {
+  const s = toMinutes(start)
+  const e = toMinutes(end)
+  return { start: s, end: e > s ? e : e + 24 * 60 }
+}
+
+/**
+ * Does a shift fit entirely inside a captain's stated hours? Both the shift
+ * and the availability window may cross midnight (Beer, 2026-08-24: a late
+ * cruise ending at "12:30" — half past midnight, not a full overnight shift,
+ * but real enough that captains need to log it). The shift is anchored to
+ * whichever day-segment of the window it actually falls in, so a window like
+ * "22:00-00:30" lines up correctly whether the shift itself is "22:00-23:30"
+ * or "23:30-00:30".
+ */
+export function shiftFitsAvailabilityWindow(
+  shiftStart: string,
+  shiftEnd: string,
+  windowStart: string,
+  windowEnd: string,
+): boolean {
+  const win = expandRange(windowStart, windowEnd)
+  const shift = expandRange(shiftStart, shiftEnd)
+  const anchored = shift.start < win.start ? { start: shift.start + 24 * 60, end: shift.end + 24 * 60 } : shift
+  return anchored.start >= win.start && anchored.end <= win.end
+}
+
 /**
  * The captain calendar's tap cycle: unset → available → unavailable → unset.
  * Exported and tested on its own — a silent change to this order is exactly

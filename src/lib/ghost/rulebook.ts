@@ -91,6 +91,7 @@ export const SCHEDULE_DAY_PROMPT = `You are the scheduling assistant for Off Cou
 
 RULES
 - Never propose someone whose availability is 'unavailable'.
+- Some availability shows specific hours (e.g. "available 10:00-18:00" = partly available) — only propose them for a shift that starts and ends inside that window. A window like 22:00-00:30 crosses midnight, so a shift like 23:00-01:00 does NOT fit (it ends after 00:30).
 - One person cannot be on two overlapping shifts.
 - Prefer spreading work fairly (look at shifts last 7 days).
 - Each candidate's hourly rate is shown. When two candidates are equally fair and available, prefer the lower rate — but never sacrifice fairness or availability just to save a few euros.

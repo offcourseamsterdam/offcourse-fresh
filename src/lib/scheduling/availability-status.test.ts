@@ -6,6 +6,7 @@ import {
   captainAvailabilityUrl,
   availabilityDisplay,
   AVAILABILITY_TAP_CYCLE,
+  shiftFitsAvailabilityWindow,
 } from './availability-status'
 
 describe('monthRange', () => {
@@ -143,6 +144,40 @@ describe('availabilityDisplay', () => {
 
   it('reads unavailable as unavailable even if hours are somehow set', () => {
     expect(availabilityDisplay({ status: 'unavailable', startTime: '10:00', endTime: '18:00' })).toBe('unavailable')
+  })
+})
+
+describe('shiftFitsAvailabilityWindow', () => {
+  it('accepts a shift fully inside an ordinary daytime window', () => {
+    expect(shiftFitsAvailabilityWindow('14:00', '16:00', '10:00', '18:00')).toBe(true)
+  })
+
+  it('rejects a shift that starts before the window opens', () => {
+    expect(shiftFitsAvailabilityWindow('08:00', '11:00', '10:00', '18:00')).toBe(false)
+  })
+
+  it('rejects a shift that ends after the window closes', () => {
+    expect(shiftFitsAvailabilityWindow('17:00', '20:00', '10:00', '18:00')).toBe(false)
+  })
+
+  it('accepts a shift inside a window that crosses midnight (Beer, 2026-08-24: ends "12:30", a late cruise not a night shift)', () => {
+    expect(shiftFitsAvailabilityWindow('22:00', '23:30', '22:00', '00:30')).toBe(true)
+  })
+
+  it('accepts a shift that ITSELF crosses midnight, inside a window that also crosses midnight', () => {
+    expect(shiftFitsAvailabilityWindow('23:30', '00:30', '22:00', '00:30')).toBe(true)
+  })
+
+  it('accepts a shift entirely after midnight, still inside a window that started the evening before', () => {
+    expect(shiftFitsAvailabilityWindow('00:00', '00:30', '22:00', '00:30')).toBe(true)
+  })
+
+  it('rejects a shift outside a midnight-crossing window even though it is the same time-of-day the next morning', () => {
+    expect(shiftFitsAvailabilityWindow('05:00', '06:00', '22:00', '00:30')).toBe(false)
+  })
+
+  it('rejects a shift ending past a midnight-crossing window\'s close', () => {
+    expect(shiftFitsAvailabilityWindow('22:00', '01:00', '22:00', '00:30')).toBe(false)
   })
 })
 

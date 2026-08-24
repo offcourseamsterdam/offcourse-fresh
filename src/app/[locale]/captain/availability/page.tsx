@@ -191,8 +191,14 @@ export default function CaptainAvailabilityPage() {
                 {hoursEligibleDays.map(date => {
                   const entry = byDate[date]!
                   const isOpen = editingHours === date
-                  const summary = entry.startTime && entry.endTime ? `${entry.startTime}–${entry.endTime}` : 'All day'
-                  const invalidRange = draftTimes.end <= draftTimes.start
+                  // endTime <= startTime crosses midnight (Beer, 2026-08-24: a
+                  // late cruise ending "12:30", not a full overnight shift) —
+                  // only an exactly-equal pair is a real, zero-length error.
+                  const summary =
+                    entry.startTime && entry.endTime
+                      ? `${entry.startTime}–${entry.endTime}${entry.endTime <= entry.startTime ? ' (+1 day)' : ''}`
+                      : 'All day'
+                  const invalidRange = draftTimes.end === draftTimes.start
                   return (
                     <div key={date}>
                       <button
@@ -231,7 +237,10 @@ export default function CaptainAvailabilityPage() {
                               />
                             </label>
                           </div>
-                          {invalidRange && <p className="text-xs text-red-600">End must be after start.</p>}
+                          {invalidRange && <p className="text-xs text-red-600">Start and end can&apos;t be the same time.</p>}
+                          {!invalidRange && draftTimes.end <= draftTimes.start && (
+                            <p className="text-xs text-zinc-400">Crosses midnight — ends the next day.</p>
+                          )}
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => applyHours(date, draftTimes)}

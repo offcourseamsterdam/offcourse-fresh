@@ -9,6 +9,7 @@ import { autonomyForKind } from './agents'
 import { recentScheduleLessons } from './evaluate'
 import { applyScheduleAssignments, type ScheduleAssignmentInput } from '@/lib/scheduling/apply-assignments'
 import { shiftCostCents, fmtCostEuros } from '@/lib/scheduling/shift-cost'
+import { shiftFitsAvailabilityWindow } from '@/lib/scheduling/availability-status'
 import {
   SCHEDULE_DAY_PROMPT,
   SCHEDULE_DAY_JSON,
@@ -115,7 +116,7 @@ export async function draftOrAssignSchedule(targetDate: string): Promise<'assign
 
     const { data: availability } = await supabase
       .from('staff_availability')
-      .select('staff_id, status, note')
+      .select('staff_id, status, note, start_time, end_time')
       .eq('date', targetDate)
 
     // Workload last 7 REAL days (not relative to targetDate) — how busy
@@ -140,7 +141,11 @@ export async function draftOrAssignSchedule(targetDate: string): Promise<'assign
     const staffLines = staff
       .map(p => {
         const a = availMap.get(p.id)
-        return `- ${p.name} (id: ${p.id}, ${p.role}) · availability: ${a?.status ?? 'not stated'}${a?.note ? ` ("${a.note}")` : ''} · shifts last 7 days: ${workload.get(p.id) ?? 0}${p.max_shifts_per_week ? ` · max/week: ${p.max_shifts_per_week}` : ''} · rate: ${fmtCostEuros(p.hourly_rate_cents)}/h`
+        // start_time/end_time (partly available, Beer, 2026-08-23/24) only
+        // ever accompany 'available' — shown so Claude can match a shift's
+        // time against them itself, on top of the hard TS check below.
+        const hours = a?.start_time && a?.end_time ? ` ${a.start_time.slice(0, 5)}–${a.end_time.slice(0, 5)}` : ''
+        return `- ${p.name} (id: ${p.id}, ${p.role}) · availability: ${a?.status ?? 'not stated'}${hours}${a?.note ? ` ("${a.note}")` : ''} · shifts last 7 days: ${workload.get(p.id) ?? 0}${p.max_shifts_per_week ? ` · max/week: ${p.max_shifts_per_week}` : ''} · rate: ${fmtCostEuros(p.hourly_rate_cents)}/h`
       })
       .join('\n')
 
@@ -214,10 +219,11 @@ ${SCHEDULE_DAY_JSON}`,
     })
 
     if (auto) {
-      // No human reviews an auto-assignment before it locks in, so the two
-      // HARD rules from the prompt (never 'unavailable', never double-book
-      // one person) are re-checked here rather than trusted — greedily
-      // accepting in the order Claude returned them.
+      // No human reviews an auto-assignment before it locks in, so the HARD
+      // rules from the prompt (never 'unavailable', never outside a stated
+      // partly-available window, never double-book one person) are
+      // re-checked here rather than trusted — greedily accepting in the
+      // order Claude returned them.
       const busyWindows = new Map<string, { start: number; end: number }[]>()
       for (const s of shiftRows) {
         if (s.status === 'open' || !s.staff_id) continue
@@ -229,8 +235,18 @@ ${SCHEDULE_DAY_JSON}`,
 
       const safeAssignments: typeof assignments = []
       for (const a of assignments) {
-        if (availMap.get(a.staff_id)?.status === 'unavailable') continue
+        const avail = availMap.get(a.staff_id)
+        if (avail?.status === 'unavailable') continue
         const shift = shiftById.get(a.shift_id)!
+        if (avail?.start_time && avail?.end_time) {
+          const fits = shiftFitsAvailabilityWindow(
+            formatAmsterdamTime(shift.start_at),
+            formatAmsterdamTime(shift.end_at),
+            avail.start_time.slice(0, 5),
+            avail.end_time.slice(0, 5),
+          )
+          if (!fits) continue // partly available, but this shift falls outside the stated window
+        }
         const window = { start: new Date(shift.start_at).getTime(), end: new Date(shift.end_at).getTime() }
         const existing = busyWindows.get(a.staff_id) ?? []
         if (existing.some(w => overlaps(w, window))) continue

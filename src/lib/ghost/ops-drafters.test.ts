@@ -425,6 +425,58 @@ describe('draftOrAssignSchedule', () => {
       expect(applyScheduleAssignments).not.toHaveBeenCalled()
     })
 
+    it('assigns normally when a partly-available captain\'s window covers the shift (17:00-19:00 Amsterdam, inside 10:00-20:00)', async () => {
+      const sb = makeSupabase({
+        shifts: [{ data: [openShift] }, { data: [] }],
+        staff: [{ data: [activeStaff] }],
+        staff_availability: [{ data: [{ staff_id: 'cap1', status: 'available', note: null, start_time: '10:00:00', end_time: '20:00:00' }] }],
+      })
+      vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+      vi.mocked(meteredMessage).mockResolvedValue(
+        claudeJson({ assignments: [{ shift_id: 's1', staff_id: 'cap1', staff_name: 'Sanne' }], summary: 'ok' }) as never,
+      )
+      vi.mocked(applyScheduleAssignments).mockResolvedValue({ applied: [{ shift_id: 's1', staff_name: 'Sanne' }], skipped: [] })
+
+      expect(await draftOrAssignSchedule(TOMORROW)).toBe('assigned')
+      expect(applyScheduleAssignments).toHaveBeenCalled()
+    })
+
+    it('rejects (safety net) an assignment outside a partly-available captain\'s stated hours, even though the model proposed it (Beer, 2026-08-24: "partly available... when trying to assign a captain")', async () => {
+      // Shift runs 17:00-19:00 Amsterdam (15:00-17:00 UTC in June/CEST); this
+      // captain says available only 10:00-16:00 — the shift starts after that.
+      const sb = makeSupabase({
+        shifts: [{ data: [openShift] }, { data: [] }],
+        staff: [{ data: [activeStaff] }],
+        staff_availability: [{ data: [{ staff_id: 'cap1', status: 'available', note: null, start_time: '10:00:00', end_time: '16:00:00' }] }],
+      })
+      vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+      vi.mocked(meteredMessage).mockResolvedValue(
+        claudeJson({ assignments: [{ shift_id: 's1', staff_id: 'cap1', staff_name: 'Sanne' }], summary: 'Sanne is available.' }) as never,
+      )
+
+      expect(await draftOrAssignSchedule(TOMORROW)).toBe('skipped')
+      expect(applyScheduleAssignments).not.toHaveBeenCalled()
+    })
+
+    it('assigns normally when a partly-available window crosses midnight and still covers the shift', async () => {
+      // Window 16:00-19:30 crosses nothing — use a window that starts the
+      // same evening and wraps past midnight, e.g. 16:00-00:30, which still
+      // comfortably covers the 17:00-19:00 shift.
+      const sb = makeSupabase({
+        shifts: [{ data: [openShift] }, { data: [] }],
+        staff: [{ data: [activeStaff] }],
+        staff_availability: [{ data: [{ staff_id: 'cap1', status: 'available', note: null, start_time: '16:00:00', end_time: '00:30:00' }] }],
+      })
+      vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+      vi.mocked(meteredMessage).mockResolvedValue(
+        claudeJson({ assignments: [{ shift_id: 's1', staff_id: 'cap1', staff_name: 'Sanne' }], summary: 'ok' }) as never,
+      )
+      vi.mocked(applyScheduleAssignments).mockResolvedValue({ applied: [{ shift_id: 's1', staff_name: 'Sanne' }], skipped: [] })
+
+      expect(await draftOrAssignSchedule(TOMORROW)).toBe('assigned')
+      expect(applyScheduleAssignments).toHaveBeenCalled()
+    })
+
     it('rejects (safety net) an assignment that would double-book a captain against an existing overlapping shift', async () => {
       // 16:00–18:00, overlapping openShift's 15:00–17:00 by an hour.
       const alreadyAssignedOverlap = { id: 's-existing', date: TOMORROW, start_at: '2026-06-14T16:00:00Z', end_at: '2026-06-14T18:00:00Z', status: 'assigned', staff_id: 'cap1', boats: { name: 'Curaçao' }, bookings: null }

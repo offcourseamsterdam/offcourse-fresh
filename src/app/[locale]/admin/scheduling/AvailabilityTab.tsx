@@ -197,12 +197,14 @@ export function AvailabilityTab() {
                         // label — Beer, 2026-08-23: "if people make it red we know
                         // not to call them for last minutes", the amber case is
                         // exactly where the hours are the decision-relevant fact.
-                        const cellText =
-                          display === 'partly_available' && entry ? `${entry.startTime}–${entry.endTime}` : STATUS_LABEL[display]
+                        // endTime <= startTime crosses midnight (Beer, 2026-08-24).
+                        const crossesMidnight = !!entry && !!entry.endTime && entry.endTime <= (entry.startTime ?? '')
+                        const window = entry ? `${entry.startTime}–${entry.endTime}${crossesMidnight ? ' (+1 day)' : ''}` : ''
+                        const cellText = display === 'partly_available' ? `${entry?.startTime}–${entry?.endTime}${crossesMidnight ? ' +1' : ''}` : STATUS_LABEL[display]
                         return (
                           <td key={c.staffId} className="px-2 py-1.5 text-center">
                             <span
-                              title={`${c.name}: ${STATUS_LABEL[display]}`}
+                              title={`${c.name}: ${display === 'partly_available' ? window : STATUS_LABEL[display]}`}
                               className={`inline-block w-full min-w-[2.5rem] rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${CELL_STYLE[display]}`}
                             >
                               {cellText}
