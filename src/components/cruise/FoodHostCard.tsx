@@ -19,7 +19,7 @@ export function FoodHostCard({ name, bio, photoUrl }: FoodHostCardProps) {
             src={photoUrl}
             alt={name}
             fill
-            className="object-cover"
+            className="object-cover object-top"
             sizes="(min-width: 640px) 50vw, 100vw"
           />
         ) : (
