@@ -1,11 +1,12 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Download, Loader2, AlertTriangle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, Loader2, AlertTriangle, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
-import { fmtEuros, formatAmsterdamTime } from '@/lib/utils'
+import { adminMutate } from '@/hooks/useAdminSave'
+import { fmtEuros, formatAmsterdamTime, amsterdamToday } from '@/lib/utils'
 import {
   aggregatePayroll,
   formatMinutes,
@@ -22,10 +23,21 @@ interface PayrollBonus {
   staff_id: string
   amount_cents: number
 }
+/** An on-the-water upsell commission (Beer, 2026-08-24: 50% of what was charged). */
+interface PayrollExtraHoursBonus {
+  id: string
+  staff_id: string
+  date: string
+  extra_minutes: number
+  amount_charged_cents: number
+  commission_cents: number
+  note: string | null
+}
 interface PayrollPayload {
   entries: PayrollEntry[]
   staff: { id: string; name: string; role: string }[]
   bonuses: PayrollBonus[]
+  extraHoursBonuses: PayrollExtraHoursBonus[]
   from: string
   to: string
 }
@@ -53,7 +65,7 @@ export function PayrollTab() {
   const [cursor, setCursor] = useState(() => new Date())
   const { from, to, label } = useMemo(() => monthRange(cursor), [cursor])
 
-  const { data, isLoading, error } = useAdminFetch<PayrollPayload>(
+  const { data, isLoading, error, refresh } = useAdminFetch<PayrollPayload>(
     `/api/admin/scheduling/payroll?from=${from}&to=${to}`,
   )
 
@@ -71,6 +83,15 @@ export function PayrollTab() {
     return map
   }, [data])
 
+  // Aggregate on-the-water upsell commission per staff (Beer, 2026-08-24).
+  const extraHoursByStaff = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const x of data?.extraHoursBonuses ?? []) {
+      map.set(x.staff_id, (map.get(x.staff_id) ?? 0) + x.commission_cents)
+    }
+    return map
+  }, [data])
+
   const totals = useMemo(
     () =>
       lines.reduce(
@@ -78,18 +99,60 @@ export function PayrollTab() {
           minutes: acc.minutes + l.totalMinutes,
           pay: acc.pay + l.totalPayCents,
           bonus: acc.bonus + (bonusByStaff.get(l.staffId) ?? 0),
+          extraHours: acc.extraHours + (extraHoursByStaff.get(l.staffId) ?? 0),
           open: acc.open + l.openCount,
           flagged: acc.flagged + l.flaggedCount,
         }),
-        { minutes: 0, pay: 0, bonus: 0, open: 0, flagged: 0 },
+        { minutes: 0, pay: 0, bonus: 0, extraHours: 0, open: 0, flagged: 0 },
       ),
-    [lines, bonusByStaff],
+    [lines, bonusByStaff, extraHoursByStaff],
   )
 
   const flaggedEntries = useMemo(
     () => (data?.entries ?? []).filter(e => e.flag || !e.clock_out_at),
     [data],
   )
+
+  // Log-an-upsell form (Beer, 2026-08-24: "a captain upsells an extra hour
+  // or 30 minutes... 50% commission"). A plain refetch after write is fine
+  // here — this is a low-frequency admin action, not worth optimistic UI.
+  const [newUpsell, setNewUpsell] = useState({ staffId: '', date: amsterdamToday(), extraMinutes: '30', amountCharged: '', note: '' })
+  const [upsellError, setUpsellError] = useState<string | null>(null)
+  const [savingUpsell, setSavingUpsell] = useState(false)
+
+  async function logUpsell() {
+    const cents = Math.round(Number(newUpsell.amountCharged) * 100)
+    if (!newUpsell.staffId || !newUpsell.extraMinutes || !cents || cents <= 0) {
+      setUpsellError('Pick a captain and enter the extra minutes and amount charged.')
+      return
+    }
+    setUpsellError(null)
+    setSavingUpsell(true)
+    try {
+      await adminMutate('/api/admin/scheduling/extra-hours-bonus', 'POST', {
+        staff_id: newUpsell.staffId,
+        date: newUpsell.date,
+        extra_minutes: Number(newUpsell.extraMinutes),
+        amount_charged_cents: cents,
+        note: newUpsell.note || undefined,
+      })
+      setNewUpsell({ staffId: '', date: amsterdamToday(), extraMinutes: '30', amountCharged: '', note: '' })
+      refresh()
+    } catch (err) {
+      setUpsellError(err instanceof Error ? err.message : 'Could not save')
+    } finally {
+      setSavingUpsell(false)
+    }
+  }
+
+  async function deleteUpsell(id: string) {
+    try {
+      await adminMutate(`/api/admin/scheduling/extra-hours-bonus?id=${id}`, 'DELETE')
+      refresh()
+    } catch (err) {
+      setUpsellError(err instanceof Error ? err.message : 'Could not delete')
+    }
+  }
 
   function shiftMonth(delta: number) {
     setCursor(c => new Date(c.getFullYear(), c.getMonth() + delta, 1))
@@ -133,6 +196,7 @@ export function PayrollTab() {
               <th className="px-4 py-3 text-right">Hours</th>
               <th className="px-4 py-3 text-right">Pay</th>
               <th className="px-4 py-3 text-right">Bonus</th>
+              <th className="px-4 py-3 text-right">Extra hrs</th>
               <th className="px-4 py-3 text-right">Total</th>
               <th className="px-4 py-3 text-right">Review</th>
             </tr>
@@ -140,13 +204,14 @@ export function PayrollTab() {
           <tbody>
             {lines.length === 0 && !isLoading && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-zinc-400">
+                <td colSpan={9} className="px-4 py-8 text-center text-zinc-400">
                   No hours logged this month.
                 </td>
               </tr>
             )}
             {lines.map(l => {
               const bonus = bonusByStaff.get(l.staffId) ?? 0
+              const extraHours = extraHoursByStaff.get(l.staffId) ?? 0
               return (
                 <tr key={l.staffId} className="border-b border-zinc-50 hover:bg-zinc-50">
                   <td className="px-4 py-3 font-medium text-zinc-900">{l.name}</td>
@@ -161,8 +226,15 @@ export function PayrollTab() {
                       <span className="text-xs text-zinc-300">—</span>
                     )}
                   </td>
+                  <td className="px-4 py-3 text-right">
+                    {extraHours > 0 ? (
+                      <span className="text-xs font-medium text-emerald-700">+{fmtEuros(extraHours)}</span>
+                    ) : (
+                      <span className="text-xs text-zinc-300">—</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-right font-semibold text-zinc-900">
-                    {fmtEuros(l.totalPayCents + bonus)}
+                    {fmtEuros(l.totalPayCents + bonus + extraHours)}
                   </td>
                   <td className="px-4 py-3 text-right">
                     {l.openCount > 0 && (
@@ -188,11 +260,108 @@ export function PayrollTab() {
                 <td className="px-4 py-3 text-right text-amber-700">
                   {totals.bonus > 0 ? `+${fmtEuros(totals.bonus)}` : '—'}
                 </td>
-                <td className="px-4 py-3 text-right">{fmtEuros(totals.pay + totals.bonus)}</td>
+                <td className="px-4 py-3 text-right text-emerald-700">
+                  {totals.extraHours > 0 ? `+${fmtEuros(totals.extraHours)}` : '—'}
+                </td>
+                <td className="px-4 py-3 text-right">{fmtEuros(totals.pay + totals.bonus + totals.extraHours)}</td>
                 <td className="px-4 py-3" />
               </tr>
             </tfoot>
           )}
+        </table>
+      </div>
+
+      {/* On-the-water upsells (Beer, 2026-08-24: "if a captain upsells an
+          extra hour or 30 minutes... 50% commission on that") */}
+      <div className="bg-white rounded-2xl border border-zinc-200 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100">
+          <h3 className="text-sm font-semibold text-zinc-700">Extra-hours upsells</h3>
+          <span className="text-xs text-zinc-400">50% commission, computed and stored when logged</span>
+        </div>
+        <div className="p-4 flex flex-wrap items-end gap-2 border-b border-zinc-100 bg-zinc-50/60">
+          <label className="text-xs text-zinc-500">
+            Captain
+            <select
+              value={newUpsell.staffId}
+              onChange={e => setNewUpsell(u => ({ ...u, staffId: e.target.value }))}
+              className="mt-1 block w-40 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm"
+            >
+              <option value="">Select…</option>
+              {(data?.staff ?? []).map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs text-zinc-500">
+            Date
+            <input
+              type="date"
+              value={newUpsell.date}
+              onChange={e => setNewUpsell(u => ({ ...u, date: e.target.value }))}
+              className="mt-1 block w-36 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="text-xs text-zinc-500">
+            Extra minutes
+            <input
+              type="number"
+              min={1}
+              value={newUpsell.extraMinutes}
+              onChange={e => setNewUpsell(u => ({ ...u, extraMinutes: e.target.value }))}
+              className="mt-1 block w-24 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="text-xs text-zinc-500">
+            Charged (€)
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              value={newUpsell.amountCharged}
+              onChange={e => setNewUpsell(u => ({ ...u, amountCharged: e.target.value }))}
+              className="mt-1 block w-24 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="text-xs text-zinc-500 flex-1 min-w-[10rem]">
+            Note (optional)
+            <input
+              type="text"
+              value={newUpsell.note}
+              onChange={e => setNewUpsell(u => ({ ...u, note: e.target.value }))}
+              className="mt-1 block w-full rounded-lg border border-zinc-300 px-2 py-1.5 text-sm"
+            />
+          </label>
+          <Button size="sm" onClick={logUpsell} disabled={savingUpsell}>
+            <Plus className="w-4 h-4 mr-1" /> Log
+          </Button>
+        </div>
+        {upsellError && <p className="px-4 py-2 text-xs text-red-600">{upsellError}</p>}
+        <table className="w-full text-sm">
+          <tbody>
+            {(data?.extraHoursBonuses ?? []).length === 0 && (
+              <tr>
+                <td className="px-4 py-6 text-center text-zinc-400 text-sm">No upsells logged this month.</td>
+              </tr>
+            )}
+            {(data?.extraHoursBonuses ?? []).map(x => {
+              const name = data?.staff.find(s => s.id === x.staff_id)?.name ?? 'Unknown'
+              return (
+                <tr key={x.id} className="border-b border-zinc-50 last:border-0">
+                  <td className="px-4 py-2 text-zinc-900">{name}</td>
+                  <td className="px-4 py-2 text-zinc-500">{x.date}</td>
+                  <td className="px-4 py-2 text-zinc-500">+{x.extra_minutes} min</td>
+                  <td className="px-4 py-2 text-zinc-500">charged {fmtEuros(x.amount_charged_cents)}</td>
+                  <td className="px-4 py-2 font-medium text-emerald-700">+{fmtEuros(x.commission_cents)}</td>
+                  <td className="px-4 py-2 text-zinc-400 text-xs">{x.note}</td>
+                  <td className="px-4 py-2 text-right">
+                    <button onClick={() => deleteUpsell(x.id)} aria-label="Delete" className="text-zinc-300 hover:text-red-600">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
         </table>
       </div>
 

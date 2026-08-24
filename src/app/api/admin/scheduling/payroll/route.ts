@@ -24,8 +24,8 @@ export async function GET(request: NextRequest) {
     }
 
     const supabase = createAdminClient()
-    const { entries, staff, bonuses } = await fetchPayrollRange(supabase, from, to)
-    return apiOk({ entries, staff, bonuses, from, to })
+    const { entries, staff, bonuses, extraHoursBonuses } = await fetchPayrollRange(supabase, from, to)
+    return apiOk({ entries, staff, bonuses, extraHoursBonuses, from, to })
   } catch (err) {
     return apiError(err instanceof Error ? err.message : 'Failed to load payroll', 500)
   }

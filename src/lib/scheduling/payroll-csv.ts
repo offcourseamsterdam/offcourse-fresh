@@ -24,6 +24,13 @@ export interface CsvBonus {
   amount_cents: number
 }
 
+/** An on-the-water upsell commission earned in the period (50% of what was charged). */
+export interface CsvExtraHoursBonus {
+  staff_id: string
+  extra_minutes: number
+  commission_cents: number
+}
+
 /** RFC-4180 field escaping: quote when the value has comma, quote, or newline. */
 function csvField(value: string): string {
   if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`
@@ -46,6 +53,7 @@ export function buildPayrollCsv(
   entries: CsvTimeEntry[],
   staff: PayrollStaff[],
   bonuses: CsvBonus[] = [],
+  extraHoursBonuses: CsvExtraHoursBonus[] = [],
 ): string {
   const byId = new Map(staff.map(s => [s.id, s]))
   const rows: string[] = [HEADERS.join(',')]
@@ -104,6 +112,42 @@ export function buildPayrollCsv(
       'review_bonus',                  // Source
       '',                              // Flag
       `${bl.count} review mention${bl.count === 1 ? '' : 's'}`, // Note
+    ]
+    rows.push(row.map(v => csvField(String(v))).join(','))
+  }
+
+  // Extra-hours (on-the-water upsell) commission — same reasoning as review
+  // bonuses above: without a summary row here, the CSV would silently
+  // underpay a captain by exactly their upsell commission.
+  const extraHoursByStaff = new Map<string, { total: number; count: number; minutes: number }>()
+  for (const x of extraHoursBonuses) {
+    const agg = extraHoursByStaff.get(x.staff_id) ?? { total: 0, count: 0, minutes: 0 }
+    agg.total += x.commission_cents
+    agg.count += 1
+    agg.minutes += x.extra_minutes
+    extraHoursByStaff.set(x.staff_id, agg)
+  }
+
+  const extraHoursLines = [...extraHoursByStaff.entries()]
+    .map(([staffId, agg]) => {
+      const s = byId.get(staffId)
+      return { name: s?.name ?? 'Unknown', role: s?.role ?? '', ...agg }
+    })
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  for (const el of extraHoursLines) {
+    const row = [
+      el.name,
+      el.role,
+      '',                              // Date
+      '',                              // Clock in
+      '',                              // Clock out
+      '',                              // Hours
+      '',                              // Rate
+      euros(el.total),                 // Pay (the commission total)
+      'extra_hours_bonus',             // Source
+      '',                              // Flag
+      `${el.count} upsell${el.count === 1 ? '' : 's'}, ${el.minutes} extra min total`, // Note
     ]
     rows.push(row.map(v => csvField(String(v))).join(','))
   }

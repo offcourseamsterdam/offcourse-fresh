@@ -11,6 +11,7 @@ const navSections = [
     { href: '/captain',              label: 'Home',         icon: 'dashboard' },
     { href: '/captain/shifts',       label: 'My shifts',    icon: 'cruises' },
     { href: '/captain/availability', label: 'Availability', icon: 'bookings' },
+    { href: '/captain/finance',      label: 'Finance',      icon: 'finance' },
   ]},
 ]
 

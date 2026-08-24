@@ -1650,6 +1650,47 @@ export type Database = {
         }
         Relationships: []
       }
+      extra_hours_bonuses: {
+        Row: {
+          amount_charged_cents: number
+          commission_cents: number
+          created_at: string
+          date: string
+          extra_minutes: number
+          id: string
+          note: string | null
+          staff_id: string
+        }
+        Insert: {
+          amount_charged_cents: number
+          commission_cents: number
+          created_at?: string
+          date: string
+          extra_minutes: number
+          id?: string
+          note?: string | null
+          staff_id: string
+        }
+        Update: {
+          amount_charged_cents?: number
+          commission_cents?: number
+          created_at?: string
+          date?: string
+          extra_minutes?: number
+          id?: string
+          note?: string | null
+          staff_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "extra_hours_bonuses_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       extras: {
         Row: {
           adults_only: boolean

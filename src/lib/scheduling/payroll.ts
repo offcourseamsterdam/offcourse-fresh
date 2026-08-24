@@ -39,8 +39,9 @@ export interface PayrollLine {
   totalPayCents: number
 }
 
-/** Worked minutes for one entry, or null if it's still open. */
-export function entryMinutes(entry: PayrollTimeEntry): number | null {
+/** Worked minutes for one entry, or null if it's still open. Only needs the
+ *  clock times — accepts any caller's row shape, not just the full payroll one. */
+export function entryMinutes(entry: Pick<PayrollTimeEntry, 'clock_in_at' | 'clock_out_at'>): number | null {
   if (!entry.clock_out_at) return null
   const start = new Date(entry.clock_in_at).getTime()
   const end = new Date(entry.clock_out_at).getTime()

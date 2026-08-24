@@ -100,4 +100,37 @@ describe('buildPayrollCsv', () => {
 
     expect(sumPayColumn(csv)).toBeCloseTo(expectedTotal, 2)
   })
+
+  it('appends a per-staff extra-hours (upsell commission) summary row', () => {
+    const csv = buildPayrollCsv([entry()], staff, [], [
+      { staff_id: 's1', extra_minutes: 30, commission_cents: 1000 },
+      { staff_id: 's1', extra_minutes: 60, commission_cents: 1500 },
+    ])
+    const last = csv.split('\r\n').at(-1)!
+    expect(last).toBe('Joris,skipper,,,,,,25.00,extra_hours_bonus,,"2 upsells, 90 extra min total"')
+  })
+
+  it('singularises the note for a single upsell', () => {
+    const csv = buildPayrollCsv([], staff, [], [{ staff_id: 's1', extra_minutes: 30, commission_cents: 1000 }])
+    expect(csv.split('\r\n').at(-1)).toContain('1 upsell, 30 extra min total')
+  })
+
+  it('omits extra-hours rows entirely when there are none', () => {
+    const csv = buildPayrollCsv([entry()], staff)
+    expect(csv).not.toContain('extra_hours_bonus')
+  })
+
+  it('CSV Pay total reconciles with hours-pay + bonuses + extra-hours commission', () => {
+    const entries = [entry()]
+    const bonuses = [{ staff_id: 's1', amount_cents: 500 }]
+    const extraHoursBonuses = [{ staff_id: 's1', extra_minutes: 30, commission_cents: 1000 }]
+    const csv = buildPayrollCsv(entries, staff, bonuses, extraHoursBonuses)
+
+    const hoursPay = entries.reduce((s, e) => s + entryPayCents(e), 0)
+    const bonusPay = bonuses.reduce((s, b) => s + b.amount_cents, 0)
+    const extraPay = extraHoursBonuses.reduce((s, x) => s + x.commission_cents, 0)
+    const expectedTotal = (hoursPay + bonusPay + extraPay) / 100
+
+    expect(sumPayColumn(csv)).toBeCloseTo(expectedTotal, 2)
+  })
 })

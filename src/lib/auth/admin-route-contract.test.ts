@@ -181,8 +181,10 @@ describe('admin route auth contract', () => {
     // Phase 4: AI-drafted copy-paste review replies, no platform auto-post).
     // 146 = 145 + /api/admin/reviews/backfill-bonus-scan (2026-08-22: manual
     // re-trigger for the staff-mention scan on any not-yet-checked review).
+    // 150 = 149 + /api/admin/scheduling/extra-hours-bonus (2026-08-24:
+    // logging an on-the-water upsell's 50% commission).
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`149`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`150`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {
