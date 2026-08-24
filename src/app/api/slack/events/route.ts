@@ -3,17 +3,23 @@ import { verifySlackSignature } from '@/lib/slack/verify-request'
 import { getSlackUserName } from '@/lib/slack/bot'
 import { fetchImageAsBase64 } from '@/lib/ai/describe-image'
 import { draftMaintenanceTask, type MaintenancePhoto } from '@/lib/ghost/maintenance-drafter'
+import { draftUpsellBonus } from '@/lib/ghost/upsell-bonus-drafter'
 
 /**
- * Slack Events API endpoint — the maintenance agent's intake.
+ * Slack Events API endpoint — intake for two shadow agents.
  *
- * People post in the "Maintenance and Ideas" channel (text and/or photos); we
- * hand each message to the shadow maintenance drafter. Slack demands a 200
- * within 3 seconds, so the work (photo fetch + Gemini + Claude) runs in
- * after(); the route acks immediately.
+ * 1. Maintenance: people post in the "Maintenance and Ideas" channel (text
+ *    and/or photos); handed to the shadow maintenance drafter. Activates
+ *    only once SLACK_MAINTENANCE_CHANNEL_ID is set and the bot is in the
+ *    channel with message + files read scopes — until then this is dark.
+ * 2. Upsell bonus (Beer, 2026-08-24): a captain DMs the bot directly about
+ *    an on-the-water upsell; handed to the shadow upsell-bonus drafter,
+ *    which drafts a proposal a human confirms in the Payroll tab. Needs the
+ *    Slack app's Events Subscriptions to include the `message.im` bot event
+ *    (and `im:history` scope) — until that's enabled, DMs never reach here.
  *
- * Activates only once SLACK_MAINTENANCE_CHANNEL_ID is set and the bot is in the
- * channel with message + files read scopes — until then this is dark.
+ * Slack demands a 200 within 3 seconds, so all the real work (photo fetch,
+ * Gemini, Claude) runs in after(); the route acks immediately.
  */
 
 const MAX_PHOTOS = 4
@@ -56,6 +62,33 @@ export function extractMaintenanceEvent(
     text: String(event.text ?? ''),
     userId: typeof event.user === 'string' ? event.user : '',
     files: (Array.isArray(event.files) ? event.files : []) as SlackFile[],
+  }
+}
+
+export interface ExtractedDmEvent {
+  eventId: string
+  text: string
+  userId: string
+}
+
+/**
+ * Decide whether a Slack event is a genuine human DM to the bot — pure +
+ * exported so the intake rules are unit tested, same reasoning as
+ * extractMaintenanceEvent. `channel_type === 'im'` is what Slack stamps on a
+ * direct-message event; a plain message (no subtype) is a real DM, while
+ * edits/joins/deletes/bot echoes must not fire the drafter. Returns null to
+ * ignore the event.
+ */
+export function extractDmEvent(body: Record<string, unknown>): ExtractedDmEvent | null {
+  if (body.type !== 'event_callback') return null
+  const event = (body.event ?? {}) as Record<string, unknown>
+  if (event.type !== 'message' || event.channel_type !== 'im' || event.bot_id) return null
+  if (typeof event.subtype === 'string') return null // no subtype = a real DM; edits/joins/deletes carry one
+
+  return {
+    eventId: String(body.event_id ?? event.ts ?? ''),
+    text: String(event.text ?? ''),
+    userId: typeof event.user === 'string' ? event.user : '',
   }
 }
 
@@ -118,6 +151,17 @@ export async function POST(req: Request): Promise<NextResponse> {
         await draftMaintenanceTask({ slackEventId: evt.eventId, text: evt.text, reporter, channel: channelId, photos })
       } catch (err) {
         console.error('[slack/events] maintenance draft failed:', err instanceof Error ? err.message : err)
+      }
+    })
+  }
+
+  const dm = extractDmEvent(body)
+  if (dm) {
+    after(async () => {
+      try {
+        await draftUpsellBonus({ slackEventId: dm.eventId, text: dm.text, slackUserId: dm.userId })
+      } catch (err) {
+        console.error('[slack/events] upsell bonus draft failed:', err instanceof Error ? err.message : err)
       }
     })
   }

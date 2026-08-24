@@ -55,36 +55,59 @@ import { sendSms } from '@/lib/sms/send-sms'
 const PREP_BODY = { listingSlug: 'private-hidden-gems-cruise', availabilityPk: 9001, bookingSource: 'complimentary' }
 
 /**
- * Route-shaped Supabase stub. `single()` returns the proposal; an `update()`
- * whose payload sets status:'booking' is the atomic claim and resolves to
- * `claimed` (the rows the conditional UPDATE matched); other updates resolve
- * empty. Every update payload is captured so we can assert the state machine.
+ * Route-shaped Supabase stub. `single()` returns the proposal (or, for a
+ * table an `insert()` just wrote to, the configured insert result); an
+ * `update()` whose payload sets a transient claim status ('booking',
+ * 'sending', 'confirming') resolves to `claimed` (the rows the conditional
+ * UPDATE matched); other updates resolve empty. Every update/insert payload
+ * is captured so we can assert the state machine.
  */
-function makeSupabase({ proposal, claimed }: { proposal: unknown; claimed: unknown[] }) {
+function makeSupabase({
+  proposal,
+  claimed,
+  insertResult = { id: 'bonus1' },
+  insertError = null,
+  claimError = null,
+}: {
+  proposal: unknown
+  claimed: unknown[]
+  insertResult?: unknown
+  insertError?: { message: string } | null
+  claimError?: { message: string } | null
+}) {
   const updates: Array<Record<string, unknown>> = []
-  const from = vi.fn(() => {
+  const inserts: Array<{ table: string; row: Record<string, unknown> }> = []
+  const from = vi.fn((table: string) => {
     let pending: Record<string, unknown> | null = null
+    let inserted = false
     const builder: Record<string, unknown> = {
       select: () => builder,
       eq: () => builder,
       in: () => builder,
-      single: async () => ({ data: proposal }),
+      single: async () => (inserted ? { data: insertError ? null : insertResult, error: insertError } : { data: proposal }),
+      insert: (row: Record<string, unknown>) => {
+        inserted = true
+        inserts.push({ table, row })
+        return builder
+      },
       update: (payload: Record<string, unknown>) => {
         pending = payload
         updates.push(payload)
         return builder
       },
       then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) => {
-        // Both transient claim statuses ('booking' for bookings, 'sending' for
-        // maintenance emails) resolve to the matched rows; other updates empty.
-        const isClaim = pending?.status === 'booking' || pending?.status === 'sending'
-        const result = isClaim ? { data: claimed } : { data: null, error: null }
+        // Claim statuses (transient or a direct one-step terminal claim, like
+        // reject_upsell_bonus's 'skipped') resolve to the matched rows; other
+        // plain updates resolve empty.
+        const isClaim =
+          pending?.status === 'booking' || pending?.status === 'sending' || pending?.status === 'confirming' || pending?.status === 'skipped'
+        const result = isClaim ? { data: claimError ? null : claimed, error: claimError } : { data: null, error: null }
         return Promise.resolve(result).then(resolve, reject)
       },
     }
     return builder
   })
-  return { client: { from }, from, updates }
+  return { client: { from }, from, updates, inserts }
 }
 
 function makeReq(body: unknown, cookie = 'sb-access=secret') {
@@ -1106,6 +1129,126 @@ describe('POST mark_rebooked action', () => {
     const res = await POST(makeReq({ action: 'mark_rebooked' }), { params: Promise.resolve({ id: 'm1' }) })
     expect(res.status).toBe(409)
     expect(sb.updates).toHaveLength(0)
+  })
+})
+
+describe('POST confirm_upsell_bonus action (Beer, 2026-08-24: "an ai reading the incoming information... in the payroll tab we have an upsell review environment")', () => {
+  const upsellProposal = { id: 'u1', kind: 'upsell_bonus', status: 'shadow', payload: { staff_id: 'bas', extra_minutes: 30, amount_charged_cents: 2000 } }
+
+  it('claims, creates the real extra_hours_bonuses row with the submitted (possibly human-corrected) fields, and marks executed', async () => {
+    const sb = makeSupabase({ proposal: upsellProposal, claimed: [{ id: 'u1' }] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(
+      makeReq({ action: 'confirm_upsell_bonus', staff_id: 'bas', date: '2026-08-24', extra_minutes: 45, amount_charged_cents: 3000 }),
+      { params: Promise.resolve({ id: 'u1' }) },
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data.extra_hours_bonus_id).toBe('bonus1')
+
+    expect(sb.inserts).toHaveLength(1)
+    expect(sb.inserts[0]).toMatchObject({
+      table: 'extra_hours_bonuses',
+      row: { staff_id: 'bas', date: '2026-08-24', extra_minutes: 45, amount_charged_cents: 3000, commission_cents: 1500 },
+    })
+
+    // Claim then finalize — 'confirming' first, 'executed' only after the insert succeeds.
+    expect(sb.updates[0]).toMatchObject({ status: 'confirming' })
+    expect(sb.updates.at(-1)).toMatchObject({ status: 'executed', outcome: expect.objectContaining({ extra_hours_bonus_id: 'bonus1' }) })
+  })
+
+  it('returns 400 for a non-upsell proposal', async () => {
+    const sb = makeSupabase({ proposal: bookingProposal, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(
+      makeReq({ action: 'confirm_upsell_bonus', staff_id: 'bas', date: '2026-08-24', extra_minutes: 30, amount_charged_cents: 2000 }),
+      { params: Promise.resolve({ id: 'p1' }) },
+    )
+    expect(res.status).toBe(400)
+    expect(sb.inserts).toHaveLength(0)
+  })
+
+  it('rejects a missing field before ever claiming', async () => {
+    const sb = makeSupabase({ proposal: upsellProposal, claimed: [{ id: 'u1' }] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(
+      makeReq({ action: 'confirm_upsell_bonus', staff_id: 'bas', date: '2026-08-24', amount_charged_cents: 2000 }),
+      { params: Promise.resolve({ id: 'u1' }) },
+    )
+    expect(res.status).toBe(400)
+    expect(sb.updates).toHaveLength(0)
+    expect(sb.inserts).toHaveLength(0)
+  })
+
+  it('surfaces a real DB error from the claim as 500, not a misleading 409 "already confirmed" (caught live: an unlisted status value hit a CHECK constraint and was silently read as a lost race)', async () => {
+    const sb = makeSupabase({ proposal: upsellProposal, claimed: [], claimError: { message: 'violates check constraint "agent_proposals_status_check"' } })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(
+      makeReq({ action: 'confirm_upsell_bonus', staff_id: 'bas', date: '2026-08-24', extra_minutes: 30, amount_charged_cents: 2000 }),
+      { params: Promise.resolve({ id: 'u1' }) },
+    )
+    expect(res.status).toBe(500)
+    const body = await res.json()
+    expect(body.error).toContain('check constraint')
+    expect(sb.inserts).toHaveLength(0)
+  })
+
+  it('refuses a second confirm — already resolved', async () => {
+    const sb = makeSupabase({ proposal: upsellProposal, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(
+      makeReq({ action: 'confirm_upsell_bonus', staff_id: 'bas', date: '2026-08-24', extra_minutes: 30, amount_charged_cents: 2000 }),
+      { params: Promise.resolve({ id: 'u1' }) },
+    )
+    expect(res.status).toBe(409)
+    expect(sb.inserts).toHaveLength(0)
+  })
+
+  it('releases the claim back to shadow if creating the bonus row fails', async () => {
+    const sb = makeSupabase({ proposal: upsellProposal, claimed: [{ id: 'u1' }], insertError: { message: 'constraint violation' } })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(
+      makeReq({ action: 'confirm_upsell_bonus', staff_id: 'bas', date: '2026-08-24', extra_minutes: 30, amount_charged_cents: 2000 }),
+      { params: Promise.resolve({ id: 'u1' }) },
+    )
+    expect(res.status).toBe(500)
+    expect(sb.updates.at(-1)).toMatchObject({ status: 'shadow' })
+  })
+})
+
+describe('POST reject_upsell_bonus action', () => {
+  const upsellProposal = { id: 'u1', kind: 'upsell_bonus', status: 'shadow', payload: {} }
+
+  it('marks the proposal skipped and creates nothing', async () => {
+    const sb = makeSupabase({ proposal: upsellProposal, claimed: [{ id: 'u1' }] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'reject_upsell_bonus' }), { params: Promise.resolve({ id: 'u1' }) })
+    expect(res.status).toBe(200)
+    expect(sb.inserts).toHaveLength(0)
+    expect(sb.updates[0]).toMatchObject({ status: 'skipped' })
+  })
+
+  it('returns 400 for a non-upsell proposal', async () => {
+    const sb = makeSupabase({ proposal: bookingProposal, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'reject_upsell_bonus' }), { params: Promise.resolve({ id: 'p1' }) })
+    expect(res.status).toBe(400)
+  })
+
+  it('refuses a second reject — already resolved', async () => {
+    const sb = makeSupabase({ proposal: upsellProposal, claimed: [] })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+
+    const res = await POST(makeReq({ action: 'reject_upsell_bonus' }), { params: Promise.resolve({ id: 'u1' }) })
+    expect(res.status).toBe(409)
   })
 })
 

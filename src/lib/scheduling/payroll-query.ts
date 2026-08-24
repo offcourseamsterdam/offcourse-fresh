@@ -33,7 +33,7 @@ export async function fetchPayrollRange(
     supabase.from('staff').select('id, name, role').order('name', { ascending: true }),
     supabase
       .from('review_bonuses')
-      .select('staff_id, amount_cents')
+      .select('id, staff_id, amount_cents, awarded_at, social_proof_reviews(rating)')
       .eq('excluded_from_payroll', false)
       .gte('awarded_at', `${from}T00:00:00.000Z`)
       .lte('awarded_at', `${to}T23:59:59.999Z`),

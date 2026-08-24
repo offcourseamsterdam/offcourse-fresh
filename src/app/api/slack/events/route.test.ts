@@ -6,8 +6,9 @@ vi.mock('@/lib/slack/verify-request', () => ({ verifySlackSignature: vi.fn() }))
 vi.mock('@/lib/slack/bot', () => ({ getSlackUserName: vi.fn() }))
 vi.mock('@/lib/ai/describe-image', () => ({ fetchImageAsBase64: vi.fn() }))
 vi.mock('@/lib/ghost/maintenance-drafter', () => ({ draftMaintenanceTask: vi.fn() }))
+vi.mock('@/lib/ghost/upsell-bonus-drafter', () => ({ draftUpsellBonus: vi.fn() }))
 
-import { extractMaintenanceEvent } from './route'
+import { extractMaintenanceEvent, extractDmEvent } from './route'
 
 /**
  * The intake rules — pure, so the one bug that would silently kill the feature
@@ -68,6 +69,41 @@ describe('extractMaintenanceEvent', () => {
 
   it('falls back to event.ts when event_id is absent', () => {
     const out = extractMaintenanceEvent({ type: 'event_callback', event: { type: 'message', channel: CH, user: 'U1', text: 'hi', ts: '171.99' } }, CH)
+    expect(out!.eventId).toBe('171.99')
+  })
+})
+
+/**
+ * The upsell-bonus DM intake (Beer, 2026-08-24: "captains message the slack
+ * bot"). channel_type 'im' is Slack's own marker for a direct message —
+ * distinct from extractMaintenanceEvent's fixed-channel gate.
+ */
+describe('extractDmEvent', () => {
+  it('accepts a plain DM to the bot', () => {
+    const out = extractDmEvent(callback({ type: 'message', channel_type: 'im', user: 'U1', text: 'sold an extra 30 min for 20 euros' }))
+    expect(out).toMatchObject({ eventId: 'Ev123', text: 'sold an extra 30 min for 20 euros', userId: 'U1' })
+  })
+
+  it('rejects a message in a regular channel (not a DM)', () => {
+    expect(extractDmEvent(callback({ type: 'message', channel_type: 'channel', user: 'U1', text: 'hi' }))).toBeNull()
+  })
+
+  it('rejects DM edits, deletes, joins (other subtypes)', () => {
+    for (const subtype of ['message_changed', 'message_deleted', 'channel_join']) {
+      expect(extractDmEvent(callback({ type: 'message', subtype, channel_type: 'im', user: 'U1' }))).toBeNull()
+    }
+  })
+
+  it('rejects the bot\'s own DM echoes', () => {
+    expect(extractDmEvent(callback({ type: 'message', channel_type: 'im', bot_id: 'B1', text: 'echo' }))).toBeNull()
+  })
+
+  it('ignores non-event_callback payloads', () => {
+    expect(extractDmEvent({ type: 'url_verification', challenge: 'x' })).toBeNull()
+  })
+
+  it('falls back to event.ts when event_id is absent', () => {
+    const out = extractDmEvent({ type: 'event_callback', event: { type: 'message', channel_type: 'im', user: 'U1', text: 'hi', ts: '171.99' } })
     expect(out!.eventId).toBe('171.99')
   })
 })

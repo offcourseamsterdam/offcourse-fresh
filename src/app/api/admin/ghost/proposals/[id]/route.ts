@@ -19,6 +19,7 @@ import { importFareharborBooking } from '@/lib/fareharbor/import-booking'
 import { syncAndScheduleShifts } from '@/lib/scheduling/proactive-scheduling'
 import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
 import { computeCancellationTerms } from '@/lib/ghost/cancellation-terms'
+import { commissionCentsFor } from '@/lib/scheduling/extra-hours-bonus'
 import type { BookingSource } from '@/lib/constants'
 import type { BookingProposalInput, AltSlot } from '@/lib/ghost/dry-run'
 
@@ -64,16 +65,38 @@ import type { BookingProposalInput, AltSlot } from '@/lib/ghost/dry-run'
  *              resyncs the affected date(s) so Planning/Scheduling reflect
  *              the real change immediately. Never touches FareHarbor itself
  *              — that rebook already happened by hand; this only confirms it.
+ *   - confirm_upsell_bonus: the human reviews an upsell_bonus proposal (a
+ *              captain's Slack DM about an on-the-water upsell, read by
+ *              upsell-bonus-drafter.ts) — Beer, 2026-08-24: "in the payroll
+ *              tab we have an upsell review environment where we can check
+ *              that upsell and assign it properly". Body carries the FINAL
+ *              staff_id/date/extra_minutes/amount_charged_cents — the human
+ *              can correct anything the model got wrong, including which
+ *              captain (real captains mostly have no slack_member_id on
+ *              file yet, so the AI's guess is often null) — and this
+ *              creates the real extra_hours_bonuses row. Same atomic-claim
+ *              shape as `book`; fires only on an explicit human click.
+ *   - reject_upsell_bonus: the human dismisses an upsell_bonus proposal —
+ *              not a real upsell, a duplicate, or one already logged by
+ *              hand. Creates nothing.
  * Everything except `book`, `send`, `correct_booking`, `import_fh_booking`,
- * `cancel_booking` and `mark_rebooked`'s resync is read-only toward the
- * outside world.
+ * `cancel_booking`, `mark_rebooked`'s resync, and `confirm_upsell_bonus` is
+ * read-only toward the outside world.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const denied = await requireAdmin()
   if (denied) return denied
   try {
     const { id } = await params
-    const body = (await req.json().catch(() => ({}))) as { action?: string; reviewed?: boolean; alternative_index?: number }
+    const body = (await req.json().catch(() => ({}))) as {
+      action?: string
+      reviewed?: boolean
+      alternative_index?: number
+      staff_id?: string
+      date?: string
+      extra_minutes?: number
+      amount_charged_cents?: number
+    }
     const supabase = createAdminClient()
 
     if (body.action === 'review') {
@@ -911,6 +934,79 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
 
       return apiOk({ rebooked_at: nextOutcome.rebooked_at })
+    }
+
+    if (body.action === 'confirm_upsell_bonus') {
+      const { data: p } = await supabase.from('agent_proposals').select('id, kind').eq('id', id).single()
+      if (!p || p.kind !== 'upsell_bonus') return apiError('Not an upsell bonus proposal', 400)
+
+      const staffId = typeof body.staff_id === 'string' && body.staff_id ? body.staff_id : null
+      const date = typeof body.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : null
+      const extraMinutes = typeof body.extra_minutes === 'number' && body.extra_minutes > 0 ? Math.round(body.extra_minutes) : null
+      const amountChargedCents =
+        typeof body.amount_charged_cents === 'number' && body.amount_charged_cents > 0 ? Math.round(body.amount_charged_cents) : null
+      if (!staffId || !date || !extraMinutes || !amountChargedCents) {
+        return apiError('staff_id, date, extra_minutes, and amount_charged_cents are all required', 400)
+      }
+
+      // ATOMIC CLAIM before creating the real bonus row — flip 'shadow'→
+      // 'confirming' only if it's still 'shadow', same shape as `book`'s
+      // 'booking' claim: a second click/concurrent request gets zero rows
+      // back and aborts. 'confirming' (not 'executed' yet) so a crash
+      // between the claim and the insert below is visibly stuck, not
+      // silently indistinguishable from a real success.
+      const { data: claimed, error: claimErr } = await supabase
+        .from('agent_proposals')
+        .update({ status: 'confirming' })
+        .eq('id', id)
+        .eq('status', 'shadow')
+        .select('id')
+      // Distinguish a genuine DB error (e.g. a constraint the status value
+      // doesn't satisfy) from a real race/already-claimed — conflating the
+      // two once cost real debugging time here: a bad status silently read
+      // as "someone else already confirmed this" instead of the real cause.
+      if (claimErr) return apiError(claimErr.message, 500)
+      if (!claimed?.length) return apiError('This upsell was already confirmed or dismissed.', 409)
+
+      const { data: bonus, error: bonusErr } = await supabase
+        .from('extra_hours_bonuses')
+        .insert({
+          staff_id: staffId,
+          date,
+          extra_minutes: extraMinutes,
+          amount_charged_cents: amountChargedCents,
+          commission_cents: commissionCentsFor(amountChargedCents),
+        })
+        .select('id')
+        .single()
+      if (bonusErr || !bonus) {
+        // Release the claim so the human can retry after fixing the cause.
+        await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
+        return apiError(bonusErr?.message ?? 'Could not create the bonus', 500)
+      }
+
+      // Close the loop: mark executed (the claim already locked out duplicates).
+      await supabase
+        .from('agent_proposals')
+        .update({ status: 'executed', outcome: { confirmed_at: new Date().toISOString(), extra_hours_bonus_id: bonus.id, staff_id: staffId } })
+        .eq('id', id)
+
+      return apiOk({ extra_hours_bonus_id: bonus.id })
+    }
+
+    if (body.action === 'reject_upsell_bonus') {
+      const { data: p } = await supabase.from('agent_proposals').select('id, kind').eq('id', id).single()
+      if (!p || p.kind !== 'upsell_bonus') return apiError('Not an upsell bonus proposal', 400)
+
+      const { data: claimed } = await supabase
+        .from('agent_proposals')
+        .update({ status: 'skipped' })
+        .eq('id', id)
+        .eq('status', 'shadow')
+        .select('id')
+      if (!claimed?.length) return apiError('Already resolved.', 409)
+
+      return apiOk({ rejected: true })
     }
 
     return apiError('Unknown action', 400)

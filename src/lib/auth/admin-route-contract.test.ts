@@ -183,8 +183,11 @@ describe('admin route auth contract', () => {
     // re-trigger for the staff-mention scan on any not-yet-checked review).
     // 150 = 149 + /api/admin/scheduling/extra-hours-bonus (2026-08-24:
     // logging an on-the-water upsell's 50% commission).
+    // 151 = 150 + /api/admin/scheduling/upsell-proposals (2026-08-24: the
+    // "upsell review environment" queue of AI-drafted, Slack-DM-sourced
+    // upsell_bonus proposals awaiting a human's confirm/reject).
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`150`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`151`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {
