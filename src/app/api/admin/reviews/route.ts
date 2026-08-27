@@ -18,7 +18,7 @@ export async function GET() {
       .order('publish_time', { ascending: false, nullsFirst: false }),
     supabase
       .from('google_reviews_config')
-      .select('place_id, place_name, overall_rating, total_reviews, last_synced_at, tripadvisor_url, tripadvisor_rating, tripadvisor_total_reviews, withlocals_experience_short_id')
+      .select('place_id, place_name, overall_rating, total_reviews, last_synced_at, tripadvisor_url, tripadvisor_rating, tripadvisor_total_reviews, withlocals_experience_short_id, recommendations_map_url, tripadvisor_review_url_shared, tripadvisor_review_url_private, review_sms_template, review_sms_auto_send, review_sms_enabled')
       .limit(1)
       .maybeSingle(),
   ])
@@ -29,7 +29,7 @@ export async function GET() {
 }
 
 /**
- * PUT /api/admin/reviews — update place_id + tripadvisor_url config.
+ * PUT /api/admin/reviews — update place_id, review links, and SMS settings.
  * Creates the config row if it doesn't exist yet.
  */
 export const PUT = withRoute(async (request: NextRequest) => {
@@ -37,7 +37,17 @@ export const PUT = withRoute(async (request: NextRequest) => {
   if (denied) return denied
 
   const body = await request.json().catch(() => ({})) as Record<string, unknown>
-  const { place_id, tripadvisor_url, withlocals_experience_short_id } = body
+  const {
+    place_id,
+    tripadvisor_url,
+    withlocals_experience_short_id,
+    recommendations_map_url,
+    tripadvisor_review_url_shared,
+    tripadvisor_review_url_private,
+    review_sms_template,
+    review_sms_auto_send,
+    review_sms_enabled,
+  } = body
 
   if (!place_id || typeof place_id !== 'string') {
     return apiError('place_id is required', 400)
@@ -52,6 +62,12 @@ export const PUT = withRoute(async (request: NextRequest) => {
         place_id: place_id.trim(),
         tripadvisor_url: typeof tripadvisor_url === 'string' ? tripadvisor_url.trim() || null : null,
         withlocals_experience_short_id: typeof withlocals_experience_short_id === 'string' ? withlocals_experience_short_id.trim() || null : null,
+        recommendations_map_url: typeof recommendations_map_url === 'string' ? recommendations_map_url.trim() || null : null,
+        tripadvisor_review_url_shared: typeof tripadvisor_review_url_shared === 'string' ? tripadvisor_review_url_shared.trim() || null : null,
+        tripadvisor_review_url_private: typeof tripadvisor_review_url_private === 'string' ? tripadvisor_review_url_private.trim() || null : null,
+        review_sms_template: typeof review_sms_template === 'string' ? review_sms_template.trim() || null : null,
+        review_sms_auto_send: typeof review_sms_auto_send === 'boolean' ? review_sms_auto_send : false,
+        review_sms_enabled: typeof review_sms_enabled === 'boolean' ? review_sms_enabled : true,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'place_id' }

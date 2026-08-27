@@ -19,14 +19,30 @@ export function useReviews() {
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<string | null>(null)
 
-  async function saveConfig(placeId: string, tripadvisorUrl: string, withlocalsShortId: string) {
+  async function saveConfig(updates: {
+    placeId: string
+    tripadvisorUrl?: string
+    withlocalsShortId?: string
+    recommendationsMapUrl?: string
+    tripadvisorReviewUrlShared?: string
+    tripadvisorReviewUrlPrivate?: string
+    reviewSmsTemplate?: string
+    reviewSmsAutoSend?: boolean
+    reviewSmsEnabled?: boolean
+  }) {
     const res = await fetch('/api/admin/reviews', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        place_id: placeId,
-        tripadvisor_url: tripadvisorUrl || null,
-        withlocals_experience_short_id: withlocalsShortId || null,
+        place_id: updates.placeId,
+        tripadvisor_url: updates.tripadvisorUrl || null,
+        withlocals_experience_short_id: updates.withlocalsShortId || null,
+        recommendations_map_url: updates.recommendationsMapUrl || null,
+        tripadvisor_review_url_shared: updates.tripadvisorReviewUrlShared || null,
+        tripadvisor_review_url_private: updates.tripadvisorReviewUrlPrivate || null,
+        review_sms_template: updates.reviewSmsTemplate || null,
+        review_sms_auto_send: updates.reviewSmsAutoSend ?? false,
+        review_sms_enabled: updates.reviewSmsEnabled ?? true,
       }),
     })
     const json = await res.json()

@@ -533,6 +533,9 @@ export type Database = {
           raw_payload: Json | null
           receipt_total: number | null
           receipt_total_display: string | null
+          review_sms_phone: string | null
+          review_sms_sent_at: string | null
+          review_sms_sid: string | null
           session_id: string | null
           start_time: string | null
           status: string | null
@@ -595,6 +598,9 @@ export type Database = {
           raw_payload?: Json | null
           receipt_total?: number | null
           receipt_total_display?: string | null
+          review_sms_phone?: string | null
+          review_sms_sent_at?: string | null
+          review_sms_sid?: string | null
           session_id?: string | null
           start_time?: string | null
           status?: string | null
@@ -657,6 +663,9 @@ export type Database = {
           raw_payload?: Json | null
           receipt_total?: number | null
           receipt_total_display?: string | null
+          review_sms_phone?: string | null
+          review_sms_sent_at?: string | null
+          review_sms_sid?: string | null
           session_id?: string | null
           start_time?: string | null
           status?: string | null
@@ -2203,8 +2212,14 @@ export type Database = {
           overall_rating: number | null
           place_id: string
           place_name: string | null
+          recommendations_map_url: string | null
+          review_sms_auto_send: boolean
+          review_sms_enabled: boolean
+          review_sms_template: string | null
           total_reviews: number | null
           tripadvisor_rating: number | null
+          tripadvisor_review_url_private: string | null
+          tripadvisor_review_url_shared: string | null
           tripadvisor_total_reviews: number | null
           tripadvisor_url: string | null
           updated_at: string
@@ -2218,8 +2233,14 @@ export type Database = {
           overall_rating?: number | null
           place_id: string
           place_name?: string | null
+          recommendations_map_url?: string | null
+          review_sms_auto_send?: boolean
+          review_sms_enabled?: boolean
+          review_sms_template?: string | null
           total_reviews?: number | null
           tripadvisor_rating?: number | null
+          tripadvisor_review_url_private?: string | null
+          tripadvisor_review_url_shared?: string | null
           tripadvisor_total_reviews?: number | null
           tripadvisor_url?: string | null
           updated_at?: string
@@ -2233,8 +2254,14 @@ export type Database = {
           overall_rating?: number | null
           place_id?: string
           place_name?: string | null
+          recommendations_map_url?: string | null
+          review_sms_auto_send?: boolean
+          review_sms_enabled?: boolean
+          review_sms_template?: string | null
           total_reviews?: number | null
           tripadvisor_rating?: number | null
+          tripadvisor_review_url_private?: string | null
+          tripadvisor_review_url_shared?: string | null
           tripadvisor_total_reviews?: number | null
           tripadvisor_url?: string | null
           updated_at?: string
@@ -3700,6 +3727,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      short_url_clicks: {
+        Row: {
+          booking_id: string | null
+          created_at: string
+          destination_url: string
+          id: string
+          ip_hash: string | null
+          slug: string
+          user_agent: string | null
+        }
+        Insert: {
+          booking_id?: string | null
+          created_at?: string
+          destination_url: string
+          id?: string
+          ip_hash?: string | null
+          slug: string
+          user_agent?: string | null
+        }
+        Update: {
+          booking_id?: string | null
+          created_at?: string
+          destination_url?: string
+          id?: string
+          ip_hash?: string | null
+          slug?: string
+          user_agent?: string | null
+        }
+        Relationships: []
       }
       slack_message_log: {
         Row: {

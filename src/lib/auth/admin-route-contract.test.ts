@@ -187,7 +187,11 @@ describe('admin route auth contract', () => {
     // "upsell review environment" queue of AI-drafted, Slack-DM-sourced
     // upsell_bonus proposals awaiting a human's confirm/reject).
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`151`)
+    // 153 = 151 (this branch) + review-sms and sms-ready (merged in from main's
+    // post-cruise review SMS feature: manual send + the "ready to send" list
+    // on the admin Reviews page).
+    // Update this when adding/removing admin routes.
+    expect(adminFiles.length).toMatchInlineSnapshot(`153`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {
