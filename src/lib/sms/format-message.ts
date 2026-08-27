@@ -30,7 +30,7 @@
 export const DEFAULT_SMS_TEMPLATE =
   'Hi {firstName}! Thanks for cruising with us on the {listingTitle}.\n\n' +
   'Our local food & drinks map: {mapUrl}\n\n' +
-  'Had a great time? We\'d love a quick review on TripAdvisor: {reviewUrl}\n\n' +
+  'We\'re the little guy against the big canal-tour fleets - a quick review helps us punch above our weight: {reviewUrl}\n\n' +
   '- {signOff}'
 
 export const DEFAULT_ENGLISH_SMS_TEMPLATE = DEFAULT_SMS_TEMPLATE
