@@ -1,0 +1,113 @@
+import { describe, it, expect } from 'vitest'
+import {
+  extractFirstName,
+  formatReviewSms,
+  DEFAULT_SMS_TEMPLATE,
+} from './format-message'
+
+// ── extractFirstName ─────────────────────────────────────────────────────────
+
+describe('extractFirstName', () => {
+  it('returns first word from a full name', () => {
+    expect(extractFirstName('Beer Zoomers')).toBe('Beer')
+  })
+
+  it('handles hyphenated first name with surname', () => {
+    expect(extractFirstName('Anna-Marie Smith')).toBe('Anna-Marie')
+  })
+
+  it('handles single name', () => {
+    expect(extractFirstName('Maria')).toBe('Maria')
+  })
+
+  it('handles extra whitespace between words', () => {
+    expect(extractFirstName('John  Doe')).toBe('John')
+  })
+
+  it('returns "there" for null', () => {
+    expect(extractFirstName(null)).toBe('there')
+  })
+
+  it('returns "there" for undefined', () => {
+    expect(extractFirstName(undefined)).toBe('there')
+  })
+
+  it('returns "there" for empty string', () => {
+    expect(extractFirstName('')).toBe('there')
+  })
+
+  it('returns "there" for whitespace-only string', () => {
+    expect(extractFirstName('   ')).toBe('there')
+  })
+})
+
+// ── formatReviewSms ──────────────────────────────────────────────────────────
+
+describe('formatReviewSms', () => {
+  const baseParams = {
+    customerName: 'John Doe',
+    listingTitle: 'Sunset Canal Cruise',
+    mapUrl: 'https://offcourseamsterdam.com/r/map',
+    reviewUrl: 'https://offcourseamsterdam.com/r/review',
+  }
+
+  it('interpolates all four tokens into the default template', () => {
+    const result = formatReviewSms(baseParams)
+    expect(result).toContain('Hi John!')
+    expect(result).toContain('Sunset Canal Cruise')
+    expect(result).toContain('https://offcourseamsterdam.com/r/map')
+    expect(result).toContain('https://offcourseamsterdam.com/r/review')
+  })
+
+  it('always produces English text (contains "Thanks for sailing")', () => {
+    const result = formatReviewSms(baseParams)
+    expect(result).toMatch(/thanks for sailing/i)
+  })
+
+  it('uses "there" as firstName when customerName is null', () => {
+    const result = formatReviewSms({ ...baseParams, customerName: null })
+    expect(result).toContain('Hi there!')
+  })
+
+  it('falls back to "the cruise" when listingTitle is null', () => {
+    const result = formatReviewSms({ ...baseParams, listingTitle: null })
+    expect(result).toContain('the cruise')
+  })
+
+  it('falls back to "the cruise" when listingTitle is empty', () => {
+    const result = formatReviewSms({ ...baseParams, listingTitle: '' })
+    expect(result).toContain('the cruise')
+  })
+
+  it('uses custom template when provided', () => {
+    const custom = 'Hey {firstName}, nice cruise on {listingTitle}! Map: {mapUrl} Review: {reviewUrl}'
+    const result = formatReviewSms({ ...baseParams, template: custom })
+    expect(result).toBe('Hey John, nice cruise on Sunset Canal Cruise! Map: https://offcourseamsterdam.com/r/map Review: https://offcourseamsterdam.com/r/review')
+  })
+
+  it('falls back to default template when custom template is null', () => {
+    const result = formatReviewSms({ ...baseParams, template: null })
+    expect(result).toContain('Hi John!')
+    expect(result).toContain('Beer & the Off Course team')
+  })
+
+  it('falls back to default template when custom template is whitespace-only', () => {
+    const result = formatReviewSms({ ...baseParams, template: '   ' })
+    expect(result).toContain('Beer & the Off Course team')
+  })
+
+  it('replaces all occurrences of each token (no leftover placeholders)', () => {
+    const result = formatReviewSms(baseParams)
+    expect(result).not.toContain('{firstName}')
+    expect(result).not.toContain('{listingTitle}')
+    expect(result).not.toContain('{mapUrl}')
+    expect(result).not.toContain('{reviewUrl}')
+  })
+
+  it('DEFAULT_SMS_TEMPLATE contains all four token placeholders', () => {
+    expect(DEFAULT_SMS_TEMPLATE).toContain('{firstName}')
+    expect(DEFAULT_SMS_TEMPLATE).toContain('{listingTitle}')
+    expect(DEFAULT_SMS_TEMPLATE).toContain('{mapUrl}')
+    expect(DEFAULT_SMS_TEMPLATE).toContain('{reviewUrl}')
+  })
+})
