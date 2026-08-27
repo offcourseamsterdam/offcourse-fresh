@@ -145,7 +145,7 @@ export function GoogleConfigBar({ config, onSave }: Props) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-medium text-zinc-700 block mb-1">
-                  Recommendations Map URL <span className="text-zinc-400">(/r/map)</span>
+                  Recommendations Map URL <span className="text-zinc-400">(/r/m)</span>
                 </label>
                 <input
                   className="w-full text-sm border border-zinc-200 bg-white rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-zinc-400"
@@ -157,7 +157,7 @@ export function GoogleConfigBar({ config, onSave }: Props) {
               </div>
               <div>
                 <label className="text-xs font-medium text-zinc-700 block mb-1">
-                  TripAdvisor Review URL — Shared <span className="text-zinc-400">(/r/review)</span>
+                  TripAdvisor Review URL — Shared <span className="text-zinc-400">(/r/t)</span>
                 </label>
                 <input
                   className="w-full text-sm border border-zinc-200 bg-white rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-zinc-400"
@@ -169,7 +169,7 @@ export function GoogleConfigBar({ config, onSave }: Props) {
               </div>
               <div>
                 <label className="text-xs font-medium text-zinc-700 block mb-1">
-                  TripAdvisor Review URL — Private <span className="text-zinc-400">(/r/review)</span>
+                  TripAdvisor Review URL — Private <span className="text-zinc-400">(/r/t)</span>
                 </label>
                 <input
                   className="w-full text-sm border border-zinc-200 bg-white rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-zinc-400"
@@ -177,7 +177,7 @@ export function GoogleConfigBar({ config, onSave }: Props) {
                   value={taReviewUrlPrivate}
                   onChange={e => setTaReviewUrlPrivate(e.target.value)}
                 />
-                <p className="text-[10px] text-zinc-400 mt-0.5">Direct &quot;write a review&quot; link for the private-cruise TripAdvisor listing. /r/review resolves to one or the other based on the guest&apos;s booking category.</p>
+                <p className="text-[10px] text-zinc-400 mt-0.5">Direct &quot;write a review&quot; link for the private-cruise TripAdvisor listing. /r/t resolves to one or the other based on the guest&apos;s booking category.</p>
               </div>
               <div className="md:col-span-2">
                 <label className="text-xs font-medium text-zinc-700 block mb-1">TripAdvisor Listing Profile URL</label>
@@ -252,7 +252,7 @@ export function GoogleConfigBar({ config, onSave }: Props) {
                 onChange={e => setSmsTemplate(e.target.value)}
               />
               <p className="text-[10px] text-zinc-400 mt-1">
-                Leave blank to use hardcoded English brand default. Brand tokens `{'{mapUrl}'}` and `{'{reviewUrl}'}` resolve to `/r/map` and `/r/review`.
+                Leave blank to use hardcoded English brand default. Brand tokens `{'{mapUrl}'}` and `{'{reviewUrl}'}` resolve to `/r/m` and `/r/t`.
                 `{'{signOff}'}` closes the message with the assigned captain&apos;s name, or plain &quot;The Off Course Team&quot; when no captain is
                 resolved — never attributes a cruise to someone who didn&apos;t run it. `{'{captainName}'}` is just the bare name (falls back to &quot;the crew&quot;) if you want to use it elsewhere in the message.
               </p>

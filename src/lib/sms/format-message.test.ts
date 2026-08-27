@@ -59,9 +59,9 @@ describe('formatReviewSms', () => {
     expect(result).toContain('https://offcourseamsterdam.com/r/review')
   })
 
-  it('always produces English text (contains "Thanks for sailing")', () => {
+  it('always produces English text (contains "Thanks for cruising")', () => {
     const result = formatReviewSms(baseParams)
-    expect(result).toMatch(/thanks for sailing/i)
+    expect(result).toMatch(/thanks for cruising/i)
   })
 
   it('uses "there" as firstName when customerName is null', () => {
@@ -116,19 +116,29 @@ describe('formatReviewSms', () => {
 
   it('signs off with the assigned captain\'s name when provided', () => {
     const result = formatReviewSms({ ...baseParams, captainName: 'Jannah' })
-    expect(result).toContain('— Jannah & the Off Course team')
+    expect(result).toContain('- Jannah & the Off Course team')
     expect(result).not.toContain('The Off Course Team')
   })
 
   it('falls back to "The Off Course Team" (no named person) when no captain is resolved', () => {
     const result = formatReviewSms({ ...baseParams, captainName: null })
-    expect(result).toContain('— The Off Course Team')
+    expect(result).toContain('- The Off Course Team')
     expect(result).not.toContain('Beer')
   })
 
   it('falls back to "The Off Course Team" when captainName is whitespace-only', () => {
     const result = formatReviewSms({ ...baseParams, captainName: '   ' })
-    expect(result).toContain('— The Off Course Team')
+    expect(result).toContain('- The Off Course Team')
+  })
+
+  it('DEFAULT_SMS_TEMPLATE is GSM-7-safe (no emoji, no em-dash) so it never forces UCS-2 encoding', () => {
+    // A single non-GSM-7 character (emoji, em-dash, curly quote, ...) forces
+    // the WHOLE message into UCS-2, cutting the per-segment limit from ~153
+    // to ~67 characters and roughly doubling the billed segment count.
+    // eslint-disable-next-line no-control-regex
+    const GSM7_SAFE = /^[\x00-\x7F£¥€]*$/
+    const rendered = formatReviewSms(baseParams)
+    expect(GSM7_SAFE.test(rendered)).toBe(true)
   })
 
   it('bare {captainName} token falls back to "the crew" in a custom template when unresolved', () => {
