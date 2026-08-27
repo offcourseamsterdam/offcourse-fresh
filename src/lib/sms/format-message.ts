@@ -18,13 +18,20 @@
  *
  * The default template is stored here so it can be tested independently of
  * the database config. The admin can override it via google_reviews_config.
+ *
+ * Deliberately plain-ASCII (no emoji, no em-dash "—", only straight quotes):
+ * a single non-GSM-7 character forces the WHOLE message into UCS-2 encoding,
+ * which cuts the per-segment limit from ~153 to ~67 characters — roughly
+ * doubling the number of (separately billed) SMS segments for the exact same
+ * wording. Keep any future edits to this template GSM-7-safe for the same
+ * reason; verified in format-message.test.ts.
  */
 
 export const DEFAULT_SMS_TEMPLATE =
-  'Hi {firstName}! Thanks for sailing with us today on the {listingTitle} 🛥️\n\n' +
-  'Here\'s our curated map of Amsterdam\'s favourite local food & drinks spots: {mapUrl}\n\n' +
-  'If you had a great time, we\'d really appreciate a quick review on TripAdvisor: {reviewUrl}\n\n' +
-  '— {signOff}'
+  'Hi {firstName}! Thanks for cruising with us on the {listingTitle}.\n\n' +
+  'Our local food & drinks map: {mapUrl}\n\n' +
+  'Had a great time? We\'d love a quick review on TripAdvisor: {reviewUrl}\n\n' +
+  '- {signOff}'
 
 export const DEFAULT_ENGLISH_SMS_TEMPLATE = DEFAULT_SMS_TEMPLATE
 
