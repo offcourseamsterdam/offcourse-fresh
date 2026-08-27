@@ -51,6 +51,10 @@
     {
       "path": "/api/cron/getyourguide-reviews",
       "schedule": "15 8 * * 1"
+    },
+    {
+      "path": "/api/cron/post-cruise-sms",
+      "schedule": "0 21 * * *"
     }
   ]
 }
