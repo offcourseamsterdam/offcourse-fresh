@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   extractFirstName,
+  normalizeNameCasing,
   formatReviewSms,
   DEFAULT_SMS_TEMPLATE,
 } from './format-message'
@@ -24,6 +25,10 @@ describe('extractFirstName', () => {
     expect(extractFirstName('John  Doe')).toBe('John')
   })
 
+  it('title-cases an ALL CAPS name (real case: booking stored as "KARL LAMEYNARDIE")', () => {
+    expect(extractFirstName('KARL LAMEYNARDIE')).toBe('Karl')
+  })
+
   it('returns "there" for null', () => {
     expect(extractFirstName(null)).toBe('there')
   })
@@ -38,6 +43,38 @@ describe('extractFirstName', () => {
 
   it('returns "there" for whitespace-only string', () => {
     expect(extractFirstName('   ')).toBe('there')
+  })
+})
+
+// ── normalizeNameCasing ──────────────────────────────────────────────────────
+
+describe('normalizeNameCasing', () => {
+  it('title-cases an ALL CAPS name', () => {
+    expect(normalizeNameCasing('KARL')).toBe('Karl')
+  })
+
+  it('title-cases an all-lowercase name', () => {
+    expect(normalizeNameCasing('karl')).toBe('Karl')
+  })
+
+  it('capitalizes after a hyphen', () => {
+    expect(normalizeNameCasing('ANNA-MARIE')).toBe('Anna-Marie')
+    expect(normalizeNameCasing('anna-marie')).toBe('Anna-Marie')
+  })
+
+  it('capitalizes after an apostrophe', () => {
+    expect(normalizeNameCasing("O'BRIEN")).toBe("O'Brien")
+    expect(normalizeNameCasing("o'brien")).toBe("O'Brien")
+  })
+
+  it('leaves already mixed-case names untouched, even unusual capitalization', () => {
+    expect(normalizeNameCasing('McDonald')).toBe('McDonald')
+    expect(normalizeNameCasing('DiCaprio')).toBe('DiCaprio')
+    expect(normalizeNameCasing('Anna-Marie')).toBe('Anna-Marie')
+  })
+
+  it('is a no-op on a name with no letters', () => {
+    expect(normalizeNameCasing('123')).toBe('123')
   })
 })
 

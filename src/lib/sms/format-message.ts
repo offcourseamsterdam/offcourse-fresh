@@ -36,9 +36,29 @@ export const DEFAULT_SMS_TEMPLATE =
 export const DEFAULT_ENGLISH_SMS_TEMPLATE = DEFAULT_SMS_TEMPLATE
 
 /**
+ * Title-cases a name, but ONLY when it's "shouty" (ALL CAPS) or "quiet"
+ * (all lowercase) — i.e. clearly not a deliberate casing choice. Names that
+ * already mix upper and lower case are left untouched, since a blind
+ * capitalize-after-every-separator pass would mangle names like "McDonald"
+ * or "DiCaprio" into "Mcdonald" / "Dicaprio".
+ * "KARL" → "Karl", "o'brien" → "O'Brien", "ANNA-MARIE" → "Anna-Marie",
+ * "McDonald" → "McDonald" (untouched, already mixed case).
+ */
+export function normalizeNameCasing(name: string): string {
+  const hasLower = /[a-z]/.test(name)
+  const hasUpper = /[A-Z]/.test(name)
+  if (hasLower && hasUpper) return name
+
+  return name
+    .toLowerCase()
+    .replace(/(^|[\s'-])([a-z])/g, (_match, sep: string, ch: string) => sep + ch.toUpperCase())
+}
+
+/**
  * Extracts the first name from a full name string.
  * "Beer Zoomers" → "Beer"
  * "Anna-Marie" → "Anna-Marie"
+ * "KARL LAMEYNARDIE" → "Karl" (title-cased — see normalizeNameCasing)
  * null / "" / whitespace-only → "there" (fallback)
  */
 export function extractFirstName(fullName: string | null | undefined): string {
@@ -46,7 +66,8 @@ export function extractFirstName(fullName: string | null | undefined): string {
   const trimmed = fullName.trim()
   if (!trimmed) return 'there'
   // Split on whitespace; take the first segment
-  return trimmed.split(/\s+/)[0] ?? 'there'
+  const firstWord = trimmed.split(/\s+/)[0]
+  return firstWord ? normalizeNameCasing(firstWord) : 'there'
 }
 
 export interface FormatSmsParams {
