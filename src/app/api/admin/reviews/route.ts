@@ -4,14 +4,19 @@ import { withRoute } from '@/lib/api/with-route'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-/** GET /api/admin/reviews — list all reviews + config */
+// Booking statuses that represent a real, valid booking for the review-to-booking
+// ratio's denominator — excludes cancelled (never happened) and pending_payment
+// (not yet a real booking).
+const RATIO_BOOKING_STATUSES = ['confirmed', 'booked', 'rebooked']
+
+/** GET /api/admin/reviews — list all reviews + config + review-to-booking ratio */
 export async function GET() {
   const denied = await requireAdmin()
   if (denied) return denied
 
   const supabase = createAdminClient()
 
-  const [reviewsResult, configResult] = await Promise.all([
+  const [reviewsResult, configResult, bookingsCountResult] = await Promise.all([
     supabase
       .from('social_proof_reviews')
       .select('*')
@@ -21,11 +26,19 @@ export async function GET() {
       .select('place_id, place_name, overall_rating, total_reviews, last_synced_at, tripadvisor_url, tripadvisor_rating, tripadvisor_total_reviews, withlocals_experience_short_id, recommendations_map_url, tripadvisor_review_url_shared, tripadvisor_review_url_private, review_sms_template, review_sms_auto_send, review_sms_enabled')
       .limit(1)
       .maybeSingle(),
+    supabase
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .in('status', RATIO_BOOKING_STATUSES),
   ])
 
   if (reviewsResult.error) return apiError(reviewsResult.error.message)
 
-  return apiOk({ reviews: reviewsResult.data ?? [], config: configResult.data ?? null })
+  return apiOk({
+    reviews: reviewsResult.data ?? [],
+    config: configResult.data ?? null,
+    bookingsCount: bookingsCountResult.count ?? 0,
+  })
 }
 
 /**

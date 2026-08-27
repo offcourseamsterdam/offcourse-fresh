@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { ReviewItem } from '@/components/admin/ReviewItem'
 import { GoogleConfigBar } from '@/components/admin/GoogleConfigBar'
 import { ReviewSmsReadyList } from '@/components/admin/ReviewSmsReadyList'
+import { ReviewBookingRatioCard } from '@/components/admin/ReviewBookingRatioCard'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { useReviews } from './useReviews'
 
@@ -39,6 +40,7 @@ export default function AdminReviewsPage() {
     taReviews,
     withlocalsReviews,
     activeReviews,
+    bookingsCount,
   } = useReviews()
 
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
@@ -107,6 +109,9 @@ export default function AdminReviewsPage() {
         {taReviews.length > 0 && <span>{taReviews.length} TripAdvisor</span>}
         {withlocalsReviews.length > 0 && <span>{withlocalsReviews.length} Withlocals</span>}
       </div>
+
+      {/* Review-to-booking ratio, by star rating */}
+      {reviews.length > 0 && <ReviewBookingRatioCard reviews={reviews} bookingsCount={bookingsCount} />}
 
       {/* Source filter tabs */}
       {showTabs && (
