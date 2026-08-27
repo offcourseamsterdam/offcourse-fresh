@@ -13,7 +13,8 @@ interface Props {
     tripadvisorUrl?: string
     withlocalsShortId?: string
     recommendationsMapUrl?: string
-    tripadvisorReviewUrl?: string
+    tripadvisorReviewUrlShared?: string
+    tripadvisorReviewUrlPrivate?: string
     reviewSmsTemplate?: string
     reviewSmsAutoSend?: boolean
     reviewSmsEnabled?: boolean
@@ -24,7 +25,8 @@ export function GoogleConfigBar({ config, onSave }: Props) {
   const [editing, setEditing] = useState(false)
   const [placeId, setPlaceId] = useState(config.place_id ?? '')
   const [taUrl, setTaUrl] = useState(config.tripadvisor_url ?? '')
-  const [taReviewUrl, setTaReviewUrl] = useState(config.tripadvisor_review_url ?? '')
+  const [taReviewUrlShared, setTaReviewUrlShared] = useState(config.tripadvisor_review_url_shared ?? '')
+  const [taReviewUrlPrivate, setTaReviewUrlPrivate] = useState(config.tripadvisor_review_url_private ?? '')
   const [mapUrl, setMapUrl] = useState(config.recommendations_map_url ?? '')
   const [wlShortId, setWlShortId] = useState(config.withlocals_experience_short_id ?? '')
   const [smsTemplate, setSmsTemplate] = useState(config.review_sms_template ?? '')
@@ -39,7 +41,8 @@ export function GoogleConfigBar({ config, onSave }: Props) {
       tripadvisorUrl: taUrl.trim(),
       withlocalsShortId: wlShortId.trim(),
       recommendationsMapUrl: mapUrl.trim(),
-      tripadvisorReviewUrl: taReviewUrl.trim(),
+      tripadvisorReviewUrlShared: taReviewUrlShared.trim(),
+      tripadvisorReviewUrlPrivate: taReviewUrlPrivate.trim(),
       reviewSmsTemplate: smsTemplate.trim(),
       reviewSmsEnabled: smsEnabled,
       reviewSmsAutoSend: autoSend,
@@ -154,15 +157,27 @@ export function GoogleConfigBar({ config, onSave }: Props) {
               </div>
               <div>
                 <label className="text-xs font-medium text-zinc-700 block mb-1">
-                  TripAdvisor Direct Review URL <span className="text-zinc-400">(/r/review)</span>
+                  TripAdvisor Review URL — Shared <span className="text-zinc-400">(/r/review)</span>
                 </label>
                 <input
                   className="w-full text-sm border border-zinc-200 bg-white rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-zinc-400"
                   placeholder="https://www.tripadvisor.com/UserReviewEdit-..."
-                  value={taReviewUrl}
-                  onChange={e => setTaReviewUrl(e.target.value)}
+                  value={taReviewUrlShared}
+                  onChange={e => setTaReviewUrlShared(e.target.value)}
                 />
-                <p className="text-[10px] text-zinc-400 mt-0.5">Direct &quot;write a review&quot; link. Distinct from listing profile URL.</p>
+                <p className="text-[10px] text-zinc-400 mt-0.5">Direct &quot;write a review&quot; link for the shared-cruise TripAdvisor listing.</p>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-zinc-700 block mb-1">
+                  TripAdvisor Review URL — Private <span className="text-zinc-400">(/r/review)</span>
+                </label>
+                <input
+                  className="w-full text-sm border border-zinc-200 bg-white rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-zinc-400"
+                  placeholder="https://www.tripadvisor.com/UserReviewEdit-..."
+                  value={taReviewUrlPrivate}
+                  onChange={e => setTaReviewUrlPrivate(e.target.value)}
+                />
+                <p className="text-[10px] text-zinc-400 mt-0.5">Direct &quot;write a review&quot; link for the private-cruise TripAdvisor listing. /r/review resolves to one or the other based on the guest&apos;s booking category.</p>
               </div>
               <div className="md:col-span-2">
                 <label className="text-xs font-medium text-zinc-700 block mb-1">TripAdvisor Listing Profile URL</label>

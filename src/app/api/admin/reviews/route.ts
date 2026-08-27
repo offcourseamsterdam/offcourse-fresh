@@ -18,7 +18,7 @@ export async function GET() {
       .order('publish_time', { ascending: false, nullsFirst: false }),
     supabase
       .from('google_reviews_config')
-      .select('place_id, place_name, overall_rating, total_reviews, last_synced_at, tripadvisor_url, tripadvisor_rating, tripadvisor_total_reviews, withlocals_experience_short_id, recommendations_map_url, tripadvisor_review_url, review_sms_template, review_sms_auto_send, review_sms_enabled')
+      .select('place_id, place_name, overall_rating, total_reviews, last_synced_at, tripadvisor_url, tripadvisor_rating, tripadvisor_total_reviews, withlocals_experience_short_id, recommendations_map_url, tripadvisor_review_url_shared, tripadvisor_review_url_private, review_sms_template, review_sms_auto_send, review_sms_enabled')
       .limit(1)
       .maybeSingle(),
   ])
@@ -42,7 +42,8 @@ export const PUT = withRoute(async (request: NextRequest) => {
     tripadvisor_url,
     withlocals_experience_short_id,
     recommendations_map_url,
-    tripadvisor_review_url,
+    tripadvisor_review_url_shared,
+    tripadvisor_review_url_private,
     review_sms_template,
     review_sms_auto_send,
     review_sms_enabled,
@@ -62,7 +63,8 @@ export const PUT = withRoute(async (request: NextRequest) => {
         tripadvisor_url: typeof tripadvisor_url === 'string' ? tripadvisor_url.trim() || null : null,
         withlocals_experience_short_id: typeof withlocals_experience_short_id === 'string' ? withlocals_experience_short_id.trim() || null : null,
         recommendations_map_url: typeof recommendations_map_url === 'string' ? recommendations_map_url.trim() || null : null,
-        tripadvisor_review_url: typeof tripadvisor_review_url === 'string' ? tripadvisor_review_url.trim() || null : null,
+        tripadvisor_review_url_shared: typeof tripadvisor_review_url_shared === 'string' ? tripadvisor_review_url_shared.trim() || null : null,
+        tripadvisor_review_url_private: typeof tripadvisor_review_url_private === 'string' ? tripadvisor_review_url_private.trim() || null : null,
         review_sms_template: typeof review_sms_template === 'string' ? review_sms_template.trim() || null : null,
         review_sms_auto_send: typeof review_sms_auto_send === 'boolean' ? review_sms_auto_send : false,
         review_sms_enabled: typeof review_sms_enabled === 'boolean' ? review_sms_enabled : true,

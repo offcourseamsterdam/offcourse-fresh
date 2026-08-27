@@ -5,7 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { formatReviewSms } from '@/lib/sms/format-message'
 import { sendTwilioSms, normalizePhoneNumber } from '@/lib/twilio/client'
 import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
-import { SITE_MAP_URL, SITE_REVIEW_URL } from '@/lib/sms/urls'
+import { SITE_MAP_URL, reviewUrlForBooking } from '@/lib/sms/urls'
 
 /**
  * GET /api/admin/bookings/[id]/review-sms
@@ -49,7 +49,7 @@ export async function GET(
     customerName: booking.customer_name,
     listingTitle: booking.listing_title,
     mapUrl: SITE_MAP_URL,
-    reviewUrl: SITE_REVIEW_URL,
+    reviewUrl: reviewUrlForBooking(booking.id),
     template: config?.review_sms_template,
   })
 
@@ -130,7 +130,7 @@ export async function POST(
         customerName: booking.customer_name,
         listingTitle: booking.listing_title,
         mapUrl: SITE_MAP_URL,
-        reviewUrl: SITE_REVIEW_URL,
+        reviewUrl: reviewUrlForBooking(booking.id),
         template: config?.review_sms_template,
       })
 

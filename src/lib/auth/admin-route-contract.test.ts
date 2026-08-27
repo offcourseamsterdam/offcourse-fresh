@@ -162,7 +162,7 @@ describe('admin route auth contract', () => {
     // 118 = 116 + /api/admin/bookings/[id]/catering-email + /api/admin/bookings/[id]/review-sms
     // (manual send of post-cruise review & local recommendations SMS via Twilio).
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`118`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`119`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {

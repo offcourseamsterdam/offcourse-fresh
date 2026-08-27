@@ -114,7 +114,7 @@ describe('GET /api/cron/post-cruise-sms', () => {
     const slackText = h.postSlackOps.mock.calls[0][0] as string
     expect(slackText).toContain('Anna Smith')
     expect(slackText).toContain('Jon')
-    expect(slackText).toContain('/admin/bookings')
+    expect(slackText).toContain('/admin/reviews')
   })
 
   it('sends directly via Twilio and records idempotency columns when auto_send is true', async () => {

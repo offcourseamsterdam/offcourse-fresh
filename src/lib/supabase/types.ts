@@ -2218,7 +2218,8 @@ export type Database = {
           review_sms_template: string | null
           total_reviews: number | null
           tripadvisor_rating: number | null
-          tripadvisor_review_url: string | null
+          tripadvisor_review_url_private: string | null
+          tripadvisor_review_url_shared: string | null
           tripadvisor_total_reviews: number | null
           tripadvisor_url: string | null
           updated_at: string
@@ -2238,7 +2239,8 @@ export type Database = {
           review_sms_template?: string | null
           total_reviews?: number | null
           tripadvisor_rating?: number | null
-          tripadvisor_review_url?: string | null
+          tripadvisor_review_url_private?: string | null
+          tripadvisor_review_url_shared?: string | null
           tripadvisor_total_reviews?: number | null
           tripadvisor_url?: string | null
           updated_at?: string
@@ -2258,7 +2260,8 @@ export type Database = {
           review_sms_template?: string | null
           total_reviews?: number | null
           tripadvisor_rating?: number | null
-          tripadvisor_review_url?: string | null
+          tripadvisor_review_url_private?: string | null
+          tripadvisor_review_url_shared?: string | null
           tripadvisor_total_reviews?: number | null
           tripadvisor_url?: string | null
           updated_at?: string
@@ -3725,6 +3728,36 @@ export type Database = {
           },
         ]
       }
+      short_url_clicks: {
+        Row: {
+          booking_id: string | null
+          created_at: string
+          destination_url: string
+          id: string
+          ip_hash: string | null
+          slug: string
+          user_agent: string | null
+        }
+        Insert: {
+          booking_id?: string | null
+          created_at?: string
+          destination_url: string
+          id?: string
+          ip_hash?: string | null
+          slug: string
+          user_agent?: string | null
+        }
+        Update: {
+          booking_id?: string | null
+          created_at?: string
+          destination_url?: string
+          id?: string
+          ip_hash?: string | null
+          slug?: string
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
       slack_message_log: {
         Row: {
           channel: string | null
@@ -3776,36 +3809,6 @@ export type Database = {
           id?: string
           notes?: string | null
           updated_at?: string
-        }
-        Relationships: []
-      }
-      short_url_clicks: {
-        Row: {
-          booking_id: string | null
-          created_at: string
-          destination_url: string
-          id: string
-          ip_hash: string | null
-          slug: string
-          user_agent: string | null
-        }
-        Insert: {
-          booking_id?: string | null
-          created_at?: string
-          destination_url: string
-          id?: string
-          ip_hash?: string | null
-          slug: string
-          user_agent?: string | null
-        }
-        Update: {
-          booking_id?: string | null
-          created_at?: string
-          destination_url?: string
-          id?: string
-          ip_hash?: string | null
-          slug?: string
-          user_agent?: string | null
         }
         Relationships: []
       }

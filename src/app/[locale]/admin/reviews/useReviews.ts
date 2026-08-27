@@ -24,7 +24,8 @@ export function useReviews() {
     tripadvisorUrl?: string
     withlocalsShortId?: string
     recommendationsMapUrl?: string
-    tripadvisorReviewUrl?: string
+    tripadvisorReviewUrlShared?: string
+    tripadvisorReviewUrlPrivate?: string
     reviewSmsTemplate?: string
     reviewSmsAutoSend?: boolean
     reviewSmsEnabled?: boolean
@@ -37,7 +38,8 @@ export function useReviews() {
         tripadvisor_url: updates.tripadvisorUrl || null,
         withlocals_experience_short_id: updates.withlocalsShortId || null,
         recommendations_map_url: updates.recommendationsMapUrl || null,
-        tripadvisor_review_url: updates.tripadvisorReviewUrl || null,
+        tripadvisor_review_url_shared: updates.tripadvisorReviewUrlShared || null,
+        tripadvisor_review_url_private: updates.tripadvisorReviewUrlPrivate || null,
         review_sms_template: updates.reviewSmsTemplate || null,
         review_sms_auto_send: updates.reviewSmsAutoSend ?? false,
         review_sms_enabled: updates.reviewSmsEnabled ?? true,

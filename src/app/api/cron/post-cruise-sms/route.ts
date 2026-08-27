@@ -3,7 +3,7 @@ import { requireCronSecret } from '@/lib/auth/require-cron-secret'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatReviewSms } from '@/lib/sms/format-message'
 import { sendTwilioSms, normalizePhoneNumber } from '@/lib/twilio/client'
-import { SITE_MAP_URL, SITE_REVIEW_URL } from '@/lib/sms/urls'
+import { SITE_MAP_URL, reviewUrlForBooking } from '@/lib/sms/urls'
 import { postSlackOps } from '@/lib/slack/send-notification'
 import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
 
@@ -14,7 +14,7 @@ import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
 // no matter how many times a booking falls inside the window across runs.
 const LOOKBACK_MS = 48 * 60 * 60 * 1000
 
-const ADMIN_BOOKINGS_URL = 'https://offcourseamsterdam.com/admin/bookings'
+const ADMIN_REVIEWS_URL = 'https://offcourseamsterdam.com/admin/reviews'
 
 /**
  * GET /api/cron/post-cruise-sms — Vercel Cron, once daily.
@@ -22,8 +22,8 @@ const ADMIN_BOOKINGS_URL = 'https://offcourseamsterdam.com/admin/bookings'
  * Finds bookings whose cruise ended within the lookback window and haven't had
  * a review SMS sent yet. When `review_sms_auto_send` is on, sends immediately
  * via Twilio. Otherwise (default), posts a Slack DM proposal to Beer listing
- * each finished cruise with a link into /admin/bookings, where the "Review SMS"
- * button on the booking row sends it.
+ * each finished cruise with a link into /admin/reviews, where the "Ready to
+ * send" list sends it.
  */
 export async function GET(request: NextRequest) {
   const denied = requireCronSecret(request)
@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
       customerName: booking.customer_name,
       listingTitle: booking.listing_title,
       mapUrl: SITE_MAP_URL,
-      reviewUrl: SITE_REVIEW_URL,
+      reviewUrl: reviewUrlForBooking(booking.id),
       template: config.review_sms_template,
     })
 
@@ -129,7 +129,7 @@ export async function GET(request: NextRequest) {
     await postSlackOps(
       `🛥️ *${proposalLines.length} cruise${proposalLines.length === 1 ? '' : 's'} finished* — review SMS ready to send:\n\n` +
         `${proposalLines.join('\n')}\n\n` +
-        `Open ${ADMIN_BOOKINGS_URL} and use "Review SMS" on each booking.`
+        `Open ${ADMIN_REVIEWS_URL} — they're in the "Ready to send" list.`
     )
   }
 

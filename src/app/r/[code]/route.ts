@@ -24,7 +24,7 @@ export async function GET(
   // Fetch reviews config for URLs
   const { data: config } = await supabase
     .from('google_reviews_config')
-    .select('recommendations_map_url, tripadvisor_review_url, tripadvisor_url')
+    .select('recommendations_map_url, tripadvisor_review_url_shared, tripadvisor_review_url_private, tripadvisor_url')
     .single()
 
   let destinationUrl: string
@@ -32,7 +32,22 @@ export async function GET(
   if (normalizedCode === 'map' || normalizedCode === 'm') {
     destinationUrl = config?.recommendations_map_url || DEFAULT_MAP_URL
   } else if (normalizedCode === 'review' || normalizedCode === 't') {
-    destinationUrl = config?.tripadvisor_review_url || config?.tripadvisor_url || DEFAULT_TRIPADVISOR_URL
+    // Shared and private cruises are different TripAdvisor listings — resolve
+    // by the clicking booking's category, looked up from the ?b= booking id.
+    let category: string | null = null
+    if (bookingId) {
+      const { data: booking } = await supabase
+        .from('bookings')
+        .select('category')
+        .eq('id', bookingId)
+        .maybeSingle()
+      category = booking?.category ?? null
+    }
+
+    destinationUrl =
+      (category === 'shared' ? config?.tripadvisor_review_url_shared : config?.tripadvisor_review_url_private) ||
+      config?.tripadvisor_url ||
+      DEFAULT_TRIPADVISOR_URL
   } else {
     // Unknown code - redirect home
     const homeUrl = new URL('/', request.url).toString()

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Pencil, Ban, CalendarDays, UtensilsCrossed, Megaphone, Tag, MessageSquareText } from 'lucide-react'
+import { Pencil, Ban, CalendarDays, UtensilsCrossed, Megaphone, Tag } from 'lucide-react'
 import { EXTRAS_CATEGORIES } from '@/lib/constants'
 import { fmtAdminAmount } from '@/lib/admin/format'
 import { BookingSourceBadge } from '@/components/admin/BookingSourceBadge'
@@ -10,7 +10,6 @@ import { CancelBookingModal } from '@/components/admin/booking-actions/CancelBoo
 import { EditBookingModal } from '@/components/admin/booking-actions/EditBookingModal'
 import { RescheduleBookingModal } from '@/components/admin/booking-actions/RescheduleBookingModal'
 import { AddCateringModal } from '@/components/admin/booking-actions/AddCateringModal'
-import { SendReviewSmsModal } from '@/components/admin/booking-actions/SendReviewSmsModal'
 import { cateringAmountCents } from '@/lib/catering/filter'
 import type { AdminExtraLineItem } from '@/lib/admin/types'
 
@@ -83,7 +82,6 @@ export function BookingDetailRow({
   const [showEdit, setShowEdit] = useState(false)
   const [showReschedule, setShowReschedule] = useState(false)
   const [showAddCatering, setShowAddCatering] = useState(false)
-  const [showReviewSms, setShowReviewSms] = useState(false)
 
   const isCancelled = status === 'cancelled'
   const isInternal = bookingSource && bookingSource !== 'website'
@@ -315,13 +313,6 @@ export function BookingDetailRow({
             {cateringCents > 0 ? 'Edit catering' : 'Add catering'}
           </button>
           <button
-            onClick={() => setShowReviewSms(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-indigo-600 hover:bg-indigo-50 transition-colors"
-          >
-            <MessageSquareText className="w-3.5 h-3.5" />
-            Review SMS
-          </button>
-          <button
             onClick={() => setShowCancel(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
           >
@@ -378,15 +369,6 @@ export function BookingDetailRow({
           baseAmountCents={baseAmountCents}
           onClose={() => setShowAddCatering(false)}
           onSuccess={() => { setShowAddCatering(false); onRefresh() }}
-        />
-      )}
-      {showReviewSms && (
-        <SendReviewSmsModal
-          bookingId={bookingId}
-          guestName={customerName}
-          cruiseTitle={listingTitle}
-          onClose={() => setShowReviewSms(false)}
-          onSuccess={() => { setShowReviewSms(false); onRefresh() }}
         />
       )}
     </div>

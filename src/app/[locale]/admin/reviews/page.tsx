@@ -5,6 +5,7 @@ import { Star, RefreshCw, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ReviewItem } from '@/components/admin/ReviewItem'
 import { GoogleConfigBar } from '@/components/admin/GoogleConfigBar'
+import { ReviewSmsReadyList } from '@/components/admin/ReviewSmsReadyList'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { useReviews } from './useReviews'
 
@@ -81,6 +82,9 @@ export default function AdminReviewsPage() {
           No reviews config yet. Click <strong>Edit config</strong> above to add your Google place ID.
         </div>
       )}
+
+      {/* Post-cruise review SMS — ready-to-send list */}
+      <ReviewSmsReadyList />
 
       {/* Sync result */}
       {syncResult && (
