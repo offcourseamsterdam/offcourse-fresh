@@ -59,6 +59,12 @@ const envSchema = z.object({
   // Outscraper — reviews scraping (Google Maps + TripAdvisor). Same key verifies webhook HMAC.
   OUTSCRAPER_API_KEY: z.string().optional(),
 
+  // Twilio SMS
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_FROM_NUMBER: z.string().optional(),
+  TWILIO_SENDER_ID: z.string().optional(),
+
   // Cron job bearer token (Vercel Cron → /api/cron/* routes)
   CRON_SECRET: z.string().optional(),
   // On-demand ISR revalidation (/api/revalidate, /api/fareharbor/sync)
