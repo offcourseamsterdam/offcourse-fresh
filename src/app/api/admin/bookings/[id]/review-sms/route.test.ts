@@ -15,8 +15,21 @@ const mockSelect = vi.fn()
 const mockUpdate = vi.fn()
 
 const mockFrom = vi.fn((table: string) => {
-  if (table === 'bookings' || table === 'google_reviews_config') {
-    return { select: mockSelect, update: mockUpdate }
+  if (table === 'google_reviews_config') {
+    return { select: mockSelect }
+  }
+  if (table === 'bookings') {
+    return {
+      select: (fields: string) => {
+        if (fields.includes('customer_name')) return mockSelect(fields)
+        // Sibling-booking lookup (same fareharbor_availability_pk) — none in these tests.
+        return { in: () => Promise.resolve({ data: [] }) }
+      },
+      update: mockUpdate,
+    }
+  }
+  if (table === 'shift_bookings') {
+    return { select: () => ({ in: () => Promise.resolve({ data: [] }) }) }
   }
   if (table === 'shifts') {
     return {

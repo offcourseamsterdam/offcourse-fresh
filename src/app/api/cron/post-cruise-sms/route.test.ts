@@ -35,19 +35,25 @@ vi.mock('@/lib/supabase/admin', () => ({
     from: (table: string) => {
       if (table === 'bookings') {
         return {
-          select: () => ({
-            in: () => ({
-              is: () => ({
-                not: () => ({
-                  lte: () => ({
-                    gte: () => ({
-                      order: () => Promise.resolve({ data: state.bookings, error: null }),
+          select: (fields: string) => {
+            if (!fields.includes('customer_name')) {
+              // Sibling-booking lookup (same fareharbor_availability_pk) — none in these tests.
+              return { in: () => Promise.resolve({ data: [] }) }
+            }
+            return {
+              in: () => ({
+                is: () => ({
+                  not: () => ({
+                    lte: () => ({
+                      gte: () => ({
+                        order: () => Promise.resolve({ data: state.bookings, error: null }),
+                      }),
                     }),
                   }),
                 }),
               }),
-            }),
-          }),
+            }
+          },
           update: (patch: unknown) => {
             updateSpy(patch)
             return { eq: () => Promise.resolve({ error: null }) }
@@ -62,6 +68,9 @@ vi.mock('@/lib/supabase/admin', () => ({
             }),
           }),
         }
+      }
+      if (table === 'shift_bookings') {
+        return { select: () => ({ in: () => Promise.resolve({ data: [] }) }) }
       }
       if (table === 'shifts') {
         return {

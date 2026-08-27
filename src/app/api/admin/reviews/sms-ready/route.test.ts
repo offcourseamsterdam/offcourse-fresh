@@ -3,7 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const state = vi.hoisted(() => ({
   bookings: [] as Record<string, unknown>[],
   error: null as { message: string } | null,
+  siblingBookings: [] as { id: string; fareharbor_availability_pk: number }[],
+  shiftBookings: [] as { booking_id: string; shift_id: string }[],
   ownShifts: [] as { booking_id: string; staff_id: string }[],
+  linkedShifts: [] as { id: string; staff_id: string }[],
   staffRows: [] as { id: string; name: string }[],
 }))
 
@@ -16,22 +19,31 @@ vi.mock('@/lib/supabase/admin', () => ({
     from: (table: string) => {
       if (table === 'bookings') {
         return {
-          select: () => ({
-            in: () => ({
-              is: () => ({
-                not: () => ({
-                  lte: () => ({
-                    gte: () => ({
-                      order: () => ({
-                        limit: () => Promise.resolve({ data: state.bookings, error: state.error }),
+          select: (fields: string) => {
+            if (fields.includes('customer_name')) {
+              return {
+                in: () => ({
+                  is: () => ({
+                    not: () => ({
+                      lte: () => ({
+                        gte: () => ({
+                          order: () => ({
+                            limit: () => Promise.resolve({ data: state.bookings, error: state.error }),
+                          }),
+                        }),
                       }),
                     }),
                   }),
                 }),
-              }),
-            }),
-          }),
+              }
+            }
+            // Sibling-booking lookup (same fareharbor_availability_pk)
+            return { in: () => Promise.resolve({ data: state.siblingBookings }) }
+          },
         }
+      }
+      if (table === 'shift_bookings') {
+        return { select: () => ({ in: () => Promise.resolve({ data: state.shiftBookings }) }) }
       }
       if (table === 'shifts') {
         return {
@@ -39,7 +51,11 @@ vi.mock('@/lib/supabase/admin', () => ({
             if (fields.includes('booking_id')) {
               return { in: () => ({ not: () => Promise.resolve({ data: state.ownShifts }) }) }
             }
-            return { in: () => ({ not: () => Promise.resolve({ data: [] }) }) }
+            if (fields.includes('fareharbor_availability_pk')) {
+              return { in: () => ({ not: () => Promise.resolve({ data: [] }) }) }
+            }
+            // id, staff_id lookup for resolved shift_bookings
+            return { in: () => ({ not: () => Promise.resolve({ data: state.linkedShifts }) }) }
           },
         }
       }
@@ -56,7 +72,10 @@ describe('GET /api/admin/reviews/sms-ready', () => {
     vi.clearAllMocks()
     state.bookings = []
     state.error = null
+    state.siblingBookings = []
+    state.shiftBookings = []
     state.ownShifts = []
+    state.linkedShifts = []
     state.staffRows = []
   })
 
