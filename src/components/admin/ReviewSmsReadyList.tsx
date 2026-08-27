@@ -12,6 +12,7 @@ interface ReadyBooking {
   listing_title: string | null
   booking_date: string | null
   end_time: string | null
+  captain_name: string | null
 }
 
 export function ReviewSmsReadyList() {
@@ -53,6 +54,7 @@ export function ReviewSmsReadyList() {
                 <p className="text-sm font-medium text-zinc-900 truncate">{b.customer_name ?? '—'}</p>
                 <p className="text-xs text-zinc-400 truncate">
                   {b.listing_title ?? 'Cruise'} · {fmtAdminDate(b.booking_date)}
+                  {b.captain_name && <> · Captain: {b.captain_name}</>}
                 </p>
               </div>
               <button

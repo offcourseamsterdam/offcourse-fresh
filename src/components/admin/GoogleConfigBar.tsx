@@ -225,7 +225,7 @@ export function GoogleConfigBar({ config, onSave }: Props) {
                 <label className="text-xs font-medium text-zinc-700">SMS Message Template (Always in English)</label>
                 <div className="flex items-center gap-1">
                   <span className="text-[10px] text-zinc-400 mr-1">Insert token:</span>
-                  {['{firstName}', '{listingTitle}', '{mapUrl}', '{reviewUrl}'].map(tok => (
+                  {['{firstName}', '{listingTitle}', '{mapUrl}', '{reviewUrl}', '{captainName}'].map(tok => (
                     <button
                       key={tok}
                       type="button"
@@ -253,6 +253,7 @@ export function GoogleConfigBar({ config, onSave }: Props) {
               />
               <p className="text-[10px] text-zinc-400 mt-1">
                 Leave blank to use hardcoded English brand default. Brand tokens `{'{mapUrl}'}` and `{'{reviewUrl}'}` resolve to `/r/map` and `/r/review`.
+                `{'{captainName}'}` resolves to the captain assigned to that cruise (via Planning), falling back to &quot;Beer&quot; when none is assigned.
               </p>
             </div>
           </div>

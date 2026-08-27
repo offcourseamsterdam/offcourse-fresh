@@ -1,6 +1,7 @@
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { apiOk, apiError } from '@/lib/api/response'
+import { getCaptainFirstNames } from '@/lib/scheduling/assigned-captain'
 
 // How far back to look for finished-but-unsent cruises. Long enough to catch up
 // after a few days away from the admin, short enough that a review SMS still
@@ -24,7 +25,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from('bookings')
-    .select('id, customer_name, customer_phone, listing_title, end_time, booking_date')
+    .select('id, customer_name, customer_phone, listing_title, end_time, booking_date, fareharbor_availability_pk')
     .in('status', ['confirmed', 'booked'])
     .is('review_sms_sent_at', null)
     .not('end_time', 'is', null)
@@ -38,5 +39,10 @@ export async function GET() {
     return apiError('Failed to load ready-to-send bookings', 500)
   }
 
-  return apiOk({ bookings: data ?? [] })
+  const bookings = data ?? []
+  const captainNames = await getCaptainFirstNames(supabase, bookings)
+
+  return apiOk({
+    bookings: bookings.map(b => ({ ...b, captain_name: captainNames.get(b.id) ?? null })),
+  })
 }

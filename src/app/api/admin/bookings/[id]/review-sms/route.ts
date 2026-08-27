@@ -6,6 +6,7 @@ import { formatReviewSms } from '@/lib/sms/format-message'
 import { sendTwilioSms, normalizePhoneNumber } from '@/lib/twilio/client'
 import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
 import { SITE_MAP_URL, reviewUrlForBooking } from '@/lib/sms/urls'
+import { getCaptainFirstNames } from '@/lib/scheduling/assigned-captain'
 
 /**
  * GET /api/admin/bookings/[id]/review-sms
@@ -24,7 +25,7 @@ export async function GET(
   const [bookingRes, configRes] = await Promise.all([
     supabase
       .from('bookings')
-      .select('id, customer_name, customer_phone, customer_email, listing_title, review_sms_sent_at, review_sms_phone, review_sms_sid')
+      .select('id, customer_name, customer_phone, customer_email, listing_title, review_sms_sent_at, review_sms_phone, review_sms_sid, fareharbor_availability_pk')
       .eq('id', id)
       .single(),
     supabase
@@ -45,11 +46,16 @@ export async function GET(
   const booking = bookingRes.data
   const config = configRes.data
 
+  const captainNames = await getCaptainFirstNames(supabase, [
+    { id: booking.id, fareharbor_availability_pk: booking.fareharbor_availability_pk },
+  ])
+
   const message = formatReviewSms({
     customerName: booking.customer_name,
     listingTitle: booking.listing_title,
     mapUrl: SITE_MAP_URL,
     reviewUrl: reviewUrlForBooking(booking.id),
+    captainName: captainNames.get(booking.id),
     template: config?.review_sms_template,
   })
 
@@ -89,7 +95,7 @@ export async function POST(
   const [bookingRes, configRes] = await Promise.all([
     supabase
       .from('bookings')
-      .select('id, customer_name, customer_phone, listing_title, review_sms_sent_at')
+      .select('id, customer_name, customer_phone, listing_title, review_sms_sent_at, fareharbor_availability_pk')
       .eq('id', id)
       .single(),
     supabase
@@ -131,6 +137,9 @@ export async function POST(
         listingTitle: booking.listing_title,
         mapUrl: SITE_MAP_URL,
         reviewUrl: reviewUrlForBooking(booking.id),
+        captainName: (await getCaptainFirstNames(supabase, [
+          { id: booking.id, fareharbor_availability_pk: booking.fareharbor_availability_pk },
+        ])).get(booking.id),
         template: config?.review_sms_template,
       })
 

@@ -102,12 +102,30 @@ describe('formatReviewSms', () => {
     expect(result).not.toContain('{listingTitle}')
     expect(result).not.toContain('{mapUrl}')
     expect(result).not.toContain('{reviewUrl}')
+    expect(result).not.toContain('{captainName}')
   })
 
-  it('DEFAULT_SMS_TEMPLATE contains all four token placeholders', () => {
+  it('DEFAULT_SMS_TEMPLATE contains all five token placeholders', () => {
     expect(DEFAULT_SMS_TEMPLATE).toContain('{firstName}')
     expect(DEFAULT_SMS_TEMPLATE).toContain('{listingTitle}')
     expect(DEFAULT_SMS_TEMPLATE).toContain('{mapUrl}')
     expect(DEFAULT_SMS_TEMPLATE).toContain('{reviewUrl}')
+    expect(DEFAULT_SMS_TEMPLATE).toContain('{captainName}')
+  })
+
+  it('signs off with the assigned captain\'s name when provided', () => {
+    const result = formatReviewSms({ ...baseParams, captainName: 'Jannah' })
+    expect(result).toContain('— Jannah & the Off Course team')
+    expect(result).not.toContain('Beer & the Off Course team')
+  })
+
+  it('falls back to "Beer" as the sign-off when no captain is resolved', () => {
+    const result = formatReviewSms({ ...baseParams, captainName: null })
+    expect(result).toContain('— Beer & the Off Course team')
+  })
+
+  it('falls back to "Beer" when captainName is whitespace-only', () => {
+    const result = formatReviewSms({ ...baseParams, captainName: '   ' })
+    expect(result).toContain('— Beer & the Off Course team')
   })
 })

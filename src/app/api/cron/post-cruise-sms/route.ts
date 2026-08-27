@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { formatReviewSms } from '@/lib/sms/format-message'
 import { sendTwilioSms, normalizePhoneNumber } from '@/lib/twilio/client'
 import { SITE_MAP_URL, reviewUrlForBooking } from '@/lib/sms/urls'
+import { getCaptainFirstNames } from '@/lib/scheduling/assigned-captain'
 import { postSlackOps } from '@/lib/slack/send-notification'
 import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
 
@@ -37,7 +38,7 @@ export async function GET(request: NextRequest) {
   const [bookingsRes, configRes] = await Promise.all([
     supabase
       .from('bookings')
-      .select('id, customer_name, customer_phone, listing_title, end_time')
+      .select('id, customer_name, customer_phone, listing_title, end_time, fareharbor_availability_pk')
       .in('status', ['confirmed', 'booked'])
       .is('review_sms_sent_at', null)
       .not('end_time', 'is', null)
@@ -70,21 +71,26 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: true, checked: 0, sent: 0, proposed: 0 })
   }
 
+  const captainNames = await getCaptainFirstNames(supabase, bookings)
+
   let sentCount = 0
   const proposalLines: string[] = []
   const errorLines: string[] = []
 
   for (const booking of bookings) {
+    const captainName = captainNames.get(booking.id)
     const message = formatReviewSms({
       customerName: booking.customer_name,
       listingTitle: booking.listing_title,
       mapUrl: SITE_MAP_URL,
       reviewUrl: reviewUrlForBooking(booking.id),
+      captainName,
       template: config.review_sms_template,
     })
 
     if (!config.review_sms_auto_send) {
-      proposalLines.push(`🛥️ *${booking.customer_name ?? 'Guest'}* — ${booking.listing_title ?? 'cruise'}`)
+      const captainSuffix = captainName ? ` (Captain: ${captainName})` : ''
+      proposalLines.push(`🛥️ *${booking.customer_name ?? 'Guest'}* — ${booking.listing_title ?? 'cruise'}${captainSuffix}`)
       continue
     }
 
