@@ -7,6 +7,7 @@ import type { Review, ReviewsConfig } from './types'
 interface ReviewsData {
   reviews: Review[]
   config: ReviewsConfig | null
+  bookingsCount: number
 }
 
 export function useReviews() {
@@ -15,6 +16,7 @@ export function useReviews() {
 
   const reviews = data?.reviews ?? []
   const config = data?.config ?? null
+  const bookingsCount = data?.bookingsCount ?? 0
 
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<string | null>(null)
@@ -109,5 +111,6 @@ export function useReviews() {
     syncing, syncResult, handleSync, saveConfig,
     toggleActive, handleDelete,
     googleReviews, taReviews, withlocalsReviews, activeReviews,
+    bookingsCount,
   }
 }

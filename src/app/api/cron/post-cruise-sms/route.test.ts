@@ -4,6 +4,8 @@ import type { NextRequest } from 'next/server'
 const state = vi.hoisted(() => ({
   bookings: [] as Record<string, unknown>[],
   config: { review_sms_enabled: true, review_sms_auto_send: false, review_sms_template: null } as Record<string, unknown> | null,
+  ownShifts: [] as { booking_id: string; staff_id: string }[],
+  staffRows: [] as { id: string; name: string }[],
 }))
 
 const h = vi.hoisted(() => ({
@@ -61,6 +63,19 @@ vi.mock('@/lib/supabase/admin', () => ({
           }),
         }
       }
+      if (table === 'shifts') {
+        return {
+          select: (fields: string) => {
+            if (fields.includes('booking_id')) {
+              return { in: () => ({ not: () => Promise.resolve({ data: state.ownShifts }) }) }
+            }
+            return { in: () => ({ not: () => Promise.resolve({ data: [] }) }) }
+          },
+        }
+      }
+      if (table === 'staff') {
+        return { select: () => ({ in: () => Promise.resolve({ data: state.staffRows }) }) }
+      }
       throw new Error(`unexpected table "${table}"`)
     },
   }),
@@ -75,6 +90,8 @@ describe('GET /api/cron/post-cruise-sms', () => {
     vi.clearAllMocks()
     state.bookings = []
     state.config = { review_sms_enabled: true, review_sms_auto_send: false, review_sms_template: null }
+    state.ownShifts = []
+    state.staffRows = []
   })
 
   it('enforces requireCronSecret', async () => {
@@ -115,6 +132,22 @@ describe('GET /api/cron/post-cruise-sms', () => {
     expect(slackText).toContain('Anna Smith')
     expect(slackText).toContain('Jon')
     expect(slackText).toContain('/admin/reviews')
+  })
+
+  it('includes the assigned captain in both the sign-off and the Slack proposal line', async () => {
+    state.bookings = [
+      { id: 'b1', customer_name: 'Anna Smith', customer_phone: '0612345678', listing_title: 'Sunset Cruise', end_time: '2026-08-27T10:00:00Z', fareharbor_availability_pk: null },
+    ]
+    state.ownShifts = [{ booking_id: 'b1', staff_id: 's1' }]
+    state.staffRows = [{ id: 's1', name: 'Jannah Schenk' }]
+
+    const { GET } = await import('./route')
+    const res = await GET(makeRequest())
+    const json = await res.json()
+
+    expect(json.proposed).toBe(1)
+    const slackText = h.postSlackOps.mock.calls[0][0] as string
+    expect(slackText).toContain('Captain: Jannah')
   })
 
   it('sends directly via Twilio and records idempotency columns when auto_send is true', async () => {
