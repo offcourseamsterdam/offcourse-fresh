@@ -159,8 +159,10 @@ describe('admin route auth contract', () => {
     // 116 = 114 + /api/admin/finance/share-links + /share-links/[id] (issue
     // and revoke temporary accountant tokens for the Finance tab — migration
     // 107, src/lib/auth/finance-share.ts).
+    // 118 = 116 + /api/admin/bookings/[id]/catering-email + /api/admin/bookings/[id]/review-sms
+    // (manual send of post-cruise review & local recommendations SMS via Twilio).
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`117`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`118`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {
