@@ -225,7 +225,7 @@ export function GoogleConfigBar({ config, onSave }: Props) {
                 <label className="text-xs font-medium text-zinc-700">SMS Message Template (Always in English)</label>
                 <div className="flex items-center gap-1">
                   <span className="text-[10px] text-zinc-400 mr-1">Insert token:</span>
-                  {['{firstName}', '{listingTitle}', '{mapUrl}', '{reviewUrl}', '{captainName}'].map(tok => (
+                  {['{firstName}', '{listingTitle}', '{mapUrl}', '{reviewUrl}', '{signOff}', '{captainName}'].map(tok => (
                     <button
                       key={tok}
                       type="button"
@@ -253,7 +253,8 @@ export function GoogleConfigBar({ config, onSave }: Props) {
               />
               <p className="text-[10px] text-zinc-400 mt-1">
                 Leave blank to use hardcoded English brand default. Brand tokens `{'{mapUrl}'}` and `{'{reviewUrl}'}` resolve to `/r/map` and `/r/review`.
-                `{'{captainName}'}` resolves to the captain assigned to that cruise (via Planning), falling back to &quot;Beer&quot; when none is assigned.
+                `{'{signOff}'}` closes the message with the assigned captain&apos;s name, or plain &quot;The Off Course Team&quot; when no captain is
+                resolved — never attributes a cruise to someone who didn&apos;t run it. `{'{captainName}'}` is just the bare name (falls back to &quot;the crew&quot;) if you want to use it elsewhere in the message.
               </p>
             </div>
           </div>
