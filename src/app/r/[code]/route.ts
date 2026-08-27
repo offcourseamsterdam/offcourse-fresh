@@ -27,7 +27,7 @@ export async function GET(
     .select('recommendations_map_url, tripadvisor_review_url, tripadvisor_url')
     .single()
 
-  let destinationUrl: string | null = null
+  let destinationUrl: string
 
   if (normalizedCode === 'map' || normalizedCode === 'm') {
     destinationUrl = config?.recommendations_map_url || DEFAULT_MAP_URL
@@ -43,16 +43,17 @@ export async function GET(
   const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || request.headers.get('x-real-ip')
   const userAgent = request.headers.get('user-agent')
 
-  await supabase
-    .from('short_url_clicks')
-    .insert({
+  try {
+    await supabase.from('short_url_clicks').insert({
       slug: normalizedCode,
       booking_id: bookingId,
       destination_url: destinationUrl,
       user_agent: userAgent,
       ip_hash: hashIp(clientIp),
-    } as any)
-    .catch(() => {})
+    })
+  } catch {
+    // Silent
+  }
 
   return NextResponse.redirect(destinationUrl, 302)
 }

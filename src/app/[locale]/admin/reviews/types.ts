@@ -26,4 +26,9 @@ export type ReviewsConfig = {
   tripadvisor_rating: number | null
   tripadvisor_total_reviews: number | null
   withlocals_experience_short_id: string | null
+  recommendations_map_url: string | null
+  tripadvisor_review_url: string | null
+  review_sms_template: string | null
+  review_sms_auto_send: boolean
+  review_sms_enabled: boolean
 }
