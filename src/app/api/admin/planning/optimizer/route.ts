@@ -13,6 +13,7 @@ import { validateBoatSwap, draftBoatSwap, type BoatSwapBooking } from '@/lib/gho
 import { openMoveRequestExists } from '@/lib/ghost/guest-move-drafter'
 import { OPTIMIZE_HORIZON_DAYS, hasEnoughNotice } from '@/lib/ghost/rulebook'
 import { emitOpsEvent } from '@/lib/ops/events'
+import { deriveOptimizerState, type OptimizerDisplayState, type ProposalOutcome } from '@/lib/scheduling/optimizer-status'
 import { amsterdamToday } from '@/lib/utils'
 import type { ExtrasLineItem } from '@/lib/catering/filter'
 
@@ -210,32 +211,71 @@ async function recordSameDayFinding(supabase: AdminClient, item: OptimizerItem):
   })
 }
 
-async function findOpenCrossDayProposal(supabase: AdminClient, bookingId: string) {
-  const { data } = await supabase
-    .from('agent_proposals')
-    .select('id, payload')
-    .eq('kind', 'guest_move_request')
-    .eq('payload->>booking_id', bookingId)
-    .eq('payload->>move_type', 'cross_day')
-    .in('status', ['shadow', 'sending', 'approved'])
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  return data as { id: string; payload: Record<string, unknown> } | null
+/** Statuses that mean "this ask is still live" — an open proposal blocks
+ *  re-drafting the same move, and is what the panel can still act on. */
+const OPEN_PROPOSAL_STATUSES = ['shadow', 'sending', 'approved']
+
+/** Everything above plus the terminal states. The Planning overlay shows the
+ *  full lifecycle (Beer, 2026-08-27: every status distinctly), so a finished
+ *  or declined move still has to come back from this route — but only the
+ *  OPEN ones may suppress a fresh draft, hence the two separate lookups. */
+const ALL_PROPOSAL_STATUSES = [...OPEN_PROPOSAL_STATUSES, 'proposed', 'booking', 'confirming', 'executed', 'rejected', 'expired', 'skipped']
+
+type ProposalRow = {
+  id: string
+  payload: Record<string, unknown>
+  status: string
+  outcome: Record<string, unknown> | null
 }
 
-async function findOpenBoatSwapProposal(supabase: AdminClient, bookingId: string) {
+async function findProposal(
+  supabase: AdminClient,
+  bookingId: string,
+  moveType: 'cross_day' | 'boat_swap',
+  statuses: string[],
+) {
   const { data } = await supabase
     .from('agent_proposals')
-    .select('id, payload')
+    .select('id, payload, status, outcome')
     .eq('kind', 'guest_move_request')
     .eq('payload->>booking_id', bookingId)
-    .eq('payload->>move_type', 'boat_swap')
-    .in('status', ['shadow', 'sending', 'approved'])
+    .eq('payload->>move_type', moveType)
+    .in('status', statuses)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
-  return data as { id: string; payload: Record<string, unknown> } | null
+  return data as ProposalRow | null
+}
+
+const findOpenCrossDayProposal = (supabase: AdminClient, bookingId: string) =>
+  findProposal(supabase, bookingId, 'cross_day', OPEN_PROPOSAL_STATUSES)
+
+const findOpenBoatSwapProposal = (supabase: AdminClient, bookingId: string) =>
+  findProposal(supabase, bookingId, 'boat_swap', OPEN_PROPOSAL_STATUSES)
+
+/** Any proposal for this booking regardless of lifecycle stage — used only to
+ *  decorate a finding with its real state for the overlay. */
+const findAnyCrossDayProposal = (supabase: AdminClient, bookingId: string) =>
+  findProposal(supabase, bookingId, 'cross_day', ALL_PROPOSAL_STATUSES)
+
+const findAnyBoatSwapProposal = (supabase: AdminClient, bookingId: string) =>
+  findProposal(supabase, bookingId, 'boat_swap', ALL_PROPOSAL_STATUSES)
+
+/** Folds a proposal row's id, drafted copy and derived lifecycle state onto a
+ *  finding. Kept in one place so cross-day and boat-swap items can never drift
+ *  apart in what the overlay receives. */
+function withProposal(base: OptimizerItem, row: ProposalRow | null, guestName: string | null | undefined): OptimizerItem {
+  if (!row) return base
+  const payload = (row.payload ?? {}) as { sms_text?: string; email_subject?: string; email_body?: string }
+  return {
+    ...base,
+    proposalId: row.id,
+    guestName: guestName ?? base.guestName,
+    smsText: payload.sms_text,
+    emailSubject: payload.email_subject,
+    emailBody: payload.email_body,
+    state: deriveOptimizerState(row.status, (row.outcome ?? null) as ProposalOutcome | null),
+  }
 }
 
 export interface OptimizerItem {
@@ -253,6 +293,25 @@ export interface OptimizerItem {
   emailSubject?: string
   emailBody?: string
   toDate?: string
+
+  // ── Overlay fields (Beer, 2026-08-27) ──────────────────────────────────
+  // The Planning grid overlay draws each finding in place, so it needs both
+  // the proposal's real lifecycle state and enough identity to anchor a
+  // marker to the right chip/lane. All optional: `same_day_gap` findings
+  // have no proposal and no booking behind them at all.
+
+  /** Display state derived from agent_proposals.status + outcome — see
+   *  src/lib/scheduling/optimizer-status.ts. Absent when there's no proposal. */
+  state?: OptimizerDisplayState
+  /** The booking this move would relocate — the overlay's anchor for the
+   *  origin marker (matched against the grid's own departure chips). */
+  bookingId?: string
+  /** Boat the move would land on. Same-day swaps only; the overlay draws the
+   *  connector from `boat` to this lane within the same day row. */
+  toBoat?: string
+  /** Start of the idle span a `same_day_gap` covers, for the ghost outline. */
+  gapStartAt?: string
+  gapEndAt?: string
 }
 
 export async function GET(_request: NextRequest) {
@@ -337,6 +396,9 @@ export async function GET(_request: NextRequest) {
           boat: gap.boat,
           summary: `${gap.boat}: ${gap.minutes} min idle ${gap.fromTime}–${gap.toTime}`,
           estSavingCents: gap.estIdleCostCents,
+          // The overlay draws a ghost outline across exactly this span.
+          gapStartAt: gap.fromAt,
+          gapEndAt: gap.toAt,
         })
       }
       allMergeCandidates.push(...facts.mergeCandidates)
@@ -356,20 +418,28 @@ export async function GET(_request: NextRequest) {
           boat: merge.fromBoat,
           summary: `${merge.cruise ?? 'Departure'} (${merge.guests ?? '?'} guests) could move ${merge.fromBoat} → ${merge.toBoat} — frees ${merge.fromBoat}'s captain for the day.`,
           estSavingCents: merge.estSavingCents,
+          toBoat: merge.toBoat,
         }
 
         const rawShift = rawShifts.find(s => s.id === merge.shiftId)
         const booking = rawShift ? bookingsForShift(rawShift, bookingsById, bookingsByAvailPk)[0] : null
         if (!booking?.listing_id) return base // nothing to validate a swap against — read-only finding only
+        const anchored: OptimizerItem = { ...base, bookingId: booking.id }
+
+        // A move that already ran its course (guest declined, rebooked, expired)
+        // still has to reach the overlay so the grid can show what happened —
+        // checked before the notice gate, since a finished move's runway is moot.
+        const settled = await findAnyBoatSwapProposal(supabase, booking.id)
+        if (settled && !OPEN_PROPOSAL_STATUSES.includes(settled.status)) {
+          return withProposal(anchored, settled, booking.customer_name)
+        }
+
         // Not enough runway to bother the guest — still worth reporting the
         // finding, just never contacted about it.
-        if (!hasEnoughNotice(booking.start_time)) return base
+        if (!hasEnoughNotice(booking.start_time)) return anchored
 
         const existing = await findOpenBoatSwapProposal(supabase, booking.id)
-        if (existing) {
-          const payload = (existing.payload ?? {}) as { sms_text?: string; email_subject?: string; email_body?: string }
-          return { ...base, proposalId: existing.id, guestName: booking.customer_name, smsText: payload.sms_text, emailSubject: payload.email_subject, emailBody: payload.email_body }
-        }
+        if (existing) return withProposal(anchored, existing, booking.customer_name)
         // Sequential, across every move type (Beer, 2026-08-23): a day
         // already mid-conversation with one guest never gets a second,
         // different guest asked to rework it too.
@@ -423,7 +493,17 @@ export async function GET(_request: NextRequest) {
           summary: `${c.booking.customerName ?? 'Guest'} (${c.booking.guestCount ?? '?'} guests, ${c.fromDate}) could join ${c.toDate}'s ${c.boat} departure (${c.receivingBooking.guestCount ?? '?'} already booked, ${c.capacity - c.combinedGuestCount} spots would remain) — ${c.eliminatesShift ? `frees the whole ${c.fromDate} shift` : `shortens the ${c.fromDate} shift`}.`,
           estSavingCents: c.estSavingCents,
           toDate: c.toDate,
+          bookingId: c.booking.id,
         }
+
+        // A move that already ran its course (guest declined, rebooked, expired)
+        // still has to reach the overlay so the grid can show what happened —
+        // checked before the notice gate, since a finished move's runway is moot.
+        const settled = await findAnyCrossDayProposal(supabase, c.booking.id)
+        if (settled && !OPEN_PROPOSAL_STATUSES.includes(settled.status)) {
+          return withProposal(base, settled, c.booking.customerName)
+        }
+
         // Not enough runway to bother the guest — still worth reporting the
         // finding, just never contacted about it.
         if (!hasEnoughNotice(c.booking.startTime)) return base
@@ -443,15 +523,7 @@ export async function GET(_request: NextRequest) {
             return outcome === 'drafted' ? await findOpenCrossDayProposal(supabase, c.booking.id) : null
           })())
 
-        const payload = (drafted?.payload ?? {}) as { sms_text?: string; email_subject?: string; email_body?: string }
-        return {
-          ...base,
-          proposalId: drafted?.id,
-          guestName: c.booking.customerName,
-          smsText: payload.sms_text,
-          emailSubject: payload.email_subject,
-          emailBody: payload.email_body,
-        }
+        return withProposal(base, drafted, c.booking.customerName)
       }),
     )
     items.push(...crossDayItems)

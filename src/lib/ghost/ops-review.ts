@@ -62,6 +62,11 @@ export interface BoatGap {
   minutes: number
   fromTime: string
   toTime: string
+  /** Raw ISO instants for the same span as fromTime/toTime. fromTime/toTime
+   *  are Amsterdam-local display strings ("14:30"); the Planning grid overlay
+   *  positions its ghost outline with leftPx(), which needs the instant. */
+  fromAt: string
+  toAt: string
   /** minutes × the earlier shift's captain rate — null when unassigned. */
   estIdleCostCents: number | null
 }
@@ -140,6 +145,8 @@ export function computeDayFacts(
         minutes,
         fromTime: formatAmsterdamTime(prev.endAt),
         toTime: formatAmsterdamTime(next.startAt),
+        fromAt: prev.endAt,
+        toAt: next.startAt,
         estIdleCostCents:
           prev.hourlyRateCents != null ? Math.round((minutes / 60) * prev.hourlyRateCents) : null,
       })

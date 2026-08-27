@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { X, Sparkles, Loader2, Send, CheckCircle2, Clock, Merge } from 'lucide-react'
 import { fmtCostEuros } from '@/lib/scheduling/shift-cost'
 import { adminMutate } from '@/hooks/useAdminSave'
@@ -35,13 +35,31 @@ const KIND_META: Record<OptimizerItem['kind'], { label: string; Icon: typeof Clo
  *
  * See docs/plans/2026-08-23-cross-day-consolidation-optimizer.md.
  */
-export function OptimizerPanel({ onClose }: { onClose: () => void }) {
+export function OptimizerPanel({
+  onClose,
+  focusProposalId,
+}: {
+  onClose: () => void
+  /** Set when the panel was opened by clicking a marker on the grid overlay —
+   *  that proposal is scrolled to and briefly ringed, so the click lands you
+   *  on the right card instead of at the top of a long list. */
+  focusProposalId?: string | null
+}) {
   const { data, isLoading, error, refresh } = useAdminFetch<{ items: OptimizerItem[]; from: string; to: string }>(
     '/api/admin/planning/optimizer',
   )
   const [sendingId, setSendingId] = useState<string | null>(null)
   const [sentIds, setSentIds] = useState<Set<string>>(new Set())
   const [sendError, setSendError] = useState<{ id: string; message: string } | null>(null)
+  const focusRef = useRef<HTMLDivElement>(null)
+
+  // Scroll after the list has actually rendered — on first open the fetch is
+  // still in flight, so the target card doesn't exist yet when this component
+  // mounts. Re-runs when the data arrives.
+  useEffect(() => {
+    if (!focusProposalId || !data) return
+    focusRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [focusProposalId, data])
 
   async function approveAndSend(proposalId: string) {
     setSendingId(proposalId)
@@ -98,8 +116,15 @@ export function OptimizerPanel({ onClose }: { onClose: () => void }) {
             const meta = KIND_META[item.kind]
             const isActionable = item.kind === 'cross_day_consolidation' || item.kind === 'same_day_merge'
             const sent = !!item.proposalId && sentIds.has(item.proposalId)
+            const isFocused = !!focusProposalId && item.proposalId === focusProposalId
             return (
-              <div key={`${item.kind}-${item.date}-${item.boat}-${i}`} className="px-5 py-4 border-b border-zinc-50 last:border-0">
+              <div
+                key={`${item.kind}-${item.date}-${item.boat}-${i}`}
+                ref={isFocused ? focusRef : undefined}
+                className={`px-5 py-4 border-b border-zinc-50 last:border-0 ${
+                  isFocused ? 'bg-violet-50 ring-1 ring-inset ring-violet-200' : ''
+                }`}
+              >
                 <div className="flex items-center justify-between gap-2 mb-1.5">
                   <span className={`inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide ${meta.color}`}>
                     <meta.Icon className="w-3 h-3" /> {meta.label}
@@ -123,9 +148,29 @@ export function OptimizerPanel({ onClose }: { onClose: () => void }) {
                         )}
                       </div>
                     )}
-                    {sent ? (
-                      <p className="text-xs text-teal-700 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2 inline-flex items-center gap-1.5">
-                        <Send className="w-3.5 h-3.5" /> Sent to {item.guestName ?? 'the guest'} — awaiting their answer
+                    {sent || (item.state && item.state !== 'possible') ? (
+                      // Real lifecycle state from the server, so this survives
+                      // a refresh — `sentIds` alone only remembered within
+                      // this mount, and read "not sent yet" ever after.
+                      <p className={`text-xs rounded-lg px-3 py-2 inline-flex items-center gap-1.5 border ${
+                        item.state === 'accepted'
+                          ? 'text-indigo-800 bg-indigo-50 border-indigo-200 font-semibold'
+                          : item.state === 'finalized'
+                            ? 'text-indigo-700 bg-indigo-50 border-indigo-100'
+                            : item.state === 'declined' || item.state === 'expired'
+                              ? 'text-zinc-500 bg-zinc-50 border-zinc-200'
+                              : 'text-teal-700 bg-teal-50 border-teal-100'
+                      }`}>
+                        <Send className="w-3.5 h-3.5" />
+                        {item.state === 'accepted'
+                          ? `${item.guestName ?? 'The guest'} accepted — rebook it in FareHarbor`
+                          : item.state === 'finalized'
+                            ? 'Rebooked'
+                            : item.state === 'declined'
+                              ? `${item.guestName ?? 'The guest'} declined`
+                              : item.state === 'expired'
+                                ? 'Expired before it could be sent'
+                                : `Sent to ${item.guestName ?? 'the guest'} — awaiting their answer`}
                       </p>
                     ) : item.proposalId ? (
                       <button

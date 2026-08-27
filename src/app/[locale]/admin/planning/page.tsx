@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Loader2, RefreshCw, ChevronLeft, ChevronRight, List, Plus, X, Ghost, Search, UserCheck, UserX, Phone, UtensilsCrossed, MessageCircle, Sparkles } from 'lucide-react'
@@ -10,7 +10,10 @@ import { adminMutate } from '@/hooks/useAdminSave'
 import { BookingDetailRow } from '@/components/admin/BookingDetailRow'
 import { GhostActivityPanel } from './GhostActivityPanel'
 import { OptimizerPanel } from './OptimizerPanel'
+import { GapGhost, MoveMarkerBadge, OverlayLegend } from './OptimizerOverlay'
+import { buildOverlayModel, laneKey, type MoveMarker, type GapMarker } from './optimizer-overlay-model'
 import type { GhostActivityItem } from '@/app/api/admin/planning/ghost-activity/route'
+import type { OptimizerItem } from '@/app/api/admin/planning/optimizer/route'
 import { BookingStatusBadge } from '@/components/admin/BookingStatusBadge'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { useBookingsChangedSignal } from '@/hooks/useBookingsChangedSignal'
@@ -25,6 +28,27 @@ import { filterCateringItems } from '@/lib/catering/filter'
 import type { AdminBooking } from '@/lib/admin/types'
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+/** Everything one lane needs to draw the optimizer overlay on itself. Passed
+ *  down only while the overlay is toggled on — absent means "draw nothing",
+ *  so the plain grid pays no rendering cost for a feature that's off. */
+interface LaneOverlay {
+  movesByBooking: Map<string, MoveMarker>
+  gaps: GapMarker[]
+  highlightedBookingId: string | null
+  onOpenMarker: (marker: MoveMarker) => void
+  onHoverMarker: (marker: MoveMarker | null) => void
+}
+
+/** The day-level slice: the same handlers plus the whole findings index, from
+ *  which each lane takes only its own boat's gaps. */
+interface DayOverlay {
+  movesByBooking: Map<string, MoveMarker>
+  gapsByLane: Map<string, GapMarker[]>
+  highlightedBookingId: string | null
+  onOpenMarker: (marker: MoveMarker) => void
+  onHoverMarker: (marker: MoveMarker | null) => void
+}
 
 /** One row of `shifts` as the Planning view needs it — including the OPEN
  *  ones (no captain yet), which the page used to throw away. */
@@ -638,7 +662,7 @@ function CompactDepartureChip({
  *  width to spend on a second column). Same fixed-width-spanning-the-full-
  *  grid contract as TimeGridColumn, just on the horizontal axis. */
 function ShiftLane({
-  shift, boatName, groups, onSelectBooking, onSelectGroup, onAssign, sharedCapacity, nowPx,
+  shift, boatName, groups, onSelectBooking, onSelectGroup, onAssign, sharedCapacity, nowPx, overlay,
 }: {
   /** Null for the fallback lane holding departures no shift covers yet. */
   shift: PlanningShift | null
@@ -650,6 +674,8 @@ function ShiftLane({
   sharedCapacity?: Record<number, SharedCapacityResult>
   /** Set only on today's lanes — the live "right now" marker. */
   nowPx?: number | null
+  /** Present only while the optimizer overlay is toggled on. */
+  overlay?: LaneOverlay
 }) {
   const captain = shift?.staff?.name ?? null
   const label = [boatName, captain].filter(Boolean).join(' · ')
@@ -690,16 +716,37 @@ function ShiftLane({
         <div className="absolute inset-y-0 z-[2] w-px bg-rose-400 pointer-events-none" style={{ left: nowPx }} />
       )}
 
+      {/* Idle-time ghosts sit UNDER the chips (z-[2] vs the chips' z-10) so a
+          departure is never obscured by a finding about the empty water
+          around it. */}
+      {overlay?.gaps.map((gap, i) => <GapGhost key={`gap-${i}`} gap={gap} />)}
+
       {groups.map(group => {
         const first = group.bookings[0]
+        // A group can hold several bookings (a shared departure); the marker
+        // belongs to whichever of them the optimizer actually found a move
+        // for, not necessarily the first one shown on the chip.
+        const marker = overlay
+          ? group.bookings.map(b => overlay.movesByBooking.get(b.id)).find(Boolean)
+          : undefined
         return (
-          <CompactDepartureChip
-            key={group.key}
-            group={group}
-            onSelectBooking={onSelectBooking}
-            onSelectGroup={onSelectGroup}
-            capacity={first.category === 'shared' && first.fareharbor_availability_pk ? sharedCapacity?.[first.fareharbor_availability_pk] : undefined}
-          />
+          <Fragment key={group.key}>
+            <CompactDepartureChip
+              group={group}
+              onSelectBooking={onSelectBooking}
+              onSelectGroup={onSelectGroup}
+              capacity={first.category === 'shared' && first.fareharbor_availability_pk ? sharedCapacity?.[first.fareharbor_availability_pk] : undefined}
+            />
+            {marker && overlay && (
+              <MoveMarkerBadge
+                marker={marker}
+                startTime={first.start_time}
+                onOpen={overlay.onOpenMarker}
+                onHoverChange={overlay.onHoverMarker}
+                isHighlighted={overlay.highlightedBookingId === marker.bookingId}
+              />
+            )}
+          </Fragment>
         )
       })}
     </div>
@@ -720,11 +767,13 @@ function ShiftLane({
  *  the chips themselves already spell that out, and rail width is the
  *  scarcest space on this layout. Full staff names stay in the tooltip. */
 function DayRow({
-  label, dateObj, isToday, dayGroups, dayShifts, boatNameById, shiftIdByBookingId, sharedCapacity, availableStaff, onSelectBooking, onSelectGroup, onAssign, nowPx,
+  label, dateObj, isToday, dateStr, dayGroups, dayShifts, boatNameById, shiftIdByBookingId, sharedCapacity, availableStaff, onSelectBooking, onSelectGroup, onAssign, nowPx, overlay,
 }: {
   label: string
   dateObj: Date
   isToday: boolean
+  /** Plain YYYY-MM-DD — the key optimizer findings are indexed by. */
+  dateStr: string
   dayGroups: PlanningGroup[]
   dayShifts: PlanningShift[]
   boatNameById: Map<string, string>
@@ -735,6 +784,8 @@ function DayRow({
   onSelectGroup: (group: PlanningGroup) => void
   onAssign: (shift: PlanningShift) => void
   nowPx?: number | null
+  /** Present only while the optimizer overlay is toggled on. */
+  overlay?: DayOverlay
 }) {
   // Every departure lands in exactly one lane: its shift's, or the fallback.
   const { groupsByShift, orphanGroups } = useMemo(() => {
@@ -824,19 +875,34 @@ function DayRow({
           </div>
         ) : (
           <>
-            {dayShifts.map(shift => (
-              <ShiftLane
-                key={shift.id}
-                shift={shift}
-                boatName={shift.boat_id ? boatNameById.get(shift.boat_id) ?? null : null}
-                groups={groupsByShift.get(shift.id) ?? []}
-                onSelectBooking={onSelectBooking}
-                onSelectGroup={onSelectGroup}
-                onAssign={onAssign}
-                sharedCapacity={sharedCapacity}
-                nowPx={nowPx}
-              />
-            ))}
+            {dayShifts.map(shift => {
+              const laneBoat = shift.boat_id ? boatNameById.get(shift.boat_id) ?? null : null
+              return (
+                <ShiftLane
+                  key={shift.id}
+                  shift={shift}
+                  boatName={laneBoat}
+                  groups={groupsByShift.get(shift.id) ?? []}
+                  onSelectBooking={onSelectBooking}
+                  onSelectGroup={onSelectGroup}
+                  onAssign={onAssign}
+                  sharedCapacity={sharedCapacity}
+                  nowPx={nowPx}
+                  overlay={
+                    overlay
+                      ? {
+                          movesByBooking: overlay.movesByBooking,
+                          // Gaps are found per boat, so a lane only draws its own.
+                          gaps: laneBoat ? overlay.gapsByLane.get(laneKey(dateStr, laneBoat)) ?? [] : [],
+                          highlightedBookingId: overlay.highlightedBookingId,
+                          onOpenMarker: overlay.onOpenMarker,
+                          onHoverMarker: overlay.onHoverMarker,
+                        }
+                      : undefined
+                  }
+                />
+              )
+            })}
             {/* Departures the sync hasn't covered with a shift yet — usually a
                 booking that landed since the last sync run. Shown rather than
                 dropped, so nothing can go missing from the board. */}
@@ -849,6 +915,19 @@ function DayRow({
                 onAssign={onAssign}
                 sharedCapacity={sharedCapacity}
                 nowPx={nowPx}
+                // Markers still apply here (the finding is keyed by booking,
+                // not by shift); gaps don't — this lane has no boat.
+                overlay={
+                  overlay
+                    ? {
+                        movesByBooking: overlay.movesByBooking,
+                        gaps: [],
+                        highlightedBookingId: overlay.highlightedBookingId,
+                        onOpenMarker: overlay.onOpenMarker,
+                        onHoverMarker: overlay.onHoverMarker,
+                      }
+                    : undefined
+                }
               />
             )}
           </>
@@ -1014,6 +1093,45 @@ export default function PlanningPage() {
   }
   const [showGhostActivity, setShowGhostActivity] = useState(false)
   const [showOptimizer, setShowOptimizer] = useState(false)
+
+  // ── Optimizer overlay ────────────────────────────────────────────────────
+  // Its own toggle, separate from the panel above (Beer, 2026-08-27): the
+  // plain board stays uncluttered by default, and you flip the layer on when
+  // you're actually looking for opportunities. The fetch is conditional on
+  // that toggle — passing null to useAdminFetch skips the request entirely,
+  // so a board you never optimize never pays for the scan (which does real
+  // FareHarbor dry-run validation server-side).
+  const [showOverlay, setShowOverlay] = useState(false)
+  const [hoveredMarker, setHoveredMarker] = useState<MoveMarker | null>(null)
+  const [focusedProposalId, setFocusedProposalId] = useState<string | null>(null)
+  const { data: optimizerData } = useAdminFetch<{ items: OptimizerItem[]; from: string; to: string }>(
+    showOverlay ? '/api/admin/planning/optimizer' : null,
+  )
+  const overlayModel = useMemo(
+    () => buildOverlayModel(optimizerData?.items ?? []),
+    [optimizerData],
+  )
+
+  // Clicking a marker hands off to the panel — the overlay is the map, the
+  // panel is where the drafted copy and the send button live.
+  const openMarker = useCallback((marker: MoveMarker) => {
+    setFocusedProposalId(marker.item.proposalId ?? null)
+    setShowOptimizer(true)
+  }, [])
+
+  const dayOverlay = useMemo(
+    () =>
+      showOverlay
+        ? {
+            movesByBooking: overlayModel.movesByBooking,
+            gapsByLane: overlayModel.gapsByLane,
+            highlightedBookingId: hoveredMarker?.bookingId ?? null,
+            onOpenMarker: openMarker,
+            onHoverMarker: setHoveredMarker,
+          }
+        : undefined,
+    [showOverlay, overlayModel, hoveredMarker, openMarker],
+  )
   const [findingCaptains, setFindingCaptains] = useState(false)
   const [findCaptainsResult, setFindCaptainsResult] = useState<string | null>(null)
   const selectedBooking = bookings?.find(b => b.id === expandedId) ?? null
@@ -1242,6 +1360,19 @@ export default function PlanningPage() {
               </span>
             )}
           </Button>
+          {/* Two deliberately separate controls: this one draws the findings
+              ON the board, the one beside it opens the panel with the drafted
+              copy and the send button. Toggling the layer shouldn't force a
+              drawer over the board you're trying to look at. */}
+          <Button
+            variant={showOverlay ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setShowOverlay(v => !v)}
+            title={showOverlay ? 'Hide the optimizer findings on the board' : 'Show the optimizer findings on the board'}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            Overlay
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setShowOptimizer(true)}>
             <Sparkles className="w-3.5 h-3.5" />
             Optimizer
@@ -1401,6 +1532,17 @@ export default function PlanningPage() {
           its own scrollport for both axes). */}
       {bookings && (
         <div className="hidden lg:block">
+          {/* Legend sits OUTSIDE the horizontal scrollport — inside it, it
+              would scroll away from the markers it explains. */}
+          {showOverlay && (
+            <div className="mb-2">
+              <OverlayLegend
+                counts={overlayModel.counts}
+                totalSavingCents={overlayModel.totalSavingCents}
+                onOpenPanel={() => setShowOptimizer(true)}
+              />
+            </div>
+          )}
           <div
             ref={headerScrollRef}
             onScroll={() => syncScroll(headerScrollRef, bodyScrollRef)}
@@ -1449,6 +1591,7 @@ export default function PlanningPage() {
                 label={DAY_LABELS[i % 7]}
                 dateObj={new Date(day + 'T12:00:00')}
                 isToday={day === todayStr}
+                dateStr={day}
                 dayGroups={byDay.get(day) ?? []}
                 dayShifts={shiftsByDate.get(day) ?? []}
                 boatNameById={boatNameById}
@@ -1459,6 +1602,7 @@ export default function PlanningPage() {
                 onSelectGroup={group => setExpandedGroupIds(group.bookings.map(b => b.id))}
                 onAssign={setAssignShift}
                 nowPx={day === todayStr ? nowPx : null}
+                overlay={dayOverlay}
               />
             ))}
           </div>
@@ -1645,7 +1789,10 @@ export default function PlanningPage() {
       )}
 
       {showOptimizer && (
-        <OptimizerPanel onClose={() => setShowOptimizer(false)} />
+        <OptimizerPanel
+          onClose={() => { setShowOptimizer(false); setFocusedProposalId(null) }}
+          focusProposalId={focusedProposalId}
+        />
       )}
     </div>
   )
