@@ -88,12 +88,12 @@ describe('formatReviewSms', () => {
   it('falls back to default template when custom template is null', () => {
     const result = formatReviewSms({ ...baseParams, template: null })
     expect(result).toContain('Hi John!')
-    expect(result).toContain('Beer & the Off Course team')
+    expect(result).toContain('The Off Course Team')
   })
 
   it('falls back to default template when custom template is whitespace-only', () => {
     const result = formatReviewSms({ ...baseParams, template: '   ' })
-    expect(result).toContain('Beer & the Off Course team')
+    expect(result).toContain('The Off Course Team')
   })
 
   it('replaces all occurrences of each token (no leftover placeholders)', () => {
@@ -103,29 +103,49 @@ describe('formatReviewSms', () => {
     expect(result).not.toContain('{mapUrl}')
     expect(result).not.toContain('{reviewUrl}')
     expect(result).not.toContain('{captainName}')
+    expect(result).not.toContain('{signOff}')
   })
 
-  it('DEFAULT_SMS_TEMPLATE contains all five token placeholders', () => {
+  it('DEFAULT_SMS_TEMPLATE contains all token placeholders', () => {
     expect(DEFAULT_SMS_TEMPLATE).toContain('{firstName}')
     expect(DEFAULT_SMS_TEMPLATE).toContain('{listingTitle}')
     expect(DEFAULT_SMS_TEMPLATE).toContain('{mapUrl}')
     expect(DEFAULT_SMS_TEMPLATE).toContain('{reviewUrl}')
-    expect(DEFAULT_SMS_TEMPLATE).toContain('{captainName}')
+    expect(DEFAULT_SMS_TEMPLATE).toContain('{signOff}')
   })
 
   it('signs off with the assigned captain\'s name when provided', () => {
     const result = formatReviewSms({ ...baseParams, captainName: 'Jannah' })
     expect(result).toContain('— Jannah & the Off Course team')
-    expect(result).not.toContain('Beer & the Off Course team')
+    expect(result).not.toContain('The Off Course Team')
   })
 
-  it('falls back to "Beer" as the sign-off when no captain is resolved', () => {
+  it('falls back to "The Off Course Team" (no named person) when no captain is resolved', () => {
     const result = formatReviewSms({ ...baseParams, captainName: null })
-    expect(result).toContain('— Beer & the Off Course team')
+    expect(result).toContain('— The Off Course Team')
+    expect(result).not.toContain('Beer')
   })
 
-  it('falls back to "Beer" when captainName is whitespace-only', () => {
+  it('falls back to "The Off Course Team" when captainName is whitespace-only', () => {
     const result = formatReviewSms({ ...baseParams, captainName: '   ' })
-    expect(result).toContain('— Beer & the Off Course team')
+    expect(result).toContain('— The Off Course Team')
+  })
+
+  it('bare {captainName} token falls back to "the crew" in a custom template when unresolved', () => {
+    const result = formatReviewSms({
+      ...baseParams,
+      captainName: null,
+      template: 'Skippered by {captainName}!',
+    })
+    expect(result).toBe('Skippered by the crew!')
+  })
+
+  it('bare {captainName} token resolves to the first name in a custom template', () => {
+    const result = formatReviewSms({
+      ...baseParams,
+      captainName: 'Jannah',
+      template: 'Skippered by {captainName}!',
+    })
+    expect(result).toBe('Skippered by Jannah!')
   })
 })
