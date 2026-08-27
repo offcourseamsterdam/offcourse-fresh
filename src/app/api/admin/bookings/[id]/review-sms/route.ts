@@ -34,7 +34,11 @@ export async function GET(
       .maybeSingle(),
   ])
 
-  if (bookingRes.error || !bookingRes.data) {
+  if (bookingRes.error) {
+    console.error('[review-sms] GET booking query failed:', bookingRes.error)
+    return apiError('Booking not found', 404)
+  }
+  if (!bookingRes.data) {
     return apiError('Booking not found', 404)
   }
 
@@ -95,7 +99,11 @@ export async function POST(
       .maybeSingle(),
   ])
 
-  if (bookingRes.error || !bookingRes.data) {
+  if (bookingRes.error) {
+    console.error('[review-sms] POST booking query failed:', bookingRes.error)
+    return apiError('Booking not found', 404)
+  }
+  if (!bookingRes.data) {
     return apiError('Booking not found', 404)
   }
 
