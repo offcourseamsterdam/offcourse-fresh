@@ -118,6 +118,9 @@ async function fetchLinkedBookings(
     .gte('created_at', range.from)
     .lte('created_at', range.to)
     .eq('status', 'confirmed')
+    // Website funnel only — platform/manual-entry bookings never carry a session_id
+    // anyway, but this keeps the filter explicit and consistent with fetchDirectBookings.
+    .in('booking_source', ['website', 'stripe_recovery'])
   if (category !== 'all') query = query.eq('category', category)
   const { data } = await query
   return data ?? []
@@ -218,6 +221,14 @@ async function fetchDirectBookings(
     .gte('created_at', range.from)
     .lte('created_at', range.to)
     .eq('status', 'confirmed')
+    // Website funnel only. Session-less rows also include platform bookings
+    // (getyourguide, boatlocal, phone_walkin, …) and historical backfills from
+    // finance reconciliation — those are real revenue but not website conversions,
+    // and their created_at is the import time, not when the booking happened, so
+    // counting them here spikes whatever week the import ran in. The Channels
+    // table (getChannelMetrics/fetchSourcelessBookings) is where platform
+    // bookings are meant to be seen, attributed by booking_source.
+    .in('booking_source', ['website', 'stripe_recovery'])
   if (category !== 'all') query = query.eq('category', category)
   const { data } = await query
   return data ?? []

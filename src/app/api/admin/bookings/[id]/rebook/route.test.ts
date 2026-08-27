@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   dbUpdate: vi.fn(),
   sendRescheduleEmail: vi.fn().mockResolvedValue(undefined),
   postSlackText: vi.fn().mockResolvedValue(undefined),
+  postSlackOps: vi.fn().mockResolvedValue(undefined),
   requireAdmin: vi.fn().mockResolvedValue(null),
 }))
 
@@ -33,7 +34,7 @@ vi.mock('@/lib/supabase/admin', () => ({
 
 vi.mock('@/lib/auth/require-admin', () => ({ requireAdmin: h.requireAdmin }))
 vi.mock('@/lib/booking/send-confirmation-email', () => ({ sendRescheduleEmail: h.sendRescheduleEmail }))
-vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText }))
+vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText, postSlackOps: h.postSlackOps }))
 
 import { POST } from './route'
 
@@ -89,17 +90,17 @@ describe('POST /api/admin/bookings/[id]/rebook', () => {
     expect(h.fhCreate).not.toHaveBeenCalled()
   })
 
-  it('creates new FH booking before cancelling the old one', async () => {
-    const order: string[] = []
-    h.fhRebook.mockImplementation(async () => { order.push('rebook'); return { uuid: 'fh-new-uuid' } })
-    h.fhCancel.mockImplementation(async () => { order.push('cancel') })
-    await POST(mockReq(BODY), mockParams())
-    expect(order).toEqual(['rebook', 'cancel'])
-  })
-
-  it('cancels the old FH UUID after rebooking', async () => {
-    await POST(mockReq(BODY), mockParams())
-    expect(h.fhCancel).toHaveBeenCalledWith('old-fh-uuid')
+  // Regression test for the Brenda Blechle incident (Aug 2026): rebook created the new FH
+  // booking correctly, but then explicitly cancelled the old UUID — which cascaded through
+  // FareHarbor's `rebooking` link and cancelled the NEW booking instead, refunding the
+  // customer's payment and leaving them with no valid booking. FH already retires the old
+  // booking itself via the link, so this route must never call cancelBooking() after a
+  // successful rebookBooking().
+  it('never calls cancelBooking after a successful rebook (FH retires the old booking via the rebooking link)', async () => {
+    const res = await POST(mockReq(BODY), mockParams())
+    const json = await res.json()
+    expect(json.data.rebooked).toBe(true)
+    expect(h.fhCancel).not.toHaveBeenCalled()
   })
 
   it('falls back to createBooking when booking has no FH UUID', async () => {
@@ -110,14 +111,6 @@ describe('POST /api/admin/bookings/[id]/rebook', () => {
     expect(h.fhCreate).toHaveBeenCalled()
     expect(h.fhRebook).not.toHaveBeenCalled()
     expect(h.fhCancel).not.toHaveBeenCalled()
-  })
-
-  it('continues when old FH booking is already gone (FHNotFoundError on cancel)', async () => {
-    const { FHNotFoundError } = await import('@/lib/fareharbor/types')
-    h.fhCancel.mockRejectedValue(new FHNotFoundError('/some/path'))
-    const res = await POST(mockReq(BODY), mockParams())
-    const json = await res.json()
-    expect(json.data.rebooked).toBe(true)
   })
 
   it('returns 422 when validation fails', async () => {
@@ -147,8 +140,8 @@ describe('POST /api/admin/bookings/[id]/rebook', () => {
 
   it('sends a Slack notification on successful rebook', async () => {
     await POST(mockReq(BODY), mockParams())
-    expect(h.postSlackText).toHaveBeenCalledOnce()
-    const msg = h.postSlackText.mock.calls[0][0] as string
+    expect(h.postSlackOps).toHaveBeenCalledOnce()
+    const msg = h.postSlackOps.mock.calls[0][0] as string
     expect(msg).toContain('rescheduled')
     expect(msg).toContain('Enrico Test')
     expect(msg).toContain('enrico@example.com')

@@ -173,6 +173,9 @@ export function RainbowCursorTrail() {
       ref={canvasRef}
       aria-hidden="true"
       className="pointer-events-none fixed inset-0 z-[60]"
+      // See RastaCursorTrail for why: forces its own compositor layer so a
+      // fast scroll can't leave a stale painted frame visible.
+      style={{ willChange: 'transform' }}
     />
   )
 }

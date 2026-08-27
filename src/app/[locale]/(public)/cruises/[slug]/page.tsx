@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import { notFound } from 'next/navigation'
 import { getTranslations } from 'next-intl/server'
 import { Clock, Users, Umbrella } from 'lucide-react'
@@ -7,6 +8,7 @@ import { ImageGallery } from '@/components/cruise/ImageGallery'
 import { StickyBookingHeader } from '@/components/cruise/StickyBookingHeader'
 import { MobileBookingCTA } from '@/components/cruise/MobileBookingCTA'
 import { RainbowCursorTrail } from '@/components/cruise/RainbowCursorTrail'
+import { RastaCursorTrail } from '@/components/cruise/RastaCursorTrail'
 import { CruiseContentSections } from '@/components/cruise/CruiseContentSections'
 import { getListingBySlug, getCruisePageData } from '@/lib/cruise/get-cruise-page-data'
 import { AvailabilityFiltersSchema } from '@/lib/fareharbor/filters'
@@ -239,6 +241,18 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
     ? buildHeroPreload(data.heroAsset.variants)
     : null
 
+  // Optional per-listing accent-color override (e.g. Jamaican green/red for the
+  // Curaçao Jamaican Buffet Cruise) — cascades to every `var(--color-primary)` /
+  // `var(--color-accent)` usage inside the wrapped subtree below (headings,
+  // buttons, selected states) without touching any of that JSX. Both fields
+  // must be set; otherwise the page keeps the default indigo/crimson theme.
+  const themeStyle = listing.theme_primary_color && listing.theme_accent_color
+    ? {
+        '--color-primary': listing.theme_primary_color,
+        '--color-accent': listing.theme_accent_color,
+      } as CSSProperties
+    : undefined
+
   return (
     <>
       <TrackPageView event="view_cruise_detail" metadata={{ slug, category: listing.category }} />
@@ -266,8 +280,11 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
       <MobileBookingCTA rainbowTheme={isSpecialEvent} />
       {/* Pride-only easter egg: a rainbow ribbon trails the cursor on this one listing. */}
       {slug === 'pride-amsterdam-2026' && <RainbowCursorTrail />}
+      {/* Jamaican Buffet Cruise easter egg: a green/gold/red banner trails the cursor,
+          with a firework-style burst in the same colors on click/tap. */}
+      {slug === 'curacao-jamaican-buffet-cruise' && <RastaCursorTrail />}
 
-      <div className="min-h-screen bg-texture-sand pb-32 lg:pb-0">
+      <div className="min-h-screen bg-texture-sand pb-32 lg:pb-0" style={themeStyle}>
 
         {/* ── Hero ── */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 sm:pt-20 pb-4">

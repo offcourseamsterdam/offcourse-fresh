@@ -1135,6 +1135,11 @@ export type Database = {
           booking_cutoff_hours: number | null
           cancellation_policy: Json | null
           category: string | null
+          catering_email_recipient: string | null
+          chef_bio: string | null
+          chef_name: string | null
+          chef_photo_asset_id: string | null
+          chef_photo_url: string | null
           created_at: string | null
           departure_location: string | null
           description: string | null
@@ -1163,6 +1168,7 @@ export type Database = {
           inclusions: Json | null
           is_archived: boolean
           is_featured: boolean | null
+          is_listed: boolean
           is_published: boolean | null
           max_guests: number | null
           payment_mode: string
@@ -1192,6 +1198,8 @@ export type Database = {
           tagline_nl: string | null
           tagline_pt: string | null
           tagline_zh: string | null
+          theme_accent_color: string | null
+          theme_primary_color: string | null
           title: string
           title_de: string | null
           title_es: string | null
@@ -1211,6 +1219,11 @@ export type Database = {
           booking_cutoff_hours?: number | null
           cancellation_policy?: Json | null
           category?: string | null
+          catering_email_recipient?: string | null
+          chef_bio?: string | null
+          chef_name?: string | null
+          chef_photo_asset_id?: string | null
+          chef_photo_url?: string | null
           created_at?: string | null
           departure_location?: string | null
           description?: string | null
@@ -1239,6 +1252,7 @@ export type Database = {
           inclusions?: Json | null
           is_archived?: boolean
           is_featured?: boolean | null
+          is_listed?: boolean
           is_published?: boolean | null
           max_guests?: number | null
           payment_mode?: string
@@ -1268,6 +1282,8 @@ export type Database = {
           tagline_nl?: string | null
           tagline_pt?: string | null
           tagline_zh?: string | null
+          theme_accent_color?: string | null
+          theme_primary_color?: string | null
           title: string
           title_de?: string | null
           title_es?: string | null
@@ -1287,6 +1303,11 @@ export type Database = {
           booking_cutoff_hours?: number | null
           cancellation_policy?: Json | null
           category?: string | null
+          catering_email_recipient?: string | null
+          chef_bio?: string | null
+          chef_name?: string | null
+          chef_photo_asset_id?: string | null
+          chef_photo_url?: string | null
           created_at?: string | null
           departure_location?: string | null
           description?: string | null
@@ -1315,6 +1336,7 @@ export type Database = {
           inclusions?: Json | null
           is_archived?: boolean
           is_featured?: boolean | null
+          is_listed?: boolean
           is_published?: boolean | null
           max_guests?: number | null
           payment_mode?: string
@@ -1344,6 +1366,8 @@ export type Database = {
           tagline_nl?: string | null
           tagline_pt?: string | null
           tagline_zh?: string | null
+          theme_accent_color?: string | null
+          theme_primary_color?: string | null
           title?: string
           title_de?: string | null
           title_es?: string | null
@@ -1360,6 +1384,13 @@ export type Database = {
             columns: ["boat_id"]
             isOneToOne: false
             referencedRelation: "boats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cruise_listings_chef_photo_asset_id_fkey"
+            columns: ["chef_photo_asset_id"]
+            isOneToOne: false
+            referencedRelation: "image_assets"
             referencedColumns: ["id"]
           },
           {
@@ -1704,6 +1735,7 @@ export type Database = {
           applicable_categories: string[] | null
           category: string
           created_at: string | null
+          default_to_guest_count: boolean
           description: string | null
           description_de: string | null
           description_es: string | null
@@ -1746,6 +1778,7 @@ export type Database = {
           applicable_categories?: string[] | null
           category: string
           created_at?: string | null
+          default_to_guest_count?: boolean
           description?: string | null
           description_de?: string | null
           description_es?: string | null
@@ -1788,6 +1821,7 @@ export type Database = {
           applicable_categories?: string[] | null
           category?: string
           created_at?: string | null
+          default_to_guest_count?: boolean
           description?: string | null
           description_de?: string | null
           description_es?: string | null

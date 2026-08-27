@@ -15,7 +15,7 @@ import { extractVat } from '@/lib/extras/calculate'
 import { CRUISE_VAT_RATE, EXTRAS_VAT_RATE } from '@/lib/booking/constants'
 import { reportBookingConversion } from '@/lib/google-ads/report-conversion'
 import { reportRefundAdjustment } from '@/lib/google-ads/report-refund'
-import { postSlackText, postSlackCritical } from '@/lib/slack/send-notification'
+import { postSlackText, postSlackOps, postSlackCritical } from '@/lib/slack/send-notification'
 import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
 import { resolvePaymentMethodLabel } from '@/lib/stripe/payment-method-label'
 import { resolveStripeFeeCents } from '@/lib/stripe/fee'
@@ -111,8 +111,12 @@ export async function POST(request: NextRequest) {
 
     if (updateError) {
       console.error('[stripe-webhook] checkout.session.completed: DB update failed', updateError)
-      // Alert Slack — customer paid but booking stays pending in admin dashboard
-      await postSlackText([
+      // Alert Slack — customer paid but booking stays pending in admin dashboard.
+      // postSlackCritical (not postSlackOps): money already left the customer's
+      // account, so this alert must survive even a missing/broken bot token —
+      // landing in #bookings is far better than vanishing. See CLAUDE.md's
+      // Slack Notification Routing section for when each sender applies.
+      await postSlackCritical([
         '🚨 *CRITICAL: PAYMENT LINK BOOKING DB FAILED* 🚨',
         '_Customer paid but booking status could not be confirmed in database._',
         `Session: \`${session.id}\`${piId ? `  ·  PI: \`${piId}\`` : ''}`,
@@ -224,7 +228,7 @@ export async function POST(request: NextRequest) {
       await notifyBookingsChanged()
     }
 
-    await postSlackText([
+    await postSlackOps([
       `⏰ *Payment link expired — FH slot released*`,
       `${booking.listing_title}`,
       `👤 ${booking.customer_name}`,
@@ -525,6 +529,7 @@ export async function POST(request: NextRequest) {
         startTimeStr: meta.start_at || null,
         guestCount,
         extrasSelected,
+        listingId: meta.listing_id ?? null,
       }),
       ...(shouldAutoSendCateringNow && insertedBookingId ? [sendCateringOrderEmailForBooking(insertedBookingId)] : []),
     ])
@@ -562,7 +567,7 @@ export async function POST(request: NextRequest) {
         console.error('[stripe-webhook] reportRefundAdjustment error (ignored):', err)
       }
 
-      await postSlackText([
+      await postSlackOps([
         isFullRefund ? '↩️ *Full refund issued*' : '↩️ *Partial refund issued*',
         `Amount refunded: €${(refundedCents / 100).toFixed(2)}`,
         `PI: \`${piId}\``,
@@ -577,7 +582,7 @@ export async function POST(request: NextRequest) {
     const dispute = event.data.object as Stripe.Dispute
     const chargeId = typeof dispute.charge === 'string' ? dispute.charge : (dispute.charge as Stripe.Charge)?.id
 
-    await postSlackText([
+    await postSlackOps([
       '🚨 *CHARGEBACK OPENED* 🚨',
       '_A customer disputed a charge. Respond in Stripe within 7 days to avoid auto-losing._',
       '',
@@ -599,7 +604,7 @@ export async function POST(request: NextRequest) {
     const meta = pi.metadata ?? {}
     const failureMsg = pi.last_payment_error?.message ?? 'unknown reason'
 
-    await postSlackText([
+    await postSlackOps([
       `💳 *Payment failed* — €${(pi.amount / 100).toFixed(0)}`,
       `Reason: ${failureMsg}`,
       meta.listing_title ? `Cruise: ${meta.listing_title}` : '',

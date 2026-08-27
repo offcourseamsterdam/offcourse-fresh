@@ -336,7 +336,9 @@ export class FareHarborClient {
   /**
    * Create a new booking that replaces an existing one (rebook).
    * Pass originalBookingUuid in the `rebooking` field to link the new booking to the old one.
-   * Caller must then call cancelBooking(originalBookingUuid) to release the old slot.
+   * FareHarbor retires the old booking itself (status flips to "Rebooked") as part of this
+   * link — do NOT call cancelBooking(originalBookingUuid) afterward. That cascades through
+   * the link and cancels the booking you just created instead of the old one.
    */
   async rebookBooking(
     newAvailPk: number,

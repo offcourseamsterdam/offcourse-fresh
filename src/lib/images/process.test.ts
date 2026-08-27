@@ -1,6 +1,12 @@
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect, beforeAll, vi } from 'vitest'
 import sharp from 'sharp'
 import { processUploadedImage, VARIANT_WIDTHS } from './process'
+
+// Per-file timeout: every test here runs a real Sharp encode of 6 widths x 2 formats
+// (AVIF + WebP), which costs 1-3s each even on an idle machine. Under the full suite's
+// parallel load they contend for CPU and drift past vitest's 5s default. Scoped to this
+// file rather than raised globally, so a genuine hang elsewhere still fails fast.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 })
 
 // Build a real test image (2000x1500 red rectangle) — small enough to be fast
 async function makeTestImage(width = 2000, height = 1500, color = { r: 200, g: 100, b: 50 }) {

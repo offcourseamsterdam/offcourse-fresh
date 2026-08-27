@@ -144,8 +144,8 @@ export async function runGuardrail(
   const message = [formatPauses(paused), formatAlerts(alerts)].filter(Boolean).join('\n\n')
   let posted = false
   if (message) {
-    const { postSlackText } = await import('@/lib/slack/send-notification')
-    await postSlackText(message)
+    const { postSlackOps } = await import('@/lib/slack/send-notification')
+    await postSlackOps(message)
     posted = true
   }
   return { ok: true, alerts, paused, posted }

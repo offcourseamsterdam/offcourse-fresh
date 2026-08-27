@@ -22,7 +22,7 @@ import { resolveCampaignCommission } from '@/lib/booking/campaign-commission'
 import { parseAttribution } from '@/lib/tracking/attribution'
 import { extractVat } from '@/lib/extras/calculate'
 import { formatAmsterdamTime, fmtEurosRounded as fmtAmountEur } from '@/lib/utils'
-import { postSlackText, postSlackCritical } from '@/lib/slack/send-notification'
+import { postSlackText, postSlackOps, postSlackCritical } from '@/lib/slack/send-notification'
 import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
 import { CITY_TAX_CENTS_PER_GUEST, CRUISE_VAT_RATE, EXTRAS_VAT_RATE } from '@/lib/booking/constants'
 import { emitOpsEvent } from '@/lib/ops/events'
@@ -488,6 +488,7 @@ export async function POST(request: NextRequest) {
         startTimeStr: startAt ?? null,
         guestCount: Number(guestCount),
         extrasSelected: (extrasSelected ?? []) as never,
+        listingId: listingId ?? null,
       }),
       sendSlackNotification({
         listingTitle: String(listingTitle ?? ''),
@@ -1265,5 +1266,5 @@ async function notifyPromoRotation(oldCode: string, newCode: string, label: stri
     '_Share the new code with your partners._',
   ].join('\n')
 
-  await postSlackText(text)
+  await postSlackOps(text)
 }

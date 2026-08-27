@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import Image from 'next/image'
 import { CruiseTabProps, patchListing, inputCls } from './shared'
 import { Field } from './Field'
 import { TabSaveButton } from './TabSaveButton'
@@ -25,9 +26,31 @@ export function CruiseDetailsTab({ listing, onSave }: CruiseTabProps) {
     max_guests: listing.max_guests?.toString() ?? '',
     fareharbor_item_pk: listing.fareharbor_item_pk?.toString() ?? '',
     booking_cutoff_hours: listing.booking_cutoff_hours?.toString() ?? '',
+    chef_name: listing.chef_name ?? '',
+    chef_bio: listing.chef_bio ?? '',
+    theme_primary_color: listing.theme_primary_color ?? '',
+    theme_accent_color: listing.theme_accent_color ?? '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [chefPhotoUrl, setChefPhotoUrl] = useState(listing.chef_photo_url ?? '')
+  const [uploadingChefPhoto, setUploadingChefPhoto] = useState(false)
+  const chefPhotoInputRef = useRef<HTMLInputElement>(null)
+
+  async function uploadChefPhoto(file: File) {
+    setUploadingChefPhoto(true)
+    setError(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch(`/api/admin/cruise-listings/${listing.id}/chef-photo`, { method: 'POST', body: fd })
+      const json = await res.json() as { ok: boolean; data?: { url: string }; error?: string }
+      if (json.ok && json.data) setChefPhotoUrl(json.data.url)
+      else setError(json.error ?? 'Photo upload failed')
+    } finally {
+      setUploadingChefPhoto(false)
+    }
+  }
 
   // Load FH items once so we can show the item name next to its PK
   const { data: fhItemsData } = useAdminFetch<{ items: FHItem[] }>('/api/admin/fareharbor-items')
@@ -195,6 +218,101 @@ export function CruiseDetailsTab({ listing, onSave }: CruiseTabProps) {
           Leave empty to fall back to the FareHarbor item&apos;s default cutoff.
         </p>
       </Field>
+
+      <div className="pt-4 border-t border-zinc-100">
+        <p className="text-sm font-semibold text-zinc-700 mb-1">Food host (optional)</p>
+        <p className="text-xs text-zinc-400 mb-3">
+          For a "private food cruise" listing with one boat and a food menu — shown as
+          "The Food" next to "The Boat" on the listing page. Leave the name empty to
+          keep the regular boat-only layout.
+        </p>
+        <Field label="Name">
+          <input
+            className={inputCls}
+            value={form.chef_name}
+            onChange={e => setForm(f => ({ ...f, chef_name: e.target.value }))}
+            placeholder="e.g. Ash"
+          />
+        </Field>
+        <Field label="Bio">
+          <textarea
+            className={`${inputCls} min-h-24`}
+            value={form.chef_bio}
+            onChange={e => setForm(f => ({ ...f, chef_bio: e.target.value }))}
+            placeholder="Who they are, and why guests should book this cruise for the food."
+          />
+        </Field>
+        <Field label="Photo">
+          <div className="flex items-center gap-3">
+            {chefPhotoUrl && (
+              <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-zinc-100 flex-shrink-0">
+                <Image src={chefPhotoUrl} alt={form.chef_name || 'Food host'} fill className="object-cover" sizes="64px" />
+              </div>
+            )}
+            <input
+              ref={chefPhotoInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={e => {
+                const file = e.target.files?.[0]
+                if (file) uploadChefPhoto(file)
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => chefPhotoInputRef.current?.click()}
+              disabled={uploadingChefPhoto}
+              className="px-3 py-1.5 rounded-md border border-zinc-200 text-xs font-medium hover:border-zinc-400 disabled:opacity-50"
+            >
+              {uploadingChefPhoto ? 'Uploading…' : chefPhotoUrl ? 'Replace photo' : 'Upload photo'}
+            </button>
+          </div>
+        </Field>
+      </div>
+
+      <div className="pt-4 border-t border-zinc-100">
+        <p className="text-sm font-semibold text-zinc-700 mb-1">Theme colors (optional)</p>
+        <p className="text-xs text-zinc-400 mb-3">
+          Overrides the site's default indigo/crimson just on this listing's page —
+          headings, buttons, selected states. Leave both empty for the default theme.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Primary (headings, buttons)">
+            <div className="flex items-center gap-2">
+              {form.theme_primary_color && (
+                <span
+                  className="w-8 h-8 rounded-md border border-zinc-200 flex-shrink-0"
+                  style={{ backgroundColor: form.theme_primary_color }}
+                />
+              )}
+              <input
+                className={inputCls}
+                value={form.theme_primary_color}
+                onChange={e => setForm(f => ({ ...f, theme_primary_color: e.target.value }))}
+                placeholder="#009639"
+              />
+            </div>
+          </Field>
+          <Field label="Accent (section headings)">
+            <div className="flex items-center gap-2">
+              {form.theme_accent_color && (
+                <span
+                  className="w-8 h-8 rounded-md border border-zinc-200 flex-shrink-0"
+                  style={{ backgroundColor: form.theme_accent_color }}
+                />
+              )}
+              <input
+                className={inputCls}
+                value={form.theme_accent_color}
+                onChange={e => setForm(f => ({ ...f, theme_accent_color: e.target.value }))}
+                placeholder="#E70001"
+              />
+            </div>
+          </Field>
+        </div>
+      </div>
+
       {error && <p className="text-sm text-red-600">{error}</p>}
       <TabSaveButton saving={saving} onClick={save} />
     </div>

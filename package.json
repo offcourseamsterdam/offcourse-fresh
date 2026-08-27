@@ -13,7 +13,8 @@
     "test:watch": "vitest",
     "gads": "tsx scripts/google-ads/gads.ts",
     "report:conversions": "tsx scripts/conversion-report.ts",
-    "reconcile:stripe": "tsx scripts/reconcile-stripe-bookings.ts"
+    "reconcile:stripe": "tsx scripts/reconcile-stripe-bookings.ts",
+    "check:rebooked": "tsx scripts/check-rebooked-bookings.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",

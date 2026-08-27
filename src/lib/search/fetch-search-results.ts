@@ -30,6 +30,7 @@ export async function fetchSearchResults(date: string, guests: number): Promise<
     .from('cruise_listings')
     .select('id, slug, title, tagline, category, hero_image_url, starting_price, price_display, price_label, departure_location, fareharbor_item_pk, allowed_resource_pks, allowed_customer_type_pks, availability_filters, booking_cutoff_hours, max_guests')
     .eq('is_published', true)
+    .eq('is_listed', true)
     .order('display_order', { ascending: true })
 
   if (error || !rawListings?.length) return []

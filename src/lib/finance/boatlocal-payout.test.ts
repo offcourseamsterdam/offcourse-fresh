@@ -118,6 +118,9 @@ describe('parseBoatLocalLines', () => {
 })
 
 describe('parseBoatLocalPayoutPdf', () => {
+  // 30s: generates a real PDF with pdf-lib and parses it back through pdfjs.
+  // Both are genuinely slow (~2-4s) and slower still under the full suite's
+  // parallel CPU load — the default 5s is not enough headroom.
   it('parses a real PDF end-to-end through pdfjs (synthetic fixture, not a real payout document)', async () => {
     const { PDFDocument, StandardFonts } = await import('pdf-lib')
     const pdf = await PDFDocument.create()
@@ -137,5 +140,5 @@ describe('parseBoatLocalPayoutPdf', () => {
     const payout = await parseBoatLocalPayoutPdf(buffer)
     expect(payout.invoiceNumber).toBe('BL-2026-06-OP-0008')
     expect(payout.operatorPayoutCents).toBe(19061)
-  })
+  }, 30_000)
 })

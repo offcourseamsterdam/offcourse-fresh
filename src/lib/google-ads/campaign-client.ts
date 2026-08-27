@@ -12,7 +12,7 @@ import { getAccessToken } from './auth'
 // config errors — appropriate for a CLI/admin tool where a loud failure is better
 // than a silent skip.
 
-const API_VERSION = process.env.GOOGLE_ADS_API_VERSION || 'v20'
+const API_VERSION = process.env.GOOGLE_ADS_API_VERSION || 'v22'
 const BASE = 'https://googleads.googleapis.com'
 const TIMEOUT_MS = 30_000 // mutates with many operations can be slower than a conversion upload
 

@@ -33,6 +33,11 @@ export function ExtraListItem({
   mode,
 }: ExtraListItemProps) {
   const perPersonPick = isPerPersonPickExtra(extra)
+  // Whether this item renders as a +/- counter at all (vs. a plain select/deselect
+  // checkbox) — driven by the extra's own quantity_mode, not the food/drinks `mode`
+  // prop. A toggle-mode food item (e.g. a free "vegan option needed" flag) must NOT
+  // get the counter UI just because it's grouped under "food".
+  const isCounterUI = perPersonPick || extra.quantity_mode === 'counter'
   const minQty = perPersonPick ? (extra.min_people ?? 1) : (extra.min_quantity ?? 1)
   // adults_only items cap the counter at adult count; otherwise no upper cap.
   const adults = adultCount ?? guestCount
@@ -63,7 +68,11 @@ export function ExtraListItem({
     e.stopPropagation()
     if (belowMinGuests) return
     if (quantity === 0) {
-      onQuantityChange(extra.id, minQty)
+      // First selection: per-person-pick items (e.g. the buffet) default to the
+      // full party size, not just the catalog minimum — the customer can still
+      // dial it down (kids not eating, etc.) via the minus button below.
+      const seedQty = perPersonPick ? Math.min(Math.max(guestCount, minQty), maxQty) : minQty
+      onQuantityChange(extra.id, seedQty)
     } else if (quantity < maxQty) {
       onQuantityChange(extra.id, quantity + 1)
     }
@@ -121,8 +130,11 @@ export function ExtraListItem({
         )}
       </div>
 
-      {/* Counter (food) or Toggle (drinks) */}
-      {mode === 'food' ? (
+      {/* Counter-mode extras get a +/- stepper; everything else (incl. a toggle-mode
+          food item like a free "vegan option needed" flag) gets a select/deselect
+          checkbox — driven by the extra's own quantity_mode, not the food/drinks
+          `mode` grouping (see isCounterUI above). */}
+      {isCounterUI ? (
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
             type="button"

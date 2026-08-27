@@ -14,6 +14,7 @@ async function getNavListings() {
     .from('cruise_listings')
     .select('id, title, slug, category')
     .eq('is_published', true)
+    .eq('is_listed', true)
     .order('display_order', { ascending: true })
   return (data ?? []) as { id: string; title: string; slug: string; category: string }[]
 }

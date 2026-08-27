@@ -3,7 +3,7 @@ import { createHmac } from 'crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { parseOutscraperPayload } from '@/lib/outscraper/parse'
 import { outscraperWebhookToken } from '@/lib/outscraper/webhook-token'
-import { postSlackText } from '@/lib/slack/send-notification'
+import { postSlackOps } from '@/lib/slack/send-notification'
 import { awardReviewBonuses } from '@/lib/scheduling/review-bonuses'
 
 /**
@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
   // ── Handle failure ──────────────────────────────────────────────────────────
   const status = payload.status as string | undefined
   if (status === 'Error' || status === 'Failure') {
-    await postSlackText(
+    await postSlackOps(
       `⚠️ Outscraper ${source} job failed (request ${requestId ?? 'unknown'}). Reviews not updated.`
     ).catch(() => {})
     return NextResponse.json({ received: true })
@@ -150,11 +150,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    await postSlackText(`✅ Outscraper ${source}: imported ${uniqueReviews.length} review(s).`).catch(() => {})
+    await postSlackOps(`✅ Outscraper ${source}: imported ${uniqueReviews.length} review(s).`).catch(() => {})
     return NextResponse.json({ received: true, upserted: uniqueReviews.length })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    await postSlackText(`🚨 Outscraper webhook error (${source}): ${msg}`).catch(() => {})
+    await postSlackOps(`🚨 Outscraper webhook error (${source}): ${msg}`).catch(() => {})
     // Still return 200 — don't let Outscraper retry-storm a broken handler
     return NextResponse.json({ received: true, error: msg })
   }

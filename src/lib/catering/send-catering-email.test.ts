@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
   sendNewEmail: vi.fn().mockResolvedValue({ id: 'gmail-msg-1', threadId: 'thread-new-1' }),
   postSlackText: vi.fn().mockResolvedValue(undefined),
   emitOpsEvent: vi.fn().mockResolvedValue(undefined),
+  postSlackOps: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/lib/ops/events', () => ({ emitOpsEvent: h.emitOpsEvent }))
@@ -29,7 +30,7 @@ vi.mock('@/lib/supabase/admin', () => ({
     }),
   }),
 }))
-vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText }))
+vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText, postSlackOps: h.postSlackOps }))
 vi.mock('@/lib/fareharbor/client', () => ({ getFareHarborClient: () => ({ updateBookingNote: vi.fn() }) }))
 vi.mock('@/lib/gmail/client', () => ({ sendNewEmail: h.sendNewEmail }))
 

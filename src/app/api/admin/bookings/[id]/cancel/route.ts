@@ -6,7 +6,7 @@ import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { getStripe } from '@/lib/stripe/server'
 import { FHNotFoundError, FHValidationError } from '@/lib/fareharbor/types'
 import { emitOpsEvent } from '@/lib/ops/events'
-import { postSlackText } from '@/lib/slack/send-notification'
+import { postSlackOps } from '@/lib/slack/send-notification'
 import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
 import { formatAmsterdamTime } from '@/lib/utils'
 
@@ -94,7 +94,7 @@ export async function POST(
       : refundOption === 'partial' && partialAmountCents
         ? `partial €${(partialAmountCents / 100).toFixed(0)}`
         : `full €${((booking.stripe_amount ?? 0) / 100).toFixed(0)}`
-    postSlackText([
+    postSlackOps([
       `❌ *Booking cancelled (admin)*`,
       `*${booking.listing_title ?? '—'}*`,
       `👤 ${booking.customer_name ?? '—'} · ${booking.customer_email ?? '—'}`,

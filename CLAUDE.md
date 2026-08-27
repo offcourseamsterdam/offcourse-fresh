@@ -146,24 +146,34 @@ Beer's goal: become someone who can read their own codebase, understand architec
 ## Known Gotchas
 
 ### Slack Notification Routing (CRITICAL)
-As of 2026-08-11: **all Slack notifications go to Beer's DM (`D08PRAXD13R`) by default.**
-The only exceptions — which keep going to the shared `#bookings` channel — are:
-- **Catering order notifications**
-- **Direct booking notifications**
+**Implemented 2026-08-22.** All Slack notifications go to Beer's DM by default.
+The only exceptions — which keep going to the shared `#bookings` channel via
+`postSlackText()` — are:
+- **Catering order notifications** (`src/lib/catering/notify.ts`,
+  `src/lib/catering/send-catering-email.ts`, and the catering pre-order in
+  `api/booking/extras/[id]`)
+- **Direct booking notifications** ("New booking confirmed!" from
+  `api/admin/booking-flow/book`, both Stripe webhook confirmations, and the
+  `pending-fh-sweep` "parked booking completed" that replaces a missed one)
 
-Everything else (cron/ops alerts, ads guardrail, reviews, sweep/consistency checks, etc.)
-must route to `D08PRAXD13R`, not the shared channel webhook.
+Everything else (cron/ops alerts, ads guardrail, reviews, sweep/consistency checks,
+refunds, chargebacks, admin cancel/rebook, etc.) uses **`postSlackOps()`**.
 
-Today `src/lib/slack/send-notification.ts` has one general-purpose function,
-`postSlackText()`, that posts to whatever `SLACK_WEBHOOK_URL` is configured for — currently
-`#bookings` — with no per-type routing. About a dozen call sites across bookings, cron,
-catering, tracking, and ads guardrail code all go through it. `D08PRAXD13R` is already the
-hardcoded fallback for the separate critical-alert DM path (`postSlackDM` / `postSlackCritical`),
-just not yet the default for regular notifications.
-**This policy is recorded but not yet implemented in code** — when implementing, audit every
-`postSlackText` call site, keep catering (`src/lib/catering/notify.ts`,
-`src/lib/catering/send-catering-email.ts`) and direct-booking notifications on the channel
-webhook, and repoint everything else to `postSlackDM`/`D08PRAXD13R`.
+`src/lib/slack/send-notification.ts` now has three senders — pick deliberately:
+- `postSlackText()` — shared `#bookings` channel. ONLY for the two exceptions above.
+- `postSlackOps()` — Beer's DM, **no channel fallback by design**. Beer's instruction
+  was "only my slack", so a failed DM is logged and dropped rather than leaking to
+  `#bookings`. This is the default for anything that isn't one of the two exceptions.
+- `postSlackCritical()` — Beer's DM, but *does* fall back to the channel webhook,
+  because a paid-but-unbooked alert must never be lost. Reserve for money-path
+  failures where silence is worse than posting in the wrong place.
+
+The DM target is `SLACK_ALERT_DM_CHANNEL`. Set it to Beer's **user** ID
+(`U08PRAX8A07`), not a `D...` DM-channel ID: a `D...` id is specific to one app's
+DM conversation, and the old hardcoded `D08PRAXD13R` fallback belonged to a
+different app — it returns `channel_not_found` for this bot, which is why DM
+alerts silently fell back to `#bookings` for months. A user ID makes Slack open
+the correct DM automatically. Set in `.env.local` + Vercel Preview + Production.
 
 ### Dev Server
 Two ways to run the app — pick whichever fits the task:
@@ -171,11 +181,14 @@ Two ways to run the app — pick whichever fits the task:
 **Option A — Beer's own Terminal (default for long sessions):**
 1. Beer runs `npm run dev` from his own Terminal.app
 2. Claude Code edits code and reads files as normal
-3. For visual verification, use Claude in Chrome MCP tools to browse `http://localhost:3000`
+3. For visual verification, use gstack's `/browse` skill (see "gstack" section above) to browse
+   `http://localhost:3000` — not the Claude in Chrome MCP tools
 
 **Option B — Claude Code preview server (try this first for verification):**
 - The previous Turbopack + macOS sandbox crash appears to be resolved.
-- `preview_start` is allowed again — use it when verifying UI changes via the `<verification_workflow>`.
+- `preview_start` is allowed again to launch the dev server itself.
+- For the actual visual verification of what it serves, use gstack's `/browse` skill instead of
+  the browser MCP tools described in `<verification_workflow>`.
 - If the dev server crashes mid-session, fall back to Option A and note it so we can re-disable preview.
 
 Do NOT spawn `next dev` directly from Bash — use `preview_start` if you want Claude Code to run the server.
@@ -230,6 +243,47 @@ routes rather than fail — it reports zero unguarded handlers because it found 
 which reads as "all clear" when it's actually blind. Whenever you add a new way of exporting a route
 handler, add a matching pattern to `findHandlers()` in the same change, and re-run the contract test
 file alone to confirm it now actually iterates the new routes instead of finding none.
+
+## gstack
+
+This project uses [gstack](https://github.com/garrytan/gstack) (Garry Tan's Claude Code skill
+suite), installed personally at `~/.claude/skills/gstack` — not vendored into this repo, so it's
+picked up automatically by any Claude Code session on Beer's machine.
+
+**Browser interaction (CRITICAL):** for all web browsing — QA, dogfooding, screenshotting,
+verifying UI changes — use the `/browse` skill (or the `$B` browse binary directly). **Never use**
+`mcp__claude-in-chrome__*` or `mcp__Claude_Browser__*` tools for this. Those are MCP-protocol
+tools that resend a full schema on every call (~1,500–2,000 tokens and 2–5s per call); gstack's
+compiled CLI talks to a local Chromium daemon over plain stdout (~100–200ms, ~0 token overhead).
+This supersedes the Dev Server section's old "Claude in Chrome MCP tools" guidance below — see
+`~/.claude/skills/gstack/BROWSER.md` for the full command reference.
+
+**Available skills:** `/office-hours`, `/plan-ceo-review`, `/plan-eng-review`,
+`/plan-design-review`, `/design-consultation`, `/design-shotgun`, `/design-html`, `/review`,
+`/ship`, `/land-and-deploy`, `/canary`, `/benchmark`, `/browse`, `/connect-chrome`, `/qa`,
+`/qa-only`, `/design-review`, `/setup-browser-cookies`, `/setup-deploy`, `/setup-gbrain`,
+`/retro`, `/investigate`, `/document-release`, `/document-generate`, `/codex`, `/cso`,
+`/autoplan`, `/plan-devex-review`, `/devex-review`, `/careful`, `/freeze`, `/guard`,
+`/unfreeze`, `/gstack-upgrade`, `/learn`.
+
+## Skill routing
+
+When the user's request matches an available skill, invoke it via the Skill tool. When in doubt, invoke the skill.
+
+Key routing rules:
+- Product ideas/brainstorming → invoke /office-hours
+- Strategy/scope → invoke /plan-ceo-review
+- Architecture → invoke /plan-eng-review
+- Design system/plan review → invoke /design-consultation or /plan-design-review
+- Full review pipeline → invoke /autoplan
+- Bugs/errors → invoke /investigate
+- QA/testing site behavior → invoke /qa or /qa-only
+- Code review/diff check → invoke /review
+- Visual polish → invoke /design-review
+- Ship/deploy/PR → invoke /ship or /land-and-deploy
+- Save progress → invoke /context-save
+- Resume context → invoke /context-restore
+- Author a backlog-ready spec/issue → invoke /spec
 
 ## How to Work
 
@@ -439,7 +493,7 @@ GOOGLE_ADS_REFRESH_TOKEN=
 GOOGLE_ADS_CUSTOMER_ID=             # advertiser account (10 digits, no dashes)
 GOOGLE_ADS_LOGIN_CUSTOMER_ID=       # manager / MCC account
 GOOGLE_ADS_CONVERSION_ACTION_ID=
-GOOGLE_ADS_API_VERSION=v20          # bump when Google sunsets a version
+GOOGLE_ADS_API_VERSION=v22          # bump when Google sunsets a version
 GOOGLE_ADS_REQUIRE_CONSENT=true
 
 # Google — reviews / OAuth (GOOGLE_OAUTH_* is reused by Google Ads auth)

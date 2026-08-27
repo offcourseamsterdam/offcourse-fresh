@@ -53,6 +53,9 @@ describe('parseWithlocalsInvoiceText', () => {
 })
 
 describe('parseWithlocalsInvoicePdf', () => {
+  // 30s: generates a real PDF with pdf-lib and parses it back through pdfjs.
+  // Both are genuinely slow (~2-4s) and slower still under the full suite's
+  // parallel CPU load — the default 5s is not enough headroom.
   it('parses a generated PDF end-to-end through pdfjs (synthetic fixture)', async () => {
     const { PDFDocument, StandardFonts } = await import('pdf-lib')
     const pdf = await PDFDocument.create()
@@ -70,5 +73,5 @@ describe('parseWithlocalsInvoicePdf', () => {
     const inv = await parseWithlocalsInvoicePdf(buffer)
     expect(inv.bookingId).toBe('91ed6b24-d955-4ef6-ab38-21882150b43f')
     expect(inv.netPayoutCents).toBe(16830)
-  })
+  }, 30_000)
 })

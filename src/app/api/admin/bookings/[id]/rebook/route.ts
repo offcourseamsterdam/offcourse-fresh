@@ -3,9 +3,8 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
-import { FHNotFoundError } from '@/lib/fareharbor/types'
 import { sendRescheduleEmail } from '@/lib/booking/send-confirmation-email'
-import { postSlackText } from '@/lib/slack/send-notification'
+import { postSlackOps } from '@/lib/slack/send-notification'
 import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
 import { formatAmsterdamTime } from '@/lib/utils'
 
@@ -85,17 +84,15 @@ export async function POST(
       throw err
     }
 
-    // Cancel the old FH booking now that the new one is confirmed.
-    // FH may already have handled this internally via the rebooking link, but we
-    // cancel explicitly to be safe. FHNotFoundError = already gone, ignore it.
-    if (booking.booking_uuid) {
-      try {
-        await fh.cancelBooking(booking.booking_uuid)
-      } catch (err) {
-        if (!(err instanceof FHNotFoundError)) throw err
-        // Already cleaned up by FH — continue
-      }
-    }
+    // Do NOT explicitly cancel the old FH booking here. FareHarbor already retires it
+    // as part of the `rebooking` link on create — its status flips to "Rebooked" pointing
+    // at the new UUID. Calling cancelBooking() on an already-rebooked-away UUID doesn't
+    // no-op: it cascades through the link and cancels the NEW booking it points to instead
+    // (confirmed against a real incident — see the Brenda Blechle booking, Aug 2026, where
+    // this exact call silently cancelled the destination booking right after creation,
+    // refunding the payment and leaving the customer with nothing). If a booking ever turns
+    // up still "confirmed" in FH instead of "Rebooked" after this route runs, that's FH not
+    // honoring the link — investigate rather than adding a cancel call back here.
 
     // Update Supabase — log new UUID before attempting so it's recoverable if this fails
     console.log('[rebook] new FH booking created:', newFhBooking.uuid, 'replacing:', booking.booking_uuid)
@@ -117,7 +114,7 @@ export async function POST(
     await notifyBookingsChanged()
 
     // Slack — best-effort, never blocks the response
-    postSlackText([
+    postSlackOps([
       `📅 *Booking rescheduled (admin)*`,
       `*${booking.listing_title ?? 'Canal Cruise'}*`,
       `👤 ${booking.customer_name ?? '—'} · ${booking.customer_email ?? '—'}`,

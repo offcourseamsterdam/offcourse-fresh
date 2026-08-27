@@ -13,6 +13,7 @@ import { emitOpsEvent } from '@/lib/ops/events'
 import { filterFoodItems, type ExtrasLineItem } from './filter'
 import { buildCateringEmailText, buildCateringEmailSubject } from './email-template'
 import { buildFHBookingNote } from './build-fh-note'
+import { resolveCateringEmailRecipient } from './recipient'
 import { postSlackText } from '@/lib/slack/send-notification'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { formatAmsterdamTime } from '@/lib/utils'
@@ -27,7 +28,7 @@ export async function sendCateringOrderEmailForBooking(bookingId: string): Promi
   const { data: booking, error } = await supabase
     .from('bookings')
     .select(`
-      id, booking_uuid, customer_name, listing_title, tour_item_name,
+      id, booking_uuid, customer_name, listing_title, tour_item_name, listing_id,
       booking_date, start_time, guest_count, category,
       extras_selected, catering_email_sent_at, catering_thread_id, guest_note
     `)
@@ -51,7 +52,7 @@ export async function sendCateringOrderEmailForBooking(bookingId: string): Promi
     items: cateringItems,
   })
 
-  const recipient = process.env.CATERING_EMAIL_RECIPIENT ?? 'info@offcourseamsterdam.com'
+  const recipient = await resolveCateringEmailRecipient(booking.listing_id)
   const subject = buildCateringEmailSubject(cruiseName, booking.booking_date, booking.start_time)
 
   // Sending via Gmail (unlike the old Resend path) can throw — a missing/expired

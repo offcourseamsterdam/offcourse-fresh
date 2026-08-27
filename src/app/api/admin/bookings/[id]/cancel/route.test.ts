@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   dbUpdate: vi.fn(),
   stripeRefunds: vi.fn().mockResolvedValue({ id: 'ref_123' }),
   postSlackText: vi.fn().mockResolvedValue(undefined),
+  postSlackOps: vi.fn().mockResolvedValue(undefined),
   requireAdmin: vi.fn().mockResolvedValue(null),
 }))
 
@@ -28,7 +29,7 @@ vi.mock('@/lib/stripe/server', () => ({
 }))
 
 vi.mock('@/lib/auth/require-admin', () => ({ requireAdmin: h.requireAdmin }))
-vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText }))
+vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText, postSlackOps: h.postSlackOps }))
 
 import { POST } from './route'
 
@@ -119,8 +120,8 @@ describe('POST /api/admin/bookings/[id]/cancel', () => {
 
   it('sends a Slack notification on cancel', async () => {
     await POST(mockReq(), mockParams())
-    expect(h.postSlackText).toHaveBeenCalledOnce()
-    const msg = h.postSlackText.mock.calls[0][0] as string
+    expect(h.postSlackOps).toHaveBeenCalledOnce()
+    const msg = h.postSlackOps.mock.calls[0][0] as string
     expect(msg).toContain('cancelled')
     expect(msg).toContain('Enrico Test')
     expect(msg).toContain('enrico@example.com')
@@ -130,19 +131,19 @@ describe('POST /api/admin/bookings/[id]/cancel', () => {
 
   it('Slack message shows refund amount for full refunds', async () => {
     await POST(mockReq({ refundOption: 'full' }), mockParams())
-    const msg = h.postSlackText.mock.calls[0][0] as string
+    const msg = h.postSlackOps.mock.calls[0][0] as string
     expect(msg).toContain('full €165')
   })
 
   it('Slack message shows partial amount for partial refunds', async () => {
     await POST(mockReq({ refundOption: 'partial', partialAmountCents: 8000 }), mockParams())
-    const msg = h.postSlackText.mock.calls[0][0] as string
+    const msg = h.postSlackOps.mock.calls[0][0] as string
     expect(msg).toContain('partial €80')
   })
 
   it('Slack message shows no refund when refundOption is none', async () => {
     await POST(mockReq({ refundOption: 'none' }), mockParams())
-    const msg = h.postSlackText.mock.calls[0][0] as string
+    const msg = h.postSlackOps.mock.calls[0][0] as string
     expect(msg).toContain('no refund')
   })
 

@@ -11,7 +11,7 @@ import { notifyCateringOrder } from '@/lib/catering/notify'
 import { hasFood, type ExtrasLineItem } from '@/lib/catering/filter'
 import { isWithinCateringAutoSendWindow } from '@/lib/catering/auto-send-cutoff'
 import { sendCateringOrderEmailForBooking } from '@/lib/catering/send-catering-email'
-import { postSlackText, postSlackCritical } from '@/lib/slack/send-notification'
+import { postSlackText, postSlackOps, postSlackCritical } from '@/lib/slack/send-notification'
 import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
 import { resolvePaymentMethodLabel } from '@/lib/stripe/payment-method-label'
 import { formatAmsterdamTime } from '@/lib/utils'
@@ -91,7 +91,7 @@ export async function GET(request: NextRequest) {
       .update({ status: 'fh_in_progress', updated_at: nowIso })
       .eq('id', cand.id)
       .eq('status', cand.status)
-      .select('id, stripe_payment_intent_id, created_at, extras_selected, customer_email, customer_name, customer_phone, listing_title, booking_date, start_time, end_time, guest_count, category, fareharbor_customer_type_rate_pk, base_amount_cents, discount_amount_cents, stripe_amount, fh_escalated_at')
+      .select('id, stripe_payment_intent_id, created_at, extras_selected, customer_email, customer_name, customer_phone, listing_title, listing_id, booking_date, start_time, end_time, guest_count, category, fareharbor_customer_type_rate_pk, base_amount_cents, discount_amount_cents, stripe_amount, fh_escalated_at')
       .maybeSingle()
     if (!claimed) continue // someone else claimed it
 
@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
           .update({ status: 'cancelled', payment_status: 'refunded', updated_at: nowIso })
           .eq('id', claimed.id)
         await notifyBookingsChanged()
-        await postSlackText(
+        await postSlackOps(
           `↩️ *Parked booking cancelled — payment was refunded* (no FareHarbor booking created)\nPI: \`${piId}\` · ${claimed.customer_name ?? '?'} · ${claimed.listing_title ?? ''}`,
         )
         cancelled++
@@ -217,6 +217,7 @@ export async function GET(request: NextRequest) {
         startTimeStr: claimed.start_time || null,
         guestCount,
         extrasSelected: extras,
+        listingId: claimed.listing_id ?? null,
       }),
       ...(shouldAutoSendCateringNow ? [sendCateringOrderEmailForBooking(claimed.id)] : []),
     ])

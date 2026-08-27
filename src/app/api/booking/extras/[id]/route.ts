@@ -9,7 +9,8 @@ import { calculateExtras } from '@/lib/extras/calculate'
 import type { Extra } from '@/lib/extras/calculate'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { countAdultsFromFHCustomers } from '@/lib/booking/adult-count'
-import { postSlackText } from '@/lib/slack/send-notification'
+import { postSlackText, postSlackOps } from '@/lib/slack/send-notification'
+import { resolveCateringEmailRecipient, isExternalCateringRecipient } from '@/lib/catering/recipient'
 import { Resend } from 'resend'
 
 /**
@@ -100,7 +101,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const { data: booking, error: bErr } = await supabase
     .from('bookings')
-    .select('id, booking_uuid, customer_name, listing_title, booking_date, start_time, end_time, guest_count, category, status, extras_selected, extras_amount_cents, extras_vat_amount_cents, total_vat_amount_cents, base_amount_cents, guest_note')
+    .select('id, booking_uuid, customer_name, listing_title, listing_id, booking_date, start_time, end_time, guest_count, category, status, extras_selected, extras_amount_cents, extras_vat_amount_cents, total_vat_amount_cents, base_amount_cents, guest_note')
     .eq('id', id)
     .maybeSingle()
 
@@ -200,6 +201,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     id,
     booking_uuid: booking.booking_uuid,
     listing_title: booking.listing_title,
+    listing_id: booking.listing_id,
     booking_date: booking.booking_date,
     start_time: booking.start_time,
     guest_count: booking.guest_count,
@@ -225,7 +227,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (hasCatering && process.env.RESEND_API_KEY) {
       try {
         const cruiseName = bookingSnapshot.listing_title ?? 'Cruise'
-        const recipient = process.env.CATERING_EMAIL_RECIPIENT ?? 'info@offcourseamsterdam.com'
+        const recipient = await resolveCateringEmailRecipient(bookingSnapshot.listing_id)
         const resend = new Resend(process.env.RESEND_API_KEY)
         await resend.emails.send({
           from: 'Off Course Amsterdam <cruise@offcourseamsterdam.com>',
@@ -253,6 +255,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       await postSlackText(
         `🍽️ *New catering pre-order* — ${bookingSnapshot.listing_title ?? 'cruise'} on ${cruiseDateStr}\n*Guest:* ${bookingSnapshot.customer_name}\n*Items:* ${itemSummary}`
       ).catch(() => {})
+
+      // Same external-caterer heads-up as the checkout-time path (see
+      // notifyCateringOrder) — a pre-order can be the first time food gets
+      // added to this booking, so this can't skip the check.
+      const recipient = await resolveCateringEmailRecipient(bookingSnapshot.listing_id)
+      if (isExternalCateringRecipient(recipient)) {
+        await postSlackOps(
+          `🍽️ *${bookingSnapshot.listing_title ?? 'cruise'} pre-order* — food order going to *${recipient}*\n${cruiseDateStr}\n*Guest:* ${bookingSnapshot.customer_name}\n*Items:* ${itemSummary}`
+        ).catch(() => {})
+      }
     }
   })
 

@@ -33,7 +33,8 @@ const LISTING_DETAIL_COLUMNS = `
   id, slug, category, images, hero_image_asset_id, hero_image_url, video_url,
   fareharbor_item_pk, allowed_customer_type_pks, availability_filters, highlights, price_display,
   price_label, payment_mode, starting_price, max_guests, duration_display,
-  departure_location, google_maps_url,
+  departure_location, google_maps_url, chef_name, chef_bio, chef_photo_url,
+  theme_primary_color, theme_accent_color,
   title, title_de, title_es, title_fr, title_nl, title_pt, title_zh,
   tagline, tagline_de, tagline_es, tagline_fr, tagline_nl, tagline_pt, tagline_zh,
   description, description_de, description_es, description_fr, description_nl, description_pt, description_zh,
@@ -195,6 +196,7 @@ export const getCruisePageData = cache(async function getCruisePageData(listing:
     ingredients: e.ingredients,
     price_display: formatExtraPrice(e),
     min_people: e.min_people ?? null,
+    default_to_guest_count: e.default_to_guest_count ?? false,
   })
 
   const serializedFood = foodAndDrinkExtras.filter((e) => e.category === 'food').map(serializeExtra)

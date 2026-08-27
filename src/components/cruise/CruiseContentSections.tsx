@@ -4,12 +4,13 @@ import { ExtrasGrid } from './ExtrasGrid'
 import { CancellationPolicyCard } from './CancellationPolicyCard'
 import { ReviewSlider } from './ReviewSlider'
 import { BoatCard } from './BoatCard'
+import { FoodHostCard } from './FoodHostCard'
 import { TruncatedDescription } from './TruncatedDescription'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import type { Locale } from '@/lib/i18n/config'
 import type { CancellationTier } from '@/lib/cancellation/policy'
 
-type SerializedExtra = { id: string; name: string; description: string | null; image_url: string | null; ingredients: string[] | null; price_display: string; min_people: number | null }
+type SerializedExtra = { id: string; name: string; description: string | null; image_url: string | null; ingredients: string[] | null; price_display: string; min_people: number | null; default_to_guest_count: boolean }
 
 interface ContentProps {
   highlights: { text: string }[]
@@ -20,7 +21,13 @@ interface ContentProps {
   listingBoats: { id: string; name: string; max_capacity: number | null; is_electric: boolean | null; description: string | null; photo_url: string | null; photo_covered_url: string | null; photo_interior_url: string | null }[]
   serializedReviews: { id: string; reviewer_name: string; review_text: string; rating: number; source: string | null; author_photo_url: string | null; review_image_url: string | null; publish_time: string | null }[]
   totalReviews?: number
-  listing: { departure_location: string | null; google_maps_url: string | null }
+  listing: {
+    departure_location: string | null
+    google_maps_url: string | null
+    chef_name?: string | null
+    chef_bio?: string | null
+    chef_photo_url?: string | null
+  }
   faqs: { question: string; answer: string }[]
   loc: Locale
   faqLabel: string
@@ -110,25 +117,55 @@ export function CruiseContentSections({
         )
       )}
 
-      {/* Our boats */}
+      {/* Our boats — a single-boat listing with a chef/food host set (the
+          "private food cruise" pattern, e.g. the Curaçao Jamaican Buffet Cruise)
+          gets a "The Boat" / "The Food" split instead of the generic boat grid. */}
       {listingBoats.length > 0 && (
-        <section>
-          <h2 className={headingClass(isSpecialEvent, 'mb-6')}>Our boats</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {listingBoats.map((boat) => (
-              <BoatCard
-                key={boat.id}
-                name={boat.name}
-                maxCapacity={boat.max_capacity}
-                isElectric={boat.is_electric ?? false}
-                description={getLocalizedField(boat, 'description', loc) || null}
-                photoUrl={boat.photo_url}
-                photoCoveredUrl={boat.photo_covered_url}
-                photoInteriorUrl={boat.photo_interior_url}
-              />
-            ))}
-          </div>
-        </section>
+        listingBoats.length === 1 && listing.chef_name ? (
+          <section>
+            <h2 className={headingClass(isSpecialEvent, 'mb-6')}>The boat &amp; the food</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mb-3">The Boat</h3>
+                <BoatCard
+                  name={listingBoats[0].name}
+                  maxCapacity={listingBoats[0].max_capacity}
+                  isElectric={listingBoats[0].is_electric ?? false}
+                  description={getLocalizedField(listingBoats[0], 'description', loc) || null}
+                  photoUrl={listingBoats[0].photo_url}
+                  photoCoveredUrl={listingBoats[0].photo_covered_url}
+                  photoInteriorUrl={listingBoats[0].photo_interior_url}
+                />
+              </div>
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mb-3">The Food</h3>
+                <FoodHostCard
+                  name={listing.chef_name}
+                  bio={listing.chef_bio ?? null}
+                  photoUrl={listing.chef_photo_url ?? null}
+                />
+              </div>
+            </div>
+          </section>
+        ) : (
+          <section>
+            <h2 className={headingClass(isSpecialEvent, 'mb-6')}>Our boats</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {listingBoats.map((boat) => (
+                <BoatCard
+                  key={boat.id}
+                  name={boat.name}
+                  maxCapacity={boat.max_capacity}
+                  isElectric={boat.is_electric ?? false}
+                  description={getLocalizedField(boat, 'description', loc) || null}
+                  photoUrl={boat.photo_url}
+                  photoCoveredUrl={boat.photo_covered_url}
+                  photoInteriorUrl={boat.photo_interior_url}
+                />
+              ))}
+            </div>
+          </section>
+        )
       )}
 
       {/* Reviews */}

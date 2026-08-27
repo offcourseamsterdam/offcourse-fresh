@@ -30,6 +30,7 @@ const h = vi.hoisted(() => ({
   notifyCateringOrder: vi.fn().mockResolvedValue(undefined),
   sendCateringOrderEmailForBooking: vi.fn().mockResolvedValue({ ok: true, resent: false, recipient: 'x' }),
   postSlackText: vi.fn().mockResolvedValue(undefined),
+  postSlackOps: vi.fn().mockResolvedValue(undefined),
   postSlackCritical: vi.fn().mockResolvedValue(undefined),
   getExtrasFromQuote: vi.fn().mockResolvedValue([]),
   resolveStripeFeeCents: vi.fn().mockResolvedValue(null),
@@ -70,6 +71,7 @@ vi.mock('@/lib/catering/notify', () => ({ notifyCateringOrder: h.notifyCateringO
 vi.mock('@/lib/catering/send-catering-email', () => ({ sendCateringOrderEmailForBooking: h.sendCateringOrderEmailForBooking }))
 vi.mock('@/lib/slack/send-notification', () => ({
   postSlackText: h.postSlackText,
+  postSlackOps: h.postSlackOps,
   postSlackCritical: h.postSlackCritical,
 }))
 vi.mock('@/lib/stripe/payment-method-label', () => ({
@@ -494,7 +496,7 @@ describe('stripe webhook — checkout.session.expired', () => {
 
     expect(res.status).toBe(200)
     expect(h.fhCancelBooking).toHaveBeenCalledWith('fh-uuid-to-cancel')
-    expect(h.postSlackText).toHaveBeenCalledTimes(1)
+    expect(h.postSlackOps).toHaveBeenCalledTimes(1)
   })
 
   it('skips FH cancel when booking has no fareharbor uuid', async () => {
@@ -507,7 +509,7 @@ describe('stripe webhook — checkout.session.expired', () => {
 
     expect(res.status).toBe(200)
     expect(h.fhCancelBooking).not.toHaveBeenCalled()
-    expect(h.postSlackText).toHaveBeenCalledTimes(1)
+    expect(h.postSlackOps).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -551,7 +553,7 @@ describe('stripe webhook — charge.refunded', () => {
     expect(h.reportRefundAdjustment).toHaveBeenCalledWith(expect.objectContaining({
       paymentIntentId: 'pi_test', isFullRefund: true, refundedCents: 16500, chargeAmountCents: 16500,
     }))
-    expect(h.postSlackText).toHaveBeenCalledWith(expect.stringContaining('Full refund'))
+    expect(h.postSlackOps).toHaveBeenCalledWith(expect.stringContaining('Full refund'))
   })
 
   it('a PARTIAL refund (amount_refunded < amount) sets payment_status to partially_refunded', async () => {
@@ -568,7 +570,7 @@ describe('stripe webhook — charge.refunded', () => {
     expect(h.reportRefundAdjustment).toHaveBeenCalledWith(expect.objectContaining({
       paymentIntentId: 'pi_test', isFullRefund: false, refundedCents: 5000, chargeAmountCents: 16500,
     }))
-    expect(h.postSlackText).toHaveBeenCalledWith(expect.stringContaining('Partial refund'))
+    expect(h.postSlackOps).toHaveBeenCalledWith(expect.stringContaining('Partial refund'))
   })
 
   it('resolves payment_intent when Stripe sends the expanded object instead of a bare id string', async () => {
@@ -603,6 +605,6 @@ describe('stripe webhook — charge.refunded', () => {
     const res = await POST(mockReq())
 
     expect(res.status).toBe(200)
-    expect(h.postSlackText).toHaveBeenCalledWith(expect.stringContaining('refund'))
+    expect(h.postSlackOps).toHaveBeenCalledWith(expect.stringContaining('refund'))
   })
 })

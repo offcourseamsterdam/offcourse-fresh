@@ -3,7 +3,7 @@ import { requireCronSecret } from '@/lib/auth/require-cron-secret'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { FHNotFoundError } from '@/lib/fareharbor/types'
-import { postSlackText } from '@/lib/slack/send-notification'
+import { postSlackOps } from '@/lib/slack/send-notification'
 import { alertCronFailure } from '@/lib/cron/alert'
 import { buildFHBookingNote } from '@/lib/catering/build-fh-note'
 import type { ExtrasLineItem } from '@/lib/catering/filter'
@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
   }
 
   if (!bookings || bookings.length === 0) {
-    await postSlackText('✅ *FH Consistency Check* — no upcoming bookings to check.')
+    await postSlackOps('✅ *FH Consistency Check* — no upcoming bookings to check.')
     return NextResponse.json({ ok: true, checked: 0, issues: 0 })
   }
 
@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
 
   if (issues.length === 0) {
     const dates = [...new Set(bookings.map(consistencyDisplayDate))].sort()
-    await postSlackText(
+    await postSlackOps(
       `✅ *FH Consistency Check* — all ${bookings.length} upcoming booking${bookings.length === 1 ? '' : 's'} confirmed in FareHarbor with correct notes. ` +
       `Dates checked: ${dates.join(', ')}.`
     )
@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
       '',
       `_Checked ${bookings.length} upcoming booking${bookings.length === 1 ? '' : 's'} total._`,
     ]
-    await postSlackText(lines.join('\n'))
+    await postSlackOps(lines.join('\n'))
   }
 
   return NextResponse.json({ ok: true, checked: bookings.length, issues: issues.length })
