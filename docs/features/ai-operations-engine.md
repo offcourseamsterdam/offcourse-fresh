@@ -223,3 +223,135 @@ metering. Depended on by: nothing yet — later phases read `ops_events`.
 - Verified live 2026-07-04: agent found tomorrow's unstaffed Curaçao 17:00 shift and
   proposed the only available captain, confidence 1.0, €0 invented savings; card
   renders on /admin/ghost; `ops_events` received `recommendation_created`.
+
+---
+
+## Cancellation & refund agent (`cancellation_request`) — SPEC, not yet built
+
+**Owner decision (Beer, 2026-08-21).** A guest emailing "we need to cancel, please
+refund" is today the one common inbox intent the Ghost has no concept of. It
+produces no proposal at all — not even a reply draft — so the whole thing is
+manual. This closes that gap.
+
+### The rule Beer asked for, stated plainly
+
+> "If I call for it, it doesn't have to be dry run. If you suggest it, then I want
+> to proceed and click it from the sidebar, whilst you also draft a response."
+
+So: **the agent never refunds on its own, but Beer's single click does the real
+thing.** That is the `ask` rung — the same shape as `book` and `import_fh_booking`,
+which also perform genuinely irreversible work on one human click.
+
+This is deliberately NOT the `booking_proposal` ceiling. Both touch money, but they
+are not the same risk:
+
+| | `booking_proposal` | `cancellation_request` |
+|---|---|---|
+| Ceiling | `dry_run` — pinned forever | `ask` |
+| Why | Creating a booking consumes a real slot and charges a card; a hallucinated one invents a customer | Cancelling acts on a booking a **real guest asked about in writing**, and the refund amount is computed by policy, never by the model |
+| Human role | Clicks a button that re-resolves and re-validates from scratch | Clicks a button that executes the already-computed action |
+
+The safety property is the same in both cases: **the model's output is never
+trusted as the instruction.** See "What the model may and may not decide" below.
+
+### What the agent reads
+
+1. **Intent** — does this message actually ask to cancel? Distinguish a real
+   cancellation from "can we move it" (that is `guest_move_request`, which already
+   exists and should win) and from a question about the policy.
+2. **Which booking** — matched from the conversation's contact, the same way
+   `booking_correction` already resolves its target. Never guessed from prose.
+3. **Where in the cancellation window it falls** — `src/lib/cancellation/policy.ts`
+   already does this and needs no changes:
+   - `hoursUntil(departure)` → how long until it sails
+   - `getRefundPercent(tiers, departure)` → 100 / 50 / 0 per the tiers on the
+     parent `fareharbor_items.cancellation_tiers` (default: 100% >48h, 50% 24–48h,
+     0% <24h)
+   - `calculateRefundCents(...)` → the actual €, from what was really paid.
+     Its own docstring already says "for future refund-management UI" — this is it.
+
+### What the proposal looks like
+
+```
+kind: 'cancellation_request'
+payload: {
+  booking_id, guest_name, departure_at,
+  hours_until_departure,        // from hoursUntil()
+  refund_percent,               // from getRefundPercent()  — policy, not the model
+  refund_cents,                 // from calculateRefundCents() — policy, not the model
+  amount_paid_cents,
+  policy_summary,               // e.g. "51h before departure → full refund tier"
+  reply,                        // the drafted response, in the guest's language
+}
+```
+
+The card in the sidebar states the situation in one line — *"Paul Kehoe wants to
+cancel Private Hidden Gems Cruise, Fri 12 Sep. 51h before departure → full refund
+tier. Paid €310 → refund €310."* — then offers:
+
+- **Cancel & refund €X** — the suggested action, pre-filled from policy
+- **Cancel, no refund** — for the goodwill/edge cases policy cannot know about
+- **Send reply only** — when it is a question, not an instruction
+- Every option sends the drafted reply; none of them is silent to the guest.
+
+### What the model may and may not decide
+
+| Decided by code | Decided by the model |
+|---|---|
+| Which booking this is | Whether the message is a cancellation at all |
+| Hours until departure | The wording of the reply |
+| Refund tier and € amount | Whether anything looks unusual enough to flag |
+| Whether the action can execute at all | — |
+
+Same principle as the rest of this engine: **facts in TypeScript, judgment in
+Claude.** A model that miscounts hours cannot cause a wrong refund, because it
+never supplies the number — `calculateRefundCents()` does, from the real paid
+amount, at click time.
+
+### Execution path (reuses what already exists — do not fork it)
+
+The click goes through `POST /api/admin/ghost/proposals/[id]` with
+`action: 'cancel_booking'`, following the identical shape as `book`:
+
+1. Validate the proposal kind and that it is still `shadow`
+2. Re-read the booking **live** — never trust the payload's snapshot
+3. **Re-compute the refund at click time**, not from the payload. A proposal
+   drafted yesterday may have crossed a tier boundary overnight; the guest must
+   get today's honest answer, not yesterday's.
+4. Atomic claim `shadow → booking` (the existing double-click guard)
+5. Call the existing `POST /api/admin/bookings/[id]/cancel` route — which already
+   cancels in FareHarbor, refunds via Stripe, and **already refuses when the
+   booking has no FareHarbor reference** (added 2026-08-21). No new money path.
+6. Send the drafted reply, mark `executed`, `notifyBookingsChanged()`,
+   `syncAndScheduleShifts()` so the freed slot leaves the roster
+7. Release the claim back to `shadow` on any failure, so a retry is possible
+
+### Hard rules
+
+- **Ceiling `ask`. Never `auto`.** Refunding money and telling a guest their trip
+  is off is not something that should ever happen without a person clicking.
+- **The refund € is recomputed server-side at execution.** The payload figure is
+  for display only.
+- **OTA bookings are excluded.** Viator/GetYourGuide hold the customer
+  relationship and the money; the existing UI already routes those to "manage this
+  on the platform", and this agent must respect the same boundary.
+- **A reply always goes out.** A cancelled booking with silence to the guest is
+  worse than no automation.
+
+### Files this will touch
+
+- `src/lib/ghost/agents.ts` — register the kind, ceiling `ask`
+- `src/lib/ghost/rulebook.ts` — a RULEBOOK entry (it is the in-app explanation of
+  what the AI may do; a kind missing from it is invisible to Beer)
+- `src/lib/chat/shadow-drafter.ts` — a terminal `submit_cancellation_request` tool,
+  alongside the existing `submit_booking_proposal`
+- `src/app/api/admin/ghost/proposals/[id]/route.ts` — the `cancel_booking` action
+- The inbox co-pilot card + `/admin/ghost` — render it
+- Tests: intent vs. move-request, each refund tier, the recompute-at-click
+  behaviour, and that an OTA booking is refused
+
+### Dependencies
+
+`src/lib/cancellation/policy.ts` (exists, unchanged), the cancel route (exists,
+already guarded), Stripe refunds (exists), the atomic-claim pattern (exists).
+Nothing new is required beyond the agent itself.

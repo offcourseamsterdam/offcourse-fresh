@@ -72,6 +72,15 @@ export const BOOKING_SOURCES = [
 
 export type BookingSource = typeof BOOKING_SOURCES[number]['value']
 
+/**
+ * Sources where a 3rd-party platform is the merchant of record and holds the
+ * customer relationship — we can read these bookings but must not unilaterally
+ * cancel/reschedule/refund them on our side; that has to happen on the
+ * platform and sync back. Shared by the admin bookings UI and the Ghost
+ * cancellation agent so the boundary can't drift between the two.
+ */
+export const OTA_BOOKING_SOURCES: BookingSource[] = ['tripadvisor', 'getyourguide', 'withlocals', 'clickandboat', 'boatlocal']
+
 // ── Session storage keys ────────────────────────────────────────────────────
 
 export const SESSION_BOOKING_KEY = 'offcourse_booking'

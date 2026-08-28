@@ -48,17 +48,6 @@ export async function GET(req: NextRequest) {
     // gmail/sync.ts uses to route these away from the customer-reply pipeline.
     // Bounded to this page's thread ids, same pattern as last_outbound above.
     const threadIds = (data ?? []).map(c => c.provider_thread_id).filter((t): t is string => !!t)
-    const cateringThreadIds = new Set<string>()
-    if (threadIds.length) {
-      const { data: cateringRows } = await supabase
-        .from('bookings')
-        .select('catering_thread_id')
-        .in('catering_thread_id', threadIds)
-      for (const row of cateringRows ?? []) {
-        if (row.catering_thread_id) cateringThreadIds.add(row.catering_thread_id)
-      }
-    }
-
     // The contact's most relevant booking — shown next to their name so the
     // list reads "Susanne Hartmann — Aug 10, 15:00" instead of making Beer
     // open every thread to find out if there's a real booking behind it.
@@ -66,23 +55,44 @@ export async function GET(req: NextRequest) {
     // thread-detail route uses), bounded to this page's contacts.
     const emails = [...new Set((data ?? []).map(c => c.contact?.email).filter((e): e is string => !!e))]
     const phones = [...new Set((data ?? []).map(c => c.contact?.phone_e164).filter((p): p is string => !!p))]
+
+    // None of these three depend on each other's result — all bounded to
+    // this page's own ids/emails/phones, so they run together instead of
+    // one-after-another.
+    //
+    // The email/phone queries are two separate `.in()` calls — NOT a
+    // hand-built `.or()` filter string. Contact emails/phones come straight
+    // from a Gmail `From:` header with no format validation (see
+    // gmail/client.ts), so they must go in as parameterized array values,
+    // never interpolated into PostgREST's filter-string DSL (a crafted
+    // local-part could otherwise break out of an `in.(...)` list and widen
+    // or corrupt the filter). `.limit(1000)` is a defensive backstop
+    // against unbounded growth (the June 2026 egress incident's exact
+    // shape) — not a precise per-contact bound, since PostgREST can't
+    // express "top-1 per contact" without a DB function. Safe in practice:
+    // no real contact at this company's scale accumulates anywhere near
+    // 1000 distinct bookings, so this never truncates real data, it just
+    // caps the theoretical worst case.
+    const [cateringRows, emailRows, phoneRows] = await Promise.all([
+      threadIds.length
+        ? supabase.from('bookings').select('catering_thread_id').in('catering_thread_id', threadIds)
+        : Promise.resolve({ data: [] as { catering_thread_id: string | null }[] }),
+      emails.length
+        ? supabase.from('bookings').select('customer_email, booking_date, start_time').in('customer_email', emails).order('booking_date', { ascending: true }).limit(1000)
+        : Promise.resolve({ data: [] as { customer_email: string | null; booking_date: string | null; start_time: string | null }[] }),
+      phones.length
+        ? supabase.from('bookings').select('customer_phone, booking_date, start_time').in('customer_phone', phones).order('booking_date', { ascending: true }).limit(1000)
+        : Promise.resolve({ data: [] as { customer_phone: string | null; booking_date: string | null; start_time: string | null }[] }),
+    ])
+
+    const cateringThreadIds = new Set<string>()
+    for (const row of cateringRows.data ?? []) {
+      if (row.catering_thread_id) cateringThreadIds.add(row.catering_thread_id)
+    }
+
     const nextBookingByEmail = new Map<string, { date: string; time: string | null }>()
     const nextBookingByPhone = new Map<string, { date: string; time: string | null }>()
     if (emails.length || phones.length) {
-      // Two separate `.in()` queries — NOT a hand-built `.or()` filter string.
-      // Contact emails/phones come straight from a Gmail `From:` header with
-      // no format validation (see gmail/client.ts), so they must go in as
-      // parameterized array values, never interpolated into PostgREST's
-      // filter-string DSL (a crafted local-part could otherwise break out of
-      // an `in.(...)` list and widen or corrupt the filter).
-      const [emailRows, phoneRows] = await Promise.all([
-        emails.length
-          ? supabase.from('bookings').select('customer_email, booking_date, start_time').in('customer_email', emails).order('booking_date', { ascending: true })
-          : Promise.resolve({ data: [] as { customer_email: string | null; booking_date: string | null; start_time: string | null }[] }),
-        phones.length
-          ? supabase.from('bookings').select('customer_phone, booking_date, start_time').in('customer_phone', phones).order('booking_date', { ascending: true })
-          : Promise.resolve({ data: [] as { customer_phone: string | null; booking_date: string | null; start_time: string | null }[] }),
-      ])
       // Amsterdam-local "today", not UTC — near Amsterdam midnight, UTC still
       // shows the previous calendar day, which would wrongly flag yesterday's
       // booking as "upcoming" and mask a real future one (see amsterdamToday's

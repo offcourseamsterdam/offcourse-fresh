@@ -11,7 +11,7 @@ const h = vi.hoisted(() => ({
   summarizeInboundEmail: vi.fn().mockResolvedValue('mock summary'),
   alertCronFailure: vi.fn().mockResolvedValue(undefined),
   detectGygReviewNotification: vi.fn().mockReturnValue(null),
-  syncGYGReviews: vi.fn().mockResolvedValue({ imported: 0, skipped: 0, blocked: false }),
+  awardReviewBonuses: vi.fn().mockResolvedValue(undefined),
 }))
 vi.mock('./client', () => ({ listNewMessages: h.listNewMessages, getMessage: h.getMessage }))
 vi.mock('./summarize', () => ({ summarizeInboundEmail: h.summarizeInboundEmail }))
@@ -22,10 +22,7 @@ vi.mock('@/lib/ota/detect', () => ({ detectOtaEmail: h.detectOtaEmail }))
 vi.mock('@/lib/ota/check-availability', () => ({ checkOtaAvailability: h.checkOtaAvailability }))
 vi.mock('@/lib/cron/alert', () => ({ alertCronFailure: h.alertCronFailure }))
 vi.mock('@/lib/getyourguide/detect-review-notification', () => ({ detectGygReviewNotification: h.detectGygReviewNotification }))
-vi.mock('@/lib/getyourguide/sync', () => ({
-  syncGYGReviews: h.syncGYGReviews,
-  GYG_PRODUCT_URLS: { "Private Canal Cruise Through Amsterdam's Hidden Gems": 'https://gyg.example/known-product' },
-}))
+vi.mock('@/lib/scheduling/review-bonuses', () => ({ awardReviewBonuses: h.awardReviewBonuses }))
 
 const state = vi.hoisted(() => ({
   contacts: [] as { id: string; email: string; name: string }[],
@@ -35,6 +32,8 @@ const state = vi.hoisted(() => ({
   insertedMessageIds: new Set<string>(),
   nextId: 1,
   simulateConversationInsertRace: false,
+  socialProofReviews: [] as { id: string; source: string; external_review_id: string; conversation_id: string | null }[],
+  reviewBonusConflicts: [] as { review_id: string; resolved_at: string | null }[],
 }))
 
 function freshId(prefix: string): string {
@@ -160,6 +159,34 @@ vi.mock('@/lib/supabase/admin', () => ({
           },
         }
       }
+      if (table === 'social_proof_reviews') {
+        return {
+          upsert: (row: { source: string; external_review_id: string; conversation_id: string | null }) => ({
+            select: () => ({
+              then: (resolve: (v: { data: unknown[]; error: null }) => unknown) => {
+                const isDuplicate = state.socialProofReviews.some(r => r.source === row.source && r.external_review_id === row.external_review_id)
+                if (isDuplicate) return Promise.resolve({ data: [], error: null }).then(resolve)
+                const created = { id: freshId('review'), ...row }
+                state.socialProofReviews.push(created)
+                return Promise.resolve({ data: [created], error: null }).then(resolve)
+              },
+            }),
+          }),
+        }
+      }
+      if (table === 'review_bonus_conflicts') {
+        return {
+          select: () => ({
+            eq: (_col: string, reviewId: string) => ({
+              is: (_col2: string, _val: null) => ({
+                maybeSingle: async () => ({
+                  data: state.reviewBonusConflicts.find(c => c.review_id === reviewId && c.resolved_at === null) ?? null,
+                }),
+              }),
+            }),
+          }),
+        }
+      }
       throw new Error(`unexpected table "${table}"`)
     },
   }),
@@ -174,6 +201,7 @@ function gmailMessage(overrides: Partial<{
   subject: string
   messageIdHeader: string | null
   bodyText: string
+  bodyHtml: string | null
 }> = {}) {
   return {
     id: 'gmail-msg-1',
@@ -182,6 +210,7 @@ function gmailMessage(overrides: Partial<{
     subject: 'Booking question',
     messageIdHeader: '<abc@mail.gmail.com>',
     bodyText: 'Can we book Saturday?',
+    bodyHtml: null,
     ...overrides,
   }
 }
@@ -195,6 +224,8 @@ beforeEach(() => {
   state.insertedMessageIds.clear()
   state.nextId = 1
   state.simulateConversationInsertRace = false
+  state.socialProofReviews.length = 0
+  state.reviewBonusConflicts.length = 0
   h.draftShadowReply.mockResolvedValue(undefined)
   h.detectCateringConfirmation.mockResolvedValue('unclear')
   h.emitOpsEvent.mockResolvedValue(undefined)
@@ -203,7 +234,7 @@ beforeEach(() => {
   h.summarizeInboundEmail.mockResolvedValue('mock summary')
   h.alertCronFailure.mockResolvedValue(undefined)
   h.detectGygReviewNotification.mockReturnValue(null)
-  h.syncGYGReviews.mockResolvedValue({ imported: 0, skipped: 0, blocked: false })
+  h.awardReviewBonuses.mockResolvedValue(undefined)
   process.env.GMAIL_USER = 'info@offcourseamsterdam.com'
   delete process.env.GMAIL_SUPPORT_ADDRESS
 })
@@ -429,7 +460,6 @@ describe('syncGmailInbox', () => {
       'gmail-inbox-sync',
       expect.any(Error),
       expect.stringContaining('gmail-msg-1'),
-      { dmOnly: true },
     )
   })
 
@@ -543,48 +573,95 @@ describe('syncGmailInbox — supplier replies to a pending catering order', () =
   })
 })
 
-describe('syncGmailInbox — GetYourGuide review notification emails', () => {
-  it('resyncs just that product immediately and skips draftShadowReply/OTA handling', async () => {
-    h.detectGygReviewNotification.mockReturnValue({
-      productName: "Private Canal Cruise Through Amsterdam's Hidden Gems",
+describe('syncGmailInbox — GetYourGuide review notification emails (Phase 3.2, 2026-08-22)', () => {
+  const DETECTION = {
+    productName: "Private Canal Cruise Through Amsterdam's Hidden Gems",
+    externalReviewId: '126298522',
+    rating: 5,
+    reviewText: 'Amazing trip!',
+  }
+
+  function gygMessage(overrides: Parameters<typeof gmailMessage>[0] = {}) {
+    return gmailMessage({
+      threadId: 'thread-gyg-1',
+      from: { email: 'do-not-reply@notification.getyourguide.com', name: 'GetYourGuide' },
+      subject: 'You have a new review on GetYourGuide - 607167 (126298522)',
+      bodyText: "You have received a new review for your product Private Canal Cruise Through Amsterdam's Hidden Gems.",
+      ...overrides,
     })
-    h.syncGYGReviews.mockResolvedValue({ imported: 1, skipped: 0, blocked: false })
+  }
+
+  it('ingests the review directly into social_proof_reviews, runs the matcher, and skips draftShadowReply/OTA handling', async () => {
+    h.detectGygReviewNotification.mockReturnValue(DETECTION)
     h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-gyg-1' }])
-    h.getMessage.mockResolvedValue(
-      gmailMessage({
-        threadId: 'thread-gyg-1',
-        from: { email: 'do-not-reply@notification.getyourguide.com', name: 'GetYourGuide' },
-        subject: 'You have a new review on GetYourGuide - 607167 (126298522)',
-        bodyText: "You have received a new review for your product Private Canal Cruise Through Amsterdam's Hidden Gems.",
-      }),
-    )
+    h.getMessage.mockResolvedValue(gygMessage())
 
     const result = await syncGmailInbox()
 
     expect(result).toEqual({ imported: 1, skipped: 0 })
-    expect(h.syncGYGReviews).toHaveBeenCalledWith('https://gyg.example/known-product')
+    expect(state.socialProofReviews).toEqual([
+      expect.objectContaining({
+        source: 'getyourguide',
+        external_review_id: '126298522',
+        rating: 5,
+        review_text: 'Amazing trip!',
+        is_active: false,
+        conversation_id: state.conversations[0]!.id,
+      }),
+    ])
+    expect(h.awardReviewBonuses).toHaveBeenCalledWith(state.socialProofReviews[0]!.id, 'Amazing trip!', 5)
     expect(h.draftShadowReply).not.toHaveBeenCalled()
     expect(h.detectOtaEmail).toHaveBeenCalled() // still runs (used for conversation grouping), just never acted on
-    expect(state.conversations[0].ota_source).toBeNull() // never stamped — see handleGygReviewNotification's own comment on why
+    expect(state.conversations[0]!.ota_source).toBeNull() // never stamped — see handleGygReviewNotification's own comment on why
   })
 
-  it('notes the product has no configured URL yet instead of silently doing nothing', async () => {
-    h.detectGygReviewNotification.mockReturnValue({ productName: 'Some Brand New Product' })
+  it('auto-resolves the conversation when the matcher leaves nothing pending (unambiguous match or no match at all)', async () => {
+    h.detectGygReviewNotification.mockReturnValue(DETECTION)
+    h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-gyg-1' }])
+    h.getMessage.mockResolvedValue(gygMessage())
+
+    await syncGmailInbox()
+
+    expect(state.conversations[0]!.status).toBe('resolved')
+  })
+
+  it('leaves the conversation open when the matcher created a pending conflict — the review still needs a human decision in the Reviews tab', async () => {
+    h.detectGygReviewNotification.mockReturnValue(DETECTION)
+    h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-gyg-1' }])
+    h.getMessage.mockResolvedValue(gygMessage())
+    // Simulate review-bonuses.ts having created an unresolved conflict for
+    // this review as a side effect of awardReviewBonuses.
+    h.awardReviewBonuses.mockImplementation(async (reviewId: string) => {
+      state.reviewBonusConflicts.push({ review_id: reviewId, resolved_at: null })
+    })
+
+    await syncGmailInbox()
+
+    expect(state.conversations[0]!.status).toBe('open')
+  })
+
+  it('a duplicate notification (already ingested — a re-poll of the same email) still resolves the conversation but does not re-run the matcher', async () => {
+    h.detectGygReviewNotification.mockReturnValue(DETECTION)
+    state.socialProofReviews.push({ id: 'review-existing', source: 'getyourguide', external_review_id: '126298522', conversation_id: null })
+    h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-gyg-1' }])
+    h.getMessage.mockResolvedValue(gygMessage())
+
+    await syncGmailInbox()
+
+    expect(h.awardReviewBonuses).not.toHaveBeenCalled()
+    expect(state.conversations[0]!.status).toBe('resolved')
+  })
+
+  it('ingests fine for a product name never seen before', async () => {
+    h.detectGygReviewNotification.mockReturnValue({ ...DETECTION, productName: 'Some Brand New Product' })
     h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-gyg-2' }])
-    h.getMessage.mockResolvedValue(
-      gmailMessage({
-        threadId: 'thread-gyg-2',
-        from: { email: 'do-not-reply@notification.getyourguide.com', name: 'GetYourGuide' },
-      }),
-    )
+    h.getMessage.mockResolvedValue(gygMessage({ threadId: 'thread-gyg-2' }))
 
     const result = await syncGmailInbox()
 
     expect(result).toEqual({ imported: 1, skipped: 0 })
-    expect(h.syncGYGReviews).not.toHaveBeenCalled()
-    expect(h.summarizeInboundEmail).toHaveBeenCalledWith(
-      expect.objectContaining({ context: expect.stringContaining('no page URL configured') }),
-    )
+    expect(state.socialProofReviews).toHaveLength(1)
+    expect(state.conversations[0]!.status).toBe('resolved')
   })
 
   it('an ordinary email that is not a GYG review notification is unaffected — draftShadowReply still runs (regression)', async () => {
@@ -594,7 +671,7 @@ describe('syncGmailInbox — GetYourGuide review notification emails', () => {
     const result = await syncGmailInbox()
 
     expect(result).toEqual({ imported: 1, skipped: 0 })
-    expect(h.syncGYGReviews).not.toHaveBeenCalled()
+    expect(h.awardReviewBonuses).not.toHaveBeenCalled()
     expect(h.draftShadowReply).toHaveBeenCalledTimes(1)
   })
 })
@@ -676,6 +753,47 @@ describe('syncGmailInbox — OTA notification emails', () => {
     expect(state.agentProposals[1]).toMatchObject({ kind: 'ota_booking_ready', status: 'shadow' })
   })
 
+  it('does NOT merge two different booking refs that land on the same Gmail thread (regression: migration 129 — Gmail threads by subject line, and two unrelated bookings for the same date/time slot got an identical subject)', async () => {
+    h.detectOtaEmail.mockReturnValue({ ...NEW_REQUEST_OTA, bookingRef: 'REF-A' })
+    h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-shared' }])
+    h.getMessage.mockResolvedValue(
+      gmailMessage({ threadId: 'thread-shared', from: { email: 'messages@fareharbor.com', name: 'FareHarbor' }, subject: 'New booking: Shared Cruise on Wednesday' }),
+    )
+    await syncGmailInbox()
+    expect(state.conversations).toHaveLength(1)
+
+    // A second, genuinely different booking — Gmail happened to thread it
+    // onto the exact same thread id because the subject line matched.
+    // Real Postgres would 23505 on provider_thread_id under the OLD single
+    // index (migration 118); the mock simulates that exact race so the
+    // recovery path actually runs, then proves it recovers by
+    // (ota_source, ota_booking_ref) — never by thread id, which would wrongly
+    // hand back the first, unrelated booking's conversation.
+    state.simulateConversationInsertRace = true
+    h.detectOtaEmail.mockReturnValue({ ...NEW_REQUEST_OTA, bookingRef: 'REF-B' })
+    h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-2', threadId: 'thread-shared' }])
+    h.getMessage.mockResolvedValue(
+      gmailMessage({ id: 'gmail-msg-2', threadId: 'thread-shared', from: { email: 'messages@fareharbor.com', name: 'FareHarbor' }, subject: 'New booking: Shared Cruise on Wednesday' }),
+    )
+    const result = await syncGmailInbox()
+
+    expect(result.imported).toBe(1)
+    const refA = state.conversations.find(c => (c as unknown as { ota_booking_ref?: string }).ota_booking_ref === 'REF-A')
+    const refB = state.conversations.find(c => (c as unknown as { ota_booking_ref?: string }).ota_booking_ref === 'REF-B')
+    expect(refA).toBeDefined()
+    expect(refB).toBeDefined()
+    expect(refA?.id).not.toBe(refB?.id)
+    // The real regression: the mock always records BOTH conversation rows
+    // regardless of which one the app code picks (it simulates Postgres
+    // pushing a row before reporting the 23505) — so the meaningful check is
+    // which conversation the second booking's proposal actually landed in.
+    // The old code recovered via lookupConversationByThreadId, which would
+    // have found REF-A's conversation first (same thread, inserted first) and
+    // silently merged REF-B's booking into it.
+    expect(state.agentProposals[1]).toMatchObject({ conversation_id: refB?.id })
+    expect(state.agentProposals[1].conversation_id).not.toBe(refA?.id)
+  })
+
   it('a confirmed booking never drafts a customer reply either — it writes an ota_booking_ready proposal for the team to review', async () => {
     h.detectOtaEmail.mockReturnValue({ ...NEW_REQUEST_OTA, kind: 'confirmed' as const })
     h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-1' }])
@@ -748,6 +866,29 @@ describe('syncGmailInbox — outbound replies sent directly from Gmail (not thro
     expect(state.contacts).toHaveLength(contactsBefore) // no bogus contact for our own address
     expect(h.detectOtaEmail).not.toHaveBeenCalled()
     expect(h.draftShadowReply).not.toHaveBeenCalled()
+    expect(state.conversations).toHaveLength(1) // attached to the existing thread, not a new one
+  })
+
+  it('recognizes a reply sent from a plus-tagged alias of our own address (e.g. "info+canned.response@") as ourselves, not a brand-new external sender (regression 2026-08-21: three real GetMyBoat threads each got a fake contact called "Jannah & Beer" instead)', async () => {
+    await seedThreadWithInboundMessage()
+
+    h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-2', threadId: 'thread-1' }])
+    h.getMessage.mockResolvedValue(
+      gmailMessage({
+        id: 'gmail-msg-2',
+        threadId: 'thread-1',
+        from: { email: 'info+canned.response@offcourseamsterdam.com', name: 'Jannah & Beer' },
+        bodyText: 'Hey [Name], thanks for drifting our way...',
+      }),
+    )
+    const contactsBefore = state.contacts.length
+
+    const result = await syncGmailInbox()
+
+    expect(result).toEqual({ imported: 1, skipped: 0 })
+    expect(state.contacts).toHaveLength(contactsBefore) // no "Jannah & Beer" contact created for our own alias
+    expect(h.detectOtaEmail).not.toHaveBeenCalled()
+    expect(h.draftShadowReply).not.toHaveBeenCalled() // never draft a reply to ourselves
     expect(state.conversations).toHaveLength(1) // attached to the existing thread, not a new one
   })
 

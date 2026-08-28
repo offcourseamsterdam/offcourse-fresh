@@ -2,6 +2,7 @@ import { checkOtaAvailability } from './check-availability'
 import { pickCheapestPrivateOption, type AvailabilityListing } from './availability-shape'
 import { OTA_PLATFORM_NAME, type OtaDetection } from './detect'
 import { postSlackCritical } from '@/lib/slack/send-notification'
+import { resolveConversation } from '@/lib/conversations/resolve'
 import type { Json } from '@/lib/supabase/types'
 
 type SupabaseAdmin = ReturnType<typeof import('@/lib/supabase/admin').createAdminClient>
@@ -166,7 +167,7 @@ export async function handleOtaMessage(
     }
 
     if (matched) {
-      await supabase.from('conversations').update({ status: 'resolved' }).eq('id', conversationId)
+      await resolveConversation(supabase, conversationId)
       return `${OTA_PLATFORM_NAME[ota.platform]} booking notification (#${ota.bookingRef ?? 'unknown'}) — already in our database, this is FareHarbor echoing back our own website's booking. No action needed.`
     }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { extraPriceLabel, compactExtras, compactAvailability } from './tools'
+import { extraPriceLabel, compactExtras, compactAvailability, nearbyDates, sharedListingsAlreadyBooked } from './tools'
 
 // Pure helpers only — the tool `run()` functions hit Supabase and are covered
 // by the live/integration path, not unit tests.
@@ -57,5 +57,66 @@ describe('compactAvailability', () => {
     expect(compactAvailability([{ listing: { slug: 's', title: 'T', category: 'private' }, availableSlots: [] }])).toMatchObject({
       available: false,
     })
+  })
+})
+
+describe('nearbyDates', () => {
+  it('returns the 3 days AFTER centerDate — never centerDate itself, never before it', () => {
+    expect(nearbyDates('2026-08-21', '2026-08-01')).toEqual(['2026-08-22', '2026-08-23', '2026-08-24'])
+  })
+
+  it('drops dates before today rather than suggesting a day that already passed', () => {
+    expect(nearbyDates('2026-08-21', '2026-08-23')).toEqual(['2026-08-23', '2026-08-24'])
+  })
+
+  it('crosses a month boundary correctly', () => {
+    expect(nearbyDates('2026-08-30', '2026-08-01')).toEqual(['2026-08-31', '2026-09-01', '2026-09-02'])
+  })
+})
+
+describe('sharedListingsAlreadyBooked', () => {
+  const SHARED = {
+    listing: { id: 'listing-1', title: 'Hidden Gems', slug: 'hidden-gems', category: 'shared', price_display: '€35' },
+    availableSlots: [{ startTime: '17:00', startAt: '2026-08-24T17:00:00.000Z' }, { startTime: '19:00', startAt: '2026-08-24T19:00:00.000Z' }],
+  }
+  const PRIVATE = {
+    listing: { id: 'listing-2', title: 'Private Diana', slug: 'private-diana', category: 'private' },
+    availableSlots: [{ startTime: '18:00', startAt: '2026-08-24T18:00:00.000Z' }],
+  }
+
+  it('keeps only a shared slot that ALREADY has a confirmed booking on that exact listing + departure', () => {
+    const existing = [{ listing_id: 'listing-1', start_time: '2026-08-24T17:00:00+00:00' }] // same instant, different string format
+    expect(sharedListingsAlreadyBooked([SHARED, PRIVATE], existing)).toEqual([
+      { listing: 'Hidden Gems', slug: 'hidden-gems', price: '€35', times: ['17:00'] },
+    ])
+  })
+
+  it('excludes a technically-available shared slot that has no existing booking yet', () => {
+    expect(sharedListingsAlreadyBooked([SHARED], [])).toEqual([])
+  })
+
+  it('never returns a private-category listing even if it has an existing booking', () => {
+    const existing = [{ listing_id: 'listing-2', start_time: '2026-08-24T18:00:00.000Z' }]
+    expect(sharedListingsAlreadyBooked([PRIVATE], existing)).toEqual([])
+  })
+
+  it('ignores an existing booking on a DIFFERENT listing or time — never a false match', () => {
+    const wrongListing = [{ listing_id: 'listing-99', start_time: '2026-08-24T17:00:00.000Z' }]
+    const wrongTime = [{ listing_id: 'listing-1', start_time: '2026-08-24T20:00:00.000Z' }]
+    expect(sharedListingsAlreadyBooked([SHARED], wrongListing)).toEqual([])
+    expect(sharedListingsAlreadyBooked([SHARED], wrongTime)).toEqual([])
+  })
+
+  it('caps times at 6 so the agent prompt stays compact', () => {
+    const manySlots = {
+      listing: { id: 'listing-3', title: 'Busy', slug: 'busy', category: 'shared' },
+      availableSlots: Array.from({ length: 10 }, (_, i) => ({ startTime: `${10 + i}:00`, startAt: `2026-08-24T${10 + i}:00:00.000Z` })),
+    }
+    const existing = manySlots.availableSlots.map(s => ({ listing_id: 'listing-3', start_time: s.startAt }))
+    expect(sharedListingsAlreadyBooked([manySlots], existing)[0].times).toHaveLength(6)
+  })
+
+  it('returns an empty array, not a crash, when there are no bookings at all', () => {
+    expect(sharedListingsAlreadyBooked([SHARED, PRIVATE], [])).toEqual([])
   })
 })

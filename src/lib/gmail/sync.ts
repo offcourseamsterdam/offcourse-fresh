@@ -5,15 +5,40 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { draftShadowReply } from '@/lib/chat/shadow-drafter'
 import { detectCateringConfirmation } from '@/lib/catering/detect-confirmation'
-import { detectOtaEmail, type OtaDetection } from '@/lib/ota/detect'
+import { detectOtaEmail, OTA_PLATFORM_NAME, type OtaDetection } from '@/lib/ota/detect'
+import { notifyInboxItem } from '@/lib/slack/notify-inbox'
 import { handleOtaMessage } from '@/lib/ota/handle-message'
 import { detectGygReviewNotification } from '@/lib/getyourguide/detect-review-notification'
-import { syncGYGReviews, GYG_PRODUCT_URLS } from '@/lib/getyourguide/sync'
+import { awardReviewBonuses } from '@/lib/scheduling/review-bonuses'
+import { resolveConversation } from '@/lib/conversations/resolve'
 import { summarizeInboundEmail } from './summarize'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { alertCronFailure } from '@/lib/cron/alert'
 import { findOrCreateContactByField } from '@/lib/contacts/find-or-create'
 import { listNewMessages, getMessage, type GmailMessage } from './client'
+
+/**
+ * Strips a Gmail "+tag" from the local part ("info+canned.response@x" →
+ * "info@x") so a plus-tagged send-as alias compares equal to the bare
+ * mailbox it actually belongs to. Gmail's own `from:` search operator
+ * already treats them as the same mailbox (that's how a plus-tagged reply
+ * ever matches inboxQuery()'s `from:${ourOwnAddress}` clause in the first
+ * place) — without normalizing here too, ourAddresses.has() below does a
+ * literal string compare, misses the plus-tagged variant, and treats a
+ * reply WE sent (e.g. from Beer/Jannah's "info+canned.response@" alias, used
+ * for manual GetMyBoat replies) as a brand-new external sender: a fresh
+ * contact literally named after our own alias's display name, run through
+ * the full customer pipeline including a Ghost-drafted reply to ourselves.
+ * Found 2026-08-21 — three real GetMyBoat threads (Sergey and others) each
+ * had their own reply misfiled this way under a contact called "Jannah & Beer".
+ */
+function stripPlusTag(email: string): string {
+  const at = email.indexOf('@')
+  if (at === -1) return email
+  const local = email.slice(0, at)
+  const domain = email.slice(at)
+  return `${local.split('+')[0]}${domain}`
+}
 
 /**
  * Every address a reply typed directly in Gmail (not through our admin
@@ -28,7 +53,7 @@ function ourOwnAddresses(): Set<string> {
   return new Set(
     [process.env.GMAIL_SUPPORT_ADDRESS, process.env.GMAIL_USER]
       .filter((a): a is string => !!a)
-      .map(a => a.toLowerCase()),
+      .map(a => stripPlusTag(a.toLowerCase())),
   )
 }
 
@@ -65,6 +90,14 @@ function inboxQuery(): string {
 
 type SupabaseAdmin = ReturnType<typeof createAdminClient>
 
+/** What the Slack DM calls each kind of thing the Ghost proposed. */
+const GHOST_KIND_HEADLINE: Record<'reply_draft' | 'booking_proposal' | 'booking_correction' | 'cancellation_request', string> = {
+  reply_draft: 'New message',
+  booking_proposal: 'New message — booking proposed',
+  booking_correction: 'New message — contact-info fix proposed',
+  cancellation_request: 'New message — CANCELLATION requested',
+}
+
 /**
  * Grouped strictly by Gmail's own threadId — NOT by "any open email conversation
  * for this contact" the way webchat groups by contact alone. A customer can have
@@ -91,6 +124,20 @@ async function lookupConversationByThreadId(
   return data ? { id: data.id, unreadCount: data.unread_count ?? 0, status: data.status } : null
 }
 
+async function lookupConversationByOtaRef(
+  supabase: SupabaseAdmin,
+  platform: string,
+  bookingRef: string,
+): Promise<{ id: string; unreadCount: number } | null> {
+  const { data } = await supabase
+    .from('conversations')
+    .select('id, unread_count')
+    .eq('ota_source', platform)
+    .eq('ota_booking_ref', bookingRef)
+    .maybeSingle()
+  return data ? { id: data.id, unreadCount: data.unread_count ?? 0 } : null
+}
+
 async function findOrCreateConversation(
   supabase: SupabaseAdmin,
   contactId: string,
@@ -99,13 +146,8 @@ async function findOrCreateConversation(
   ota: OtaDetection | null,
 ): Promise<{ id: string; unreadCount: number }> {
   if (ota?.bookingRef) {
-    const { data: existingByRef } = await supabase
-      .from('conversations')
-      .select('id, unread_count')
-      .eq('ota_source', ota.platform)
-      .eq('ota_booking_ref', ota.bookingRef)
-      .maybeSingle()
-    if (existingByRef) return { id: existingByRef.id, unreadCount: existingByRef.unread_count ?? 0 }
+    const existingByRef = await lookupConversationByOtaRef(supabase, ota.platform, ota.bookingRef)
+    if (existingByRef) return existingByRef
   } else {
     const existing = await lookupConversationByThreadId(supabase, threadId)
     if (existing) return existing
@@ -127,11 +169,20 @@ async function findOrCreateConversation(
   if (error) {
     // 23505 = another concurrent poll (a manual sync-gmail-now.ts run
     // overlapping the cron, or two overlapping cron invocations) already
-    // inserted a conversation for this exact Gmail thread — backed by a
-    // partial unique index on provider_thread_id (migration 118). Not a real
-    // failure: fetch and use the row that won instead of erroring out.
+    // inserted a conversation for the same real thing — backed by
+    // conversations_thread_id_unique_idx for a normal customer email thread,
+    // or conversations_ota_ref_unique_idx for the SAME OTA booking ref
+    // (migration 129 — see its comment for why these are two separate
+    // indexes, not one on provider_thread_id: two DIFFERENT booking refs are
+    // allowed to share a Gmail thread id, since Gmail threads by subject
+    // line and two unrelated bookings can get an identical one). Recover via
+    // whichever key actually identifies this conversation, not thread_id —
+    // that would silently merge two different bookings' notifications into
+    // one conversation exactly the way this migration fixed.
     if (error.code === '23505') {
-      const winner = await lookupConversationByThreadId(supabase, threadId)
+      const winner = ota?.bookingRef
+        ? await lookupConversationByOtaRef(supabase, ota.platform, ota.bookingRef)
+        : await lookupConversationByThreadId(supabase, threadId)
       if (winner) return winner
     }
     throw new Error(`Could not create conversation for thread ${threadId}: ${error.message}`)
@@ -198,9 +249,23 @@ async function handlePendingCateringReply(supabase: SupabaseAdmin, message: Gmai
 /**
  * GetYourGuide's "you have a new review" notification — never a customer
  * message, never something to reply to (see detect-review-notification.ts).
- * Triggers an immediate resync of just that product's reviews instead of
- * waiting for the weekly cron, so a fresh 5-star review shows up on the site
- * same-day rather than up to a week later.
+ * The email carries everything a review row needs, so it's ingested directly
+ * (Beer, 2026-08-22, plan §3.2). This is the ONLY way new GYG reviews arrive —
+ * the page-scraping fallback (`lib/getyourguide/sync.ts`) was deleted
+ * 2026-08-23 after confirming live it had been Cloudflare-blocked for both
+ * known product pages the whole time, doing nothing.
+ *
+ * Same matcher, same tables as the Outscraper path (awardReviewBonuses) — the
+ * Reviews tab doesn't need to know which platform a review came from.
+ *
+ * This conversation auto-resolves once the review has nothing left needing a
+ * human decision: an unambiguous match (or no match at all) resolves
+ * immediately; an ambiguous/near-miss match leaves it 'open' until a human
+ * picks a captain in the Reviews tab (see api/admin/reviews/[id]/assign/
+ * route.ts, which resolves the conversation at that point instead). This is
+ * Beer's rule — "don't show it in the inbox if that's already been taken
+ * care of in the review session" — read literally: still-pending IS still
+ * showing, already-decided is not.
  *
  * Deliberately does NOT stamp conversations.ota_source — that field also
  * drives the inbox list's "Booking request" title and OTA filter bucket
@@ -208,29 +273,62 @@ async function handlePendingCateringReply(supabase: SupabaseAdmin, message: Gmai
  * rendering this email's remote images is decided separately, straight from
  * the contact's email domain — see ThreadPane.tsx's trustSender check.
  */
-async function handleGygReviewNotification(message: GmailMessage): Promise<string | null> {
+async function handleGygReviewNotification(supabase: SupabaseAdmin, message: GmailMessage, conversationId: string): Promise<string | null> {
   const detection = detectGygReviewNotification({
     fromEmail: message.from.email,
     subject: message.subject,
     bodyText: message.bodyText,
+    bodyHtml: message.bodyHtml,
   })
   if (!detection) return null
 
-  const url = GYG_PRODUCT_URLS[detection.productName]
-  if (!url) {
-    return `New GetYourGuide review for "${detection.productName}" — no page URL configured for this product yet, so it wasn't auto-synced (add it to GYG_PRODUCT_URLS).`
+  // ignoreDuplicates + .select() is the same "was this actually fresh"
+  // pattern as review-bonuses.ts's own upsert — an empty array means this
+  // exact (source, external_review_id) is already in the table, i.e. a
+  // re-poll of the same email.
+  const { data: inserted, error: insertErr } = await supabase
+    .from('social_proof_reviews')
+    .upsert(
+      {
+        source: 'getyourguide',
+        external_review_id: detection.externalReviewId,
+        // No reviewer name in the notification email at all — a known,
+        // permanent gap (there's no other GYG ingestion path left to
+        // backfill it from). Beer can edit it by hand in the Reviews tab
+        // if he wants the real name shown.
+        reviewer_name: 'GetYourGuide guest',
+        rating: detection.rating,
+        review_text: detection.reviewText,
+        is_active: false,
+        conversation_id: conversationId,
+      },
+      { onConflict: 'source,external_review_id', ignoreDuplicates: true },
+    )
+    .select('id')
+
+  const reviewId = !insertErr && inserted?.length ? (inserted[0] as { id: string }).id : null
+
+  if (!reviewId) {
+    // Already ingested — nothing new to decide, so nothing left open either.
+    await resolveConversation(supabase, conversationId)
+  } else {
+    await awardReviewBonuses(reviewId, detection.reviewText, detection.rating)
+
+    const { data: pendingConflict } = await supabase
+      .from('review_bonus_conflicts')
+      .select('id')
+      .eq('review_id', reviewId)
+      .is('resolved_at', null)
+      .maybeSingle()
+
+    if (!pendingConflict) {
+      await resolveConversation(supabase, conversationId)
+    }
   }
 
-  try {
-    const result = await syncGYGReviews(url)
-    if (result.blocked) {
-      return `New GetYourGuide review for "${detection.productName}" — tried to sync immediately but GetYourGuide blocked the request; will retry on the weekly cron.`
-    }
-    return `New GetYourGuide review for "${detection.productName}" — synced immediately (${result.imported} new review${result.imported === 1 ? '' : 's'}).`
-  } catch (err) {
-    console.error('[gmail/sync] GYG review resync failed:', err instanceof Error ? err.message : err)
-    return `New GetYourGuide review for "${detection.productName}" — resync attempt failed, will retry on the weekly cron.`
-  }
+  return reviewId
+    ? `New GetYourGuide review for "${detection.productName}" (${detection.rating}★) — ingested directly from the email.`
+    : `New GetYourGuide review for "${detection.productName}" — already recorded (duplicate notification).`
 }
 
 /**
@@ -291,9 +389,9 @@ export interface GmailSyncResult {
   skipped: number
 }
 
-export async function syncGmailInbox(): Promise<GmailSyncResult> {
+export async function syncGmailInbox(queryOverride?: string): Promise<GmailSyncResult> {
   const supabase = createAdminClient()
-  const refs = await listNewMessages(inboxQuery())
+  const refs = await listNewMessages(queryOverride ?? inboxQuery())
   const ourAddresses = ourOwnAddresses()
 
   let imported = 0
@@ -318,7 +416,7 @@ export async function syncGmailInbox(): Promise<GmailSyncResult> {
     // A reply sent directly from Gmail (not through our own admin panel) —
     // attach it to its thread and move on. Never a customer message, so
     // never routed through contact-matching, OTA detection, or Ghost.
-    if (ourAddresses.has(message.from.email.toLowerCase())) {
+    if (ourAddresses.has(stripPlusTag(message.from.email.toLowerCase()))) {
       try {
         const outcome = await handleOutboundGmailMessage(supabase, message)
         if (outcome === 'inserted') imported++
@@ -397,7 +495,7 @@ export async function syncGmailInbox(): Promise<GmailSyncResult> {
       const cateringContext = await handlePendingCateringReply(supabase, message)
       ghostContext = cateringContext
       if (!cateringContext) {
-        ghostContext = await handleGygReviewNotification(message)
+        ghostContext = await handleGygReviewNotification(supabase, message, conversationId)
       }
       if (!cateringContext && !ghostContext) {
         if (ota) {
@@ -405,6 +503,25 @@ export async function syncGmailInbox(): Promise<GmailSyncResult> {
           // platform, not by replying to info@withlocals.com) — a dedicated,
           // read-only fact block instead. See lib/ota/handle-message.ts.
           ghostContext = await handleOtaMessage(supabase, ota, conversationId, inserted?.id ?? null)
+
+          // A booking that exists in FareHarbor but not in OUR database is
+          // invisible to Bookings, Planning, Scheduling and Finance until a
+          // human clicks Import — so announce it rather than letting it sit
+          // (two Boat Local bookings went unnoticed for days, 2026-08-21).
+          if (ota.kind === 'needs_import') {
+            await notifyInboxItem({
+              conversationId,
+              from: `${OTA_PLATFORM_NAME[ota.platform]}${ota.guestName ? ` · ${ota.guestName}` : ''}`,
+              headline: 'Booking not in our database yet',
+              details: [
+                ota.parsed.experienceName,
+                [ota.parsed.date, ota.parsed.time].filter(Boolean).join(' at ') || null,
+                ota.parsed.guests ? `${ota.parsed.guests} guests` : null,
+                ota.bookingRef ? `FareHarbor #${ota.bookingRef}` : null,
+              ],
+              action: 'One click on the Import card adds it to Bookings, Planning and Finance.',
+            })
+          }
         } else {
           // Ghost drafts a reply/booking proposal — same pipeline webchat already
           // uses, unmodified. Awaited directly (this runs inside a cron, not a
@@ -413,6 +530,19 @@ export async function syncGmailInbox(): Promise<GmailSyncResult> {
           ghostContext = shadowResult
             ? `Ghost ${shadowResult.kind === 'reply_draft' ? 'drafted a reply' : shadowResult.kind === 'booking_proposal' ? 'proposed a booking' : 'proposed a contact-info correction'}: ${shadowResult.reasoning}`
             : null
+
+          // A real guest is waiting — DM the draft so Beer can act from his
+          // phone instead of having to open the admin panel to notice at all.
+          if (shadowResult) {
+            await notifyInboxItem({
+              conversationId,
+              from: message.from.name || message.from.email,
+              headline: GHOST_KIND_HEADLINE[shadowResult.kind],
+              details: [message.subject],
+              draft: shadowResult.reply,
+              action: shadowResult.kind === 'reply_draft' ? undefined : 'Needs your approval in the admin panel.',
+            })
+          }
         }
       }
     } catch (err) {
@@ -437,7 +567,6 @@ export async function syncGmailInbox(): Promise<GmailSyncResult> {
       'gmail-inbox-sync',
       failures[0].error,
       `${failures.length} message(s) skipped this poll — none were saved, so they'll be retried automatically next poll:\n${failureList}`,
-      { dmOnly: true },
     )
   }
 

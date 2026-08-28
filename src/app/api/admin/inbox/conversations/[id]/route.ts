@@ -57,31 +57,58 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
   }
 }
 
-/** The contact's booking history: matched by email, then phone as fallback. */
+const CONTACT_BOOKING_COLUMNS =
+  'id, booking_id, booking_date, start_time, status, guest_count, listing_title, receipt_total_display'
+
+/**
+ * The contact's booking history: matched by email OR phone. Two sequential
+ * .eq() queries, NOT a hand-built .or() filter string — contact.email/
+ * phone_e164 come straight from a Gmail header with no format validation
+ * (see gmail/client.ts), so they must go in as parameterized values, never
+ * interpolated into PostgREST's filter-string DSL (the same fix as the
+ * sibling conversations list route's next_booking lookup, and the
+ * fareharbor-webhook .or() fix — a crafted local-part could otherwise break
+ * out of the filter expression).
+ */
 async function loadContactBookings(
   supabase: ReturnType<typeof createAdminClient>,
   contact: { email: string | null; phone_e164: string | null } | null,
 ) {
   if (!contact?.email && !contact?.phone_e164) return []
-  const filters = []
-  if (contact.email) filters.push(`customer_email.eq.${contact.email}`)
-  if (contact.phone_e164) filters.push(`customer_phone.eq.${contact.phone_e164}`)
 
-  const { data } = await supabase
-    .from('bookings')
-    .select(
-      'id, booking_id, booking_date, start_time, status, guest_count, listing_title, receipt_total_display',
-    )
-    .or(filters.join(','))
-    .order('booking_date', { ascending: false })
-    .limit(10)
-  return data ?? []
+  // .limit(10) on each side, not just the final .slice(0, 10) below — a
+  // repeat guest or a shared/corporate phone number can carry an unbounded
+  // number of historical booking rows, and fetching all of them on every
+  // 5-second thread poll is the exact shape of the June 2026 egress
+  // incident (an unbounded fetch on a poll). Two independently-sorted
+  // top-10-by-date lists still merge into the correct overall top-10 — the
+  // true global top-K can never need a row ranked below K in either source.
+  const [byEmail, byPhone] = await Promise.all([
+    contact.email
+      ? supabase.from('bookings').select(CONTACT_BOOKING_COLUMNS).eq('customer_email', contact.email).order('booking_date', { ascending: false }).limit(10)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    contact.phone_e164
+      ? supabase.from('bookings').select(CONTACT_BOOKING_COLUMNS).eq('customer_phone', contact.phone_e164).order('booking_date', { ascending: false }).limit(10)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+  ])
+
+  const seen = new Set<string>()
+  const merged = [...(byEmail.data ?? []), ...(byPhone.data ?? [])].filter(row => {
+    const id = row.id as string
+    if (seen.has(id)) return false
+    seen.add(id)
+    return true
+  })
+
+  return merged
+    .sort((a, b) => String(b.booking_date ?? '').localeCompare(String(a.booking_date ?? '')))
+    .slice(0, 10)
 }
 
 /** The narrowed columns we pull per proposal — never the whole payload/outcome. */
 interface NarrowedGhostRow {
   id: string
-  kind: 'reply_draft' | 'booking_proposal' | 'booking_correction' | 'ota_availability' | 'ota_booking_ready' | 'fh_booking_import_ready'
+  kind: 'reply_draft' | 'booking_proposal' | 'booking_correction' | 'cancellation_request' | 'ota_availability' | 'ota_booking_ready' | 'fh_booking_import_ready'
   status: string
   reasoning: string | null
   created_at: string
@@ -91,6 +118,10 @@ interface NarrowedGhostRow {
   booking: Record<string, unknown> | null
   verdict: Record<string, unknown> | null
   correction: Record<string, unknown> | null
+  cancellation: Record<string, unknown> | null
+  cancellation_terms: Record<string, unknown> | null
+  /** Tool NAMES only — never the fat `steps` blob; see the select below. */
+  tools_used: string[] | null
   human_reply: string | null
   comparison: Record<string, unknown> | null
   ota_platform: string | null
@@ -122,13 +153,15 @@ async function loadGhostProposals(supabase: ReturnType<typeof createAdminClient>
       `id, kind, status, reasoning, created_at,
        reply:payload->>reply, reply_en:payload->>reply_en, language:payload->>language,
        booking:payload->booking, verdict:payload->verdict, correction:payload->correction,
+       cancellation:payload->cancellation, cancellation_terms:payload->cancellation_terms,
+       tools_used:payload->tools_used,
        human_reply:outcome->>human_reply, comparison:outcome->comparison,
        ota_platform:payload->>platform, ota_booking_ref:payload->>bookingRef, ota_guest_name:payload->>guestName,
        ota_requested:payload->requested, ota_parsed:payload->parsed, ota_checked:payload->>checked,
        ota_availability_data:payload->availability`,
     )
     .eq('conversation_id', conversationId)
-    .in('kind', ['reply_draft', 'booking_proposal', 'booking_correction', 'ota_availability', 'ota_booking_ready', 'fh_booking_import_ready'])
+    .in('kind', ['reply_draft', 'booking_proposal', 'booking_correction', 'cancellation_request', 'ota_availability', 'ota_booking_ready', 'fh_booking_import_ready'])
     .order('created_at', { ascending: false })
     .limit(20)
 
@@ -146,6 +179,9 @@ async function loadGhostProposals(supabase: ReturnType<typeof createAdminClient>
       booking: r.booking ?? undefined,
       verdict: r.verdict ?? undefined,
       correction: r.correction ?? undefined,
+      cancellation: r.cancellation ?? undefined,
+      cancellation_terms: r.cancellation_terms ?? undefined,
+      tools_used: r.tools_used ?? undefined,
       platform: r.ota_platform ?? undefined,
       booking_ref: r.ota_booking_ref ?? undefined,
       guest_name: r.ota_guest_name ?? undefined,
@@ -169,6 +205,7 @@ async function loadGhostProposals(supabase: ReturnType<typeof createAdminClient>
     replyDraft: isOta ? null : rows.find(r => r.kind === 'reply_draft') ?? null,
     bookingProposal: isOta ? null : rows.find(r => r.kind === 'booking_proposal') ?? null,
     bookingCorrection: isOta ? null : rows.find(r => r.kind === 'booking_correction') ?? null,
+    cancellationRequest: isOta ? null : rows.find(r => r.kind === 'cancellation_request') ?? null,
     otaAvailability: rows.find(r => r.kind === 'ota_availability') ?? null,
     otaBookingReady: rows.find(r => r.kind === 'ota_booking_ready') ?? null,
     fhImportReady: rows.find(r => r.kind === 'fh_booking_import_ready') ?? null,

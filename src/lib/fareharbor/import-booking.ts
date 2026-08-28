@@ -1,5 +1,7 @@
 import { amsterdamTimeToUtcIso } from '@/lib/utils'
 import type { BookingSource } from '@/lib/constants'
+import { getStripe } from '@/lib/stripe/server'
+import { categoryFromExperienceName } from '../../../supabase/functions/_shared/category'
 
 type SupabaseAdmin = ReturnType<typeof import('@/lib/supabase/admin').createAdminClient>
 
@@ -15,6 +17,16 @@ export interface ImportableBooking {
   endTime: string | null
   guests: number | null
   experienceName: string | null
+  /**
+   * Set ONLY for Boat Local's "own_channel" case (see ota/detect.ts) — that
+   * affiliate books through OUR OWN Stripe checkout, so its "Voucher" field
+   * is a real PaymentIntent id, not a platform code. When present, the real
+   * charge is fetched and stamped as this booking's stripe_amount instead of
+   * the €0 comp used for a true 3rd-party OTA (GYG/Viator) below — we
+   * actually know what was paid here, so recording €0 would just create a
+   * second, wrong figure for Finance to reconcile against.
+   */
+  stripePaymentIntentId?: string | null
 }
 
 export type ImportBookingResult =
@@ -39,10 +51,14 @@ export type ImportBookingResult =
  * pk into booking_uuid would make fh-consistency's getBooking(uuid) call
  * 404 and wrongly report this booking as missing from FareHarbor.
  *
- * Money is deliberately left at 0: the guest paid the platform, not us, and
- * that platform's own payout data (src/lib/finance/*-summary.ts) is the
- * right source for the real amount — stamping a number here would just be a
- * second, competing figure Finance would have to reconcile against.
+ * Money is deliberately left at 0 for a true 3rd-party OTA: the guest paid
+ * the platform, not us, and that platform's own payout data
+ * (src/lib/finance/*-summary.ts) is the right source for the real amount —
+ * stamping a number here would just be a second, competing figure Finance
+ * would have to reconcile against. The one exception is Boat Local's
+ * "own_channel" case (booking.stripePaymentIntentId set) — that's a real
+ * charge on our own Stripe, so the actual amount is fetched and stamped
+ * instead of a €0 placeholder.
  */
 export async function importFareharborBooking(supabase: SupabaseAdmin, booking: ImportableBooking): Promise<ImportBookingResult> {
   if (!booking.dateISO || !booking.time) {
@@ -61,12 +77,22 @@ export async function importFareharborBooking(supabase: SupabaseAdmin, booking: 
   const startTime = amsterdamTimeToUtcIso(booking.dateISO, booking.time)
   const endTime = booking.endTime ? amsterdamTimeToUtcIso(booking.dateISO, booking.endTime) : null
 
+  // Real charge on our own Stripe (Boat Local) vs. paid-elsewhere comp (GYG/Viator).
+  let stripeAmount = 0
+  let paymentStatus = 'paid_externally'
+  if (booking.stripePaymentIntentId) {
+    const pi = await getStripe().paymentIntents.retrieve(booking.stripePaymentIntentId)
+    stripeAmount = pi.amount_received || pi.amount
+    paymentStatus = 'paid'
+  }
+
   const { data: inserted, error } = await supabase
     .from('bookings')
     .insert({
       booking_id: `fh_${booking.bookingPk}`,
       external_id: String(booking.bookingPk),
       tour_item_name: booking.experienceName,
+      category: categoryFromExperienceName(booking.experienceName),
       booking_date: booking.dateISO,
       start_time: startTime,
       end_time: endTime,
@@ -75,10 +101,11 @@ export async function importFareharborBooking(supabase: SupabaseAdmin, booking: 
       customer_email: booking.guestEmail ?? '',
       customer_phone: booking.guestPhone,
       status: 'confirmed',
-      payment_status: 'paid_externally',
+      payment_status: paymentStatus,
       currency: 'eur',
       booking_source: booking.bookingSource,
-      stripe_amount: 0,
+      stripe_payment_intent_id: booking.stripePaymentIntentId ?? null,
+      stripe_amount: stripeAmount,
       discount_amount_cents: 0,
     })
     .select('id')

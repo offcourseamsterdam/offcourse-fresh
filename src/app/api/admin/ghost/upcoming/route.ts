@@ -22,7 +22,16 @@ export async function GET() {
 
     const [openChatsRes, proposalsRes] = await Promise.all([
       supabase.from('conversations').select('id', { count: 'exact', head: true }).eq('status', 'open'),
-      supabase.from('agent_proposals').select('id, payload').eq('status', 'shadow').in('kind', AWAITING_REVIEW_KINDS),
+      // Shadow proposals are normally short-lived (claimed or executed within
+      // a day or two), but nothing enforces that — capped + newest-first as a
+      // safety bound against an unbounded scan on this 15s poll.
+      supabase
+        .from('agent_proposals')
+        .select('id, payload')
+        .eq('status', 'shadow')
+        .in('kind', AWAITING_REVIEW_KINDS)
+        .order('created_at', { ascending: false })
+        .limit(500),
     ])
 
     if (openChatsRes.error) return apiError(openChatsRes.error.message)

@@ -10,10 +10,10 @@
  * 3. The refresh token prints to this terminal — paste it into .env.local as
  *    GMAIL_REFRESH_TOKEN.
  *
- * Reuses GOOGLE_OAUTH_CLIENT_ID/SECRET (the same client Google Ads already uses —
- * see src/lib/google-ads/auth.ts) with new scopes, so it needs its own consent
- * grant: Google issues refresh tokens scoped to whatever was approved at consent
- * time, and this client has never been granted Gmail access before.
+ * Uses its own dedicated OAuth client (GMAIL_OAUTH_CLIENT_ID/SECRET), not the
+ * shared GOOGLE_OAUTH_CLIENT_ID Google Ads uses — see src/lib/gmail/auth.ts
+ * for why. Needs its own consent grant: Google issues refresh tokens scoped
+ * to whatever was approved at consent time.
  *
  * Before running: in Google Cloud Console, on this OAuth client, add
  * http://localhost:8945/oauth-callback to "Authorized redirect URIs" if it isn't
@@ -21,8 +21,8 @@
  */
 import { createServer } from 'node:http'
 
-const CLIENT_ID = process.env.GOOGLE_OAUTH_CLIENT_ID
-const CLIENT_SECRET = process.env.GOOGLE_OAUTH_CLIENT_SECRET
+const CLIENT_ID = process.env.GMAIL_OAUTH_CLIENT_ID
+const CLIENT_SECRET = process.env.GMAIL_OAUTH_CLIENT_SECRET
 const REDIRECT_URI = 'http://localhost:8945/oauth-callback'
 const SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
@@ -30,7 +30,7 @@ const SCOPES = [
 ]
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
-  console.error('Missing GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET — set them in .env.local first.')
+  console.error('Missing GMAIL_OAUTH_CLIENT_ID / GMAIL_OAUTH_CLIENT_SECRET — set them in .env.local first.')
   process.exit(1)
 }
 

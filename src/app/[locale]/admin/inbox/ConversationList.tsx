@@ -1,14 +1,25 @@
 'use client'
 
-import { useEffect, useState, type ComponentType } from 'react'
+import { useMemo, useState, type ComponentType } from 'react'
+import { preload } from 'swr'
 import { CheckCircle2, Clock, Download, Globe, Mail, MailOpen, MessageSquare, Phone, XCircle } from 'lucide-react'
 import { timeAgoShort } from '@/lib/utils'
 import { fmtAdminDate, fmtAdminTime } from '@/lib/admin/format'
 import { formatWindowRemaining } from '@/lib/whatsapp/window'
 import { WhatsAppIcon } from '@/components/chat/WhatsAppIcon'
+import { adminFetcher } from '@/hooks/useAdminFetch'
 import { adminMutate } from '@/hooks/useAdminSave'
+import { useTickingClock } from '@/hooks/useTickingClock'
 import { OTA_PLATFORM_NAME } from '@/lib/ota/detect'
+import { GYG_REVIEW_NOTIFICATION_SENDER } from '@/lib/getyourguide/detect-review-notification'
 import type { InboxListItem } from './types'
+
+/** Same idiom as DashboardSidebar's nav hover-prefetch — warm SWR's cache the
+ * moment the mouse arrives on a row, so by the time a click actually lands,
+ * the thread detail request is already in flight (or done). */
+function prefetchConversation(id: string) {
+  preload(`/api/admin/inbox/conversations/${id}`, adminFetcher)
+}
 
 const CHANNEL_ICON = {
   webchat: MessageSquare,
@@ -59,6 +70,16 @@ function sourceOf(c: InboxListItem): SourceFilter {
  * everything else in ota/detect.ts.
  */
 function requestTypeLabel(c: InboxListItem): string | null {
+  // GetYourGuide's own review-notification relay — never a customer, never
+  // has a booking, so without this it fell through to bookingInfoLabel()'s
+  // generic "no booking" (see gmail/sync.ts's handleGygReviewNotification,
+  // which deliberately does NOT stamp ota_source — that field also drives the
+  // OTA filter bucket, and a review notification is neither an OTA booking
+  // request nor something to reply to).
+  // No platform suffix here (unlike the OTA labels below) — the contact name
+  // for this sender IS "GetYourGuide", so "New review · GetYourGuide" would
+  // repeat it right after: "New review · GetYourGuide — GetYourGuide".
+  if (c.contact?.email === GYG_REVIEW_NOTIFICATION_SENDER) return 'New review'
   if (c.ota_source) {
     const platform = OTA_PLATFORM_NAME[c.ota_source as keyof typeof OTA_PLATFORM_NAME] ?? c.ota_source
     const kind =
@@ -104,23 +125,33 @@ export function ConversationList({ conversations, selectedId, statusFilter, onSe
   // Ticks the WhatsApp window badges below — the list itself re-polls every
   // 10s anyway (page.tsx), but a visible countdown should move even between
   // polls rather than sitting frozen for up to 10s at a time.
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 30_000)
-    return () => clearInterval(interval)
-  }, [])
+  const now = useTickingClock(true)
 
   // Quick status-change buttons on each row (Open/Waiting/Resolved) — disabled
   // while its own request is in flight so a slow save can't be double-fired.
   const [changingId, setChangingId] = useState<string | null>(null)
+  // Drives the row's fade/slide-out below. Separate from changingId (which
+  // gates re-entrancy) so the animation has a guaranteed minimum duration
+  // instead of just however long the network happens to take — a save that
+  // resolves in 80ms would otherwise look like a jump-cut, not a transition.
+  const [animatingId, setAnimatingId] = useState<string | null>(null)
+  const [animatingStatus, setAnimatingStatus] = useState<WorkflowStatus | null>(null)
+  const ROW_ANIMATION_MS = 320
   async function changeStatus(id: string, status: WorkflowStatus) {
     if (changingId) return
     setChangingId(id)
+    setAnimatingId(id)
+    setAnimatingStatus(status)
     try {
-      await adminMutate(`/api/admin/inbox/conversations/${id}`, 'PATCH', { status })
+      await Promise.all([
+        adminMutate(`/api/admin/inbox/conversations/${id}`, 'PATCH', { status }),
+        new Promise(resolve => setTimeout(resolve, ROW_ANIMATION_MS)),
+      ])
       onStatusChanged?.()
     } finally {
       setChangingId(null)
+      setAnimatingId(null)
+      setAnimatingStatus(null)
     }
   }
 
@@ -132,11 +163,21 @@ export function ConversationList({ conversations, selectedId, statusFilter, onSe
     voice: true,
     ota: true,
   })
-  const sourceCounts = conversations.reduce(
-    (acc, c) => ({ ...acc, [sourceOf(c)]: acc[sourceOf(c)] + 1 }),
-    { chat: 0, email: 0, whatsapp: 0, voice: 0, ota: 0 } as Record<SourceFilter, number>,
-  )
-  const visibleConversations = conversations.filter(c => sourceFilter[sourceOf(c)])
+  // One pass over `conversations` for both derived values instead of two
+  // (`reduce` + `filter`), and computed once per render via useMemo instead
+  // of on every re-render — this component re-renders every 30s just to
+  // tick the WhatsApp countdown badges, which shouldn't force a full
+  // recount/refilter of a list that hasn't actually changed.
+  const { sourceCounts, visibleConversations } = useMemo(() => {
+    const counts: Record<SourceFilter, number> = { chat: 0, email: 0, whatsapp: 0, voice: 0, ota: 0 }
+    const visible: typeof conversations = []
+    for (const c of conversations) {
+      const source = sourceOf(c)
+      counts[source]++
+      if (sourceFilter[source]) visible.push(c)
+    }
+    return { sourceCounts: counts, visibleConversations: visible }
+  }, [conversations, sourceFilter])
 
   return (
     <div className="flex flex-col h-full">
@@ -204,23 +245,43 @@ export function ConversationList({ conversations, selectedId, statusFilter, onSe
           const otherStatuses = WORKFLOW_STATUSES.filter(s => s !== c.status)
           const requestType = requestTypeLabel(c)
           const displayName = c.ota_guest_name ?? c.contact?.name ?? 'Unknown'
+          const isAnimatingOut = animatingId === c.id
+          const animatingColor = animatingStatus === 'resolved' ? 'bg-emerald-50' : animatingStatus === 'pending' ? 'bg-amber-50' : ''
           return (
             <div
               key={c.id}
               role="button"
               tabIndex={0}
               onClick={() => onSelect(c.id)}
+              onMouseEnter={() => prefetchConversation(c.id)}
               onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && onSelect(c.id)}
-              className={`group w-full text-left px-3 py-3 border-b border-zinc-50 transition-colors cursor-pointer ${
-                selectedId === c.id ? 'bg-zinc-100' : 'hover:bg-zinc-50'
+              className={`group w-full text-left px-3 py-3 border-b border-zinc-50 cursor-pointer transition-all duration-300 ease-out ${
+                isAnimatingOut
+                  ? `opacity-0 scale-[0.97] -translate-x-1.5 ${animatingColor}`
+                  : `opacity-100 scale-100 translate-x-0 ${selectedId === c.id ? 'bg-zinc-100' : 'hover:bg-zinc-50'}`
               }`}
             >
               <div className="flex items-center gap-2">
-                <Icon className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                <span className={`flex-1 truncate text-sm ${unread ? 'font-semibold text-zinc-900' : 'text-zinc-700'}`}>
-                  {requestType && <span className="font-normal text-zinc-400">{requestType} — </span>}
-                  {displayName}
-                  {!requestType && <span className="font-normal text-zinc-400"> — {bookingInfoLabel(c)}</span>}
+                {isAnimatingOut && animatingStatus ? (
+                  (() => {
+                    const AnimatingIcon = WORKFLOW_ICON[animatingStatus]
+                    return (
+                      <AnimatingIcon
+                        className={`w-3.5 h-3.5 shrink-0 ${animatingStatus === 'resolved' ? 'text-emerald-500' : 'text-amber-500'}`}
+                      />
+                    )
+                  })()
+                ) : (
+                  <Icon className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                )}
+                <span className={`flex-1 min-w-0 flex items-baseline text-sm ${unread ? 'font-semibold text-zinc-900' : 'text-zinc-700'}`}>
+                  {/* requestType is fixed-width (shrink-0) so a long label can never push the
+                      actual guest name off the end of the shared truncate — before this, a
+                      long label like "Website booking — no DB row · Boat Local —" ate the whole
+                      row's width and the real name never rendered at all. */}
+                  {requestType && <span className="font-normal text-zinc-400 shrink-0 whitespace-nowrap">{requestType} — </span>}
+                  <span className="truncate">{displayName}</span>
+                  {!requestType && <span className="font-normal text-zinc-400 shrink-0 whitespace-nowrap"> — {bookingInfoLabel(c)}</span>}
                 </span>
                 {/* Quick status change — icon-only, hidden until hover, only the OTHER two states shown */}
                 <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">

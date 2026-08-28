@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+const retrievePaymentIntent = vi.fn()
+vi.mock('@/lib/stripe/server', () => ({ getStripe: () => ({ paymentIntents: { retrieve: retrievePaymentIntent } }) }))
+
 import { importFareharborBooking, type ImportableBooking } from './import-booking'
 
 /** The one grounded example (see ota/detect.test.ts) — booking #369057638. */
@@ -53,6 +56,7 @@ describe('importFareharborBooking', () => {
       booking_id: 'fh_369057638',
       external_id: '369057638',
       tour_item_name: 'Shared Cruise',
+      category: 'shared',
       booking_date: '2026-08-05',
       start_time: '2026-08-05T15:00:00.000Z', // 17:00 Amsterdam, CEST = UTC+2
       end_time: '2026-08-05T16:30:00.000Z', // 18:30 Amsterdam
@@ -64,8 +68,29 @@ describe('importFareharborBooking', () => {
       payment_status: 'paid_externally',
       currency: 'eur',
       booking_source: 'getyourguide',
+      stripe_payment_intent_id: null,
       stripe_amount: 0,
       discount_amount_cents: 0,
+    })
+  })
+
+  it('fetches the real Stripe charge and stamps it as paid, instead of the €0 comp, when stripePaymentIntentId is set (Boat Local own_channel)', async () => {
+    const sb = makeSupabase({})
+    retrievePaymentIntent.mockResolvedValue({ amount: 31000, amount_received: 31000 })
+
+    const result = await importFareharborBooking(sb.client as never, {
+      ...BOOKING,
+      bookingSource: 'boatlocal',
+      stripePaymentIntentId: 'pi_3U0pbNGh1qCF71Ta0pKRNwmw',
+    })
+
+    expect(result).toEqual({ ok: true, bookingId: 'bk-new-1', date: '2026-08-05' })
+    expect(retrievePaymentIntent).toHaveBeenCalledWith('pi_3U0pbNGh1qCF71Ta0pKRNwmw')
+    expect(sb.inserted[0]).toMatchObject({
+      booking_source: 'boatlocal',
+      stripe_payment_intent_id: 'pi_3U0pbNGh1qCF71Ta0pKRNwmw',
+      stripe_amount: 31000,
+      payment_status: 'paid',
     })
   })
 
@@ -76,6 +101,22 @@ describe('importFareharborBooking', () => {
 
     expect(result.ok).toBe(true)
     expect(sb.inserted[0]).toMatchObject({ guest_count: 1, customer_name: 'Unknown', customer_email: '' })
+  })
+
+  it('derives category="private" from an experience name containing "Private" (case-insensitive)', async () => {
+    const sb = makeSupabase({})
+
+    await importFareharborBooking(sb.client as never, { ...BOOKING, experienceName: 'Private Cruise (Diana, 2h)' })
+
+    expect(sb.inserted[0]).toMatchObject({ category: 'private' })
+  })
+
+  it('leaves category null when the experience name says neither "Shared" nor "Private"', async () => {
+    const sb = makeSupabase({})
+
+    await importFareharborBooking(sb.client as never, { ...BOOKING, experienceName: null })
+
+    expect(sb.inserted[0]).toMatchObject({ category: null })
   })
 
   it('leaves end_time null when the notification had no end time', async () => {

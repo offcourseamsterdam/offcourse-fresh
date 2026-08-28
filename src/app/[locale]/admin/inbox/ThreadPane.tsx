@@ -5,10 +5,12 @@ import { ArrowLeft, CalendarSearch, CheckCircle2, Clock, Languages, Loader2, Pan
 import { adminMutate } from '@/hooks/useAdminSave'
 import { formatAmsterdamTime } from '@/lib/utils'
 import { formatWindowRemaining } from '@/lib/whatsapp/window'
+import { useTickingClock } from '@/hooks/useTickingClock'
 import { Linkify } from '@/components/chat/Linkify'
 import { SafeEmailHtml } from '@/components/admin/SafeEmailHtml'
 import { WhatsAppIcon } from '@/components/chat/WhatsAppIcon'
 import { OTA_PLATFORM_NAME } from '@/lib/ota/detect'
+import { GYG_REVIEW_NOTIFICATION_SENDER } from '@/lib/getyourguide/detect-review-notification'
 import { isTrustedEmailSender } from '@/lib/email/trusted-senders'
 import { AvailabilityFinder } from './AvailabilityFinder'
 import type { InboxConversationDetail, InboxMessage } from './types'
@@ -53,16 +55,17 @@ export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed,
   const [translating, setTranslating] = useState<Record<string, boolean>>({})
   const [showFinder, setShowFinder] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const topRef = useRef<HTMLDivElement>(null)
+  // Email is read top-to-bottom like an inbox, newest on top — the opposite
+  // convention from a live chat (WhatsApp/webchat), which stays oldest-first
+  // with auto-scroll to the newest message at the bottom.
+  const isEmailThread = conversation.channel === 'email'
+  const displayMessages = isEmailThread ? [...messages].reverse() : messages
 
   // WhatsApp's 24h reply window, ticking down live rather than only surfacing
   // when a send actually fails — a minute of drift is fine, so a 30s tick is
   // plenty; no need to re-poll the API just to keep a clock moving.
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (conversation.channel !== 'whatsapp' || !conversation.wa_window_expires_at) return
-    const interval = setInterval(() => setNow(Date.now()), 30_000)
-    return () => clearInterval(interval)
-  }, [conversation.channel, conversation.wa_window_expires_at])
+  const now = useTickingClock(conversation.channel === 'whatsapp' && !!conversation.wa_window_expires_at)
   const windowStatus =
     conversation.channel === 'whatsapp' ? formatWindowRemaining(conversation.wa_window_expires_at, now) : null
 
@@ -88,8 +91,12 @@ export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed,
   }
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView()
-  }, [messages.length, conversation.id])
+    if (isEmailThread) {
+      topRef.current?.scrollIntoView()
+    } else {
+      bottomRef.current?.scrollIntoView()
+    }
+  }, [messages.length, conversation.id, isEmailThread])
 
   async function send(e: React.FormEvent) {
     e.preventDefault()
@@ -130,6 +137,11 @@ export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed,
               <CheckCircle2 className="w-3 h-3 shrink-0" />
               Imported from {conversation.ota_source ? (OTA_PLATFORM_NAME[conversation.ota_source as keyof typeof OTA_PLATFORM_NAME] ?? conversation.ota_source) : 'the platform'}
             </p>
+          ) : conversation.contact?.email === GYG_REVIEW_NOTIFICATION_SENDER ? (
+            // Same purpose label as the list row — the raw subject
+            // ("You have a new review on GetYourGuide - 607167 (…)") already
+            // told us this, no need to make Beer re-derive it from prose.
+            <p className="text-xs text-zinc-400 truncate">New review</p>
           ) : (
             conversation.subject && <p className="text-xs text-zinc-400 truncate">{conversation.subject}</p>
           )}
@@ -158,7 +170,8 @@ export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed,
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-zinc-50/50">
-        {messages.map(m => (
+        {isEmailThread && <div ref={topRef} />}
+        {displayMessages.map(m => (
           <MessageBubble
             key={m.id}
             message={m}
@@ -169,7 +182,7 @@ export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed,
             trustSender={isTrustedEmailSender(conversation.contact?.email)}
           />
         ))}
-        <div ref={bottomRef} />
+        {!isEmailThread && <div ref={bottomRef} />}
       </div>
 
       {/* Availability finder — outside the composer <form> (forms can't nest) */}

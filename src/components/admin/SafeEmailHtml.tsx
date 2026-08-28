@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { sanitizeEmailHtml } from '@/lib/email/sanitize-html'
+import { stripQuotedReply } from '@/lib/email/strip-quoted-reply'
 
 /**
  * Renders an email's original HTML formatting — UNTRUSTED content straight
@@ -20,7 +21,7 @@ export function SafeEmailHtml({ html, trustSender }: { html: string; trustSender
   const [sanitized, setSanitized] = useState<string | null>(null)
 
   useEffect(() => {
-    setSanitized(sanitizeEmailHtml(html, { allowRemoteImages: trustSender }))
+    setSanitized(stripQuotedReply(sanitizeEmailHtml(html, { allowRemoteImages: trustSender })))
   }, [html, trustSender])
 
   if (sanitized === null) return null

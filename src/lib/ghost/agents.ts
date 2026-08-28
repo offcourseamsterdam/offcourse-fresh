@@ -60,6 +60,14 @@ export const AUTONOMY_CEILING: Record<string, AutonomyLevel> = {
   stock_reorder: 'ask',
   ops_review: 'ask', // may one day get an Apply button; never auto — it moves boats and people
   guest_move_request: 'ask', // contacting a guest is ALWAYS a human click; never auto
+  // Owner decision (Beer, 2026-08-21): "if I call for it, it doesn't have to be
+  // dry run — I want to proceed and click it from the sidebar." Deliberately
+  // NOT the booking_proposal ceiling: creating a booking risks inventing a
+  // customer/slot, but this acts on a booking a real guest asked about in
+  // writing, and the € is computed by policy (cancellation-terms.ts), never
+  // by the model. The human click still performs the real cancel + refund —
+  // see docs/features/ai-operations-engine.md's cancellation agent section.
+  cancellation_request: 'ask', // refunds money and tells a guest their trip is off — never auto
   // Read-only fact blocks — no action button exists yet for either, so there's
   // nothing an autonomy climb would even mean. Raise this ceiling only once a
   // real one-click action (e.g. auto-creating the FareHarbor booking) is built.
@@ -87,6 +95,9 @@ export const AUTONOMY_LEVEL: Record<string, AutonomyLevel> = {
   stock_reorder: 'propose',
   ops_review: 'propose', // shadow-only until its outcome history earns a climb
   guest_move_request: 'dry_run', // every ask is FH-validated before draft AND re-validated before send
+  // Starts at its ceiling like booking_correction: the point is a one-click
+  // "Cancel & refund" action from day one, not a shadow-only note.
+  cancellation_request: 'ask',
   ota_availability: 'propose',
   ota_booking_ready: 'propose',
 }
@@ -150,6 +161,15 @@ export const GHOST_AGENTS: GhostAgent[] = [
     status: 'active',
     kinds: ['booking_correction'],
     trigger: 'booking correction intent detected in a conversation',
+  },
+  {
+    key: 'cancellation',
+    name: 'Cancellation agent',
+    description:
+      "When a customer asks to cancel and be refunded, finds their booking, checks how far out the cruise is against the real cancellation policy, and proposes cancelling it plus the exact refund — computed by policy, never guessed — for one-click approval. Always drafts the reply too, cancel or not. Never acts on a booking made through an OTA platform; those keep the customer relationship and must be cancelled there.",
+    status: 'active',
+    kinds: ['cancellation_request'],
+    trigger: 'cancellation intent detected in a conversation',
   },
   {
     key: 'scheduling',

@@ -132,6 +132,46 @@ Shared Cruise\r
                           Voucher: pi_3U0pbNGh1qCF71Ta0pKRNwmw\r
 `
 
+// Real capture, 2026-08-14 (Jason Tully, FH booking #372067461) — Viator's
+// affiliate name is "TripAdvisor Experiences/Viator - EUR - API", not a bare
+// "Viator", which is why platformFromAffiliate matches on either substring.
+const FAREHARBOR_NEW_BOOKING_VIATOR_BODY = `Off Course\r
+\r
+New Booking for \r
+                          Shared Cruise\r
+\r
+View on FareHarbor &raquo;\r
+\r
+Created by:\r
+                        Viator-API\r
+                          (TripAdvisor Experiences/Viator - EUR - API)\r
+                      \r
+Created at:\r
+                      14/8/2026 @ 19:53\r
+\r
+Booking #372067461\r
+\r
+Booking note: #### Customers: Jason Tully, Passenger Two GUIDE\r
+\r
+Shared Cruise\r
+\r
+                    Monday, 17 August 2026 @ 17:00 - 18:30\r
+\r
+                        2 Adults + Unlimited Drinks\r
+\r
+                    Name: Jason Tully\r
+\r
+                      Phone: +1 404-394-6447\r
+\r
+                      Email: S-1a4dd43dab0d45aeb673337992bba328+1436673491-3912gzwelojp6@expmessaging.tripadvisor.com\r
+\r
+                      Affiliate\r
+\r
+                        Affiliate: TripAdvisor Experiences/Viator - EUR - API\r
+\r
+                          Voucher: 1436673491\r
+`
+
 const GETMYBOAT_REQUEST_BODY = `NEW BOOKING REQUEST\r
 dasd is actively comparing boats, other owners have already been contacted.\r
 \r
@@ -298,6 +338,46 @@ describe('detectOtaEmail — FareHarbor notification', () => {
         date: '6 August 2026',
         time: '17:00',
         dateISO: '2026-08-06',
+        guests: 2,
+        experienceName: 'Shared Cruise',
+      },
+    })
+  })
+
+  it('recognizes a Boat Local notification whose Voucher is NOT a Stripe PaymentIntent id as kind=needs_import, not own_channel — a genuine boatlocal.nl booking, not our own website checkout echoed back (grounded 2026-08-21: James Hagler, FH #372322392, Voucher a plain UUID)', () => {
+    const bodyWithUuidVoucher = FAREHARBOR_NEW_BOOKING_BOATLOCAL_BODY.replace(
+      'Voucher: pi_3U0pbNGh1qCF71Ta0pKRNwmw',
+      'Voucher: ac39e1c8-c598-473a-9da8-143de7c3a0e0',
+    )
+    const result = detectOtaEmail({
+      fromEmail: 'messages@fareharbor.com',
+      subject: 'New booking for Shared Cruise',
+      bodyText: bodyWithUuidVoucher,
+    })
+    expect(result?.kind).toBe('needs_import')
+    expect(result?.platform).toBe('boatlocal')
+    expect(result?.stripePaymentIntentId).toBeNull()
+  })
+
+  it('recognizes a real "New Booking ... Created by: Viator-API (TripAdvisor Experiences/Viator - EUR - API)" notification as kind=needs_import, platform=tripadvisor', () => {
+    const result = detectOtaEmail({
+      fromEmail: 'messages@fareharbor.com',
+      subject: 'New booking for Shared Cruise',
+      bodyText: FAREHARBOR_NEW_BOOKING_VIATOR_BODY,
+    })
+    expect(result).toEqual({
+      platform: 'tripadvisor',
+      kind: 'needs_import',
+      bookingRef: '372067461',
+      guestName: 'Jason Tully',
+      guestEmail: 'S-1a4dd43dab0d45aeb673337992bba328+1436673491-3912gzwelojp6@expmessaging.tripadvisor.com',
+      guestPhone: '+1 404-394-6447',
+      endTime: '18:30',
+      stripePaymentIntentId: null,
+      parsed: {
+        date: '17 August 2026',
+        time: '17:00',
+        dateISO: '2026-08-17',
         guests: 2,
         experienceName: 'Shared Cruise',
       },

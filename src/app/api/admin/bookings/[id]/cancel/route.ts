@@ -8,6 +8,8 @@ import { FHNotFoundError, FHValidationError } from '@/lib/fareharbor/types'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { postSlackOps } from '@/lib/slack/send-notification'
 import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
+import { syncAndScheduleShifts } from '@/lib/scheduling/proactive-scheduling'
+import { after } from 'next/server'
 import { formatAmsterdamTime } from '@/lib/utils'
 
 export async function POST(
@@ -27,13 +29,28 @@ export async function POST(
     const supabase = createAdminClient()
     const { data: booking, error: fetchError } = await supabase
       .from('bookings')
-      .select('id, booking_uuid, status, booking_source, stripe_payment_intent_id, stripe_amount, customer_name, customer_email, listing_title, booking_date, start_time')
+      .select('id, booking_uuid, booking_id, external_id, booking_date, status, booking_source, stripe_payment_intent_id, stripe_amount, customer_name, customer_email, listing_title, booking_date, start_time')
       .eq('id', id)
       .single()
 
     if (fetchError || !booking) return apiError('Booking not found', 404)
     // Note: we allow re-cancelling an already-cancelled booking so the admin
     // can still issue a Stripe refund or force-sync the status.
+
+    // A booking that exists in FareHarbor but has no booking_uuid CANNOT be
+    // cancelled there — FareHarbor addresses bookings by uuid only (a numeric
+    // pk returns 403, verified). Before this guard the `if (booking_uuid)`
+    // below simply skipped the FareHarbor call and fell through to marking the
+    // row cancelled locally, so the boat slot stayed live while the admin
+    // panel and Slack both reported it cancelled. Refuse loudly instead: an
+    // honest error beats a silent lie about a real slot on a real boat.
+    const existsInFareharbor = !!booking.external_id || booking.booking_id?.startsWith('fh_')
+    if (!booking.booking_uuid && existsInFareharbor && booking.status !== 'cancelled') {
+      return apiError(
+        'This booking has no FareHarbor reference we can cancel with, so cancelling here would leave the slot live in FareHarbor. Cancel it in FareHarbor (or on the platform it was booked through) and it will sync back.',
+        409,
+      )
+    }
 
     if (booking.booking_uuid && booking.status !== 'cancelled') {
       try {
@@ -54,6 +71,15 @@ export async function POST(
 
     if (updateError) return apiError(updateError.message)
     await notifyBookingsChanged()
+
+    // A cancelled cruise changes the day's real work: its shift may now cover
+    // fewer departures, or none at all (in which case the sync cancels it).
+    // Without this the roster kept a shift for a cruise that is no longer
+    // sailing until the nightly cron happened to notice.
+    if (booking.booking_date) {
+      const date = booking.booking_date
+      after(() => syncAndScheduleShifts(supabase, date).catch(err => console.error('[cancel] shift sync failed:', err)))
+    }
 
     await emitOpsEvent({
       eventType: 'booking_cancelled',

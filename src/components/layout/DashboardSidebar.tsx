@@ -98,6 +98,11 @@ const PREFETCH_URLS: Record<string, string> = {
   '/admin/cruises':     '/api/admin/cruise-listings',
   '/admin/promo-codes': '/api/admin/promo-codes',
   '/admin/finance':     '/api/admin/finance/partners-summary',
+  '/admin/inbox':       '/api/admin/inbox/conversations?status=open',
+  '/admin/catering':    '/api/admin/catering',
+  '/admin/planning':    '/api/admin/bookings/local',
+  '/admin/maintenance': '/api/admin/maintenance',
+  '/admin/stock':       '/api/admin/stock',
 }
 
 const RAIL_STORAGE_KEY = 'admin:sidebar-collapsed'

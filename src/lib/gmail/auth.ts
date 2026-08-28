@@ -3,19 +3,25 @@
 // serverless instance don't re-fetch. Same no-SDK pattern as
 // lib/google-ads/auth.ts — the refresh token was consented separately (see
 // scripts/gmail-oauth-setup.ts) for gmail.readonly + gmail.send scopes.
+//
+// Uses its own dedicated OAuth client (GMAIL_OAUTH_CLIENT_ID/SECRET), not the
+// shared GOOGLE_OAUTH_CLIENT_ID Google Ads uses — Gmail push notifications
+// require the Pub/Sub topic to live in the same GCP project as the OAuth
+// client, and the original shared client turned out to belong to a
+// different project than the one hosting this app's infrastructure.
 
 let cached: { token: string; expiresAt: number } | null = null
 
 export async function getGmailAccessToken(): Promise<string> {
   if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token
 
-  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID
-  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET
+  const clientId = process.env.GMAIL_OAUTH_CLIENT_ID
+  const clientSecret = process.env.GMAIL_OAUTH_CLIENT_SECRET
   const refreshToken = process.env.GMAIL_REFRESH_TOKEN
 
   if (!clientId || !clientSecret || !refreshToken) {
     throw new Error(
-      'Gmail OAuth not configured (need GOOGLE_OAUTH_CLIENT_ID/SECRET plus GMAIL_REFRESH_TOKEN)',
+      'Gmail OAuth not configured (need GMAIL_OAUTH_CLIENT_ID/SECRET plus GMAIL_REFRESH_TOKEN)',
     )
   }
 

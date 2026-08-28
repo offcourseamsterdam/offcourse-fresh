@@ -2,6 +2,7 @@ import 'server-only'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { resolveExperienceUuid, fetchAllWithlocalsReviews } from './client'
 import { parseWithlocalsReview } from './parse'
+import { scanReviewsForBonuses } from '@/lib/scheduling/review-bonuses'
 
 // Two reviews are considered the same if 70%+ of their meaningful words overlap.
 const DUPLICATE_THRESHOLD = 0.7
@@ -104,8 +105,15 @@ export async function syncWithlocalsReviews(shortId: string): Promise<SyncWithlo
 
   // Only insert truly new reviews (is_active stays false until Beer approves)
   if (newRows.length > 0) {
-    const { error } = await supabase.from('social_proof_reviews').insert(newRows)
+    const { data: inserted, error } = await supabase.from('social_proof_reviews').insert(newRows).select('id, review_text, rating')
     if (error) throw new Error(`Insert failed: ${error.message}`)
+    // Scan every freshly-inserted review for staff mentions right here — this
+    // is the only ingestion path for Withlocals (weekly cron AND the manual
+    // "Sync" button both call this same function), so without this a new
+    // Withlocals review would sit unscanned until someone clicks "Scan" in
+    // the Reviews tab (Beer, 2026-08-23: "its push based right?... how will
+    // we do so for each platform?" — this closes that gap for Withlocals).
+    await scanReviewsForBonuses((inserted ?? []).map(row => ({ id: row.id, reviewText: row.review_text, rating: row.rating })))
   }
 
   // For existing rows, update only possible_duplicate_of — never touch is_active

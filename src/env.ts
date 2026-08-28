@@ -79,6 +79,10 @@ const envSchema = z.object({
   // one-time manual Google Cloud Pub/Sub setup.
   GMAIL_PUBSUB_TOPIC: z.string().optional(),
   GMAIL_PUSH_WEBHOOK_SECRET: z.string().optional(),
+  // Dedicated OAuth client for Gmail (not the shared GOOGLE_OAUTH_CLIENT_ID
+  // Google Ads uses) — see lib/gmail/auth.ts for why.
+  GMAIL_OAUTH_CLIENT_ID: z.string().optional(),
+  GMAIL_OAUTH_CLIENT_SECRET: z.string().optional(),
 
   // Outscraper — reviews scraping (Google Maps + TripAdvisor). Same key verifies webhook HMAC.
   OUTSCRAPER_API_KEY: z.string().optional(),

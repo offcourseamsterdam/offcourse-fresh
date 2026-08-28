@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, after } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -6,6 +6,7 @@ import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { sendRescheduleEmail } from '@/lib/booking/send-confirmation-email'
 import { postSlackOps } from '@/lib/slack/send-notification'
 import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
+import { syncAndScheduleShifts } from '@/lib/scheduling/proactive-scheduling'
 import { formatAmsterdamTime } from '@/lib/utils'
 
 export async function POST(
@@ -34,12 +35,26 @@ export async function POST(
     const supabase = createAdminClient()
     const { data: booking } = await supabase
       .from('bookings')
-      .select('id, booking_uuid, status, customer_name, customer_email, customer_phone, guest_note, category, guest_count, listing_title, base_amount_cents, booking_date, start_time')
+      .select('id, booking_uuid, booking_id, external_id, status, customer_name, customer_email, customer_phone, guest_note, category, guest_count, listing_title, base_amount_cents, booking_date, start_time')
       .eq('id', id)
       .single()
 
     if (!booking) return apiError('Booking not found', 404)
     if (booking.status === 'cancelled') return apiError('Cannot rebook a cancelled booking', 409)
+
+    // The createBooking fallback further down exists for admin-created bookings
+    // that never had a FareHarbor booking at all. For a booking that DOES exist
+    // in FareHarbor but has no uuid, that same fallback is dangerous: it would
+    // create a SECOND live FareHarbor booking and then skip cancelling the
+    // original (the cancel below is also uuid-gated), consuming two slots for
+    // one guest while our row silently repoints to the new one. Refuse instead.
+    const existsInFareharbor = !!booking.external_id || booking.booking_id?.startsWith('fh_')
+    if (!booking.booking_uuid && existsInFareharbor) {
+      return apiError(
+        'This booking has no FareHarbor reference we can move, so rescheduling here would create a second booking instead of moving this one. Reschedule it in FareHarbor (or on the platform it was booked through) and it will sync back.',
+        409,
+      )
+    }
 
     const fh = getFareHarborClient()
     const isPrivate = booking.category === 'private'
@@ -112,6 +127,16 @@ export async function POST(
 
     if (updateError) return apiError(updateError.message)
     await notifyBookingsChanged()
+
+    // A moved cruise changes the work on BOTH days — the old date may lose its
+    // only departure, the new one may need a shift that doesn't exist yet.
+    // Sync both rather than assuming the move stayed within a single day.
+    const oldDate = booking.booking_date
+    after(async () => {
+      for (const d of [...new Set([oldDate, newDate].filter(Boolean) as string[])]) {
+        await syncAndScheduleShifts(supabase, d).catch(err => console.error('[rebook] shift sync failed for', d, err))
+      }
+    })
 
     // Slack — best-effort, never blocks the response
     postSlackOps([

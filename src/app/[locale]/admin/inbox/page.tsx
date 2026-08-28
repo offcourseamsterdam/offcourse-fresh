@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Ghost, Loader2, X } from 'lucide-react'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
@@ -8,7 +9,7 @@ import { ConversationList, type StatusFilter } from './ConversationList'
 import { ThreadPane } from './ThreadPane'
 import { ContextPane } from './ContextPane'
 import { CallButton } from './CallButton'
-import type { InboxConversationDetail, InboxListItem } from './types'
+import { hasGhostCoPilotContent, type InboxConversationDetail, type InboxListItem } from './types'
 
 /**
  * The unified inbox — three panes on desktop (list · thread · customer),
@@ -20,8 +21,13 @@ const LIST_POLL_MS = 10_000
 const THREAD_POLL_MS = 5_000
 
 export default function AdminInboxPage() {
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('open')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  // ?c=<conversationId> opens that thread directly — the Slack DM (and any
+  // other deep link) points here, so the link lands on the actual conversation
+  // instead of dumping you in the list to hunt for it. Only the INITIAL value:
+  // clicking another thread afterwards must not be fought by the URL.
+  const searchParams = useSearchParams()
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => (searchParams.get('c') ? 'all' : 'open'))
+  const [selectedId, setSelectedId] = useState<string | null>(() => searchParams.get('c'))
   // "Use this draft" in the Ghost co-pilot drops text into the thread composer.
   const [composerPrefill, setComposerPrefill] = useState<string | null>(null)
   // Below xl, the customer/Ghost pane isn't docked beside the thread — it opens
@@ -39,13 +45,7 @@ export default function AdminInboxPage() {
 
   const conversations = list.data?.conversations ?? []
   const ghost = detail.data?.ghost
-  const hasGhostAction = !!(
-    ghost?.replyDraft ||
-    ghost?.bookingProposal ||
-    ghost?.bookingCorrection ||
-    ghost?.otaAvailability ||
-    ghost?.otaBookingReady
-  )
+  const hasGhostAction = hasGhostCoPilotContent(ghost)
 
   function refreshAll() {
     detail.refresh()

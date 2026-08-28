@@ -32,6 +32,13 @@ vi.mock('@/lib/supabase/admin', () => ({
   }),
 }))
 
+vi.mock('@/lib/scheduling/proactive-scheduling', () => ({ syncAndScheduleShifts: vi.fn().mockResolvedValue(undefined) }))
+// after() needs a real Next.js request scope, absent when calling POST directly
+// in a unit test — run the callback inline instead.
+vi.mock('next/server', async importOriginal => {
+  const actual = await importOriginal<typeof import('next/server')>()
+  return { ...actual, after: (cb: () => unknown) => cb() }
+})
 vi.mock('@/lib/auth/require-admin', () => ({ requireAdmin: h.requireAdmin }))
 vi.mock('@/lib/booking/send-confirmation-email', () => ({ sendRescheduleEmail: h.sendRescheduleEmail }))
 vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText, postSlackOps: h.postSlackOps }))
@@ -157,5 +164,62 @@ describe('POST /api/admin/bookings/[id]/rebook', () => {
   it('suppresses customer email when sendEmail is false', async () => {
     await POST(mockReq({ ...BODY, sendEmail: false }), mockParams())
     expect(h.sendRescheduleEmail).not.toHaveBeenCalled()
+  })
+})
+
+describe('bookings that exist in FareHarbor but have no uuid', () => {
+  it('refuses rather than creating a SECOND live booking for the same guest', async () => {
+    // Without the guard this fell through to createBooking() and then skipped
+    // the (uuid-gated) cancel — two slots consumed for one guest, with the
+    // original left live and our row silently repointed to the new one.
+    h.dbSelect.mockResolvedValue({
+      data: { ...BOOKING, booking_uuid: null, external_id: '371969124', booking_source: 'tripadvisor' },
+      error: null,
+    })
+
+    const res = await POST(mockReq(BODY), mockParams())
+
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toContain('would create a second booking')
+    expect(h.fhCreate).not.toHaveBeenCalled()
+    expect(h.fhRebook).not.toHaveBeenCalled()
+    expect(h.dbUpdate).not.toHaveBeenCalled()
+  })
+
+  it('recognises the fh_ booking_id form too', async () => {
+    h.dbSelect.mockResolvedValue({
+      data: { ...BOOKING, booking_uuid: null, external_id: '', booking_id: 'fh_371969124' },
+      error: null,
+    })
+
+    const res = await POST(mockReq(BODY), mockParams())
+
+    expect(res.status).toBe(409)
+    expect(h.fhCreate).not.toHaveBeenCalled()
+  })
+
+  it('rebooks normally once the uuid is known (the backfilled case)', async () => {
+    h.dbSelect.mockResolvedValue({
+      data: { ...BOOKING, booking_uuid: 'old-fh-uuid', external_id: '371969124' },
+      error: null,
+    })
+
+    const res = await POST(mockReq(BODY), mockParams())
+
+    expect(res.status).toBe(200)
+    expect(h.fhRebook).toHaveBeenCalled()
+  })
+
+  it('still allows the createBooking fallback for an admin-only booking', async () => {
+    // No uuid AND never in FareHarbor — the case that fallback was written for.
+    h.dbSelect.mockResolvedValue({
+      data: { ...BOOKING, booking_uuid: null, external_id: '', booking_id: 'pi_test_123' },
+      error: null,
+    })
+
+    const res = await POST(mockReq(BODY), mockParams())
+
+    expect(res.status).toBe(200)
+    expect(h.fhCreate).toHaveBeenCalled()
   })
 })

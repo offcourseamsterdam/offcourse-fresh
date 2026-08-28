@@ -28,6 +28,13 @@ vi.mock('@/lib/stripe/server', () => ({
   getStripe: () => ({ refunds: { create: h.stripeRefunds } }),
 }))
 
+vi.mock('@/lib/scheduling/proactive-scheduling', () => ({ syncAndScheduleShifts: vi.fn().mockResolvedValue(undefined) }))
+// after() needs a real Next.js request scope, absent when calling POST directly
+// in a unit test — run the callback inline instead.
+vi.mock('next/server', async importOriginal => {
+  const actual = await importOriginal<typeof import('next/server')>()
+  return { ...actual, after: (cb: () => unknown) => cb() }
+})
 vi.mock('@/lib/auth/require-admin', () => ({ requireAdmin: h.requireAdmin }))
 vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText, postSlackOps: h.postSlackOps }))
 
@@ -153,5 +160,62 @@ describe('POST /api/admin/bookings/[id]/cancel', () => {
     const res = await POST(mockReq(), mockParams())
     const json = await res.json()
     expect(json.data.cancelled).toBe(true)
+  })
+})
+
+describe('bookings that exist in FareHarbor but have no uuid', () => {
+  it('refuses instead of silently marking a live FareHarbor slot as cancelled', async () => {
+    // The original bug: booking_uuid null meant the FareHarbor call was simply
+    // skipped, and the row was marked cancelled anyway — the boat stayed booked
+    // while the admin panel and Slack both said otherwise.
+    h.dbSelect.mockResolvedValue({
+      data: { ...BOOKING, booking_uuid: null, external_id: '371969124', booking_source: 'tripadvisor' },
+      error: null,
+    })
+
+    const res = await POST(mockReq(), mockParams())
+
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toContain('leave the slot live in FareHarbor')
+    expect(h.fhCancel).not.toHaveBeenCalled()
+    expect(h.dbUpdate).not.toHaveBeenCalled() // status untouched — no false "cancelled"
+  })
+
+  it('recognises the fh_ booking_id form too, not just external_id', async () => {
+    h.dbSelect.mockResolvedValue({
+      data: { ...BOOKING, booking_uuid: null, external_id: '', booking_id: 'fh_371969124' },
+      error: null,
+    })
+
+    const res = await POST(mockReq(), mockParams())
+
+    expect(res.status).toBe(409)
+    expect(h.dbUpdate).not.toHaveBeenCalled()
+  })
+
+  it('still cancels normally once the uuid is known (the backfilled case)', async () => {
+    h.dbSelect.mockResolvedValue({
+      data: { ...BOOKING, booking_uuid: 'fh-uuid-abc', external_id: '371969124' },
+      error: null,
+    })
+
+    const res = await POST(mockReq(), mockParams())
+
+    expect(res.status).toBe(200)
+    expect(h.fhCancel).toHaveBeenCalledWith('fh-uuid-abc')
+  })
+
+  it('leaves an admin-only booking (never in FareHarbor) cancellable', async () => {
+    // No uuid AND no FareHarbor reference — nothing to reach, nothing to lie
+    // about. This is the case the uuid-gated skip was originally written for.
+    h.dbSelect.mockResolvedValue({
+      data: { ...BOOKING, booking_uuid: null, external_id: '', booking_id: 'pi_test_123' },
+      error: null,
+    })
+
+    const res = await POST(mockReq(), mockParams())
+
+    expect(res.status).toBe(200)
+    expect(h.fhCancel).not.toHaveBeenCalled()
   })
 })

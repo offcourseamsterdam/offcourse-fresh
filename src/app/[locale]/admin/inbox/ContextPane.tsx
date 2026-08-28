@@ -2,15 +2,15 @@
 
 import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { CalendarDays, CalendarPlus, Check, CheckCircle2, Download, Ghost, Globe, Languages, Loader2, Mail, Phone, Plus, Sparkles, XCircle } from 'lucide-react'
+import { CalendarDays, CalendarPlus, Check, CheckCircle2, Download, Ghost, Globe, Languages, Loader2, Mail, Phone, Plus, Sparkles, Wrench, XCircle } from 'lucide-react'
 import { adminMutate } from '@/hooks/useAdminSave'
 import { replySimilarity } from '@/lib/ghost/similarity'
 import { fmtAdminDate, fmtAdminTime } from '@/lib/admin/format'
 import { OTA_PLATFORM_NAME } from '@/lib/ota/detect'
 import { pickCheapestPrivateOption } from '@/lib/ota/availability-shape'
-import type { InboxConversationDetail, InboxGhostProposal } from './types'
+import { draftNeedsEnglish } from '@/lib/i18n/needs-translation'
+import { hasGhostCoPilotContent, type InboxConversationDetail, type InboxGhostProposal } from './types'
 
-const NL_EN = /^(english|dutch|en|nl)$/i
 const SIM_BADGE: Record<string, { text: string; cls: string }> = {
   match: { text: '≈ matched', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   minor: { text: 'minor edits', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
@@ -62,7 +62,7 @@ export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
   return (
     <div className="h-full overflow-y-auto p-4 space-y-5">
       {/* Ghost co-pilot — act on what the agent suggests, where the work happens */}
-      {(ghost?.replyDraft || ghost?.bookingProposal || ghost?.bookingCorrection || ghost?.otaAvailability || ghost?.otaBookingReady || ghost?.fhImportReady) && (
+      {hasGhostCoPilotContent(ghost) && (
         <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-3">
           <p className="text-[10px] font-semibold tracking-widest uppercase text-violet-500 mb-2 inline-flex items-center gap-1.5">
             <Ghost className="w-3.5 h-3.5" /> Ghost co-pilot
@@ -72,6 +72,14 @@ export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
           )}
           {ghost.bookingProposal && <BookingApproval proposal={ghost.bookingProposal} onChanged={onChanged} />}
           {ghost.bookingCorrection && <BookingCorrectionApproval proposal={ghost.bookingCorrection} onChanged={onChanged} />}
+          {ghost.cancellationRequest && (
+            <>
+              {ghost.cancellationRequest.payload.reply && (
+                <SuggestedReply proposal={ghost.cancellationRequest} onUseDraft={onUseDraft} onChanged={onChanged} />
+              )}
+              <CancellationApproval proposal={ghost.cancellationRequest} onChanged={onChanged} />
+            </>
+          )}
           {ghost.otaAvailability && <OtaAvailabilityCard proposal={ghost.otaAvailability} />}
           {ghost.otaBookingReady && <OtaBookingReadyCard proposal={ghost.otaBookingReady} />}
           {ghost.fhImportReady && <FhImportReadyCard proposal={ghost.fhImportReady} onChanged={onChanged} />}
@@ -189,7 +197,7 @@ function SuggestedReply({
   const [translating, setTranslating] = useState(false)
   const reply = proposal.payload.reply!
   const replyEn = proposal.payload.reply_en
-  const otherLanguage = proposal.payload.language && !NL_EN.test(proposal.payload.language)
+  const otherLanguage = draftNeedsEnglish(proposal.payload.language)
 
   async function translate() {
     setTranslating(true)
@@ -206,12 +214,12 @@ function SuggestedReply({
       <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 mb-1">
         Suggested reply{proposal.payload.language ? ` · ${proposal.payload.language}` : ''}
       </p>
-      <div className="rounded-lg bg-white border border-violet-100 px-3 py-2 text-xs text-zinc-700 whitespace-pre-wrap max-h-32 overflow-y-auto">
+      <div className="rounded-lg bg-white border border-violet-100 px-3 py-2 text-xs text-zinc-700 whitespace-pre-wrap max-h-64 overflow-y-auto">
         {reply}
       </div>
       {/* You read English + Dutch — show English for anything else. */}
       {otherLanguage && replyEn && (
-        <div className="mt-1 rounded-lg bg-zinc-50 border border-zinc-200 px-3 py-2 text-xs text-zinc-500 whitespace-pre-wrap max-h-28 overflow-y-auto">
+        <div className="mt-1 rounded-lg bg-zinc-50 border border-zinc-200 px-3 py-2 text-xs text-zinc-500 whitespace-pre-wrap max-h-64 overflow-y-auto">
           <span className="text-[9px] font-semibold uppercase tracking-wide text-zinc-400 block mb-0.5">In English</span>
           {replyEn}
         </div>
@@ -233,7 +241,58 @@ function SuggestedReply({
           </button>
         )}
       </div>
+      <ToolsUsed tools={proposal.payload.tools_used} />
     </div>
+  )
+}
+
+/** Tool names are snake_case identifiers — "check_shared_cruise_to_join" → "Check shared cruise to join". */
+function toolLabel(name: string): string {
+  const spaced = name.replace(/_/g, ' ')
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+}
+
+/**
+ * What the agent actually did to produce this draft — the real tool calls it
+ * made, not a claim about them. Reads payload.tools_used (just the names; the
+ * full `steps` blob is deliberately never fetched on the thread poll — see
+ * the select in api/admin/inbox/conversations/[id]/route.ts).
+ *
+ * Renders nothing when the agent answered from context alone (no tool calls),
+ * rather than an empty "Checked:" label implying something was skipped.
+ */
+function ToolsUsed({ tools }: { tools?: string[] }) {
+  if (!tools?.length) return null
+  return (
+    <div className="mt-2 pt-2 border-t border-violet-100">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 mb-1">Checked before drafting</p>
+      <div className="flex flex-wrap gap-1">
+        {tools.map(t => (
+          <span key={t} className="inline-flex items-center gap-1 rounded-full bg-white border border-violet-100 px-2 py-0.5 text-[10px] text-zinc-600">
+            <Wrench className="w-2.5 h-2.5 text-violet-400" />
+            {toolLabel(t)}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** Shared by every card below that names an OTA/FareHarbor platform in its copy. */
+function platformLabel(platform: string | null | undefined, fallback: string): string {
+  return platform ? (OTA_PLATFORM_NAME[platform as keyof typeof OTA_PLATFORM_NAME] ?? platform) : fallback
+}
+
+/** The `date · time · guests[ · experience]` line repeated across the OTA/FH cards below. */
+function RequestSummaryLine({ date, time, guests, experienceName }: { date: string | null | undefined; time?: string | null; guests?: number | null; experienceName?: string | null }) {
+  return (
+    <p className="flex items-center gap-1.5 text-zinc-600">
+      <CalendarDays className="w-3 h-3 text-zinc-400 shrink-0" />
+      {date ?? 'date unclear'}
+      {time ? ` · ${time}` : ''}
+      {guests ? ` · ${guests} guests` : ''}
+      {experienceName ? ` · ${experienceName}` : ''}
+    </p>
   )
 }
 
@@ -246,7 +305,7 @@ function SuggestedReply({
  */
 function OtaAvailabilityCard({ proposal }: { proposal: InboxGhostProposal }) {
   const p = proposal.payload
-  const platform = p.platform ? (OTA_PLATFORM_NAME[p.platform as keyof typeof OTA_PLATFORM_NAME] ?? p.platform) : 'OTA'
+  const platform = platformLabel(p.platform, 'OTA')
   const req = p.requested
   const { bookable: hasBookable, cheapest } = pickCheapestPrivateOption(p.availability?.listings)
   const bookable = p.checked ? hasBookable : null
@@ -257,14 +316,7 @@ function OtaAvailabilityCard({ proposal }: { proposal: InboxGhostProposal }) {
         {platform} booking request{p.booking_ref ? ` · ref ${p.booking_ref}` : ''}
       </p>
       <div className="rounded-lg bg-white border border-violet-100 px-3 py-2 text-xs text-zinc-700 space-y-1">
-        {req && (
-          <p className="flex items-center gap-1.5">
-            <CalendarDays className="w-3 h-3 text-zinc-400 shrink-0" />
-            {req.date ?? 'date unclear'}
-            {req.time ? ` · ${req.time}` : ''}
-            {req.guests ? ` · ${req.guests} guests` : ''}
-          </p>
-        )}
+        {req && <RequestSummaryLine date={req.date} time={req.time} guests={req.guests} />}
         <p className="flex items-center gap-1.5">
           {bookable === true && <CheckCircle2 className="w-3.5 h-3.5 text-green-600 shrink-0" />}
           {bookable === false && <XCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />}
@@ -298,7 +350,7 @@ function OtaBookingReadyCard({ proposal }: { proposal: InboxGhostProposal }) {
   const locale = params.locale as string
   const router = useRouter()
   const p = proposal.payload
-  const platform = p.platform ? (OTA_PLATFORM_NAME[p.platform as keyof typeof OTA_PLATFORM_NAME] ?? p.platform) : 'OTA'
+  const platform = platformLabel(p.platform, 'OTA')
   const parsed = p.parsed
 
   // Pre-fills the manual booking tool with what the OTA's own confirmation
@@ -327,14 +379,7 @@ function OtaBookingReadyCard({ proposal }: { proposal: InboxGhostProposal }) {
         <p className="flex items-center gap-1.5 text-emerald-700 font-semibold">
           <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> Guest already paid on {platform}
         </p>
-        {parsed && (
-          <p className="flex items-center gap-1.5 text-zinc-600">
-            <CalendarDays className="w-3 h-3 text-zinc-400 shrink-0" />
-            {parsed.date ?? 'date unclear'}
-            {parsed.time ? ` · ${parsed.time}` : ''}
-            {parsed.guests ? ` · ${parsed.guests} guests` : ''}
-          </p>
-        )}
+        {parsed && <RequestSummaryLine date={parsed.date} time={parsed.time} guests={parsed.guests} />}
       </div>
       <button
         onClick={createBooking}
@@ -351,6 +396,33 @@ function OtaBookingReadyCard({ proposal }: { proposal: InboxGhostProposal }) {
 }
 
 /**
+ * The shared busy/error/action wiring behind every proposal-approval card
+ * below (FhImportReadyCard, BookingApproval, BookingCorrectionApproval,
+ * CancellationApproval) — each used to hand-roll its own useState pair +
+ * try/catch/finally around the identical `adminMutate(proposals/:id, 'POST',
+ * body)` call. `onError` covers the one thing that varies per card: resetting
+ * whatever "confirming" step that card was on when the request failed.
+ */
+function useProposalAction(proposalId: string, onChanged: () => void) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  async function run(body: Record<string, unknown>, fallbackError: string, onError?: () => void) {
+    setBusy(true)
+    setError(null)
+    try {
+      await adminMutate(`/api/admin/ghost/proposals/${proposalId}`, 'POST', body)
+      onChanged()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : fallbackError)
+      onError?.()
+    } finally {
+      setBusy(false)
+    }
+  }
+  return { busy, error, run }
+}
+
+/**
  * A 3rd-party API (so far: GetYourGuide) already created this booking
  * directly inside FareHarbor — no reply to send, and nothing to create
  * either (unlike OtaBookingReadyCard above, where nothing exists in
@@ -360,24 +432,14 @@ function OtaBookingReadyCard({ proposal }: { proposal: InboxGhostProposal }) {
  * the matching row — see lib/fareharbor/import-booking.ts.
  */
 function FhImportReadyCard({ proposal, onChanged }: { proposal: InboxGhostProposal; onChanged: () => void }) {
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { busy, error, run } = useProposalAction(proposal.id, onChanged)
   const p = proposal.payload
-  const platform = p.platform ? (OTA_PLATFORM_NAME[p.platform as keyof typeof OTA_PLATFORM_NAME] ?? p.platform) : 'FareHarbor'
+  const platform = platformLabel(p.platform, 'FareHarbor')
   const parsed = p.parsed
   const executed = proposal.status === 'executed'
 
-  async function importBooking() {
-    setBusy(true)
-    setError(null)
-    try {
-      await adminMutate(`/api/admin/ghost/proposals/${proposal.id}`, 'POST', { action: 'import_fh_booking' })
-      onChanged()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not import this booking')
-    } finally {
-      setBusy(false)
-    }
+  function importBooking() {
+    return run({ action: 'import_fh_booking' }, 'Could not import this booking')
   }
 
   return (
@@ -389,15 +451,7 @@ function FhImportReadyCard({ proposal, onChanged }: { proposal: InboxGhostPropos
         <p className="flex items-center gap-1.5 text-amber-700 font-semibold">
           <Download className="w-3.5 h-3.5 shrink-0" /> Not yet in our database
         </p>
-        {parsed && (
-          <p className="flex items-center gap-1.5 text-zinc-600">
-            <CalendarDays className="w-3 h-3 text-zinc-400 shrink-0" />
-            {parsed.date ?? 'date unclear'}
-            {parsed.time ? ` · ${parsed.time}` : ''}
-            {parsed.guests ? ` · ${parsed.guests} guests` : ''}
-            {parsed.experienceName ? ` · ${parsed.experienceName}` : ''}
-          </p>
-        )}
+        {parsed && <RequestSummaryLine date={parsed.date} time={parsed.time} guests={parsed.guests} experienceName={parsed.experienceName} />}
       </div>
 
       {executed ? (
@@ -502,8 +556,7 @@ function ConfirmCreate({
  * as one-click "Use this" options (each re-resolved + re-validated on the server).
  */
 function BookingApproval({ proposal, onChanged }: { proposal: InboxGhostProposal; onChanged: () => void }) {
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { busy, error, run } = useProposalAction(proposal.id, onChanged)
   // null = idle; 'primary' = confirming the proposed slot; number = confirming that alternative.
   const [confirming, setConfirming] = useState<'primary' | number | null>(null)
   const b = proposal.payload.booking
@@ -512,21 +565,12 @@ function BookingApproval({ proposal, onChanged }: { proposal: InboxGhostProposal
   const alternatives = verdict?.alternatives ?? []
   if (!b) return null
 
-  async function book(altIndex?: number) {
-    setBusy(true)
-    setError(null)
-    try {
-      await adminMutate(`/api/admin/ghost/proposals/${proposal.id}`, 'POST', {
-        action: 'book',
-        ...(altIndex != null ? { alternative_index: altIndex } : {}),
-      })
-      onChanged()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create the booking')
-      setConfirming(null)
-    } finally {
-      setBusy(false)
-    }
+  function book(altIndex?: number) {
+    return run(
+      { action: 'book', ...(altIndex != null ? { alternative_index: altIndex } : {}) },
+      'Could not create the booking',
+      () => setConfirming(null),
+    )
   }
 
   return (
@@ -601,26 +645,15 @@ const CORRECTION_FIELD_LABEL: Record<string, string> = {
  * just a narrower blast radius (one column on one existing row).
  */
 function BookingCorrectionApproval({ proposal, onChanged }: { proposal: InboxGhostProposal; onChanged: () => void }) {
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { busy, error, run } = useProposalAction(proposal.id, onChanged)
   const [confirming, setConfirming] = useState(false)
   const c = proposal.payload.correction
   const executed = proposal.status === 'executed'
   if (!c?.new_value) return null
   const fieldLabel = (c.field && CORRECTION_FIELD_LABEL[c.field]) ?? c.field ?? 'contact detail'
 
-  async function apply() {
-    setBusy(true)
-    setError(null)
-    try {
-      await adminMutate(`/api/admin/ghost/proposals/${proposal.id}`, 'POST', { action: 'correct_booking' })
-      onChanged()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not apply the correction')
-      setConfirming(false)
-    } finally {
-      setBusy(false)
-    }
+  function apply() {
+    return run({ action: 'correct_booking' }, 'Could not apply the correction', () => setConfirming(false))
   }
 
   return (
@@ -654,6 +687,96 @@ function BookingCorrectionApproval({ proposal, onChanged }: { proposal: InboxGho
         >
           <CalendarPlus className="w-3.5 h-3.5" /> Approve &amp; resend confirmation
         </button>
+      )}
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+    </div>
+  )
+}
+
+/**
+ * The money action: approve a cancellation_request → cancel it in FareHarbor
+ * and refund via Stripe for real. Every € here comes from
+ * payload.cancellation_terms (policy-computed, stored right after the
+ * proposal was drafted — see cancellation-terms.ts) — never AI prose. The
+ * server recomputes it AGAIN at the moment of the click, so this display copy
+ * is exactly that: display only.
+ */
+function CancellationApproval({ proposal, onChanged }: { proposal: InboxGhostProposal; onChanged: () => void }) {
+  const { busy, error, run } = useProposalAction(proposal.id, onChanged)
+  const [confirming, setConfirming] = useState<'suggested' | 'none' | null>(null)
+  const terms = proposal.payload.cancellation_terms
+  const executed = proposal.status === 'executed'
+  if (!proposal.payload.cancellation?.booking_id) return null
+
+  function apply(refundOption: 'suggested' | 'none') {
+    return run({ action: 'cancel_booking', refundOption }, 'Could not cancel the booking', () => setConfirming(null))
+  }
+
+  const refundEur = ((terms?.refundCents ?? 0) / 100).toFixed(2)
+  const paidEur = ((terms?.amountPaidCents ?? 0) / 100).toFixed(2)
+
+  return (
+    <div className="mt-2 pt-2 border-t border-violet-100">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 mb-1">Wants to cancel</p>
+      <div className="rounded-lg bg-white border border-rose-100 px-3 py-2 text-xs text-zinc-700 space-y-1">
+        {terms?.listingTitle && (
+          <p className="font-semibold text-zinc-900">
+            {terms.listingTitle}
+            {terms.departureAt ? ` · ${fmtAdminDate(terms.departureAt)} ${fmtAdminTime(terms.departureAt)}` : ''}
+          </p>
+        )}
+        {terms?.policySummary && <p className="text-zinc-500">{terms.policySummary}</p>}
+        {terms && (
+          <p>
+            Paid <span className="font-semibold">€{paidEur}</span> → refund{' '}
+            <span className="font-semibold text-emerald-700">€{refundEur}</span>
+          </p>
+        )}
+      </div>
+
+      {executed ? (
+        <p className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
+          <Check className="w-3.5 h-3.5" /> Cancelled &amp; refund processed
+        </p>
+      ) : terms?.isOtaBooking ? (
+        <p className="mt-1.5 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+          Booked through {terms.bookingSource} — cancel it there; it&apos;ll sync back here.
+        </p>
+      ) : terms && terms.canCancelInFareharbor === false ? (
+        <p className="mt-1.5 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+          No FareHarbor reference on this booking — cancel it directly in FareHarbor instead.
+        </p>
+      ) : confirming ? (
+        <ConfirmCreate
+          onYes={() => apply(confirming)}
+          onCancel={() => setConfirming(null)}
+          busy={busy}
+          message={
+            confirming === 'suggested' ? (
+              <>
+                This cancels the booking in FareHarbor and refunds <span className="font-semibold">€{refundEur}</span> via
+                Stripe. Continue?
+              </>
+            ) : (
+              <>
+                This cancels the booking in FareHarbor with <span className="font-semibold">no refund</span>. Continue?
+              </>
+            )
+          }
+          confirmLabel={confirming === 'suggested' ? 'Yes, cancel & refund' : 'Yes, cancel (no refund)'}
+        />
+      ) : (
+        <div className="mt-1.5 flex items-center gap-3 flex-wrap">
+          <button
+            onClick={() => setConfirming('suggested')}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-rose-700"
+          >
+            <XCircle className="w-3.5 h-3.5" /> Cancel &amp; refund €{refundEur}
+          </button>
+          <button onClick={() => setConfirming('none')} className="text-xs text-zinc-500 hover:text-zinc-700 underline">
+            Cancel, no refund
+          </button>
+        </div>
       )}
       {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
     </div>

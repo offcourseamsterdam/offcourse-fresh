@@ -21,7 +21,12 @@
  */
 
 export type OtaKind = 'new_request' | 'confirmed' | 'other' | 'needs_import' | 'own_channel'
-export type OtaPlatform = 'withlocals' | 'getmyboat' | 'getyourguide' | 'boatlocal'
+// 'tripadvisor' (not 'viator') to match the existing BookingSource value —
+// FareHarbor's own affiliate field calls it "TripAdvisor Experiences/Viator",
+// and the import proposal casts this value straight into bookings.booking_source
+// (see proposals/[id]/route.ts's import_fh_booking action), so it must already
+// be a valid BookingSource, not a new string that constant doesn't recognize.
+export type OtaPlatform = 'withlocals' | 'getmyboat' | 'getyourguide' | 'boatlocal' | 'tripadvisor'
 
 /** Single source of truth for a platform's display name — used anywhere an OtaDetection/proposal needs to show it (inbox list, co-pilot cards). */
 export const OTA_PLATFORM_NAME: Record<OtaPlatform, string> = {
@@ -29,6 +34,7 @@ export const OTA_PLATFORM_NAME: Record<OtaPlatform, string> = {
   getmyboat: 'GetMyBoat',
   getyourguide: 'GetYourGuide',
   boatlocal: 'Boat Local',
+  tripadvisor: 'Viator',
 }
 
 export interface OtaDetection {
@@ -193,21 +199,34 @@ function detectGetMyBoat(fromEmail: string, bodyText: string): OtaDetection | nu
  * every field the row needs, so there's nothing to gain from that round trip
  * anyway.
  *
- * "Boat Local - API" is a DIFFERENT case, not another 3rd-party platform to
- * import: grounded in 3 real notifications (2026-08-05) whose "Created by"
- * line reads "Zoomers B.V. API (Boat Local - API)" — Zoomers B.V. is Off
- * Course's own legal entity, and all 3 example bookings already existed in
- * our `bookings` table under booking_source='website'. This is FareHarbor
- * echoing back a booking OUR OWN website just created, not a foreign
- * platform — see handleOtaMessage's 'own_channel' branch, which checks our
- * own database instead of offering an import (importing would create a real
- * duplicate of a booking that's usually already there).
+ * "Boat Local - API" is TWO different cases under one affiliate name, told
+ * apart by the Voucher field (see below): grounded in 3 real notifications
+ * (2026-08-05) whose "Created by" line reads "Zoomers B.V. API (Boat Local -
+ * API)" — Zoomers B.V. is Off Course's own legal entity — where all 3 example
+ * bookings already existed in our `bookings` table under
+ * booking_source='website'. That's FareHarbor echoing back a booking OUR OWN
+ * website just created (kind='own_channel') — see handleOtaMessage's
+ * 'own_channel' branch, which checks our own database instead of offering an
+ * import (importing would create a real duplicate of a booking that's
+ * usually already there). But Boat Local ALSO takes bookings directly on
+ * boatlocal.nl (Beer's separate other company) that never touch this
+ * website's checkout at all — those get kind='needs_import' instead, same
+ * shape as a GYG/Viator import, once the Voucher doesn't look like one of our
+ * own Stripe PaymentIntent ids.
+ *
+ * "TripAdvisor Experiences/Viator - EUR - API" is Viator — grounded in a real
+ * "New Booking for Shared Cruise ... Created by: Viator-API (TripAdvisor
+ * Experiences/Viator - EUR - API) ... Booking #372067461" email (2026-08-14).
+ * Same shape as GetYourGuide: Viator has direct FareHarbor API write access,
+ * the booking already exists there, and the gap is only that it never made
+ * it into our own database — 'needs_import', not a new case to special-case.
  */
 function platformFromAffiliate(affiliateRaw: string | null): OtaPlatform | null {
   if (!affiliateRaw) return null
   const lower = affiliateRaw.toLowerCase()
   if (lower.includes('getyourguide')) return 'getyourguide'
   if (lower.includes('boat local')) return 'boatlocal'
+  if (lower.includes('viator') || lower.includes('tripadvisor')) return 'tripadvisor'
   return null
 }
 
@@ -252,17 +271,27 @@ function detectFareharborNotification(bodyText: string): OtaDetection | null {
   const guestsRaw = bodyText.match(/(\d+)\s*Adults?/i)?.[1]
   const guests = guestsRaw ? parseInt(guestsRaw, 10) : null
 
-  // Boat Local's "Voucher" field is our own Stripe PaymentIntent id (grounded
-  // in a real example: "Voucher: pi_3U0pbNGh1qCF71Ta0pKRNwmw") — only
-  // meaningful as a lookup key for that platform; other platforms' vouchers
-  // are their own booking codes, not something our `bookings` table stores.
-  const stripePaymentIntentId = platform === 'boatlocal'
-    ? bodyText.match(/Voucher:\s*([^\r\n]+)/i)?.[1]?.trim() ?? null
-    : null
+  // Boat Local's "Voucher" field is our own Stripe PaymentIntent id ONLY when
+  // the booking actually ran through our own website checkout (grounded in a
+  // real example: "Voucher: pi_3U0pbNGh1qCF71Ta0pKRNwmw") — but Boat Local
+  // also takes bookings directly on boatlocal.nl (Beer's other company,
+  // separate from this website), which stamp some other internal id there
+  // instead (grounded 2026-08-21: two real "no matching row" notifications —
+  // James Hagler and Victoria Kingdom — both carried a plain UUID voucher,
+  // e.g. "Voucher: ac39e1c8-c598-473a-9da8-143de7c3a0e0", not a PaymentIntent).
+  // Checking the `pi_` prefix is what tells these two apart: a real PI means
+  // "our own checkout, just echoed back" (own_channel); anything else means
+  // "a genuine boatlocal.nl booking we've never seen," same shape as a GYG/
+  // Viator import (needs_import) — not a data-integrity gap needing a Slack
+  // alert, and not the same €0-comp path either, since there's no other
+  // platform payout report for boatlocal.nl — see import-booking.ts.
+  const voucher = platform === 'boatlocal' ? bodyText.match(/Voucher:\s*([^\r\n]+)/i)?.[1]?.trim() ?? null : null
+  const stripePaymentIntentId = voucher?.startsWith('pi_') ? voucher : null
+  const isOwnChannel = platform === 'boatlocal' && !!stripePaymentIntentId
 
   return {
     platform,
-    kind: platform === 'boatlocal' ? 'own_channel' : 'needs_import',
+    kind: isOwnChannel ? 'own_channel' : 'needs_import',
     bookingRef: pk,
     guestName,
     guestEmail,

@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { CalendarSearch, Loader2, X } from 'lucide-react'
+import { adminFetcher } from '@/hooks/useAdminFetch'
+import { locales } from '@/lib/i18n/config'
 
 interface SlotResult {
   listing: { slug: string; title: string; category: string | null }
@@ -17,7 +19,6 @@ interface Props {
 }
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://offcourseamsterdam.com'
-const KNOWN_LOCALES = ['en', 'nl', 'de', 'fr', 'es', 'pt', 'zh']
 
 /**
  * The inbox's availability finder — same /api/search the website hero uses,
@@ -32,17 +33,15 @@ export function AvailabilityFinder({ customerLocale, onPick, onClose }: Props) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const locale = customerLocale && KNOWN_LOCALES.includes(customerLocale) ? customerLocale : 'en'
+  const locale = customerLocale && (locales as readonly string[]).includes(customerLocale) ? customerLocale : 'en'
 
   async function search(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError(null)
     try {
-      const res = await fetch(`/api/search?date=${date}&guests=${guests}`)
-      const json = await res.json().catch(() => null)
-      if (!json?.ok) throw new Error(json?.error ?? 'Search failed')
-      setResults(json.data.results as SlotResult[])
+      const { results } = await adminFetcher<{ results: SlotResult[] }>(`/api/search?date=${date}&guests=${guests}`)
+      setResults(results)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Search failed')
     } finally {

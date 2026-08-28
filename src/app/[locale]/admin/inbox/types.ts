@@ -103,7 +103,7 @@ export interface OtaRequestedDetails {
 /** A Ghost proposal surfaced for this conversation (reply draft, booking, or OTA fact block). */
 export interface InboxGhostProposal {
   id: string
-  kind: 'reply_draft' | 'booking_proposal' | 'booking_correction' | 'ota_availability' | 'ota_booking_ready' | 'fh_booking_import_ready'
+  kind: 'reply_draft' | 'booking_proposal' | 'booking_correction' | 'cancellation_request' | 'ota_availability' | 'ota_booking_ready' | 'fh_booking_import_ready'
   status: string
   reasoning: string | null
   created_at: string
@@ -131,6 +131,29 @@ export interface InboxGhostProposal {
       listing_title?: string
       guest_count?: number
     }
+    cancellation?: {
+      booking_id?: string
+    }
+    /** Policy-computed terms, stored right after the proposal is drafted — see
+     *  src/lib/ghost/cancellation-terms.ts. Every number here is code output,
+     *  never the model's; the card shows these, not anything Claude wrote. */
+    cancellation_terms?: {
+      bookingFound?: boolean
+      guestName?: string | null
+      listingTitle?: string | null
+      departureAt?: string | null
+      hoursUntilDeparture?: number | null
+      refundPercent?: number
+      amountPaidCents?: number
+      refundCents?: number
+      policySummary?: string
+      bookingSource?: string | null
+      isOtaBooking?: boolean
+      alreadyCancelled?: boolean
+      canCancelInFareharbor?: boolean
+    }
+    /** Names of the tools the agent actually called, in order — shown under the draft. */
+    tools_used?: string[]
     // ota_availability / ota_booking_ready only:
     platform?: string
     booking_ref?: string | null
@@ -174,6 +197,7 @@ export interface InboxConversationDetail {
     replyDraft: InboxGhostProposal | null
     bookingProposal: InboxGhostProposal | null
     bookingCorrection: InboxGhostProposal | null
+    cancellationRequest: InboxGhostProposal | null
     /** New OTA booking request — read-only availability check, no reply to send. */
     otaAvailability: InboxGhostProposal | null
     /** OTA booking confirmed by the guest on the platform — review and create it manually. */
@@ -182,4 +206,28 @@ export interface InboxConversationDetail {
     fhImportReady: InboxGhostProposal | null
     history: InboxGhostProposal[]
   }
+}
+
+/**
+ * True when the Ghost co-pilot has ANY of the 7 proposal kinds pending —
+ * shared by ContextPane.tsx (whether to render the co-pilot card at all) and
+ * page.tsx (the mobile drawer's "there's something to act on" dot badge).
+ * Was two independently hand-maintained lists that had already drifted:
+ * page.tsx's copy was missing cancellationRequest and fhImportReady, so a
+ * pending cancellation/refund or an import-ready booking never lit up the
+ * mobile badge (found during a 2026-08-23 simplify pass). Add new kinds to
+ * InboxConversationDetail['ghost'] and they're automatically covered here —
+ * nothing to remember to update in a second place.
+ */
+export function hasGhostCoPilotContent(ghost: InboxConversationDetail['ghost'] | undefined): boolean {
+  if (!ghost) return false
+  return !!(
+    ghost.replyDraft ||
+    ghost.bookingProposal ||
+    ghost.bookingCorrection ||
+    ghost.cancellationRequest ||
+    ghost.otaAvailability ||
+    ghost.otaBookingReady ||
+    ghost.fhImportReady
+  )
 }

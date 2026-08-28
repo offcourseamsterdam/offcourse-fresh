@@ -66,6 +66,20 @@ describe('validateSubmission', () => {
     expect(validateSubmission({ reply: 'Hi', booking: 'tomorrow' })?.booking).toBeUndefined()
   })
 
+  it('keeps a cancellation object when present', () => {
+    const parsed = validateSubmission({
+      reply: "That's within 24 hours of departure, so unfortunately no refund applies.",
+      language: 'English',
+      reasoning: '6h before departure — no-refund tier per check_cancellation_terms.',
+      cancellation: { booking_id: 'bk-42' },
+    })
+    expect(parsed?.cancellation).toEqual({ booking_id: 'bk-42' })
+  })
+
+  it('drops non-object cancellation values', () => {
+    expect(validateSubmission({ reply: 'Hi', cancellation: 'bk-42' })?.cancellation).toBeUndefined()
+  })
+
   it('keeps a correction object when present, including the booking summary fields', () => {
     const parsed = validateSubmission({
       reply: 'We found your booking and are fixing the email now.',
@@ -112,6 +126,12 @@ describe('draftShadowReply — never breaks the customer flow', () => {
     await expect(draftShadowReply('conv-1', 'msg-1')).resolves.toBeNull()
   })
 
+  /** Captures the agent_proposals rows written during a run, for assertions below. */
+  const insertedProposals: Record<string, unknown>[] = []
+  beforeEach(() => {
+    insertedProposals.length = 0
+  })
+
   /** Full happy-path Supabase stub — everything the drafter reads/writes on a normal run. */
   function fakeSupabase({ insertError }: { insertError?: { message: string } | null } = {}) {
     return {
@@ -152,7 +172,7 @@ describe('draftShadowReply — never breaks the customer flow', () => {
           return {
             select: () => ({
               order: () => ({ limit: async () => ({ data: [] }) }),
-              eq: async () => ({ data: [] }),
+              eq: () => ({ limit: async () => ({ data: [] }) }),
             }),
           }
         }
@@ -166,14 +186,27 @@ describe('draftShadowReply — never breaks the customer flow', () => {
                   }),
                 }),
               }),
+              // storeCancellationTerms re-reads the freshly-inserted proposal by
+              // id to merge cancellation_terms onto its payload.
+              eq: () => ({ single: async () => ({ data: { payload: {} } }) }),
             }),
-            insert: () => ({
-              select: () => ({
-                single: async () =>
-                  insertError ? { data: null, error: insertError } : { data: { id: 'proposal-1' }, error: null },
-              }),
-            }),
+            insert: (row: Record<string, unknown>) => {
+              insertedProposals.push(row)
+              return {
+                select: () => ({
+                  single: async () =>
+                    insertError ? { data: null, error: insertError } : { data: { id: 'proposal-1' }, error: null },
+                }),
+              }
+            },
+            update: () => ({ eq: async () => ({ error: null }) }),
           }
+        }
+        // storeCancellationTerms's computeCancellationTerms looks the booking up
+        // by id — "not found" is enough for the kind-derivation tests below,
+        // which aren't testing the refund math itself (see cancellation-terms.test.ts).
+        if (table === 'bookings') {
+          return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null }) }) }) }
         }
         throw new Error(`unexpected table "${table}"`)
       },
@@ -192,7 +225,60 @@ describe('draftShadowReply — never breaks the customer flow', () => {
     vi.mocked(runAgenticLoop).mockResolvedValue(REPLY_SUBMISSION)
 
     const result = await draftShadowReply('conv-1', 'msg-1')
-    expect(result).toEqual({ kind: 'reply_draft', reasoning: 'Simple availability question.' })
+    expect(result).toEqual({ kind: 'reply_draft', reasoning: 'Simple availability question.', reply: 'Yes! Saturday works, what time suits you?' })
+  })
+
+  it('records the tool names it actually called as payload.tools_used, deduped and in order', async () => {
+    // Denormalized on purpose so the inbox can show "what did it check" without
+    // the thread poll ever selecting the fat `steps` blob (egress — see the
+    // select in api/admin/inbox/conversations/[id]/route.ts).
+    vi.mocked(createAdminClient).mockReturnValue(fakeSupabase() as never)
+    vi.mocked(runAgenticLoop).mockResolvedValue({
+      ...REPLY_SUBMISSION,
+      steps: [
+        { tool: 'search_availability', input: {}, result_preview: '...' },
+        { tool: 'check_shared_cruise_to_join', input: {}, result_preview: '...' },
+        { tool: 'search_availability', input: {}, result_preview: '...' }, // called twice
+      ],
+    } as never)
+
+    await draftShadowReply('conv-1', 'msg-1')
+
+    const payload = insertedProposals[0].payload as { tools_used: string[] }
+    expect(payload.tools_used).toEqual(['search_availability', 'check_shared_cruise_to_join'])
+  })
+
+  it('records an empty tools_used when the agent answered without calling any tool', async () => {
+    vi.mocked(createAdminClient).mockReturnValue(fakeSupabase() as never)
+    vi.mocked(runAgenticLoop).mockResolvedValue(REPLY_SUBMISSION)
+
+    await draftShadowReply('conv-1', 'msg-1')
+
+    expect((insertedProposals[0].payload as { tools_used: string[] }).tools_used).toEqual([])
+  })
+
+  it('returns cancellation_request when the model submits via submit_cancellation_request', async () => {
+    vi.mocked(createAdminClient).mockReturnValue(fakeSupabase() as never)
+    vi.mocked(runAgenticLoop).mockResolvedValue({
+      submission: {
+        reply: "No problem — that's more than 48 hours out, so you'll get a full refund.",
+        language: 'English',
+        reasoning: '51h before departure, full-refund tier per check_cancellation_terms.',
+        open_question: null,
+        cancellation: { booking_id: 'bk-1' },
+      },
+      submittedVia: 'submit_cancellation_request',
+      steps: [],
+      turns: 2,
+    })
+
+    const result = await draftShadowReply('conv-1', 'msg-1')
+
+    expect(result).toEqual({
+      kind: 'cancellation_request',
+      reasoning: '51h before departure, full-refund tier per check_cancellation_terms.',
+      reply: "No problem — that's more than 48 hours out, so you'll get a full refund.",
+    })
   })
 
   it('returns null (not a fake success) when saving the proposal fails — the agent did real work but nothing was persisted', async () => {

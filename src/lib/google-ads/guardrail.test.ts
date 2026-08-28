@@ -105,12 +105,12 @@ describe('formatPauses', () => {
 const h = vi.hoisted(() => ({
   campaignPerformance: vi.fn(),
   setCampaignStatus: vi.fn(),
-  postSlackText: vi.fn().mockResolvedValue(undefined),
+  postSlackOps: vi.fn().mockResolvedValue(undefined),
   emitOpsEvent: vi.fn().mockResolvedValue(undefined),
 }))
 vi.mock('./reporting', () => ({ campaignPerformance: h.campaignPerformance }))
 vi.mock('./campaigns', () => ({ setCampaignStatus: h.setCampaignStatus }))
-vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText }))
+vi.mock('@/lib/slack/send-notification', () => ({ postSlackOps: h.postSlackOps }))
 vi.mock('@/lib/ops/events', () => ({ emitOpsEvent: h.emitOpsEvent }))
 
 describe('runGuardrail', () => {

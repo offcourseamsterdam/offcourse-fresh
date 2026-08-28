@@ -28,7 +28,11 @@ vi.mock('@/lib/supabase/admin', () => ({
         return { select: () => ({ eq: () => Promise.resolve({ count: 5, error: null }) }) }
       }
       if (table === 'agent_proposals') {
-        return { select: () => ({ eq: () => ({ in: () => Promise.resolve({ data: proposals, error: null }) }) }) }
+        return {
+          select: () => ({
+            eq: () => ({ in: () => ({ order: () => ({ limit: () => Promise.resolve({ data: proposals, error: null }) }) }) }),
+          }),
+        }
       }
       throw new Error(`unexpected table "${table}"`)
     },
