@@ -61,10 +61,6 @@
       "schedule": "0 4 * * *"
     },
     {
-      "path": "/api/cron/getyourguide-reviews",
-      "schedule": "15 8 * * 1"
-    },
-    {
       "path": "/api/cron/gmail-inbox-sync",
       "schedule": "*/2 * * * *"
     },
