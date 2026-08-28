@@ -1,3 +1,18 @@
+export type StaffOption = { id: string; name: string }
+
+/** An assigned bonus — carries amount/date too, for the "spent this month" overview stat. */
+export type Assignee = StaffOption & { amountCents: number; awardedAt: string }
+
+/**
+ * Every review's match status, not just conflicts (Beer, 2026-08-22, plan
+ * §3.2) — 'needs_confirmation' generalizes the old standalone
+ * BonusConflictCards panel into a per-row state.
+ */
+export type MatchStatus =
+  | { status: 'no_match' }
+  | { status: 'assigned'; assignees: Assignee[] }
+  | { status: 'needs_confirmation'; matchedName: string; candidates: StaffOption[] }
+
 export type Review = {
   id: string
   reviewer_name: string
@@ -14,6 +29,10 @@ export type Review = {
   original_text: string | null
   language: string | null
   created_at: string
+  matchStatus: MatchStatus
+  ai_draft_reply: string | null
+  replied_at: string | null
+  bonus_checked_at: string | null
 }
 
 export type ReviewsConfig = {

@@ -24,6 +24,10 @@ export const PATCH = withRoute(async (request: NextRequest, ctx: Ctx) => {
     'is_active', 'sort_order', 'author_photo_url',
     'review_text_nl', 'review_text_de', 'review_text_fr',
     'review_text_es', 'review_text_pt', 'review_text_zh',
+    // Phase 4 (2026-08-22): editing the AI draft before copy-pasting it, and
+    // marking a review as replied-to (both plain manual admin actions, no
+    // platform API call behind either).
+    'ai_draft_reply', 'replied_at',
   ] as const
   for (const key of allowed) {
     if (key in body) updates[key] = body[key]

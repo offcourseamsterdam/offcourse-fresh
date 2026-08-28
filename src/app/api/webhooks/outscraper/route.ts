@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
     if (externalIds.length > 0) {
       const { data: upsertedRows } = await supabase
         .from('social_proof_reviews')
-        .select('id, review_text, original_text')
+        .select('id, review_text, original_text, rating')
         .eq('source', source)
         .in('external_review_id', externalIds)
 
@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
         after(async () => {
           for (const row of upsertedRows) {
             const text = [row.review_text, row.original_text].filter(Boolean).join(' ')
-            await awardReviewBonuses(row.id, text)
+            await awardReviewBonuses(row.id, text, row.rating ?? 0)
           }
         })
       }

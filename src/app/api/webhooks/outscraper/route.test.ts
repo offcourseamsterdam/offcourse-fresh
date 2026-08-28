@@ -16,13 +16,24 @@ const h = vi.hoisted(() => ({
   configUpdate: vi.fn().mockResolvedValue({ error: null }),
   postSlackText: vi.fn().mockResolvedValue(undefined),
   postSlackOps: vi.fn().mockResolvedValue(undefined),
+  awardReviewBonuses: vi.fn().mockResolvedValue(undefined),
+  // The post-upsert re-fetch (id, review_text, original_text, rating) that
+  // feeds awardReviewBonuses — override per-test via reviewRows.mockResolvedValue(...).
+  reviewRows: vi.fn().mockResolvedValue({ data: [{ id: 'row-1', review_text: 'Loved it', original_text: null, rating: 5 }] }),
 }))
 
+// after() normally defers to post-response — run it synchronously so its
+// awardReviewBonuses call is observable within the test (same pattern as
+// admin/bookings/[id]/cancel/route.test.ts).
+vi.mock('next/server', async importOriginal => {
+  const actual = await importOriginal<typeof import('next/server')>()
+  return { ...actual, after: (cb: () => unknown) => cb() }
+})
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from: (table: string) => {
       if (table === 'social_proof_reviews') {
-        return { upsert: h.upsert }
+        return { upsert: h.upsert, select: () => ({ eq: () => ({ in: h.reviewRows }) }) }
       }
       return {
         select: () => ({ limit: () => ({ single: h.maybeSingle, maybeSingle: h.maybeSingle }) }),
@@ -32,6 +43,7 @@ vi.mock('@/lib/supabase/admin', () => ({
   }),
 }))
 vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText, postSlackOps: h.postSlackOps }))
+vi.mock('@/lib/scheduling/review-bonuses', () => ({ awardReviewBonuses: h.awardReviewBonuses }))
 
 import { POST } from './route'
 
@@ -106,5 +118,17 @@ describe('outscraper webhook', () => {
     const res = await POST(mockReq(VALID_PAYLOAD))
     expect(res.status).toBe(200)
     expect(h.upsert).not.toHaveBeenCalled()
+  })
+
+  it('passes the review\'s real rating through to awardReviewBonuses — regression for the 5-star gate silently getting a wrong/missing rating', async () => {
+    h.reviewRows.mockResolvedValue({ data: [{ id: 'row-1', review_text: 'Loved it', original_text: null, rating: 5 }] })
+    await POST(mockReq(VALID_PAYLOAD))
+    expect(h.awardReviewBonuses).toHaveBeenCalledWith('row-1', 'Loved it', 5)
+  })
+
+  it('coalesces a null rating to 0 rather than passing null/undefined into the gate', async () => {
+    h.reviewRows.mockResolvedValue({ data: [{ id: 'row-1', review_text: 'Loved it', original_text: null, rating: null }] })
+    await POST(mockReq(VALID_PAYLOAD))
+    expect(h.awardReviewBonuses).toHaveBeenCalledWith('row-1', 'Loved it', 0)
   })
 })

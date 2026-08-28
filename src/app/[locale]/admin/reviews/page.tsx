@@ -8,8 +8,9 @@ import { GoogleConfigBar } from '@/components/admin/GoogleConfigBar'
 import { ReviewSmsReadyList } from '@/components/admin/ReviewSmsReadyList'
 import { ReviewBookingRatioCard } from '@/components/admin/ReviewBookingRatioCard'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
+import { ReviewsOverviewCard } from '@/components/admin/ReviewsOverviewCard'
+import { ReviewsStatsSection } from '@/components/admin/ReviewsStatsSection'
 import { useReviews } from './useReviews'
-import { BonusConflictCards } from './BonusConflictCards'
 
 type SourceFilter = 'all' | 'google' | 'tripadvisor' | 'withlocals' | 'getyourguide'
 
@@ -37,11 +38,20 @@ export default function AdminReviewsPage() {
     saveConfig,
     toggleActive,
     handleDelete,
+    assignReview,
+    activeStaff,
+    draftReply,
+    draftingIds,
+    toggleReplied,
     googleReviews,
     taReviews,
     withlocalsReviews,
     activeReviews,
     bookingsCount,
+    overview,
+    scanning,
+    scanResult,
+    backfillScan,
   } = useReviews()
 
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
@@ -102,6 +112,15 @@ export default function AdminReviewsPage() {
 
       <AdminErrorBanner error={error} />
 
+      {/* Overview — new this month, bonuses paid this month, unassigned backlog,
+          and the manual re-scan trigger (Beer, 2026-08-22) */}
+      {reviews.length > 0 && (
+        <>
+          <ReviewsOverviewCard overview={overview} scanning={scanning} scanResult={scanResult} onScan={backfillScan} />
+          <ReviewsStatsSection reviews={reviews} />
+        </>
+      )}
+
       {/* Quick stats */}
       <div className="flex gap-4 text-sm text-zinc-500">
         <span>{reviews.length} total</span>
@@ -148,10 +167,9 @@ export default function AdminReviewsPage() {
         </div>
       )}
 
-      {/* Bonus conflicts — surfaces when two staff share a first name */}
-      <BonusConflictCards />
-
-      {/* Reviews list */}
+      {/* Reviews list — each row carries its own €5 bonus match status and
+          assign/reassign control (plan §3.2, replaces the old standalone
+          BonusConflictCards panel) */}
       {filteredReviews.length > 0 && (
         <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
           <ul className="divide-y divide-zinc-100">
@@ -161,6 +179,11 @@ export default function AdminReviewsPage() {
                 review={review}
                 onToggleActive={toggleActive}
                 onDelete={handleDelete}
+                onAssign={assignReview}
+                activeStaff={activeStaff}
+                onDraftReply={draftReply}
+                onToggleReplied={toggleReplied}
+                isDrafting={draftingIds.has(review.id)}
               />
             ))}
           </ul>

@@ -191,7 +191,7 @@ describe('admin route auth contract', () => {
     // post-cruise review SMS feature: manual send + the "ready to send" list
     // on the admin Reviews page).
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`153`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`154`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {
