@@ -20,17 +20,31 @@ export interface PlanningGroup {
  * already resolved server-side and two bookings sold the same product always
  * carry the identical name, so it's a reliable proxy without needing to widen
  * the AdminBooking type.
+ *
+ * Shared cruises key on `fareharbor_availability_pk` instead, when it's known
+ * — the ONE identifier guaranteed to mean "the same real FareHarbor
+ * departure" regardless of which virtual listing (see CLAUDE.md's Virtual
+ * Product Layer) or import path a given booking came from. listing_id can
+ * legitimately differ for two bookings on the exact same slot (two different
+ * marketing pages pointing at one shared FareHarbor item), and a booking
+ * imported straight from an OTA notification email (see
+ * lib/fareharbor/import-booking.ts) never gets a listing_id or
+ * customer_type_name at all — grouping those by the listing-based key alone
+ * would always split them into their own single-booking card even when a
+ * normal website booking exists on the identical slot.
  */
 export function groupBookingsForPlanning(bookings: AdminBooking[]): PlanningGroup[] {
   const map = new Map<string, AdminBooking[]>()
   for (const b of bookings) {
-    const key = [
-      b.booking_date ?? '',
-      b.start_time ?? '',
-      b.listing_id ?? '',
-      b.category ?? '',
-      b.customer_type_name ?? '',
-    ].join('::')
+    const key = b.category === 'shared' && b.fareharbor_availability_pk
+      ? `avail::${b.fareharbor_availability_pk}`
+      : [
+          b.booking_date ?? '',
+          b.start_time ?? '',
+          b.listing_id ?? '',
+          b.category ?? '',
+          b.customer_type_name ?? '',
+        ].join('::')
     const group = map.get(key)
     if (group) {
       group.push(b)
