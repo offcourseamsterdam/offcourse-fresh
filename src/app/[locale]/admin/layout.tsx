@@ -16,6 +16,10 @@ const navSections: NavSection[] = [
   {
     label: 'Operations',
     items: [
+      // The dashboard has always existed at /admin (today's cruises, revenue,
+      // captain cover) but was only reachable by editing the URL — it's the
+      // natural landing page, so it leads the section.
+      { href: '/admin',           label: 'Dashboard', icon: 'dashboard' },
       { href: '/admin/bookings',  label: 'Bookings',  icon: 'bookings' },
       { href: '/admin/inbox',     label: 'Inbox',     icon: 'inbox',     badge: 'inbox-open-count' },
       { href: '/admin/catering',  label: 'Catering',  icon: 'catering',  badge: 'pending-catering-count' },
@@ -24,6 +28,9 @@ const navSections: NavSection[] = [
       { href: '/admin/maintenance', label: 'Maintenance', icon: 'maintenance' },
       { href: '/admin/stock',      label: 'Stock',      icon: 'stock' },
       { href: '/admin/customers', label: 'Customers', icon: 'customers', comingSoon: true },
+      // Moved from Content (2026-08-22): captain-assignment/bonus management makes this an
+      // operational task now, not content curation — see docs/plans/2026-08-22-reviews-bonuses-and-attribution.md.
+      { href: '/admin/reviews',   label: 'Reviews',   icon: 'reviews' },
     ],
   },
   {
@@ -33,7 +40,6 @@ const navSections: NavSection[] = [
       { href: '/admin/boats',      label: 'Boats',      icon: 'cruises' },
       { href: '/admin/cruises',    label: 'Cruises',    icon: 'cruises' },
       { href: '/admin/extras',     label: 'Extras',     icon: 'extras' },
-      { href: '/admin/reviews',    label: 'Reviews',    icon: 'reviews' },
     ],
   },
   {
