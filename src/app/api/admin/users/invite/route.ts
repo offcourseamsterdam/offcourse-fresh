@@ -29,15 +29,29 @@ export const POST = withRoute(async (request: NextRequest) => {
 
   const supabase = createAdminClient()
 
-  // Create Supabase auth user and send invite email
-  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-    email,
-    email_confirm: true,
-    user_metadata: { display_name },
+  // inviteUserByEmail both creates the user AND actually dispatches Supabase's
+  // real invite email through the project's configured mailer.
+  //
+  // The previous version here called createUser() + generateLink() instead.
+  // generateLink() is explicitly documented as being for a CUSTOM email
+  // provider — "Generates email links... to be sent via a custom email
+  // provider" — it only mints a link and hands it back; it never sends
+  // anything itself. That returned link was never used (the route discarded
+  // it after only checking for an error), so this route created a real
+  // account, told the admin "Invite sent to {email}", and no email ever went
+  // out — silently, every single time. (Found 2026-08-21: Beer invited
+  // finance@offcourseamsterdam.com, got the success message, no email arrived.)
+  const redirectTo = new URL('/auth/callback?locale=en', request.url).toString()
+  const { data: authData, error: authError } = await supabase.auth.admin.inviteUserByEmail(email, {
+    data: { display_name },
+    redirectTo,
   })
 
   if (authError) {
     return apiError(authError.message)
+  }
+  if (!authData.user) {
+    return apiError('Invite email could not be created')
   }
 
   // The handle_new_user trigger will have created the profile with role='guest'.
@@ -49,17 +63,6 @@ export const POST = withRoute(async (request: NextRequest) => {
 
   if (profileError) {
     return apiError(profileError.message)
-  }
-
-  // Send them a magic link to set up their account
-  const { error: linkError } = await supabase.auth.admin.generateLink({
-    type: 'magiclink',
-    email,
-  })
-
-  if (linkError) {
-    // Non-fatal — user was created, they can request a link themselves
-    console.warn('[invite] Failed to send magic link:', linkError.message)
   }
 
   return apiOk({ success: true, userId: authData.user.id })
