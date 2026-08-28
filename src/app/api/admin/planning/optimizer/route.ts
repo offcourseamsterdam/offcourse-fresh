@@ -265,12 +265,15 @@ const findAnyBoatSwapProposal = (supabase: AdminClient, bookingId: string) =>
  *  finding. Kept in one place so cross-day and boat-swap items can never drift
  *  apart in what the overlay receives. */
 function withProposal(base: OptimizerItem, row: ProposalRow | null, guestName: string | null | undefined): OptimizerItem {
-  if (!row) return base
+  // guestName belongs to the booking, not to whether a proposal row exists
+  // yet — merge it unconditionally, then layer in the row-dependent fields
+  // (proposal id, drafted copy, lifecycle state) only when there is a row.
+  const withGuest: OptimizerItem = { ...base, guestName: guestName ?? base.guestName }
+  if (!row) return withGuest
   const payload = (row.payload ?? {}) as { sms_text?: string; email_subject?: string; email_body?: string }
   return {
-    ...base,
+    ...withGuest,
     proposalId: row.id,
-    guestName: guestName ?? base.guestName,
     smsText: payload.sms_text,
     emailSubject: payload.email_subject,
     emailBody: payload.email_body,
