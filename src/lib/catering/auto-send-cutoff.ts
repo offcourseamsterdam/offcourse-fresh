@@ -25,3 +25,23 @@ export function isWithinCateringAutoSendWindow(
   if (!bookingDate) return false
   return bookingDate <= cateringAutoSendCutoffDate(daysAhead, now)
 }
+
+/**
+ * Days remaining until the auto-send cron will pick this booking up (see
+ * cron/catering-auto-send). 0 or negative means it's already inside the
+ * window — sends today's cron run (or should already have gone out).
+ * Dates are plain YYYY-MM-DD calendar strings, diffed via UTC epoch so DST
+ * never skews the day count.
+ */
+export function daysUntilCateringAutoSend(
+  bookingDate: string | null | undefined,
+  daysAhead = 7,
+  now: Date = new Date(),
+): number | null {
+  if (!bookingDate) return null
+  const today = cateringAutoSendCutoffDate(0, now)
+  const [by, bm, bd] = bookingDate.split('-').map(Number)
+  const [ty, tm, td] = today.split('-').map(Number)
+  const daysUntilDeparture = Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ty, tm - 1, td)) / (24 * 60 * 60 * 1000))
+  return daysUntilDeparture - daysAhead
+}
