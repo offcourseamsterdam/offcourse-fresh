@@ -16,7 +16,7 @@
  */
 
 export const DEFAULT_SMS_TEMPLATE =
-  'Hi {firstName}! Thanks for sailing with us today on the {listingTitle} 🛥️\n\n' +
+  'Hi {firstName}! Thanks for cruising with us today 🛥️\n\n' +
   'Here\'s our curated map of Amsterdam\'s favourite local food & drinks spots: {mapUrl}\n\n' +
   'If you had a great time, we\'d really appreciate a quick review on TripAdvisor: {reviewUrl}\n\n' +
   '— {captainName} & the Off Course team'
