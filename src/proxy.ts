@@ -31,6 +31,14 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // ── Branded short links (map / review) ──────────────────────────────────
+  // /r/<code> is a public, locale-less route (src/app/r/[code]/route.ts —
+  // the review-SMS redirector). Bypass the locale redirect so it doesn't
+  // become /en/r/<code> (which doesn't exist) → 404.
+  if (pathname.startsWith('/r/')) {
+    return NextResponse.next()
+  }
+
   // ── Locale redirect ─────────────────────────────────────────────────────
   // If no locale prefix → redirect to /en
   const match = pathname.match(LOCALE_RE)
