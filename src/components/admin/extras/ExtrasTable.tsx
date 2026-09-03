@@ -52,6 +52,7 @@ export function ExtrasTable({ extras, onEdit, onToggleActive, onDelete }: Extras
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Name</th>
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-zinc-500 uppercase tracking-wider hidden sm:table-cell">Scope</th>
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Price</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-zinc-500 uppercase tracking-wider hidden lg:table-cell">Inkoop (Marge)</th>
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-zinc-500 uppercase tracking-wider hidden md:table-cell">VAT</th>
                     <th className="text-center px-4 py-2.5 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Active</th>
                     <th className="px-4 py-2.5 w-10" />
@@ -91,6 +92,25 @@ export function ExtrasTable({ extras, onEdit, onToggleActive, onDelete }: Extras
                       {/* Price */}
                       <td className="px-4 py-3 text-zinc-700 font-medium whitespace-nowrap">
                         {formatPrice(extra)}
+                      </td>
+                      {/* Inkoop & Marge */}
+                      <td className="px-4 py-3 text-xs hidden lg:table-cell whitespace-nowrap">
+                        {extra.price_type !== 'informational' && extra.cost_price_value && extra.cost_price_value > 0 ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-zinc-600 font-medium">€{(extra.cost_price_value / 100).toFixed(2)}</span>
+                            {extra.price_value > 0 && (
+                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                                Math.round(((extra.price_value - extra.cost_price_value) / extra.price_value) * 100) >= 50
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
+                                  : 'bg-amber-50 text-amber-700 border border-amber-200/60'
+                              }`}>
+                                {Math.round(((extra.price_value - extra.cost_price_value) / extra.price_value) * 100)}%
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-zinc-300">—</span>
+                        )}
                       </td>
                       {/* VAT */}
                       <td className="px-4 py-3 text-zinc-400 text-xs hidden md:table-cell">

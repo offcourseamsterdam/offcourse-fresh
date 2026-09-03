@@ -1853,6 +1853,7 @@ export type Database = {
           name_zh: string | null
           price_type: string
           price_value: number
+          cost_price_value: number | null
           quantity_mode: string
           scope: string
           sort_order: number
@@ -1896,6 +1897,7 @@ export type Database = {
           name_zh?: string | null
           price_type: string
           price_value?: number
+          cost_price_value?: number | null
           quantity_mode?: string
           scope: string
           sort_order?: number
@@ -1939,6 +1941,7 @@ export type Database = {
           name_zh?: string | null
           price_type?: string
           price_value?: number
+          cost_price_value?: number | null
           quantity_mode?: string
           scope?: string
           sort_order?: number
@@ -2054,6 +2057,48 @@ export type Database = {
           updated_at?: string
           vat21_cents?: number
           vat9_cents?: number
+        }
+        Relationships: []
+      }
+      finance_budget_settings: {
+        Row: {
+          id: string
+          maintenance_pct: number
+          marketing_pct: number
+          fixed_costs_monthly_cents: number
+          winter_buffer_target_cents: number
+          default_monthly_revenue_target_cents: number
+          target_skipper_ratio_pct: number
+          target_catering_margin_pct: number
+          default_skipper_hourly_rate_cents: number
+          revolut_manual_balance_cents: number | null
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          maintenance_pct?: number
+          marketing_pct?: number
+          fixed_costs_monthly_cents?: number
+          winter_buffer_target_cents?: number
+          default_monthly_revenue_target_cents?: number
+          target_skipper_ratio_pct?: number
+          target_catering_margin_pct?: number
+          default_skipper_hourly_rate_cents?: number
+          revolut_manual_balance_cents?: number | null
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          maintenance_pct?: number
+          marketing_pct?: number
+          fixed_costs_monthly_cents?: number
+          winter_buffer_target_cents?: number
+          default_monthly_revenue_target_cents?: number
+          target_skipper_ratio_pct?: number
+          target_catering_margin_pct?: number
+          default_skipper_hourly_rate_cents?: number
+          revolut_manual_balance_cents?: number | null
+          updated_at?: string
         }
         Relationships: []
       }

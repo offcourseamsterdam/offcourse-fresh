@@ -267,6 +267,42 @@ export function ExtrasFormModal({
                 ))}
               </div>
             </div>
+
+            {/* Inkoopprijs (COGS) */}
+            <div className="space-y-1.5 sm:col-span-2 bg-zinc-50 border border-zinc-200/80 p-3 rounded-lg">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-zinc-700">Inkoopprijs (€) <span className="font-normal text-zinc-400">— wat Off Course betaalt</span></label>
+                {(() => {
+                  const sell = parseFloat(form.price_value_display) || 0
+                  const cost = parseFloat(form.cost_price_display) || 0
+                  if (cost > 0 && sell > 0) {
+                    const margin = sell - cost
+                    const pct = Math.round((margin / sell) * 100)
+                    return (
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                        pct >= 50 ? 'bg-emerald-100 text-emerald-800' : pct >= 25 ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'
+                      }`}>
+                        Marge: €{margin.toFixed(2)} ({pct}%)
+                      </span>
+                    )
+                  }
+                  return null
+                })()}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="bv. 12.50"
+                  value={form.cost_price_display}
+                  onChange={e => onFormChange(f => ({ ...f, cost_price_display: e.target.value }))}
+                />
+                <p className="text-xs text-zinc-500">
+                  Gebruikt voor de live winst- en maandrapportages in Finance.
+                </p>
+              </div>
+            </div>
           </div>
         )}
 

@@ -11,6 +11,7 @@ export interface Extra {
   applicable_categories: string[] | null
   price_type: string
   price_value: number
+  cost_price_value?: number | null
   vat_rate: number
   is_required: boolean
   is_active: boolean
@@ -41,6 +42,7 @@ export interface FormState {
   applicable_categories: ListingCategory[]
   price_type: PriceType
   price_value_display: string  // in euros (as user types)
+  cost_price_display: string   // inkoop in euros (as user types)
   vat_rate: number
   is_required: boolean
   is_active: boolean
@@ -61,6 +63,7 @@ export function blankForm(): FormState {
     applicable_categories: [],
     price_type: 'fixed_cents',
     price_value_display: '',
+    cost_price_display: '',
     vat_rate: 9,
     is_required: false,
     is_active: true,
@@ -80,6 +83,9 @@ export function extraToForm(extra: Extra): FormState {
   } else if (priceType !== 'informational') {
     priceDisplay = (extra.price_value / 100).toFixed(2)
   }
+  const costDisplay = extra.cost_price_value && extra.cost_price_value > 0
+    ? (extra.cost_price_value / 100).toFixed(2)
+    : ''
   return {
     name: extra.name,
     description: extra.description ?? '',
@@ -89,6 +95,7 @@ export function extraToForm(extra: Extra): FormState {
     applicable_categories: (extra.applicable_categories ?? []) as ListingCategory[],
     price_type: priceType,
     price_value_display: priceDisplay,
+    cost_price_display: costDisplay,
     vat_rate: extra.vat_rate,
     is_required: extra.is_required,
     is_active: extra.is_active,
@@ -107,6 +114,7 @@ export function formToPayload(form: FormState) {
   } else if (form.price_type !== 'informational') {
     price_value = Math.round((parseFloat(form.price_value_display) || 0) * 100)
   }
+  const cost_price_value = Math.round((parseFloat(form.cost_price_display) || 0) * 100)
   const payload = {
     name: form.name,
     description: form.description || null,
@@ -116,6 +124,7 @@ export function formToPayload(form: FormState) {
     applicable_categories: form.scope === 'global' ? form.applicable_categories : null,
     price_type: form.price_type,
     price_value,
+    cost_price_value,
     vat_rate: form.price_type === 'informational' ? 0 : form.vat_rate,
     is_required: form.is_required,
     is_active: form.is_active,

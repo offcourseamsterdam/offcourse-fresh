@@ -43,6 +43,7 @@ export const POST = withRoute(async (request: NextRequest) => {
     applicable_categories: body.applicable_categories ?? null,
     price_type: body.price_type,
     price_value: body.price_value ?? 0,
+    cost_price_value: body.cost_price_value ?? 0,
     vat_rate: body.vat_rate ?? 9,
     is_required: body.is_required ?? false,
     is_active: body.is_active ?? true,
