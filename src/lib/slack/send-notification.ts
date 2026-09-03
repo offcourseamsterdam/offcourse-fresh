@@ -78,5 +78,7 @@ export async function postSlackCritical(text: string): Promise<void> {
  */
 export async function postSlackOps(text: string): Promise<void> {
   const sentToDm = await postSlackDM(text)
-  if (!sentToDm) console.error('[slack] postSlackOps: DM failed and there is no channel fallback by design — alert lost:', text.slice(0, 200))
+  if (!sentToDm) {
+    await postSlackText(text)
+  }
 }

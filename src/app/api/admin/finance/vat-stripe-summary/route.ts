@@ -41,7 +41,7 @@ export async function GET(_req: NextRequest) {
     const { data, error } = await supabase
       .from('bookings')
       .select('created_at, stripe_amount, base_vat_amount_cents, extras_vat_amount_cents, total_vat_amount_cents, stripe_fee_cents')
-      .not('stripe_payment_intent_id', 'is', null)
+      .or('stripe_payment_intent_id.not.is.null,and(booking_source.eq.stripe_invoice,payment_status.eq.paid)')
       .neq('payment_status', 'refunded')
 
     if (error) return apiError(error.message)

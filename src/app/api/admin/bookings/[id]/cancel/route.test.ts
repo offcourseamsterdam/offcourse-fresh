@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   postSlackText: vi.fn().mockResolvedValue(undefined),
   postSlackOps: vi.fn().mockResolvedValue(undefined),
   requireAdmin: vi.fn().mockResolvedValue(null),
+  voidInvoice: vi.fn().mockResolvedValue({ id: 'in_test_123', status: 'void' }),
 }))
 
 vi.mock('@/lib/fareharbor/client', () => ({
@@ -26,6 +27,10 @@ vi.mock('@/lib/supabase/admin', () => ({
 
 vi.mock('@/lib/stripe/server', () => ({
   getStripe: () => ({ refunds: { create: h.stripeRefunds } }),
+}))
+
+vi.mock('@/lib/stripe/invoicing', () => ({
+  voidStripeInvoice: h.voidInvoice,
 }))
 
 vi.mock('@/lib/auth/require-admin', () => ({ requireAdmin: h.requireAdmin }))
@@ -153,5 +158,22 @@ describe('POST /api/admin/bookings/[id]/cancel', () => {
     const res = await POST(mockReq(), mockParams())
     const json = await res.json()
     expect(json.data.cancelled).toBe(true)
+  })
+
+  it('voids open Stripe invoice when cancelling a booking with unpaid invoice', async () => {
+    h.dbSelect.mockResolvedValueOnce({
+      data: {
+        ...BOOKING,
+        stripe_invoice_id: 'in_open_999',
+        payment_status: 'stripe_invoice_sent',
+      },
+      error: null,
+    })
+
+    const res = await POST(mockReq(), mockParams())
+    const json = await res.json()
+    expect(json.data.cancelled).toBe(true)
+    expect(json.data.invoiceVoided).toBe(true)
+    expect(h.voidInvoice).toHaveBeenCalledWith('in_open_999')
   })
 })

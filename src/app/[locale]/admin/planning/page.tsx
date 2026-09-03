@@ -424,6 +424,7 @@ export default function PlanningPage() {
                 bookingUuid={selectedBooking.booking_uuid}
                 listingId={selectedBooking.listing_id}
                 status={selectedBooking.status}
+                paymentStatus={selectedBooking.payment_status}
                 stripePaymentIntentId={selectedBooking.stripe_payment_intent_id}
                 bookingDate={selectedBooking.booking_date}
                 startTime={selectedBooking.start_time}
@@ -447,6 +448,13 @@ export default function PlanningPage() {
                 partnerName={selectedBooking.partner_name}
                 category={selectedBooking.category}
                 customerTypeName={selectedBooking.customer_type_name}
+                stripeInvoiceId={selectedBooking.stripe_invoice_id}
+                stripeInvoiceUrl={selectedBooking.stripe_invoice_url}
+                companyName={selectedBooking.company_name}
+                companyKvk={selectedBooking.company_kvk}
+                companyVat={selectedBooking.company_vat}
+                companyAddress={selectedBooking.company_address}
+                invoiceDueDate={selectedBooking.invoice_due_date}
               />
             </div>
           </div>

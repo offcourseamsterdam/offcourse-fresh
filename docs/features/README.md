@@ -34,3 +34,4 @@ One file per track or major feature. Written before every PR and kept up to date
 | Special-event cruise listings (Pride Amsterdam 2026) | [special-event-listings.md](special-event-listings.md) | — | done |
 | Kasboek payout pipelines (Viator/GetYourGuide/BoatLocal/Withlocals/Click&Boat/GetMyBoat/Barqo/Revolut/Zettle/FareHarbor) + BTW dashboard | [kasboek-payout-pipelines.md](kasboek-payout-pipelines.md) | — | done |
 | Post-cruise review & recommendations SMS (Twilio) | [review-sms-twilio.md](review-sms-twilio.md) | — | done |
+| City tax (Amsterdam day-trip tourist tax) reporting | [city-tax.md](city-tax.md) | — | done (v1, known gaps) |

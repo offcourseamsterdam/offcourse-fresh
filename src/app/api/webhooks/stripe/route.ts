@@ -552,6 +552,99 @@ export async function POST(request: NextRequest) {
     ].filter(Boolean).join('\n'))
   }
 
+  // ── invoice.paid ──────────────────────────────────────────────────────────
+  // Fires when an invoice is fully paid (via Virtual IBAN SEPA transfer, iDEAL, card, etc.)
+  // Automatically reconciles the payment to the booking record!
+  if (event.type === 'invoice.paid') {
+    const invoice = event.data.object as Stripe.Invoice
+    const invoiceId = invoice.id
+
+    const { data: booking } = await supabase
+      .from('bookings')
+      .select('id, status, payment_status, stripe_payment_intent_id, company_name, customer_name, customer_email, stripe_amount, listing_title, booking_date')
+      .eq('stripe_invoice_id', invoiceId)
+      .maybeSingle()
+
+    if (booking) {
+      if (booking.payment_status === 'paid') {
+        console.log('[stripe-webhook] invoice.paid: booking already marked paid', booking.id)
+        return NextResponse.json({ received: true })
+      }
+
+      const rawPi = (invoice as unknown as { payment_intent?: string | Stripe.PaymentIntent | null }).payment_intent
+      const piId = typeof rawPi === 'string'
+        ? rawPi
+        : (rawPi as Stripe.PaymentIntent | null)?.id ?? null
+
+      let stripeFeeCents: number | null = null
+      if (piId) {
+        try {
+          const pi = await stripe.paymentIntents.retrieve(piId)
+          stripeFeeCents = await resolveStripeFeeCents(stripe, pi)
+        } catch (err) {
+          console.warn('[stripe-webhook] resolveStripeFeeCents for invoice failed:', err)
+        }
+      }
+
+      const { error: updateError } = await supabase
+        .from('bookings')
+        .update({
+          payment_status: 'paid',
+          stripe_amount: invoice.amount_paid ?? undefined,
+          ...(piId ? { stripe_payment_intent_id: piId } : {}),
+          ...(stripeFeeCents != null ? { stripe_fee_cents: stripeFeeCents } : {}),
+        })
+        .eq('id', booking.id)
+
+      if (updateError) {
+        console.error('[stripe-webhook] invoice.paid: DB update failed', updateError)
+      } else {
+        await notifyBookingsChanged()
+        if (booking.status === 'cancelled') {
+          await postSlackCritical([
+            `🚨 *CRITICAL: INVOICE PAID FOR CANCELLED BOOKING* 🚨`,
+            `_Customer paid invoice \`${invoice.number || invoice.id}\` (€${((invoice.amount_paid ?? 0) / 100).toFixed(2)}) but booking is CANCELLED._`,
+            `Customer: ${booking.customer_name} (${booking.customer_email}) · Company: ${booking.company_name ?? '—'}`,
+            `Cruise: ${booking.listing_title} (${booking.booking_date})`,
+            `_Action required: Check boat availability or issue a refund in Stripe._`,
+          ].join('\n'))
+        } else {
+          await postSlackOps([
+            `💶 *Stripe Invoice PAID & Auto-Reconciled!*`,
+            `👤 *Beer Zoomers* (Ops Alert)`,
+            `🏢 *${booking.company_name || booking.customer_name || 'Guest'}* · €${((invoice.amount_paid ?? 0) / 100).toFixed(2)}`,
+            `Invoice: \`${invoice.number || invoice.id}\``,
+            booking.listing_title ? `Cruise: ${booking.listing_title} (${booking.booking_date})` : '',
+            piId ? `PaymentIntent: \`${piId}\`` : '',
+          ].filter(Boolean).join('\n')).catch(err => console.error('[stripe-webhook] Slack alert failed:', err))
+        }
+      }
+    } else {
+      console.log('[stripe-webhook] invoice.paid: no booking found for invoice', invoiceId)
+    }
+  }
+
+  // ── invoice.payment_failed ────────────────────────────────────────────────
+  if (event.type === 'invoice.payment_failed') {
+    const invoice = event.data.object as Stripe.Invoice
+    await postSlackOps([
+      `⚠️ *Stripe Invoice payment failed*`,
+      `Invoice: \`${invoice.number || invoice.id}\` · €${((invoice.amount_due ?? 0) / 100).toFixed(2)}`,
+      `Customer: ${invoice.customer_name || invoice.customer_email || invoice.customer}`,
+    ].filter(Boolean).join('\n')).catch(err => console.error('[stripe-webhook] Slack alert failed:', err))
+  }
+
+  // ── invoice.voided / invoice.marked_uncollectible ─────────────────────────
+  if (event.type === 'invoice.voided' || event.type === 'invoice.marked_uncollectible') {
+    const invoice = event.data.object as Stripe.Invoice
+    await supabase
+      .from('bookings')
+      .update({ payment_status: 'cancelled', status: 'cancelled' })
+      .eq('stripe_invoice_id', invoice.id)
+      .neq('payment_status', 'paid')
+    await notifyBookingsChanged()
+  }
+
   return NextResponse.json({ received: true })
 }
 

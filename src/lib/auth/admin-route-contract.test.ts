@@ -161,8 +161,9 @@ describe('admin route auth contract', () => {
     // 107, src/lib/auth/finance-share.ts).
     // 118 = 116 + /api/admin/bookings/[id]/catering-email + /api/admin/bookings/[id]/review-sms
     // (manual send of post-cruise review & local recommendations SMS via Twilio).
+    // 125 = 124 + /api/admin/finance/invoices (Dedicated open/paid B2B invoice dashboard).
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`119`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`125`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {

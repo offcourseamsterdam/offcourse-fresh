@@ -6,6 +6,7 @@ import { Loader2, RefreshCw, Receipt, ArrowRight, AlertTriangle, Upload, Chevron
 import { Button } from '@/components/ui/button'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { FinanceShareLinks } from '@/components/admin/FinanceShareLinks'
+import { InvoicesTab } from '@/components/admin/finance/InvoicesTab'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { useFinanceUpload } from '@/hooks/useFinanceUpload'
 import { fmtAdminAmount, fmtAdminAmountRounded, fmtAdminDate } from '@/lib/admin/format'
@@ -125,6 +126,7 @@ interface BoatLocalBatchRow {
 
 const TABS = [
   { key: 'partners', label: 'Partners' },
+  { key: 'invoices', label: 'Open Facturen (Stripe)' },
   { key: 'btw-dashboard', label: 'BTW dashboard' },
   { key: 'vat', label: 'BTW & Stripe' },
   { key: 'viator', label: 'Viator' },
@@ -135,6 +137,7 @@ const TABS = [
   { key: 'getmyboat', label: 'GetMyBoat' },
   { key: 'barqo', label: 'Barqo' },
   { key: 'revolut', label: 'Revolut' },
+  { key: 'city-tax', label: 'City Tax' },
   { key: 'zettle', label: 'Zettle' },
   { key: 'fareharbor', label: 'FareHarbor' },
   { key: 'kasboek', label: 'Kasboek bronnen' },
@@ -179,6 +182,7 @@ export default function FinancePage() {
       </div>
 
       {tab === 'partners' && <PartnersTab />}
+      {tab === 'invoices' && <InvoicesTab />}
       {tab === 'btw-dashboard' && <BtwDashboardTab />}
       {tab === 'vat' && <VatStripeTab />}
       {tab === 'viator' && <ViatorTab />}
@@ -189,6 +193,7 @@ export default function FinancePage() {
       {tab === 'getmyboat' && <GetMyBoatTab />}
       {tab === 'barqo' && <BarqoTab />}
       {tab === 'revolut' && <RevolutTab />}
+      {tab === 'city-tax' && <CityTaxTab />}
       {tab === 'zettle' && <ZettleTab />}
       {tab === 'fareharbor' && <FareHarborPayoutTab />}
       {tab === 'kasboek' && <KasboekBronnenTab />}
@@ -2410,6 +2415,129 @@ function RevolutTab() {
             ))}
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+// ── City Tax tab ──────────────────────────────────────────────────────────
+//
+// Amsterdam's day-trip city tax: €2.60/guest, first 250 guests/year exempt
+// fleet-wide. Already charged to every customer at checkout — this tab just
+// adds it up for remittance. Deliberately shows what's EXCLUDED alongside
+// the total, since the underlying `bookings` data has real, known gaps (see
+// src/lib/finance/city-tax.ts) — a single confident-looking number here
+// would be worse than no tab at all.
+
+interface CityTaxData {
+  year: number
+  countedGuests: number
+  countedBookings: number
+  freeGuests: number
+  billableGuests: number
+  cityTaxOwedCents: number
+  excludedNoGuestCount: number
+  excludedNotActive: number
+  duplicatesResolved: number
+  untrackedSources: readonly string[]
+}
+
+const CITY_TAX_SOURCE_LABELS: Record<string, string> = {
+  withlocals: 'Withlocals',
+  clickandboat: 'Click & Boat',
+  getmyboat: 'GetMyBoat',
+  barqo: 'Barqo',
+}
+
+function CityTaxTab() {
+  const [year, setYear] = useState(() => new Date().getFullYear())
+  const { data, isLoading, error, refresh } = useAdminFetch<CityTaxData>(
+    `/api/admin/finance/city-tax/summary?year=${year}`
+  )
+  const yearOptions = [2026, 2027, 2028].filter(y => y <= year + 1 || y === 2026)
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-sm text-zinc-500 max-w-2xl">
+          Amsterdam toeristenbelasting voor dagtochten: €2,60 per gast, de eerste 250 gasten per
+          kalenderjaar zijn vrijgesteld — over de hele vloot samen, niet per boot. Dit bedrag zit
+          al in elke boeking verwerkt bij checkout; dit tabblad telt het alleen op voor de
+          gemeente-aangifte. Geteld vanaf boekjaar 2026.
+        </p>
+        <div className="flex items-center gap-2 shrink-0">
+          <select
+            value={year}
+            onChange={e => setYear(Number(e.target.value))}
+            className="text-sm border border-zinc-200 rounded-md px-2 py-1.5 bg-white"
+          >
+            {yearOptions.map(y => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+          <Button variant="outline" size="sm" onClick={refresh} disabled={isLoading}>
+            {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      <AdminErrorBanner error={error} />
+
+      {isLoading && !data && (
+        <div className="flex items-center gap-2 text-sm text-zinc-400 py-8">
+          <Loader2 className="w-4 h-4 animate-spin" /> City tax laden…
+        </div>
+      )}
+
+      {data && (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="rounded-xl border border-zinc-200 bg-white p-5">
+              <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Geteld ({data.year})</p>
+              <p className="text-2xl font-bold text-zinc-900 mt-1">{data.countedGuests} gasten</p>
+              <p className="text-xs text-zinc-400 mt-1">{data.countedBookings} boekingen</p>
+            </div>
+            <div className="rounded-xl border border-zinc-200 bg-white p-5">
+              <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Vrijstelling</p>
+              <p className="text-2xl font-bold text-zinc-900 mt-1">{data.freeGuests} gasten</p>
+            </div>
+            <div className="rounded-xl border border-zinc-200 bg-white p-5">
+              <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Belastbaar</p>
+              <p className="text-2xl font-bold text-zinc-900 mt-1">{data.billableGuests} gasten</p>
+            </div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+              <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider">Verschuldigd</p>
+              <p className="text-2xl font-bold text-emerald-800 mt-1">{fmtAdminAmount(data.cityTaxOwedCents)}</p>
+            </div>
+          </div>
+
+          {(data.excludedNoGuestCount > 0 || data.excludedNotActive > 0 || data.duplicatesResolved > 0 || data.untrackedSources.length > 0) && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 flex gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="text-sm text-amber-800 space-y-1.5">
+                <p className="font-semibold">Dit is een ondergrens, geen volledige telling</p>
+                {data.excludedNoGuestCount > 0 && (
+                  <p>{data.excludedNoGuestCount} actieve boeking{data.excludedNoGuestCount !== 1 ? 'en' : ''} zonder bekend aantal gasten — niet meegeteld (nooit gegokt).</p>
+                )}
+                {data.excludedNotActive > 0 && (
+                  <p>{data.excludedNotActive} boeking{data.excludedNotActive !== 1 ? 'en' : ''} geannuleerd/herboekt/nog niet betaald — terecht overgeslagen.</p>
+                )}
+                {data.duplicatesResolved > 0 && (
+                  <p>{data.duplicatesResolved} dubbele rij{data.duplicatesResolved !== 1 ? 'en' : ''} (twee systemen schreven dezelfde boeking) — maar één keer geteld.</p>
+                )}
+                {data.untrackedSources.length > 0 && (
+                  <p>
+                    Boekingen via {data.untrackedSources.map(s => CITY_TAX_SOURCE_LABELS[s] ?? s).join(', ')} staan
+                    helemaal niet in deze telling — die worden rechtstreeks in FareHarbor ingevoerd,
+                    los van dit systeem. Check hun eigen tabblad hierboven voor het boekingsaantal
+                    daar.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

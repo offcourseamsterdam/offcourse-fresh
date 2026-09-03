@@ -50,6 +50,15 @@ export interface AdminBooking {
   discount_amount_cents: number | null
   partner_name: string | null
   fareharbor_availability_pk: number | null
+  stripe_invoice_id?: string | null
+  stripe_invoice_url?: string | null
+  stripe_customer_id?: string | null
+  business_profile_id?: string | null
+  company_name?: string | null
+  company_kvk?: string | null
+  company_vat?: string | null
+  company_address?: string | null
+  invoice_due_date?: string | null
 }
 
 export interface AdminPromoCode {

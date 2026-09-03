@@ -10,6 +10,13 @@
 /** Amsterdam tourist/city tax — a per-guest municipal pass-through, 0% VAT. */
 export const CITY_TAX_CENTS_PER_GUEST = 260
 
+/**
+ * Amsterdam's day-trip city tax exempts a company's first N guests each
+ * calendar year, fleet-wide (not per boat). Confirmed with Beer 2026-09-02;
+ * counting starts from calendar year 2026.
+ */
+export const CITY_TAX_FREE_GUESTS_PER_YEAR = 250
+
 /** Dutch VAT rate applied to the cruise itself (the base fare). */
 export const CRUISE_VAT_RATE = 9
 

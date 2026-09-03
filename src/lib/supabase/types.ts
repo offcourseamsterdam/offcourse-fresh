@@ -541,6 +541,16 @@ export type Database = {
           status: string | null
           stripe_amount: number | null
           stripe_fee_cents: number | null
+          business_profile_id: string | null
+          company_address: string | null
+          company_kvk: string | null
+          company_name: string | null
+          company_vat: string | null
+          invoice_due_date: string | null
+          payment_terms_days: number | null
+          stripe_customer_id: string | null
+          stripe_invoice_id: string | null
+          stripe_invoice_url: string | null
           stripe_payment_intent_id: string | null
           stripe_session_id: string | null
           total_vat_amount_cents: number | null
@@ -558,12 +568,17 @@ export type Database = {
           booking_id: string
           booking_source?: string
           booking_uuid?: string | null
+          business_profile_id?: string | null
           campaign_id?: string | null
           category?: string | null
           catering_confirmed_at?: string | null
           catering_email_sent_at?: string | null
           catering_thread_id?: string | null
           commission_amount_cents?: number | null
+          company_address?: string | null
+          company_kvk?: string | null
+          company_name?: string | null
+          company_vat?: string | null
           created_at?: string | null
           currency?: string | null
           customer_email: string
@@ -585,6 +600,7 @@ export type Database = {
           guest_count?: number | null
           guest_note?: string | null
           id?: string
+          invoice_due_date?: string | null
           invoice_number?: string | null
           listing_id?: string | null
           listing_title?: string | null
@@ -594,6 +610,7 @@ export type Database = {
           payment_link_expires_at?: string | null
           payment_reminder_sent?: boolean | null
           payment_status?: string | null
+          payment_terms_days?: number | null
           promo_code_id?: string | null
           raw_payload?: Json | null
           receipt_total?: number | null
@@ -605,7 +622,10 @@ export type Database = {
           start_time?: string | null
           status?: string | null
           stripe_amount?: number | null
+          stripe_customer_id?: string | null
           stripe_fee_cents?: number | null
+          stripe_invoice_id?: string | null
+          stripe_invoice_url?: string | null
           stripe_payment_intent_id?: string | null
           stripe_session_id?: string | null
           total_vat_amount_cents?: number | null
@@ -623,12 +643,17 @@ export type Database = {
           booking_id?: string
           booking_source?: string
           booking_uuid?: string | null
+          business_profile_id?: string | null
           campaign_id?: string | null
           category?: string | null
           catering_confirmed_at?: string | null
           catering_email_sent_at?: string | null
           catering_thread_id?: string | null
           commission_amount_cents?: number | null
+          company_address?: string | null
+          company_kvk?: string | null
+          company_name?: string | null
+          company_vat?: string | null
           created_at?: string | null
           currency?: string | null
           customer_email?: string
@@ -650,6 +675,7 @@ export type Database = {
           guest_count?: number | null
           guest_note?: string | null
           id?: string
+          invoice_due_date?: string | null
           invoice_number?: string | null
           listing_id?: string | null
           listing_title?: string | null
@@ -659,6 +685,7 @@ export type Database = {
           payment_link_expires_at?: string | null
           payment_reminder_sent?: boolean | null
           payment_status?: string | null
+          payment_terms_days?: number | null
           promo_code_id?: string | null
           raw_payload?: Json | null
           receipt_total?: number | null
@@ -670,7 +697,10 @@ export type Database = {
           start_time?: string | null
           status?: string | null
           stripe_amount?: number | null
+          stripe_customer_id?: string | null
           stripe_fee_cents?: number | null
+          stripe_invoice_id?: string | null
+          stripe_invoice_url?: string | null
           stripe_payment_intent_id?: string | null
           stripe_session_id?: string | null
           total_vat_amount_cents?: number | null
@@ -710,6 +740,60 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      business_profiles: {
+        Row: {
+          address_line1: string
+          city: string
+          company_name: string
+          contact_email: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          country_code: string | null
+          created_at: string
+          id: string
+          kvk_number: string | null
+          notes: string | null
+          postal_code: string
+          stripe_customer_id: string | null
+          updated_at: string
+          vat_number: string | null
+        }
+        Insert: {
+          address_line1: string
+          city: string
+          company_name: string
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          country_code?: string | null
+          created_at?: string
+          id?: string
+          kvk_number?: string | null
+          notes?: string | null
+          postal_code: string
+          stripe_customer_id?: string | null
+          updated_at?: string
+          vat_number?: string | null
+        }
+        Update: {
+          address_line1?: string
+          city?: string
+          company_name?: string
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          country_code?: string | null
+          created_at?: string
+          id?: string
+          kvk_number?: string | null
+          notes?: string | null
+          postal_code?: string
+          stripe_customer_id?: string | null
+          updated_at?: string
+          vat_number?: string | null
+        }
+        Relationships: []
       }
       campaign_clicks: {
         Row: {

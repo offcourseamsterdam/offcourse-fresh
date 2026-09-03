@@ -11,6 +11,7 @@ import { PaymentStep } from '@/components/admin/fareharbor/PaymentStep'
 import { PaymentLinkStep } from '@/components/admin/fareharbor/PaymentLinkStep'
 import { ConfirmationStep } from '@/components/admin/fareharbor/ConfirmationStep'
 import type { Listing, Slot, Rate, Contact, PendingBooking } from '@/components/admin/fareharbor/types'
+import type { BusinessDetails } from '@/components/admin/fareharbor/BusinessDetailsPanel'
 import type { ExtrasCalculation } from '@/lib/extras/calculate'
 import { BOOKING_SOURCES } from '@/lib/constants'
 import type { BookingSource } from '@/lib/constants'
@@ -88,10 +89,26 @@ export default function BookingFlowPage() {
   const [bookingLoading, setBookingLoading] = useState(false)
   const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null)
   const [paymentLinkUrl, setPaymentLinkUrl] = useState<string | null>(null)
+  const [stripeInvoiceUrl, setStripeInvoiceUrl] = useState<string | null>(null)
+
+  // Stripe Invoice (Op Factuur)
+  const [businessDetails, setBusinessDetails] = useState<BusinessDetails>({
+    companyName: '',
+    kvkNumber: '',
+    vatNumber: '',
+    contactName: '',
+    contactEmail: '',
+    contactPhone: '',
+    addressLine1: '',
+    postalCode: '',
+    city: '',
+    countryCode: 'NL',
+  })
 
   const isInternal = bookingSource !== 'website'
   const isStripeRecovery = bookingSource === 'stripe_recovery'
   const isInvoiceLater = bookingSource === 'invoice_later'
+  const isStripeInvoice = bookingSource === 'stripe_invoice'
 
   // Sync deposit input when source changes
   useEffect(() => {
@@ -109,6 +126,21 @@ export default function BookingFlowPage() {
       setSelectedPartnerId('')
       setInvoiceAmountInput('')
       setInvoiceSuggestionNote(null)
+    }
+    // Reset business details when leaving stripe_invoice
+    if (bookingSource !== 'stripe_invoice') {
+      setBusinessDetails({
+        companyName: '',
+        kvkNumber: '',
+        vatNumber: '',
+        contactName: '',
+        contactEmail: '',
+        contactPhone: '',
+        addressLine1: '',
+        postalCode: '',
+        city: '',
+        countryCode: 'NL',
+      })
     }
   }, [bookingSource])
 
@@ -339,6 +371,9 @@ export default function BookingFlowPage() {
       : (ratePrice(activeRate) ?? 0)
 
     const recoveryCents = Math.round((parseFloat(recoveryAmountInput) || 0) * 100)
+    const stripeInvoiceCents = calc
+      ? calc.grand_total_cents + (effectiveGuestCount * 260)
+      : baseAmountCents + (effectiveGuestCount * 260)
 
     setBookingLoading(true)
     setBookingError(null)
@@ -366,7 +401,7 @@ export default function BookingFlowPage() {
           date,
           startAt: selectedSlot.start_at,
           endAt: selectedSlot.end_at,
-          amountCents: isStripeRecovery ? recoveryCents : 0,
+          amountCents: isStripeRecovery ? recoveryCents : isStripeInvoice ? stripeInvoiceCents : 0,
           baseAmountCents: calc?.base_amount_cents ?? baseAmountCents,
           extrasSelected: calc?.line_items ?? [],
           extrasAmountCents: calc?.extras_amount_cents ?? 0,
@@ -388,11 +423,18 @@ export default function BookingFlowPage() {
           invoiceAmountCents: isInvoiceLater
             ? Math.round((parseFloat(invoiceAmountInput) || 0) * 100)
             : undefined,
+          // Stripe Invoice (Op Factuur) business details
+          businessDetails: isStripeInvoice ? businessDetails : undefined,
         }),
       })
       const json = await res.json()
       if (json.ok) {
         setBooking(json.booking)
+        if (json.invoice?.hostedInvoiceUrl) {
+          setStripeInvoiceUrl(json.invoice.hostedInvoiceUrl)
+        } else if (json.booking?.stripe_invoice_url) {
+          setStripeInvoiceUrl(json.booking.stripe_invoice_url)
+        }
       } else {
         setBookingError(json.errors ? json.errors.join(', ') : json.error ?? 'Booking failed')
       }
@@ -512,6 +554,19 @@ export default function BookingFlowPage() {
     setSelectedPartnerId('')
     setInvoiceAmountInput('')
     setInvoiceSuggestionNote(null)
+    setStripeInvoiceUrl(null)
+    setBusinessDetails({
+      companyName: '',
+      kvkNumber: '',
+      vatNumber: '',
+      contactName: '',
+      contactEmail: '',
+      contactPhone: '',
+      addressLine1: '',
+      postalCode: '',
+      city: '',
+      countryCode: 'NL',
+    })
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -580,6 +635,9 @@ export default function BookingFlowPage() {
           selectedRate={selectedRate}
           guestCount={guestCount}
           date={date}
+          bookingSource={bookingSource}
+          businessDetails={businessDetails}
+          onBusinessDetailsChange={setBusinessDetails}
           onBack={() => setStep(2)}
           onContinue={() => setStep(4)}
         />
@@ -762,8 +820,54 @@ export default function BookingFlowPage() {
               </>
             )}
 
-            {/* Deposit amount field — hidden for complimentary, stripe_recovery, invoice_later */}
-            {bookingSource !== 'complimentary' && !isStripeRecovery && !isInvoiceLater && (
+            {/* Stripe Invoicing (Op Factuur) */}
+            {isStripeInvoice && (
+              <>
+                <div className="rounded-md bg-emerald-50 border border-emerald-200 px-4 py-3 text-xs text-emerald-900 space-y-1">
+                  <p className="font-semibold text-emerald-950">
+                    Stripe Factuur & Reservering
+                  </p>
+                  <p>
+                    De boeking wordt direct gereserveerd in FareHarbor en de officiële factuur wordt per e-mail verstuurd naar <strong>{contact.email || businessDetails.contactEmail}</strong> via Stripe.
+                  </p>
+                  <p className="pt-1 text-emerald-800">
+                    📅 Betaaltermijn: <strong>14 dagen na de vaart</strong> (inclusief Virtual IBAN auto-reconciliatie).
+                  </p>
+                </div>
+
+                <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 text-xs space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">Bedrijf:</span>
+                    <span className="font-semibold text-zinc-900">{businessDetails.companyName}</span>
+                  </div>
+                  {businessDetails.kvkNumber && (
+                    <div className="flex justify-between">
+                      <span className="text-zinc-500">KVK:</span>
+                      <span className="text-zinc-900 font-mono">{businessDetails.kvkNumber}</span>
+                    </div>
+                  )}
+                  {businessDetails.vatNumber && (
+                    <div className="flex justify-between">
+                      <span className="text-zinc-500">BTW:</span>
+                      <span className="text-zinc-900 font-mono">{businessDetails.vatNumber}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">Adres:</span>
+                    <span className="text-zinc-900">{businessDetails.addressLine1}, {businessDetails.postalCode} {businessDetails.city}</span>
+                  </div>
+                  <div className="flex justify-between pt-2 border-t border-zinc-200 font-medium">
+                    <span className="text-zinc-700">Totaal factuurbedrag:</span>
+                    <span className="text-zinc-900 font-semibold text-sm">
+                      €{(((extrasStep?.calculation?.grand_total_cents ?? (isSharedListing ? (sharedBaseAmountCents ?? 0) : (selectedRate ? ratePrice(selectedRate) ?? 0 : 0))) + (effectiveGuestCount * 260)) / 100).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Deposit amount field — hidden for complimentary, stripe_recovery, invoice_later, stripe_invoice */}
+            {bookingSource !== 'complimentary' && !isStripeRecovery && !isInvoiceLater && !isStripeInvoice && (
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-zinc-700">
                   Deposit amount (€)
@@ -792,11 +896,15 @@ export default function BookingFlowPage() {
             {/* Extras summary */}
             {extrasStep && extrasStep.calculation.line_items.length > 0 && (
               <div className="rounded-md bg-zinc-50 px-4 py-3 space-y-1">
-                <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Extras (informational — not charged)</p>
+                <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                  {isStripeInvoice ? 'Geselecteerde Extras (op factuur)' : 'Extras (informational — not charged)'}
+                </p>
                 {extrasStep.calculation.line_items.map((item, i) => (
                   <div key={i} className="flex justify-between text-sm">
                     <span className="text-zinc-600">{item.name}</span>
-                    <span className="text-zinc-400 line-through">€{(item.amount_cents / 100).toFixed(2)}</span>
+                    <span className={isStripeInvoice ? 'text-zinc-900 font-medium' : 'text-zinc-400 line-through'}>
+                      €{(item.amount_cents / 100).toFixed(2)}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -812,10 +920,20 @@ export default function BookingFlowPage() {
             </button>
             <button
               onClick={handleInternalConfirm}
-              disabled={(isStripeRecovery && !recoveryAmountInput) || (isInvoiceLater && (!selectedPartnerId || !invoiceAmountInput))}
+              disabled={
+                (isStripeRecovery && !recoveryAmountInput) ||
+                (isInvoiceLater && (!selectedPartnerId || !invoiceAmountInput)) ||
+                (isStripeInvoice && (!businessDetails.companyName || !businessDetails.addressLine1 || !businessDetails.postalCode || !businessDetails.city))
+              }
               className="flex-1 px-4 py-2 rounded-lg bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {isStripeRecovery ? 'Confirm — already paid' : isInvoiceLater ? 'Confirm — invoice later' : 'Confirm Booking'}
+              {isStripeRecovery
+                ? 'Confirm — already paid'
+                : isInvoiceLater
+                  ? 'Confirm — invoice later'
+                  : isStripeInvoice
+                    ? 'Boeken & Factuur Versturen via Stripe 📄'
+                    : 'Confirm Booking'}
             </button>
           </div>
         </div>
@@ -828,6 +946,7 @@ export default function BookingFlowPage() {
           booking={booking}
           paymentIntentId={paymentIntentId}
           paymentLinkUrl={paymentLinkUrl}
+          stripeInvoiceUrl={stripeInvoiceUrl}
           onReset={reset}
         />
       )}
