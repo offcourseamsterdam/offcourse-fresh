@@ -6,6 +6,7 @@ import { Loader2, RefreshCw, Receipt, ArrowRight, AlertTriangle, Upload, Chevron
 import { Button } from '@/components/ui/button'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { FinanceShareLinks } from '@/components/admin/FinanceShareLinks'
+import { InvoicesTab } from '@/components/admin/finance/InvoicesTab'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { useFinanceUpload } from '@/hooks/useFinanceUpload'
 import { fmtAdminAmount, fmtAdminAmountRounded, fmtAdminDate } from '@/lib/admin/format'
@@ -123,26 +124,81 @@ interface BoatLocalBatchRow {
   lines: BoatLocalLineRow[]
 }
 
-const TABS = [
-  { key: 'partners', label: 'Partners' },
-  { key: 'btw-dashboard', label: 'BTW dashboard' },
-  { key: 'vat', label: 'BTW & Stripe' },
-  { key: 'viator', label: 'Viator' },
-  { key: 'getyourguide', label: 'GetYourGuide' },
-  { key: 'boatlocal', label: 'BoatLocal' },
-  { key: 'withlocals', label: 'Withlocals' },
-  { key: 'clickandboat', label: 'Click & Boat' },
-  { key: 'getmyboat', label: 'GetMyBoat' },
-  { key: 'barqo', label: 'Barqo' },
-  { key: 'revolut', label: 'Revolut' },
-  { key: 'zettle', label: 'Zettle' },
-  { key: 'fareharbor', label: 'FareHarbor' },
-  { key: 'kasboek', label: 'Kasboek bronnen' },
+const ALL_TAB_KEYS = [
+  'partners',
+  'invoices',
+  'btw-dashboard',
+  'vat',
+  'viator',
+  'getyourguide',
+  'boatlocal',
+  'withlocals',
+  'clickandboat',
+  'getmyboat',
+  'barqo',
+  'revolut',
+  'city-tax',
+  'zettle',
+  'fareharbor',
+  'kasboek',
 ] as const
-type TabKey = (typeof TABS)[number]['key']
+type TabKey = (typeof ALL_TAB_KEYS)[number]
+
+interface ChannelStatusItem {
+  key: TabKey
+  sourceKey: string
+  label: string
+  allTimeRevenueCents: number
+  hasPreviousMonthData: boolean
+  isArchived: boolean
+}
+
+interface FinanceChannelStatusData {
+  previousMonth: {
+    key: string
+    label: string
+  }
+  openInvoicesCount: number
+  outstandingPartnersCount: number
+  channels: ChannelStatusItem[]
+}
+
+const DEFAULT_CHANNELS: ChannelStatusItem[] = [
+  { key: 'fareharbor', sourceKey: 'fareharbor', label: 'FareHarbor', allTimeRevenueCents: 1895734, hasPreviousMonthData: false, isArchived: true },
+  { key: 'vat', sourceKey: 'stripe', label: 'Stripe (Website)', allTimeRevenueCents: 1865417, hasPreviousMonthData: true, isArchived: false },
+  { key: 'zettle', sourceKey: 'zettle', label: 'Zettle', allTimeRevenueCents: 1225540, hasPreviousMonthData: true, isArchived: false },
+  { key: 'withlocals', sourceKey: 'withlocals', label: 'Withlocals', allTimeRevenueCents: 1014488, hasPreviousMonthData: false, isArchived: false },
+  { key: 'getyourguide', sourceKey: 'getyourguide', label: 'GetYourGuide', allTimeRevenueCents: 675590, hasPreviousMonthData: true, isArchived: false },
+  { key: 'viator', sourceKey: 'viator', label: 'Viator', allTimeRevenueCents: 640088, hasPreviousMonthData: true, isArchived: false },
+  { key: 'boatlocal', sourceKey: 'boatlocal', label: 'BoatLocal', allTimeRevenueCents: 435744, hasPreviousMonthData: true, isArchived: false },
+  { key: 'revolut', sourceKey: 'revolut', label: 'Revolut', allTimeRevenueCents: 391952, hasPreviousMonthData: false, isArchived: false },
+  { key: 'clickandboat', sourceKey: 'clickandboat', label: 'Click & Boat', allTimeRevenueCents: 258956, hasPreviousMonthData: false, isArchived: false },
+  { key: 'getmyboat', sourceKey: 'getmyboat', label: 'GetMyBoat', allTimeRevenueCents: 104100, hasPreviousMonthData: false, isArchived: false },
+  { key: 'barqo', sourceKey: 'barqo', label: 'Barqo', allTimeRevenueCents: 50366, hasPreviousMonthData: false, isArchived: false },
+]
+
+function formatShortEuro(cents: number): string {
+  if (cents >= 100000) {
+    const k = (cents / 100000).toFixed(1).replace('.', ',')
+    return `€ ${k}k`
+  }
+  return `€ ${Math.round(cents / 100).toLocaleString('nl-NL')}`
+}
 
 export default function FinancePage() {
-  const [tab, setTab] = useState<TabKey>('partners')
+  const [tab, setTab] = useState<TabKey>('btw-dashboard')
+
+  const { data: statusData } = useAdminFetch<FinanceChannelStatusData>(
+    '/api/admin/finance/channel-status'
+  )
+
+  const openInvoicesCount = statusData?.openInvoicesCount ?? 0
+  const outstandingPartnersCount = statusData?.outstandingPartnersCount ?? 0
+  const previousMonthLabel = statusData?.previousMonth?.label ?? 'aug'
+
+  const channels = statusData?.channels && statusData.channels.length > 0
+    ? statusData.channels
+    : DEFAULT_CHANNELS
 
   return (
     <div className="p-8 max-w-none space-y-6">
@@ -160,25 +216,194 @@ export default function FinancePage() {
         <FinanceShareLinks />
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-zinc-200">
-        {TABS.map(t => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === t.key
-                ? 'border-zinc-900 text-zinc-900'
-                : 'border-transparent text-zinc-500 hover:text-zinc-700'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* Redesigned Navigation */}
+      <div className="space-y-4 bg-zinc-50/80 p-4 rounded-2xl border border-zinc-200/70 shadow-xs">
+        {/* Tier 1: Core Overzichten & Beheer */}
+        <div>
+          <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mb-2 px-1">
+            Overzichten &amp; Beheer
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setTab('btw-dashboard')}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                tab === 'btw-dashboard'
+                  ? 'bg-zinc-900 text-white shadow-sm'
+                  : 'bg-white text-zinc-700 hover:bg-zinc-100/80 border border-zinc-200/80'
+              }`}
+            >
+              <span>BTW dashboard</span>
+              <span className={`text-[10px] font-normal px-1.5 py-0.5 rounded ${tab === 'btw-dashboard' ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-100 text-zinc-500'}`}>
+                Totaal
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTab('invoices')}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                tab === 'invoices'
+                  ? 'bg-zinc-900 text-white shadow-sm'
+                  : 'bg-white text-zinc-700 hover:bg-zinc-100/80 border border-zinc-200/80'
+              }`}
+            >
+              <span>Open Facturen (Stripe)</span>
+              {openInvoicesCount > 0 ? (
+                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-bold ${
+                  tab === 'invoices'
+                    ? 'bg-amber-400 text-amber-950 ring-2 ring-amber-300'
+                    : 'bg-amber-100 text-amber-800 border border-amber-300 animate-pulse'
+                }`}>
+                  {openInvoicesCount} open
+                </span>
+              ) : (
+                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-medium ${
+                  tab === 'invoices'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                }`}>
+                  0 open ✓
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTab('partners')}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                tab === 'partners'
+                  ? 'bg-zinc-900 text-white shadow-sm'
+                  : 'bg-white text-zinc-700 hover:bg-zinc-100/80 border border-zinc-200/80'
+              }`}
+            >
+              <span>Partners</span>
+              {outstandingPartnersCount > 0 ? (
+                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-semibold ${
+                  tab === 'partners'
+                    ? 'bg-amber-400 text-amber-950'
+                    : 'bg-amber-50 text-amber-800 border border-amber-200'
+                }`}>
+                  {outstandingPartnersCount} open
+                </span>
+              ) : (
+                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[11px] font-medium ${
+                  tab === 'partners'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                }`}>
+                  Voldaan ✓
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTab('city-tax')}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                tab === 'city-tax'
+                  ? 'bg-zinc-900 text-white shadow-sm'
+                  : 'bg-white text-zinc-700 hover:bg-zinc-100/80 border border-zinc-200/80'
+              }`}
+            >
+              <span>City Tax</span>
+              <span className={`text-[10px] font-normal px-1.5 py-0.5 rounded ${tab === 'city-tax' ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-100 text-zinc-500'}`}>
+                Gemeente
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTab('kasboek')}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                tab === 'kasboek'
+                  ? 'bg-zinc-900 text-white shadow-sm'
+                  : 'bg-white text-zinc-700 hover:bg-zinc-100/80 border border-zinc-200/80'
+              }`}
+            >
+              <span>Kasboek bronnen</span>
+              <span className={`text-[10px] font-normal px-1.5 py-0.5 rounded ${tab === 'kasboek' ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-100 text-zinc-500'}`}>
+                Reconciliatie
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* Tier 2: Verkoopkanalen (Gerangschikt op All-Time Omzet) */}
+        <div>
+          <div className="flex items-center justify-between text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mb-2 px-1">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              Verkoopkanalen · gerangschikt op all-time omzet
+            </span>
+            <span className="text-[11px] text-zinc-400 font-normal lowercase">
+              status recente maand ({previousMonthLabel})
+            </span>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {channels.map((ch, idx) => {
+              const isActive = tab === ch.key
+              return (
+                <button
+                  key={ch.key}
+                  type="button"
+                  onClick={() => setTab(ch.key)}
+                  className={`group flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border transition-all ${
+                    isActive
+                      ? 'bg-zinc-900 text-white border-zinc-900 shadow-sm ring-1 ring-zinc-900'
+                      : 'bg-white text-zinc-700 border-zinc-200/80 hover:border-zinc-300 hover:bg-zinc-50'
+                  }`}
+                >
+                  <span className={`text-[10px] font-mono px-1 py-0.5 rounded ${
+                    isActive ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-100 text-zinc-500'
+                  }`}>
+                    #{idx + 1}
+                  </span>
+
+                  <span className="font-semibold">{ch.label}</span>
+
+                  <span className={`text-[11px] font-mono font-medium ${
+                    isActive ? 'text-emerald-300' : 'text-zinc-500'
+                  }`}>
+                    {formatShortEuro(ch.allTimeRevenueCents)}
+                  </span>
+
+                  {/* Status chip */}
+                  {ch.isArchived ? (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-normal ${
+                      isActive ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-100 text-zinc-500'
+                    }`}>
+                      Archief
+                    </span>
+                  ) : ch.hasPreviousMonthData ? (
+                    <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+                      isActive
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    }`}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      {previousMonthLabel} ✓
+                    </span>
+                  ) : (
+                    <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                      isActive
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                        : 'bg-amber-50 text-amber-700 border border-amber-200'
+                    }`}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                      {previousMonthLabel} ontbreekt
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </div>
       </div>
 
       {tab === 'partners' && <PartnersTab />}
+      {tab === 'invoices' && <InvoicesTab />}
       {tab === 'btw-dashboard' && <BtwDashboardTab />}
       {tab === 'vat' && <VatStripeTab />}
       {tab === 'viator' && <ViatorTab />}
@@ -189,6 +414,7 @@ export default function FinancePage() {
       {tab === 'getmyboat' && <GetMyBoatTab />}
       {tab === 'barqo' && <BarqoTab />}
       {tab === 'revolut' && <RevolutTab />}
+      {tab === 'city-tax' && <CityTaxTab />}
       {tab === 'zettle' && <ZettleTab />}
       {tab === 'fareharbor' && <FareHarborPayoutTab />}
       {tab === 'kasboek' && <KasboekBronnenTab />}
@@ -2410,6 +2636,129 @@ function RevolutTab() {
             ))}
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+// ── City Tax tab ──────────────────────────────────────────────────────────
+//
+// Amsterdam's day-trip city tax: €2.60/guest, first 250 guests/year exempt
+// fleet-wide. Already charged to every customer at checkout — this tab just
+// adds it up for remittance. Deliberately shows what's EXCLUDED alongside
+// the total, since the underlying `bookings` data has real, known gaps (see
+// src/lib/finance/city-tax.ts) — a single confident-looking number here
+// would be worse than no tab at all.
+
+interface CityTaxData {
+  year: number
+  countedGuests: number
+  countedBookings: number
+  freeGuests: number
+  billableGuests: number
+  cityTaxOwedCents: number
+  excludedNoGuestCount: number
+  excludedNotActive: number
+  duplicatesResolved: number
+  untrackedSources: readonly string[]
+}
+
+const CITY_TAX_SOURCE_LABELS: Record<string, string> = {
+  withlocals: 'Withlocals',
+  clickandboat: 'Click & Boat',
+  getmyboat: 'GetMyBoat',
+  barqo: 'Barqo',
+}
+
+function CityTaxTab() {
+  const [year, setYear] = useState(() => new Date().getFullYear())
+  const { data, isLoading, error, refresh } = useAdminFetch<CityTaxData>(
+    `/api/admin/finance/city-tax/summary?year=${year}`
+  )
+  const yearOptions = [2026, 2027, 2028].filter(y => y <= year + 1 || y === 2026)
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-sm text-zinc-500 max-w-2xl">
+          Amsterdam toeristenbelasting voor dagtochten: €2,60 per gast, de eerste 250 gasten per
+          kalenderjaar zijn vrijgesteld — over de hele vloot samen, niet per boot. Dit bedrag zit
+          al in elke boeking verwerkt bij checkout; dit tabblad telt het alleen op voor de
+          gemeente-aangifte. Geteld vanaf boekjaar 2026.
+        </p>
+        <div className="flex items-center gap-2 shrink-0">
+          <select
+            value={year}
+            onChange={e => setYear(Number(e.target.value))}
+            className="text-sm border border-zinc-200 rounded-md px-2 py-1.5 bg-white"
+          >
+            {yearOptions.map(y => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+          <Button variant="outline" size="sm" onClick={refresh} disabled={isLoading}>
+            {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      <AdminErrorBanner error={error} />
+
+      {isLoading && !data && (
+        <div className="flex items-center gap-2 text-sm text-zinc-400 py-8">
+          <Loader2 className="w-4 h-4 animate-spin" /> City tax laden…
+        </div>
+      )}
+
+      {data && (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="rounded-xl border border-zinc-200 bg-white p-5">
+              <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Geteld ({data.year})</p>
+              <p className="text-2xl font-bold text-zinc-900 mt-1">{data.countedGuests} gasten</p>
+              <p className="text-xs text-zinc-400 mt-1">{data.countedBookings} boekingen</p>
+            </div>
+            <div className="rounded-xl border border-zinc-200 bg-white p-5">
+              <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Vrijstelling</p>
+              <p className="text-2xl font-bold text-zinc-900 mt-1">{data.freeGuests} gasten</p>
+            </div>
+            <div className="rounded-xl border border-zinc-200 bg-white p-5">
+              <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Belastbaar</p>
+              <p className="text-2xl font-bold text-zinc-900 mt-1">{data.billableGuests} gasten</p>
+            </div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+              <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider">Verschuldigd</p>
+              <p className="text-2xl font-bold text-emerald-800 mt-1">{fmtAdminAmount(data.cityTaxOwedCents)}</p>
+            </div>
+          </div>
+
+          {(data.excludedNoGuestCount > 0 || data.excludedNotActive > 0 || data.duplicatesResolved > 0 || data.untrackedSources.length > 0) && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 flex gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="text-sm text-amber-800 space-y-1.5">
+                <p className="font-semibold">Dit is een ondergrens, geen volledige telling</p>
+                {data.excludedNoGuestCount > 0 && (
+                  <p>{data.excludedNoGuestCount} actieve boeking{data.excludedNoGuestCount !== 1 ? 'en' : ''} zonder bekend aantal gasten — niet meegeteld (nooit gegokt).</p>
+                )}
+                {data.excludedNotActive > 0 && (
+                  <p>{data.excludedNotActive} boeking{data.excludedNotActive !== 1 ? 'en' : ''} geannuleerd/herboekt/nog niet betaald — terecht overgeslagen.</p>
+                )}
+                {data.duplicatesResolved > 0 && (
+                  <p>{data.duplicatesResolved} dubbele rij{data.duplicatesResolved !== 1 ? 'en' : ''} (twee systemen schreven dezelfde boeking) — maar één keer geteld.</p>
+                )}
+                {data.untrackedSources.length > 0 && (
+                  <p>
+                    Boekingen via {data.untrackedSources.map(s => CITY_TAX_SOURCE_LABELS[s] ?? s).join(', ')} staan
+                    helemaal niet in deze telling — die worden rechtstreeks in FareHarbor ingevoerd,
+                    los van dit systeem. Check hun eigen tabblad hierboven voor het boekingsaantal
+                    daar.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

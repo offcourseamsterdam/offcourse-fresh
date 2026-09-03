@@ -541,6 +541,16 @@ export type Database = {
           status: string | null
           stripe_amount: number | null
           stripe_fee_cents: number | null
+          business_profile_id: string | null
+          company_address: string | null
+          company_kvk: string | null
+          company_name: string | null
+          company_vat: string | null
+          invoice_due_date: string | null
+          payment_terms_days: number | null
+          stripe_customer_id: string | null
+          stripe_invoice_id: string | null
+          stripe_invoice_url: string | null
           stripe_payment_intent_id: string | null
           stripe_session_id: string | null
           total_vat_amount_cents: number | null
@@ -606,6 +616,16 @@ export type Database = {
           status?: string | null
           stripe_amount?: number | null
           stripe_fee_cents?: number | null
+          business_profile_id?: string | null
+          company_address?: string | null
+          company_kvk?: string | null
+          company_name?: string | null
+          company_vat?: string | null
+          invoice_due_date?: string | null
+          payment_terms_days?: number | null
+          stripe_customer_id?: string | null
+          stripe_invoice_id?: string | null
+          stripe_invoice_url?: string | null
           stripe_payment_intent_id?: string | null
           stripe_session_id?: string | null
           total_vat_amount_cents?: number | null
@@ -671,6 +691,16 @@ export type Database = {
           status?: string | null
           stripe_amount?: number | null
           stripe_fee_cents?: number | null
+          business_profile_id?: string | null
+          company_address?: string | null
+          company_kvk?: string | null
+          company_name?: string | null
+          company_vat?: string | null
+          invoice_due_date?: string | null
+          payment_terms_days?: number | null
+          stripe_customer_id?: string | null
+          stripe_invoice_id?: string | null
+          stripe_invoice_url?: string | null
           stripe_payment_intent_id?: string | null
           stripe_session_id?: string | null
           total_vat_amount_cents?: number | null
@@ -710,6 +740,60 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      business_profiles: {
+        Row: {
+          address_line1: string
+          city: string
+          company_name: string
+          contact_email: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          country_code: string | null
+          created_at: string
+          id: string
+          kvk_number: string | null
+          notes: string | null
+          postal_code: string
+          stripe_customer_id: string | null
+          updated_at: string
+          vat_number: string | null
+        }
+        Insert: {
+          address_line1: string
+          city: string
+          company_name: string
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          country_code?: string | null
+          created_at?: string
+          id?: string
+          kvk_number?: string | null
+          notes?: string | null
+          postal_code: string
+          stripe_customer_id?: string | null
+          updated_at?: string
+          vat_number?: string | null
+        }
+        Update: {
+          address_line1?: string
+          city?: string
+          company_name?: string
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          country_code?: string | null
+          created_at?: string
+          id?: string
+          kvk_number?: string | null
+          notes?: string | null
+          postal_code?: string
+          stripe_customer_id?: string | null
+          updated_at?: string
+          vat_number?: string | null
+        }
+        Relationships: []
       }
       campaign_clicks: {
         Row: {
