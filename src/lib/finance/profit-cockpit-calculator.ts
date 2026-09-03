@@ -1,5 +1,24 @@
 import { calculateCateringOrderCosts, resolveItemCostPrice, type ExtraCatalogItem } from './catering-costs'
 
+export interface LoanItem {
+  id: string
+  name: string // e.g. 'Bootfinanciering Curaçao'
+  principalTotalCents: number // e.g. 2500000 (€ 25.000)
+  monthlyPrincipalCents: number // e.g. 50000 (€ 500 / mnd)
+  monthlyInterestCents: number // e.g. 11500 (€ 115 / mnd)
+  interestRatePct: number // e.g. 5.5%
+  targetPayoffYear?: number // e.g. 2028
+}
+
+export interface AlfCategorySetting {
+  id: string
+  name: string // e.g. 'Categorie 1: Curaçao (Overkapt / Salon)'
+  active: boolean // Toggle ON/OFF
+  feeCents: number // default 190000 (€ 1.900)
+  targetCruises?: number // e.g. 8 cruises
+  ticketPriceCents?: number // e.g. 3500 (€ 35)
+}
+
 export interface CockpitBudgetSettings {
   maintenancePct: number // default 8
   marketingPct: number // default 6
@@ -10,13 +29,19 @@ export interface CockpitBudgetSettings {
   berthFeePerBoatYearlyCents: number // default 400000 (€ 4.000 ex BTW per boot per jaar)
   otherFixedCostsMonthlyCents: number // default 120000 (€ 1.200 / maand)
   zettleCogsPct: number // default 28 (28% inkoop op boordverkoop)
-  // Lening & Schuld Aflosplan
+  // Multi-loans
+  loans?: LoanItem[]
+  // Legacy single loan fallback
   loanName: string // default 'Bootfinanciering'
   loanPrincipalTotalCents: number // default 4000000 (€ 40.000)
   loanMonthlyPrincipalCents: number // default 75000 (€ 750 / maand aflossing)
   loanMonthlyInterestCents: number // default 17500 (€ 175 / maand rente)
   loanInterestRatePct: number // default 5.5%
   loanTargetPayoffYear: number // default 2028
+  // Scenario planning & What-if
+  marketingScenarioSpendCents?: number // default 200000 (€ 2.000 baseline)
+  marketingScenarioMode?: 'fixed_cents' | 'percentage' // default 'fixed_cents'
+  alfCategories?: AlfCategorySetting[]
   fixedCostsMonthlyCents: number // legacy fallback
   winterBufferTargetCents: number // default 2500000 (€ 25.000)
   defaultMonthlyRevenueTargetCents: number // default 4000000 (€ 40.000)
@@ -24,6 +49,23 @@ export interface CockpitBudgetSettings {
   targetCateringMarginPct: number // default 55
   defaultSkipperHourlyRateCents: number // default 3500 (€ 35/h)
 }
+
+export const DEFAULT_ALF_CATEGORIES: AlfCategorySetting[] = [
+  { id: 'alf-1', name: 'Categorie 1: Curaçao (Overkapt / Salon)', active: true, feeCents: 190000, targetCruises: 8, ticketPriceCents: 3500 },
+  { id: 'alf-2', name: 'Categorie 2: Tweede Boot (Open / Semi)', active: false, feeCents: 190000, targetCruises: 6, ticketPriceCents: 3500 },
+]
+
+export const DEFAULT_LOANS: LoanItem[] = [
+  {
+    id: 'loan-1',
+    name: 'Bootfinanciering Curaçao',
+    principalTotalCents: 4000000,
+    monthlyPrincipalCents: 75000,
+    monthlyInterestCents: 17500,
+    interestRatePct: 5.5,
+    targetPayoffYear: 2028,
+  },
+]
 
 export const DEFAULT_BUDGET_SETTINGS: CockpitBudgetSettings = {
   maintenancePct: 8.0,
@@ -35,12 +77,16 @@ export const DEFAULT_BUDGET_SETTINGS: CockpitBudgetSettings = {
   berthFeePerBoatYearlyCents: 400000,
   otherFixedCostsMonthlyCents: 120000,
   zettleCogsPct: 28.0,
-  loanName: 'Bootfinanciering',
+  loans: DEFAULT_LOANS,
+  loanName: 'Bootfinanciering Curaçao',
   loanPrincipalTotalCents: 4000000,
   loanMonthlyPrincipalCents: 75000,
   loanMonthlyInterestCents: 17500,
   loanInterestRatePct: 5.5,
   loanTargetPayoffYear: 2028,
+  marketingScenarioSpendCents: 200000,
+  marketingScenarioMode: 'fixed_cents',
+  alfCategories: DEFAULT_ALF_CATEGORIES,
   fixedCostsMonthlyCents: 186667,
   winterBufferTargetCents: 2500000,
   defaultMonthlyRevenueTargetCents: 4000000,
@@ -125,6 +171,23 @@ export interface MonthlyCockpitRow {
   maintenancePotCents: number // 8% Capex
   marketingPotCents: number // 6% Groei
   fiscusReserveCents: number // BTW + City Tax
+  // ── 3-TIER KOSTENHIËRARCHIE ──
+  // Tier 3: Variabele vaartkosten (COGS, catering, drank, captains, commissies, city tax)
+  tier3VariableCostsCents: number
+  grossContributionMarginCents: number // Totale omzet - Tier 3 (Dekkingsbijdrage)
+  grossContributionMarginPct: number
+
+  // Tier 1: Vaste kosten (Operationeel fundament: liggeld, vaste overhead, eigenaarsbasis, leningrente)
+  tier1FixedCostsCents: number
+  operatingCashFlowCents: number // Dekkingsbijdrage - Tier 1
+
+  // Tier 2: Dynamische kosten & Investeringen (Profit First & Groei: aflossing, onderhoudsreserve, marketing, ALF)
+  tier2InvestmentsCents: number
+  netRetainedCashCents: number // Operating Cash Flow - Tier 2 (Echte vrije overcash)
+
+  alfFeesMonthlyCents: number
+  marketingSpendMonthlyCents: number
+
   // Netto overblijvende vrije cash na alle potjes, vaste lasten en leningaflossing
   netFreeCashAfterPotsCents: number
   profitFirstHealth: 'healthy' | 'tight' | 'deficit'
@@ -132,6 +195,17 @@ export interface MonthlyCockpitRow {
   revenueTargetCents: number
   revenueTargetProgressPct: number
   isCurrentMonth: boolean
+}
+
+export interface LoanSummaryItem {
+  id: string
+  name: string
+  principalTotalCents: number
+  monthlyPrincipalCents: number
+  monthlyInterestCents: number
+  interestRatePct: number
+  remainingPrincipalCents: number
+  monthsUntilPaidOff: number
 }
 
 export interface CockpitTotals {
@@ -157,6 +231,44 @@ export interface CockpitTotals {
   totalMarketingBudgetCents: number
   totalHoursCruised: number
   averageProfitPerHourCents: number
+
+  // 3-Tier Totals
+  totalTier3VariableCostsCents: number
+  totalGrossContributionMarginCents: number
+  overallGrossContributionMarginPct: number
+
+  totalTier1FixedCostsCents: number
+  totalOperatingCashFlowCents: number
+
+  totalTier2InvestmentsCents: number
+  totalNetRetainedCashCents: number
+
+  // Multi-Loan Summaries
+  loansSummary: LoanSummaryItem[]
+
+  // Scenario Simulator Outputs
+  marketingScenario: {
+    baselineSpendCents: number // 200.000 (€ 2.000)
+    activeSpendCents: number // e.g. 400.000 (€ 4.000)
+    deltaSpendCents: number // +200.000
+    breakevenCruisesNeeded: number // e.g. 7.7
+    projectedExtraBookings: number // e.g. 13
+    projectedNetExtraProfitCents: number
+  }
+
+  alfScenario: {
+    totalActiveCategories: number
+    totalFeesCents: number
+    categories: Array<{
+      id: string
+      name: string
+      active: boolean
+      feeCents: number
+      breakevenCruises: number
+      breakevenTickets: number
+    }>
+    breakevenTotalCruises: number
+  }
 }
 
 const DUTCH_MONTH_NAMES = [
@@ -223,18 +335,41 @@ export function computeMonthlyCockpit({
     }
   }
 
-  // Monthly fixed costs:
+  // Monthly fixed costs (Overhead + Liggeld):
   const monthlyBerthFeeCents = Math.round((settings.boatCount * settings.berthFeePerBoatYearlyCents) / 12)
   const monthlyOtherFixedCostsCents = settings.otherFixedCostsMonthlyCents
   const monthlyTotalFixedCostsCents = monthlyBerthFeeCents + monthlyOtherFixedCostsCents
 
-  // Monthly debt service (interest + principal)
-  const monthlyLoanPrincipalCents = settings.loanMonthlyPrincipalCents
-  const monthlyLoanInterestCents = settings.loanMonthlyInterestCents
+  // Multi-loans resolution (falls back to legacy single loan if loans array is empty)
+  const activeLoans: LoanItem[] = (settings.loans && settings.loans.length > 0)
+    ? settings.loans
+    : [
+        {
+          id: 'default-loan',
+          name: settings.loanName || 'Bootfinanciering Curaçao',
+          principalTotalCents: settings.loanPrincipalTotalCents ?? 4000000,
+          monthlyPrincipalCents: settings.loanMonthlyPrincipalCents ?? 75000,
+          monthlyInterestCents: settings.loanMonthlyInterestCents ?? 17500,
+          interestRatePct: settings.loanInterestRatePct ?? 5.5,
+          targetPayoffYear: settings.loanTargetPayoffYear ?? 2028,
+        },
+      ]
+
+  const monthlyLoanPrincipalCents = activeLoans.reduce((sum, l) => sum + l.monthlyPrincipalCents, 0)
+  const monthlyLoanInterestCents = activeLoans.reduce((sum, l) => sum + l.monthlyInterestCents, 0)
   const monthlyTotalDebtServiceCents = monthlyLoanPrincipalCents + monthlyLoanInterestCents
+  const initialTotalLoanPrincipalCents = activeLoans.reduce((sum, l) => sum + l.principalTotalCents, 0)
+
+  // ALF resolution (Amsterdam Light Festival: December & January)
+  const alfCategories = settings.alfCategories && settings.alfCategories.length > 0
+    ? settings.alfCategories
+    : DEFAULT_ALF_CATEGORIES
+  const totalActiveAlfFeesCents = alfCategories
+    .filter(c => c.active)
+    .reduce((sum, c) => sum + c.feeCents, 0)
 
   let totalRevenueCents = 0
-  let totalProfitCents = 0
+  let totalOperatingProfitCents = 0
   let totalSkipperCostCents = 0
   let totalCateringSellingCents = 0
   let totalCateringCostCents = 0
@@ -246,6 +381,14 @@ export function computeMonthlyCockpit({
   let totalLoanInterestCents = 0
   let totalLoanPrincipalCents = 0
   let totalHoursCruised = 0
+  let totalBookingCount = 0
+
+  let totalTier3VariableCostsCents = 0
+  let totalGrossContributionMarginCents = 0
+  let totalTier1FixedCostsCents = 0
+  let totalOperatingCashFlowCents = 0
+  let totalTier2InvestmentsCents = 0
+  let totalNetRetainedCashCents = 0
 
   let cumulativePrincipalRepaid = 0
 
@@ -317,42 +460,57 @@ export function computeMonthlyCockpit({
       mSkipperCost += Math.round(hours * rate)
     }
 
-    // Operating Profit (voor vaste lasten en lening)
-    const operatingProfitCents = revCents - commissionCents - cityTaxCents - cateringCost - mSkipperCost
-    const operatingProfitPct = revCents > 0 ? Math.round((operatingProfitCents / revCents) * 100) : 0
+    // ── 3-TIER KOSTENHIËRARCHIE ──
+
+    // Tier 3: Variabele Vaartkosten (COGS, catering, drank, schippers, commissies, city tax)
+    const tier3VariableCostsCents = commissionCents + cityTaxCents + cateringCost + mSkipperCost
+    const grossContributionMarginCents = revCents - tier3VariableCostsCents
+    const grossContributionMarginPct = revCents > 0 ? Math.round((grossContributionMarginCents / revCents) * 100) : 0
+
+    // Operating Profit (gelijk aan gross contribution margin voor compatibiliteit)
+    const operatingProfitCents = grossContributionMarginCents
+    const operatingProfitPct = grossContributionMarginPct
     const profitPerHourCents = mHours > 0 ? Math.round(operatingProfitCents / mHours) : 0
     const skipperRatioPct = revCents > 0 ? Math.round((mSkipperCost / revCents) * 100) : 0
 
-    // Debt service for this month
+    // Multi-loan Debt service for this month
     cumulativePrincipalRepaid += monthlyLoanPrincipalCents
-    const remainingLoanPrincipalCents = Math.max(0, settings.loanPrincipalTotalCents - cumulativePrincipalRepaid)
+    const remainingLoanPrincipalCents = Math.max(0, initialTotalLoanPrincipalCents - cumulativePrincipalRepaid)
 
-    // ── PROFIT FIRST TOEWAIJZINGEN ──
-    // 1. Winstpot (direct 5-10% afromen)
-    const profitFirstProfitPotCents = Math.round(revCents * (settings.profitFirstProfitPct / 100))
-
-    // 2. Eigenaarssalaris (vast bedrag of % van omzet)
+    // Profit First & Vaste reserveringen:
+    // 1. Eigenaarssalaris (vast bedrag of % van omzet)
     const ownerSalaryPotCents = settings.ownerSalaryPct > 0
       ? Math.round(revCents * (settings.ownerSalaryPct / 100))
       : settings.ownerSalaryMonthlyCents
 
-    // 3. Vloot & Onderhoud (8%)
+    // 2. Tier 1: Vaste Kosten (Fundament: liggeld + overhead + eigenaar minimum + rente)
+    const tier1FixedCostsCents = monthlyTotalFixedCostsCents + ownerSalaryPotCents + monthlyLoanInterestCents
+    const operatingCashFlowCents = grossContributionMarginCents - tier1FixedCostsCents
+
+    // 3. Profit First Pot (direct 5-10% afromen)
+    const profitFirstProfitPotCents = Math.round(revCents * (settings.profitFirstProfitPct / 100))
+
+    // 4. Vloot & Onderhoudsreserve (8%)
     const maintenancePotCents = Math.round(revCents * (settings.maintenancePct / 100))
 
-    // 4. Marketing & Groei (6%)
-    const marketingPotCents = Math.round(revCents * (settings.marketingPct / 100))
+    // 5. Marketing & Groeibudget (What-if scenario spend of percentage)
+    const marketingSpendMonthlyCents = settings.marketingScenarioSpendCents !== undefined
+      ? settings.marketingScenarioSpendCents
+      : Math.round(revCents * (settings.marketingPct / 100))
 
-    // 5. Belastingreservering (BTW + City Tax + Zettle BTW)
+    // 6. Amsterdam Light Festival (Dec & Jan)
+    // 50% in December (index 11), 50% in January (index 0)
+    const alfFeesMonthlyCents = (monthIndex === 11 || monthIndex === 0)
+      ? Math.round(totalActiveAlfFeesCents / 2)
+      : 0
+
+    // 7. Belastingreservering (BTW + City Tax + Zettle BTW)
     const fiscusReserveCents = Math.round(cityTaxCents + (bookingRevCents * 0.09) + zettleVat)
 
-    // 6. Netto Vrije Cash na aftrek van ALLE potjes, vaste lasten EN leningaflossing/rente
-    const netFreeCashAfterPotsCents = operatingProfitCents 
-      - monthlyTotalFixedCostsCents 
-      - monthlyTotalDebtServiceCents
-      - profitFirstProfitPotCents 
-      - ownerSalaryPotCents 
-      - maintenancePotCents 
-      - marketingPotCents
+    // Tier 2: Dynamische kosten & Investeringen (Aflossing leningen + onderhoudsreservering + marketing + ALF + winstpot)
+    const tier2InvestmentsCents = monthlyLoanPrincipalCents + maintenancePotCents + marketingSpendMonthlyCents + alfFeesMonthlyCents + profitFirstProfitPotCents
+    const netRetainedCashCents = operatingCashFlowCents - tier2InvestmentsCents
+    const netFreeCashAfterPotsCents = netRetainedCashCents
 
     // Profit First Health Check
     let profitFirstHealth: 'healthy' | 'tight' | 'deficit' = 'healthy'
@@ -366,18 +524,26 @@ export function computeMonthlyCockpit({
 
     // Accumulate totals
     totalRevenueCents += revCents
-    totalProfitCents += operatingProfitCents
+    totalOperatingProfitCents += operatingProfitCents
     totalSkipperCostCents += mSkipperCost
     totalCateringSellingCents += cateringSell
     totalCateringCostCents += cateringCost
     totalZettleSellingCents += zettleSell
     totalMaintenanceReservedCents += maintenancePotCents
-    totalMarketingBudgetCents += marketingPotCents
+    totalMarketingBudgetCents += marketingSpendMonthlyCents
     totalProfitFirstProfitCents += profitFirstProfitPotCents
     totalOwnerSalaryCents += ownerSalaryPotCents
     totalLoanInterestCents += monthlyLoanInterestCents
     totalLoanPrincipalCents += monthlyLoanPrincipalCents
     totalHoursCruised += mHours
+    totalBookingCount += bList.length
+
+    totalTier3VariableCostsCents += tier3VariableCostsCents
+    totalGrossContributionMarginCents += grossContributionMarginCents
+    totalTier1FixedCostsCents += tier1FixedCostsCents
+    totalOperatingCashFlowCents += operatingCashFlowCents
+    totalTier2InvestmentsCents += tier2InvestmentsCents
+    totalNetRetainedCashCents += netRetainedCashCents
 
     return {
       month: mKey,
@@ -410,8 +576,20 @@ export function computeMonthlyCockpit({
       profitFirstProfitPotCents,
       ownerSalaryPotCents,
       maintenancePotCents,
-      marketingPotCents,
+      marketingPotCents: marketingSpendMonthlyCents,
       fiscusReserveCents,
+
+      // 3-Tier Hierarchy
+      tier3VariableCostsCents,
+      grossContributionMarginCents,
+      grossContributionMarginPct,
+      tier1FixedCostsCents,
+      operatingCashFlowCents,
+      tier2InvestmentsCents,
+      netRetainedCashCents,
+      alfFeesMonthlyCents,
+      marketingSpendMonthlyCents,
+
       netFreeCashAfterPotsCents,
       profitFirstHealth,
       revenueTargetCents: target,
@@ -423,15 +601,64 @@ export function computeMonthlyCockpit({
   const totalFixedCostsCents = monthlyTotalFixedCostsCents * 12
   const totalBerthFeeCents = monthlyBerthFeeCents * 12
   const totalDebtServiceCents = (monthlyLoanPrincipalCents + monthlyLoanInterestCents) * 12
-  const finalRemainingLoanCents = Math.max(0, settings.loanPrincipalTotalCents - totalLoanPrincipalCents)
+  const finalRemainingLoanCents = Math.max(0, initialTotalLoanPrincipalCents - totalLoanPrincipalCents)
   const monthsUntilDebtFree = monthlyLoanPrincipalCents > 0
-    ? Math.ceil(settings.loanPrincipalTotalCents / monthlyLoanPrincipalCents)
+    ? Math.ceil(initialTotalLoanPrincipalCents / monthlyLoanPrincipalCents)
     : 0
+
+  // Multi-Loan Summaries
+  let cumulativeLoanOffset = 0
+  const loansSummary: LoanSummaryItem[] = activeLoans.map(loan => {
+    const loanRepaidInYear = loan.monthlyPrincipalCents * 12
+    const remaining = Math.max(0, loan.principalTotalCents - loanRepaidInYear)
+    const months = loan.monthlyPrincipalCents > 0
+      ? Math.ceil(loan.principalTotalCents / loan.monthlyPrincipalCents)
+      : 0
+    cumulativeLoanOffset += loan.monthlyPrincipalCents
+    return {
+      id: loan.id,
+      name: loan.name,
+      principalTotalCents: loan.principalTotalCents,
+      monthlyPrincipalCents: loan.monthlyPrincipalCents,
+      monthlyInterestCents: loan.monthlyInterestCents,
+      interestRatePct: loan.interestRatePct,
+      remainingPrincipalCents: remaining,
+      monthsUntilPaidOff: months,
+    }
+  })
+
+  // Scenario Simulator: Marketing (€2.000 vs €4.000 etc.)
+  const baselineMarketingSpendCents = 200000 // € 2.000 baseline
+  const activeMarketingSpendCents = settings.marketingScenarioSpendCents ?? 200000
+  const deltaMarketingSpendCents = activeMarketingSpendCents - baselineMarketingSpendCents
+  const avgMarginPerCruise = totalBookingCount > 0
+    ? Math.round(totalGrossContributionMarginCents / totalBookingCount)
+    : 26000 // Fallback € 260 / cruise
+  const breakevenCruisesNeeded = (deltaMarketingSpendCents > 0 && avgMarginPerCruise > 0)
+    ? Math.round((deltaMarketingSpendCents / avgMarginPerCruise) * 10) / 10
+    : 0
+  // Estimated 1 booking per € 150 ad spend in high season
+  const projectedExtraBookings = deltaMarketingSpendCents > 0 ? Math.round(deltaMarketingSpendCents / 15000) : 0
+  const projectedNetExtraProfitCents = (projectedExtraBookings * avgMarginPerCruise) - Math.max(0, deltaMarketingSpendCents)
+
+  // Scenario Simulator: Amsterdam Light Festival (€1.900 per categorie)
+  const activeAlfCategories = alfCategories.filter(c => c.active)
+  const alfCategoryDetails = alfCategories.map(cat => ({
+    id: cat.id,
+    name: cat.name,
+    active: cat.active,
+    feeCents: cat.feeCents,
+    breakevenCruises: avgMarginPerCruise > 0 ? Math.ceil(cat.feeCents / avgMarginPerCruise) : 8,
+    breakevenTickets: Math.ceil(cat.feeCents / (cat.ticketPriceCents || 3500)),
+  }))
+  const breakevenTotalAlfCruises = avgMarginPerCruise > 0
+    ? Math.ceil(totalActiveAlfFeesCents / avgMarginPerCruise)
+    : 15
 
   const totals: CockpitTotals = {
     totalRevenueCents,
-    totalOperatingProfitCents: totalProfitCents,
-    overallProfitMarginPct: totalRevenueCents > 0 ? Math.round((totalProfitCents / totalRevenueCents) * 100) : 0,
+    totalOperatingProfitCents,
+    overallProfitMarginPct: totalRevenueCents > 0 ? Math.round((totalOperatingProfitCents / totalRevenueCents) * 100) : 0,
     totalSkipperCostCents,
     overallSkipperRatioPct: totalRevenueCents > 0 ? Math.round((totalSkipperCostCents / totalRevenueCents) * 100) : 0,
     totalCateringSellingCents,
@@ -452,7 +679,36 @@ export function computeMonthlyCockpit({
     totalMaintenanceReservedCents,
     totalMarketingBudgetCents,
     totalHoursCruised: Math.round(totalHoursCruised * 10) / 10,
-    averageProfitPerHourCents: totalHoursCruised > 0 ? Math.round(totalProfitCents / totalHoursCruised) : 0,
+    averageProfitPerHourCents: totalHoursCruised > 0 ? Math.round(totalOperatingProfitCents / totalHoursCruised) : 0,
+
+    // 3-Tier Totals
+    totalTier3VariableCostsCents,
+    totalGrossContributionMarginCents,
+    overallGrossContributionMarginPct: totalRevenueCents > 0 ? Math.round((totalGrossContributionMarginCents / totalRevenueCents) * 100) : 0,
+    totalTier1FixedCostsCents,
+    totalOperatingCashFlowCents,
+    totalTier2InvestmentsCents,
+    totalNetRetainedCashCents,
+
+    // Multi-Loan Summaries
+    loansSummary,
+
+    // Scenario Simulator Outputs
+    marketingScenario: {
+      baselineSpendCents: baselineMarketingSpendCents,
+      activeSpendCents: activeMarketingSpendCents,
+      deltaSpendCents: deltaMarketingSpendCents,
+      breakevenCruisesNeeded,
+      projectedExtraBookings,
+      projectedNetExtraProfitCents,
+    },
+
+    alfScenario: {
+      totalActiveCategories: activeAlfCategories.length,
+      totalFeesCents: totalActiveAlfFeesCents,
+      categories: alfCategoryDetails,
+      breakevenTotalCruises: breakevenTotalAlfCruises,
+    },
   }
 
   return { months, totals }

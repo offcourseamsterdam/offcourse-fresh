@@ -36,6 +36,9 @@ export const POST = withRoute(async (request: NextRequest) => {
   if (typeof body.targetCateringMarginPct === 'number') patch.target_catering_margin_pct = body.targetCateringMarginPct
   if (typeof body.defaultSkipperHourlyRateCents === 'number') patch.default_skipper_hourly_rate_cents = body.defaultSkipperHourlyRateCents
   if (typeof body.revolutManualBalanceCents === 'number') patch.revolut_manual_balance_cents = body.revolutManualBalanceCents
+  if (Array.isArray(body.loans)) patch.loans = body.loans
+  if (Array.isArray(body.alfCategories)) patch.alf_categories = body.alfCategories
+  if (typeof body.marketingScenarioSpendCents === 'number') patch.marketing_scenario_spend_cents = body.marketingScenarioSpendCents
 
   const { data, error } = await supabase
     .from('finance_budget_settings')

@@ -42,6 +42,13 @@ export async function GET(request: NextRequest) {
         loanMonthlyInterestCents: (dbSettings as any).loan_monthly_interest_cents ?? DEFAULT_BUDGET_SETTINGS.loanMonthlyInterestCents,
         loanInterestRatePct: Number((dbSettings as any).loan_interest_rate_pct) || DEFAULT_BUDGET_SETTINGS.loanInterestRatePct,
         loanTargetPayoffYear: (dbSettings as any).loan_target_payoff_year ?? DEFAULT_BUDGET_SETTINGS.loanTargetPayoffYear,
+        loans: (dbSettings as any).loans && Array.isArray((dbSettings as any).loans) && (dbSettings as any).loans.length > 0
+          ? (dbSettings as any).loans
+          : DEFAULT_BUDGET_SETTINGS.loans,
+        alfCategories: (dbSettings as any).alf_categories && Array.isArray((dbSettings as any).alf_categories) && (dbSettings as any).alf_categories.length > 0
+          ? (dbSettings as any).alf_categories
+          : DEFAULT_BUDGET_SETTINGS.alfCategories,
+        marketingScenarioSpendCents: (dbSettings as any).marketing_scenario_spend_cents ?? DEFAULT_BUDGET_SETTINGS.marketingScenarioSpendCents,
         fixedCostsMonthlyCents: dbSettings.fixed_costs_monthly_cents ?? DEFAULT_BUDGET_SETTINGS.fixedCostsMonthlyCents,
         winterBufferTargetCents: dbSettings.winter_buffer_target_cents ?? DEFAULT_BUDGET_SETTINGS.winterBufferTargetCents,
         defaultMonthlyRevenueTargetCents: dbSettings.default_monthly_revenue_target_cents ?? DEFAULT_BUDGET_SETTINGS.defaultMonthlyRevenueTargetCents,

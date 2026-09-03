@@ -22,11 +22,24 @@ import {
   Crown,
   PiggyBank,
   Banknote,
-  CalendarCheck
+  CalendarCheck,
+  Zap,
+  Lightbulb,
+  Plus,
+  Trash2,
+  Layers,
+  HelpCircle,
 } from 'lucide-react'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { fmtAdminAmount, fmtAdminAmountRounded } from '@/lib/admin/format'
-import type { MonthlyCockpitRow, CockpitTotals, CockpitBudgetSettings } from '@/lib/finance/profit-cockpit-calculator'
+import type {
+  MonthlyCockpitRow,
+  CockpitTotals,
+  CockpitBudgetSettings,
+  LoanItem,
+  AlfCategorySetting,
+} from '@/lib/finance/profit-cockpit-calculator'
+import { DEFAULT_LOANS, DEFAULT_ALF_CATEGORIES } from '@/lib/finance/profit-cockpit-calculator'
 
 export interface ProfitCockpitResponse {
   year: number
@@ -58,7 +71,23 @@ export function ProfitCockpitTab() {
   )
 
   const [savingSettings, setSavingSettings] = useState(false)
-  const [settingsForm, setSettingsForm] = useState({
+  const [settingsForm, setSettingsForm] = useState<{
+    maintenancePct: number
+    marketingPct: number
+    profitFirstProfitPct: number
+    ownerSalaryMonthlyEuros: number
+    boatCount: number
+    berthFeePerBoatYearlyEuros: number
+    otherFixedCostsMonthlyEuros: number
+    zettleCogsPct: number
+    loans: LoanItem[]
+    marketingScenarioSpendEuros: number
+    alfCategories: AlfCategorySetting[]
+    winterBufferTargetEuros: number
+    monthlyRevenueTargetEuros: number
+    targetSkipperRatioPct: number
+    defaultSkipperHourlyRateEuros: number
+  }>({
     maintenancePct: 8,
     marketingPct: 6,
     profitFirstProfitPct: 5,
@@ -67,12 +96,9 @@ export function ProfitCockpitTab() {
     berthFeePerBoatYearlyEuros: 4000,
     otherFixedCostsMonthlyEuros: 1200,
     zettleCogsPct: 28,
-    loanName: 'Bootfinanciering',
-    loanPrincipalTotalEuros: 40000,
-    loanMonthlyPrincipalEuros: 750,
-    loanMonthlyInterestEuros: 175,
-    loanInterestRatePct: 5.5,
-    loanTargetPayoffYear: 2028,
+    loans: DEFAULT_LOANS,
+    marketingScenarioSpendEuros: 2000,
+    alfCategories: DEFAULT_ALF_CATEGORIES,
     winterBufferTargetEuros: 25000,
     monthlyRevenueTargetEuros: 40000,
     targetSkipperRatioPct: 18,
@@ -90,12 +116,9 @@ export function ProfitCockpitTab() {
         berthFeePerBoatYearlyEuros: Math.round((data.settings.berthFeePerBoatYearlyCents ?? 400000) / 100),
         otherFixedCostsMonthlyEuros: Math.round((data.settings.otherFixedCostsMonthlyCents ?? 120000) / 100),
         zettleCogsPct: data.settings.zettleCogsPct ?? 28,
-        loanName: data.settings.loanName ?? 'Bootfinanciering',
-        loanPrincipalTotalEuros: Math.round((data.settings.loanPrincipalTotalCents ?? 4000000) / 100),
-        loanMonthlyPrincipalEuros: Math.round((data.settings.loanMonthlyPrincipalCents ?? 75000) / 100),
-        loanMonthlyInterestEuros: Math.round((data.settings.loanMonthlyInterestCents ?? 17500) / 100),
-        loanInterestRatePct: data.settings.loanInterestRatePct ?? 5.5,
-        loanTargetPayoffYear: data.settings.loanTargetPayoffYear ?? 2028,
+        loans: data.settings.loans && data.settings.loans.length > 0 ? data.settings.loans : DEFAULT_LOANS,
+        marketingScenarioSpendEuros: Math.round((data.settings.marketingScenarioSpendCents ?? 200000) / 100),
+        alfCategories: data.settings.alfCategories && data.settings.alfCategories.length > 0 ? data.settings.alfCategories : DEFAULT_ALF_CATEGORIES,
         winterBufferTargetEuros: Math.round(data.settings.winterBufferTargetCents / 100),
         monthlyRevenueTargetEuros: Math.round(data.settings.defaultMonthlyRevenueTargetCents / 100),
         targetSkipperRatioPct: data.settings.targetSkipperRatioPct,
@@ -103,6 +126,19 @@ export function ProfitCockpitTab() {
       })
     }
     setShowSettingsModal(true)
+  }
+
+  async function handleQuickScenarioUpdate(patch: Partial<CockpitBudgetSettings>) {
+    try {
+      await fetch('/api/admin/finance/profit-cockpit/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      await refresh()
+    } catch (err) {
+      console.error('Failed to update scenario:', err)
+    }
   }
 
   async function handleSaveSettings(e: React.FormEvent) {
@@ -121,12 +157,9 @@ export function ProfitCockpitTab() {
           berthFeePerBoatYearlyCents: Number(settingsForm.berthFeePerBoatYearlyEuros) * 100,
           otherFixedCostsMonthlyCents: Number(settingsForm.otherFixedCostsMonthlyEuros) * 100,
           zettleCogsPct: Number(settingsForm.zettleCogsPct),
-          loanName: settingsForm.loanName,
-          loanPrincipalTotalCents: Number(settingsForm.loanPrincipalTotalEuros) * 100,
-          loanMonthlyPrincipalCents: Number(settingsForm.loanMonthlyPrincipalEuros) * 100,
-          loanMonthlyInterestCents: Number(settingsForm.loanMonthlyInterestEuros) * 100,
-          loanInterestRatePct: Number(settingsForm.loanInterestRatePct),
-          loanTargetPayoffYear: Number(settingsForm.loanTargetPayoffYear),
+          loans: settingsForm.loans,
+          marketingScenarioSpendCents: Number(settingsForm.marketingScenarioSpendEuros) * 100,
+          alfCategories: settingsForm.alfCategories,
           winterBufferTargetCents: Number(settingsForm.winterBufferTargetEuros) * 100,
           defaultMonthlyRevenueTargetCents: Number(settingsForm.monthlyRevenueTargetEuros) * 100,
           targetSkipperRatioPct: Number(settingsForm.targetSkipperRatioPct),
@@ -266,151 +299,376 @@ export function ProfitCockpitTab() {
         </div>
       </div>
 
-      {/* ── 2. PROFIT FIRST ALLOCATIES, VASTE LASTEN & LENING BANNER ── */}
-      <div className="bg-amber-50/50 border border-amber-200/80 rounded-2xl p-4 shadow-sm space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200/60 pb-2.5">
+      {/* ── 2. 3-TIER KOSTENHIËRARCHIE (HIËRARCHIE VAN KOSTEN) ── */}
+      <div className="space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <PiggyBank className="w-5 h-5 text-amber-700" />
-            <h3 className="text-sm font-bold text-amber-950">Profit First Systeem &amp; Financiering</h3>
-            <span className="text-xs text-amber-700 font-normal">
-              — Winst &amp; salaris als eerste afromen, schuldverplichting veiligstellen
+            <Layers className="w-5 h-5 text-indigo-600" />
+            <h3 className="text-sm font-bold text-zinc-900 tracking-tight">Hiërarchie van Kosten &amp; Marges</h3>
+            <span className="text-xs text-zinc-500">
+              — Van bruto omzet naar dekkingsbijdrage, break-even en vrije winst
             </span>
           </div>
-          <span className="text-xs font-semibold text-amber-900 bg-amber-100 px-2.5 py-0.5 rounded-full">
-            Status: Gezonde Marge ✓
+          <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200">
+            Kostenpiramide ✓
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-          {/* Echte Winstpot (Profit First) */}
-          <div className="bg-white rounded-xl border border-amber-200 p-3 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-amber-900 flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                Winstpot ({settings.profitFirstProfitPct}%)
-              </span>
-              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1 py-0.5 rounded">
-                Profit First
-              </span>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Tier 3: Variabele Kosten */}
+          <div className="bg-gradient-to-b from-blue-50/60 to-white rounded-2xl border border-blue-200 p-4 space-y-3 shadow-sm">
+            <div className="flex items-center justify-between border-b border-blue-100 pb-2">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                  Tier 3: Variabel (COGS)
+                </span>
+                <h4 className="text-sm font-bold text-zinc-900 mt-1">Directe Vaartkosten</h4>
+              </div>
+              <UtensilsCrossed className="w-5 h-5 text-blue-600" />
             </div>
-            <div className="text-lg font-bold text-amber-900">
-              {fmtAdminAmount(totals.totalProfitFirstProfitCents)}
+
+            <div className="space-y-1.5 text-xs text-zinc-600">
+              <div className="flex justify-between">
+                <span>Drank- &amp; Barinkoop (incl. Zettle):</span>
+                <span className="font-semibold text-zinc-900">{fmtAdminAmount(totals.totalCateringCostCents)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Captains / Schipperskosten:</span>
+                <span className="font-semibold text-zinc-900">{fmtAdminAmount(totals.totalSkipperCostCents)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Commissies &amp; City Tax:</span>
+                <span className="font-semibold text-zinc-900">{fmtAdminAmount(Math.max(0, totals.totalTier3VariableCostsCents - totals.totalCateringCostCents - totals.totalSkipperCostCents))}</span>
+              </div>
             </div>
-            <p className="text-[10px] text-zinc-500">
-              Directe winstreservering (kwartaalbonus).
-            </p>
+
+            <div className="pt-2 border-t border-blue-100">
+              <div className="text-[11px] text-zinc-500">Totale Variabele Kosten:</div>
+              <div className="text-base font-bold text-blue-950">
+                − {fmtAdminAmount(totals.totalTier3VariableCostsCents)}
+              </div>
+              <div className="mt-2 bg-blue-100/60 rounded-xl p-2 text-xs">
+                <span className="text-blue-900 font-semibold">Dekkingsbijdrage (Gross Margin):</span>
+                <div className="text-lg font-black text-blue-950">
+                  {fmtAdminAmount(totals.totalGrossContributionMarginCents)} <span className="text-xs font-normal text-blue-700">({totals.overallGrossContributionMarginPct}%)</span>
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Eigenaarssalaris (Beer) */}
-          <div className="bg-white rounded-xl border border-amber-200 p-3 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-amber-900 flex items-center gap-1">
-                <Crown className="w-3.5 h-3.5 text-amber-600" />
-                Eigenaarsloon
-              </span>
-              <span className="text-[10px] text-zinc-500">
-                {fmtAdminAmount(settings.ownerSalaryMonthlyCents)}/mnd
-              </span>
+          {/* Tier 1: Vaste Kosten */}
+          <div className="bg-gradient-to-b from-amber-50/60 to-white rounded-2xl border border-amber-200 p-4 space-y-3 shadow-sm">
+            <div className="flex items-center justify-between border-b border-amber-100 pb-2">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
+                  Tier 1: Vast (Fundament)
+                </span>
+                <h4 className="text-sm font-bold text-zinc-900 mt-1">Vaste Bedrijfslasten</h4>
+              </div>
+              <Anchor className="w-5 h-5 text-amber-700" />
             </div>
-            <div className="text-lg font-bold text-amber-900">
-              {fmtAdminAmount(totals.totalOwnerSalaryCents)}
+
+            <div className="space-y-1.5 text-xs text-zinc-600">
+              <div className="flex justify-between">
+                <span>Liggeld ({settings.boatCount} boten à €4k ex):</span>
+                <span className="font-semibold text-zinc-900">{fmtAdminAmount(totals.totalBerthFeeCents)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Vaste Overhead &amp; Software:</span>
+                <span className="font-semibold text-zinc-900">{fmtAdminAmount(Math.max(0, totals.totalFixedCostsCents - totals.totalBerthFeeCents))}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Eigenaar Basissalaris (Beer):</span>
+                <span className="font-semibold text-zinc-900">{fmtAdminAmount(totals.totalOwnerSalaryCents)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Vaste Rentelasten Leningen:</span>
+                <span className="font-semibold text-zinc-900">{fmtAdminAmount(totals.totalLoanInterestCents)}</span>
+              </div>
             </div>
-            <p className="text-[10px] text-zinc-500">
-              Gereserveerd maandsalaris voor Beer.
-            </p>
+
+            <div className="pt-2 border-t border-amber-100">
+              <div className="text-[11px] text-zinc-500">Totale Vaste Lasten:</div>
+              <div className="text-base font-bold text-amber-950">
+                − {fmtAdminAmount(totals.totalTier1FixedCostsCents)}
+              </div>
+              <div className="mt-2 bg-amber-100/60 rounded-xl p-2 text-xs">
+                <span className="text-amber-900 font-semibold">Operationele Break-even Cash:</span>
+                <div className="text-lg font-black text-amber-950">
+                  {fmtAdminAmount(totals.totalOperatingCashFlowCents)}
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Liggeld Boten */}
-          <div className="bg-white rounded-xl border border-amber-200 p-3 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-amber-900 flex items-center gap-1">
-                <Anchor className="w-3.5 h-3.5 text-amber-600" />
-                Liggeld ({settings.boatCount} boten)
-              </span>
-              <span className="text-[10px] text-zinc-500">
-                € 4.000 ex / boot
-              </span>
+          {/* Tier 2: Dynamische Kosten & Investeringen */}
+          <div className="bg-gradient-to-b from-emerald-50/60 to-white rounded-2xl border border-emerald-200 p-4 space-y-3 shadow-sm">
+            <div className="flex items-center justify-between border-b border-emerald-100 pb-2">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
+                  Tier 2: Dynamisch / Groei
+                </span>
+                <h4 className="text-sm font-bold text-zinc-900 mt-1">Investeringen &amp; Potjes</h4>
+              </div>
+              <Sparkles className="w-5 h-5 text-emerald-600" />
             </div>
-            <div className="text-lg font-bold text-zinc-900">
-              {fmtAdminAmount(totals.totalBerthFeeCents)}
-            </div>
-            <p className="text-[10px] text-zinc-500">
-              Vast liggeld: {fmtAdminAmount(Math.round((settings.boatCount * settings.berthFeePerBoatYearlyCents) / 12))}/mnd.
-            </p>
-          </div>
 
-          {/* Lening & Aflosplan */}
-          <div className="bg-white rounded-xl border border-rose-200 p-3 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-rose-950 flex items-center gap-1">
-                <Banknote className="w-3.5 h-3.5 text-rose-600" />
-                {settings.loanName}
-              </span>
-              <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-1 py-0.5 rounded">
-                {settings.loanInterestRatePct}% rente
-              </span>
+            <div className="space-y-1.5 text-xs text-zinc-600">
+              <div className="flex justify-between">
+                <span>Aflossing Leningen (Schuldvrij):</span>
+                <span className="font-semibold text-zinc-900">{fmtAdminAmount(totals.totalLoanPrincipalCents)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Onderhoudsreservering Boten:</span>
+                <span className="font-semibold text-zinc-900">{fmtAdminAmount(totals.totalMaintenanceReservedCents)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Marketing ({fmtAdminAmount(totals.marketingScenario.activeSpendCents)}/mnd):</span>
+                <span className="font-semibold text-zinc-900">{fmtAdminAmount(totals.totalMarketingBudgetCents)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Amsterdam Light Festival:</span>
+                <span className="font-semibold text-zinc-900">{fmtAdminAmount(totals.alfScenario.totalFeesCents)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Winstpot ({settings.profitFirstProfitPct}%):</span>
+                <span className="font-semibold text-zinc-900">{fmtAdminAmount(totals.totalProfitFirstProfitCents)}</span>
+              </div>
             </div>
-            <div className="text-lg font-bold text-rose-900">
-              − {fmtAdminAmount(totals.totalDebtServiceCents)}
-            </div>
-            <p className="text-[10px] text-zinc-500">
-              Last: {fmtAdminAmount(settings.loanMonthlyPrincipalCents + settings.loanMonthlyInterestCents)}/mnd (aflos {fmtAdminAmount(settings.loanMonthlyPrincipalCents)} · rente {fmtAdminAmount(settings.loanMonthlyInterestCents)})
-            </p>
-          </div>
 
-          {/* Zettle Boordverkoop Omzet */}
-          <div className="bg-white rounded-xl border border-amber-200 p-3 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-amber-900 flex items-center gap-1">
-                <CreditCard className="w-3.5 h-3.5 text-amber-600" />
-                Zettle Boordomzet
-              </span>
-              <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded font-semibold">
-                +{100 - settings.zettleCogsPct}% marge
-              </span>
+            <div className="pt-2 border-t border-emerald-100">
+              <div className="text-[11px] text-zinc-500">Totale Reserveringen &amp; Aflossing:</div>
+              <div className="text-base font-bold text-emerald-950">
+                − {fmtAdminAmount(totals.totalTier2InvestmentsCents)}
+              </div>
+              <div className="mt-2 bg-emerald-100/70 rounded-xl p-2 text-xs">
+                <span className="text-emerald-900 font-semibold">Netto Overwinst (Echte Vrije Cash):</span>
+                <div className="text-lg font-black text-emerald-900">
+                  {fmtAdminAmount(totals.totalNetRetainedCashCents)}
+                </div>
+              </div>
             </div>
-            <div className="text-lg font-bold text-zinc-900">
-              {fmtAdminAmount(totals.totalZettleSellingCents)}
-            </div>
-            <p className="text-[10px] text-zinc-500">
-              Drankjes &amp; snacks aan boord afgerekend.
-            </p>
           </div>
         </div>
       </div>
 
-      {/* ── 3. LENING & SCHULDENVRIJ SPARRPLAN VOORTGANG ── */}
+      {/* ── 3. WHAT-IF BESLISSINGSSIMULATOR ── */}
+      <div className="bg-gradient-to-br from-indigo-950 via-zinc-900 to-indigo-950 text-white rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-800/60 pb-3">
+          <div className="flex items-center gap-2">
+            <Zap className="w-5 h-5 text-amber-400" />
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+              What-If Beslissingssimulator &amp; Investeringen
+            </h3>
+            <span className="text-xs text-zinc-400">
+              — Test direct het effect van hogere advertentiekosten of festivaldeelname
+            </span>
+          </div>
+          <span className="text-[11px] font-semibold bg-amber-400/20 text-amber-300 border border-amber-400/30 px-2.5 py-0.5 rounded-full">
+            Live Scenario Berekening
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {/* Module 1: Marketing Spend Slider / Knoppen */}
+          <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs font-bold text-sky-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Megaphone className="w-4 h-4 text-sky-400" />
+                  Marketing Investering (€ 2.000 vs. € 4.000)
+                </span>
+                <p className="text-[11px] text-zinc-400 mt-0.5">
+                  Wat als ik hier € 4.000 in stop i.p.v. € 2.000?
+                </p>
+              </div>
+              <span className="text-sm font-black text-white bg-sky-500/20 border border-sky-400/30 px-2.5 py-1 rounded-lg">
+                {fmtAdminAmount(totals.marketingScenario.activeSpendCents)} / mnd
+              </span>
+            </div>
+
+            {/* Quick buttons */}
+            <div className="grid grid-cols-4 gap-2">
+              {[2000, 3000, 4000, 5000].map(amt => (
+                <button
+                  key={amt}
+                  onClick={() => handleQuickScenarioUpdate({ marketingScenarioSpendCents: amt * 100 })}
+                  className={`py-1.5 px-2 rounded-lg text-xs font-bold transition-all ${
+                    Math.round(totals.marketingScenario.activeSpendCents / 100) === amt
+                      ? 'bg-sky-500 text-white shadow-md shadow-sky-500/30 ring-2 ring-sky-300'
+                      : 'bg-white/10 text-zinc-300 hover:bg-white/20'
+                  }`}
+                >
+                  € {amt.toLocaleString('nl-NL')}
+                  {amt === 2000 && <span className="block text-[9px] font-normal opacity-80">Basis</span>}
+                  {amt === 4000 && <span className="block text-[9px] font-normal opacity-80">Groeispurt</span>}
+                </button>
+              ))}
+            </div>
+
+            {/* Live KPI impact */}
+            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/10 text-center">
+              <div className="bg-white/5 rounded-lg p-2">
+                <span className="text-[10px] text-zinc-400 block">Extra Spend:</span>
+                <span className="text-xs font-bold text-white">
+                  {totals.marketingScenario.deltaSpendCents > 0
+                    ? `+${fmtAdminAmount(totals.marketingScenario.deltaSpendCents)}`
+                    : '€ 0'}
+                </span>
+              </div>
+              <div className="bg-white/5 rounded-lg p-2">
+                <span className="text-[10px] text-zinc-400 block">Break-even Vaarten:</span>
+                <span className="text-xs font-bold text-amber-300">
+                  +{totals.marketingScenario.breakevenCruisesNeeded} cruises
+                </span>
+              </div>
+              <div className="bg-white/5 rounded-lg p-2">
+                <span className="text-[10px] text-zinc-400 block">Verwachte Winst:</span>
+                <span className={`text-xs font-bold ${totals.marketingScenario.projectedNetExtraProfitCents >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {totals.marketingScenario.projectedNetExtraProfitCents >= 0 ? '+' : ''}{fmtAdminAmount(totals.marketingScenario.projectedNetExtraProfitCents)}
+                </span>
+              </div>
+            </div>
+            <p className="text-[10px] text-zinc-400">
+              *Gebaseerd op dekkingsbijdrage per privévaart en ~€ 150 acquisitiekosten per extra boeking.
+            </p>
+          </div>
+
+          {/* Module 2: Amsterdam Light Festival (ALF) Toggles */}
+          <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  Amsterdam Light Festival (€ 1.900 per categorie)
+                </span>
+                <p className="text-[11px] text-zinc-400 mt-0.5">
+                  Wel of niet € 1.900 inschrijfgeld betalen per bootcategorie?
+                </p>
+              </div>
+              <span className="text-sm font-black text-amber-300 bg-amber-400/20 border border-amber-400/30 px-2.5 py-1 rounded-lg">
+                {fmtAdminAmount(totals.alfScenario.totalFeesCents)}
+              </span>
+            </div>
+
+            {/* Category toggles */}
+            <div className="space-y-2">
+              {totals.alfScenario.categories.map(cat => (
+                <div
+                  key={cat.id}
+                  className={`flex items-center justify-between p-2.5 rounded-lg border transition-all ${
+                    cat.active
+                      ? 'bg-amber-400/10 border-amber-400/40 text-white'
+                      : 'bg-white/5 border-white/10 text-zinc-400'
+                  }`}
+                >
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold">{cat.name}</span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-white/10">
+                        {fmtAdminAmount(cat.feeCents)}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-zinc-300">
+                      Break-even: {cat.breakevenTickets} tickets à € 35 OF {cat.breakevenCruises} privécruises
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      const updated = totals.alfScenario.categories.map(c =>
+                        c.id === cat.id ? { ...c, active: !c.active } : c
+                      )
+                      handleQuickScenarioUpdate({
+                        alfCategories: updated.map(c => ({
+                          id: c.id,
+                          name: c.name,
+                          active: c.active,
+                          feeCents: c.feeCents,
+                        })),
+                      })
+                    }}
+                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${
+                      cat.active
+                        ? 'bg-amber-400 text-zinc-950 shadow-sm'
+                        : 'bg-white/10 text-zinc-400 hover:bg-white/20'
+                    }`}
+                  >
+                    {cat.active ? 'Meedoen ✓' : 'Niet meedoen'}
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="pt-2 border-t border-white/10 flex justify-between items-center text-xs">
+              <span className="text-zinc-400">Totaal benodigde ALF vaarten:</span>
+              <span className="font-bold text-amber-300">
+                {totals.alfScenario.breakevenTotalCruises} vaarten in dec &amp; jan
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 4. MULTI-LOAN DEBT FREEDOM MANAGER ── */}
       <div className="bg-gradient-to-r from-rose-50 via-white to-amber-50 border border-rose-200/80 rounded-2xl p-4 shadow-sm space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <CalendarCheck className="w-4 h-4 text-rose-600" />
             <h4 className="text-xs font-bold text-rose-950 uppercase tracking-wider">
-              Aflosplan &amp; Schuldvrij Tracker ({settings.loanName})
+              Leningen &amp; Schuldvrij Aflosplan ({totals.loansSummary.length} actieve {totals.loansSummary.length === 1 ? 'lening' : 'leningen'})
             </h4>
           </div>
           <div className="flex items-center gap-3 text-xs">
             <span className="text-zinc-600">
-              Resterende Hoofdsom: <strong className="text-rose-900 font-bold">{fmtAdminAmount(totals.remainingLoanPrincipalCents)}</strong>
+              Totale Restschuld: <strong className="text-rose-900 font-bold">{fmtAdminAmount(totals.remainingLoanPrincipalCents)}</strong>
             </span>
             <span className="text-rose-700 bg-rose-100/70 px-2 py-0.5 rounded-full font-semibold text-[11px]">
-              Schuldenvrij in ~{totals.monthsUntilDebtFree} maanden ({settings.loanTargetPayoffYear})
+              Volledig schuldenvrij in ~{totals.monthsUntilDebtFree} maanden
             </span>
           </div>
         </div>
 
+        {/* Global Progress Bar */}
         <div className="w-full bg-rose-100/60 h-2.5 rounded-full overflow-hidden">
           <div
             className="h-full bg-gradient-to-r from-rose-500 to-emerald-500 rounded-full transition-all"
             style={{
-              width: `${Math.min(100, Math.round(((settings.loanPrincipalTotalCents - totals.remainingLoanPrincipalCents) / settings.loanPrincipalTotalCents) * 100))}%`
+              width: `${totals.remainingLoanPrincipalCents > 0 ? Math.min(100, Math.round(((totals.totalLoanPrincipalCents) / (totals.remainingLoanPrincipalCents + totals.totalLoanPrincipalCents)) * 100)) : 100}%`
             }}
           />
         </div>
 
-        <div className="flex justify-between text-[11px] text-zinc-500">
-          <span>Oorspronkelijk: {fmtAdminAmount(settings.loanPrincipalTotalCents)}</span>
-          <span>Aflossing: {fmtAdminAmount(settings.loanMonthlyPrincipalCents)}/mnd · Rente: {fmtAdminAmount(settings.loanMonthlyInterestCents)}/mnd ({settings.loanInterestRatePct}%)</span>
-          <span>Doel: Volledig afgelost in {settings.loanTargetPayoffYear}</span>
+        {/* Individual Loan Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+          {totals.loansSummary.map(loan => (
+            <div key={loan.id} className="bg-white border border-rose-200/80 rounded-xl p-3 space-y-1.5 shadow-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-zinc-900">{loan.name}</span>
+                <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded">
+                  {loan.interestRatePct}% rente
+                </span>
+              </div>
+              <div className="flex justify-between items-baseline text-xs">
+                <span className="text-zinc-500">Restschuld:</span>
+                <span className="font-bold text-rose-950">{fmtAdminAmount(loan.remainingPrincipalCents)}</span>
+              </div>
+              <div className="flex justify-between items-baseline text-[11px] text-zinc-500">
+                <span>Aflossing:</span>
+                <span>{fmtAdminAmount(loan.monthlyPrincipalCents)}/mnd</span>
+              </div>
+              <div className="flex justify-between items-baseline text-[11px] text-zinc-500">
+                <span>Rente:</span>
+                <span>{fmtAdminAmount(loan.monthlyInterestCents)}/mnd</span>
+              </div>
+              <div className="pt-1.5 border-t border-zinc-100 flex justify-between items-center text-[11px]">
+                <span className="text-zinc-400">Schuldvrij in:</span>
+                <span className="font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
+                  ~{loan.monthsUntilPaidOff} mnd
+                </span>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -749,80 +1007,195 @@ export function ProfitCockpitTab() {
             <form onSubmit={handleSaveSettings} className="space-y-5 text-xs">
               {/* Lening & Financiering Blok */}
               <div className="bg-rose-50/60 border border-rose-200/80 p-3.5 rounded-xl space-y-3">
-                <h4 className="font-bold text-rose-950 flex items-center gap-1.5">
-                  <Banknote className="w-4 h-4 text-rose-700" />
-                  Lening &amp; Financiering (Rente &amp; Aflossing)
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-rose-950 flex items-center gap-1.5">
+                    <Banknote className="w-4 h-4 text-rose-700" />
+                    Leningen &amp; Financiering ({settingsForm.loans.length})
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newId = `loan-${Date.now()}`
+                      setSettingsForm({
+                        ...settingsForm,
+                        loans: [
+                          ...settingsForm.loans,
+                          {
+                            id: newId,
+                            name: `Lening #${settingsForm.loans.length + 1}`,
+                            principalTotalCents: 1500000,
+                            monthlyPrincipalCents: 30000,
+                            monthlyInterestCents: 7000,
+                            interestRatePct: 5.5,
+                            targetPayoffYear: 2028,
+                          },
+                        ],
+                      })
+                    }}
+                    className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 hover:bg-rose-200 transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Lening Toevoegen
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {settingsForm.loans.map((loan, idx) => (
+                    <div key={loan.id} className="bg-white/80 border border-rose-200 rounded-xl p-3 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <input
+                          type="text"
+                          className="font-bold text-xs text-zinc-900 border-b border-dashed border-zinc-300 pb-0.5 w-full bg-transparent"
+                          value={loan.name}
+                          onChange={e => {
+                            const updated = settingsForm.loans.map(l =>
+                              l.id === loan.id ? { ...l, name: e.target.value } : l
+                            )
+                            setSettingsForm({ ...settingsForm, loans: updated })
+                          }}
+                        />
+                        {settingsForm.loans.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSettingsForm({
+                                ...settingsForm,
+                                loans: settingsForm.loans.filter(l => l.id !== loan.id),
+                              })
+                            }}
+                            className="text-zinc-400 hover:text-rose-600 p-1"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <div>
+                          <label className="text-[10px] text-zinc-500 font-semibold">Hoofdsom (€)</label>
+                          <input
+                            type="number"
+                            step="500"
+                            className="w-full border border-zinc-200 rounded p-1.5 text-xs text-zinc-900 bg-white"
+                            value={Math.round(loan.principalTotalCents / 100)}
+                            onChange={e => {
+                              const val = Number(e.target.value) * 100
+                              const updated = settingsForm.loans.map(l =>
+                                l.id === loan.id ? { ...l, principalTotalCents: val } : l
+                              )
+                              setSettingsForm({ ...settingsForm, loans: updated })
+                            }}
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] text-zinc-500 font-semibold">Aflossing (€/mnd)</label>
+                          <input
+                            type="number"
+                            step="25"
+                            className="w-full border border-zinc-200 rounded p-1.5 text-xs text-zinc-900 bg-white"
+                            value={Math.round(loan.monthlyPrincipalCents / 100)}
+                            onChange={e => {
+                              const val = Number(e.target.value) * 100
+                              const updated = settingsForm.loans.map(l =>
+                                l.id === loan.id ? { ...l, monthlyPrincipalCents: val } : l
+                              )
+                              setSettingsForm({ ...settingsForm, loans: updated })
+                            }}
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] text-zinc-500 font-semibold">Rente (€/mnd)</label>
+                          <input
+                            type="number"
+                            step="10"
+                            className="w-full border border-zinc-200 rounded p-1.5 text-xs text-zinc-900 bg-white"
+                            value={Math.round(loan.monthlyInterestCents / 100)}
+                            onChange={e => {
+                              const val = Number(e.target.value) * 100
+                              const updated = settingsForm.loans.map(l =>
+                                l.id === loan.id ? { ...l, monthlyInterestCents: val } : l
+                              )
+                              setSettingsForm({ ...settingsForm, loans: updated })
+                            }}
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] text-zinc-500 font-semibold">Rente (%)</label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            className="w-full border border-zinc-200 rounded p-1.5 text-xs text-zinc-900 bg-white"
+                            value={loan.interestRatePct}
+                            onChange={e => {
+                              const val = Number(e.target.value)
+                              const updated = settingsForm.loans.map(l =>
+                                l.id === loan.id ? { ...l, interestRatePct: val } : l
+                              )
+                              setSettingsForm({ ...settingsForm, loans: updated })
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Amsterdam Light Festival (ALF) Categorieën Blok */}
+              <div className="bg-indigo-50/60 border border-indigo-200/80 p-3.5 rounded-xl space-y-3">
+                <h4 className="font-bold text-indigo-950 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-indigo-700" />
+                  Amsterdam Light Festival (ALF) Categorieën &amp; Fees
                 </h4>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <div className="space-y-1 sm:col-span-3">
-                    <label className="font-semibold text-zinc-700">Omschrijving Lening</label>
-                    <input
-                      type="text"
-                      className="w-full border border-zinc-200 rounded-lg p-2 text-sm text-zinc-900 bg-white"
-                      value={settingsForm.loanName}
-                      onChange={e => setSettingsForm({ ...settingsForm, loanName: e.target.value })}
-                    />
-                  </div>
+                <div className="space-y-2">
+                  {settingsForm.alfCategories.map(cat => (
+                    <div key={cat.id} className="flex items-center justify-between p-2 rounded-lg bg-white border border-indigo-100 text-xs">
+                      <div className="space-y-0.5">
+                        <span className="font-semibold text-zinc-900">{cat.name}</span>
+                        <p className="text-[10px] text-zinc-500">Inschrijfgeld: € {Math.round(cat.feeCents / 100)} per seizoen</p>
+                      </div>
 
-                  <div className="space-y-1">
-                    <label className="font-semibold text-zinc-700">Openstaande Schuld (€)</label>
-                    <input
-                      type="number"
-                      step="1000"
-                      className="w-full border border-zinc-200 rounded-lg p-2 text-sm text-zinc-900 bg-white"
-                      value={settingsForm.loanPrincipalTotalEuros}
-                      onChange={e => setSettingsForm({ ...settingsForm, loanPrincipalTotalEuros: Number(e.target.value) })}
-                    />
-                    <p className="text-[10px] text-zinc-400">bv. € 40.000</p>
-                  </div>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1">
+                          <span className="text-[11px] text-zinc-500">Fee: €</span>
+                          <input
+                            type="number"
+                            step="100"
+                            className="w-20 border border-zinc-200 rounded p-1 text-xs text-zinc-900 text-right"
+                            value={Math.round(cat.feeCents / 100)}
+                            onChange={e => {
+                              const val = Number(e.target.value) * 100
+                              const updated = settingsForm.alfCategories.map(c =>
+                                c.id === cat.id ? { ...c, feeCents: val } : c
+                              )
+                              setSettingsForm({ ...settingsForm, alfCategories: updated })
+                            }}
+                          />
+                        </div>
 
-                  <div className="space-y-1">
-                    <label className="font-semibold text-zinc-700">Aflossing (€ / mnd)</label>
-                    <input
-                      type="number"
-                      step="50"
-                      className="w-full border border-zinc-200 rounded-lg p-2 text-sm text-zinc-900 bg-white"
-                      value={settingsForm.loanMonthlyPrincipalEuros}
-                      onChange={e => setSettingsForm({ ...settingsForm, loanMonthlyPrincipalEuros: Number(e.target.value) })}
-                    />
-                    <p className="text-[10px] text-zinc-400">bv. € 750 / mnd</p>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="font-semibold text-zinc-700">Rente (€ / mnd)</label>
-                    <input
-                      type="number"
-                      step="25"
-                      className="w-full border border-zinc-200 rounded-lg p-2 text-sm text-zinc-900 bg-white"
-                      value={settingsForm.loanMonthlyInterestEuros}
-                      onChange={e => setSettingsForm({ ...settingsForm, loanMonthlyInterestEuros: Number(e.target.value) })}
-                    />
-                    <p className="text-[10px] text-zinc-400">bv. € 175 / mnd</p>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="font-semibold text-zinc-700">Rentepercentage (%)</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      className="w-full border border-zinc-200 rounded-lg p-2 text-sm text-zinc-900 bg-white"
-                      value={settingsForm.loanInterestRatePct}
-                      onChange={e => setSettingsForm({ ...settingsForm, loanInterestRatePct: Number(e.target.value) })}
-                    />
-                    <p className="text-[10px] text-zinc-400">bv. 5.5%</p>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="font-semibold text-zinc-700">Doel Schuldenvrij (Jaar)</label>
-                    <input
-                      type="number"
-                      className="w-full border border-zinc-200 rounded-lg p-2 text-sm text-zinc-900 bg-white"
-                      value={settingsForm.loanTargetPayoffYear}
-                      onChange={e => setSettingsForm({ ...settingsForm, loanTargetPayoffYear: Number(e.target.value) })}
-                    />
-                    <p className="text-[10px] text-zinc-400">bv. 2028</p>
-                  </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = settingsForm.alfCategories.map(c =>
+                              c.id === cat.id ? { ...c, active: !c.active } : c
+                            )
+                            setSettingsForm({ ...settingsForm, alfCategories: updated })
+                          }}
+                          className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${
+                            cat.active
+                              ? 'bg-indigo-600 text-white'
+                              : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200'
+                          }`}
+                        >
+                          {cat.active ? 'Actief ✓' : 'Inactief'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 

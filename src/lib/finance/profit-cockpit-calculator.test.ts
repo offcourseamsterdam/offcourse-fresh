@@ -102,6 +102,112 @@ describe('profit-cockpit-calculator', () => {
     expect(result.totals.totalDebtServiceCents).toBe(92500 * 12)
     expect(result.totals.monthsUntilDebtFree).toBe(Math.ceil(4000000 / 75000))
 
+    // 3-Tier Cost Hierarchy assertions:
+    // Tier 3: commission 3500 + cityTax (10 * 260 = 2600) + catering 5750 + skipper (2h * 35 = 7000) = 18850
+    expect(aug.tier3VariableCostsCents).toBe(18850)
+    // Gross Contribution Margin = 45000 - 18850 = 26150
+    expect(aug.grossContributionMarginCents).toBe(26150)
+    expect(aug.grossContributionMarginPct).toBe(Math.round((26150 / 45000) * 100))
+
+    // Tier 1 Fixed Costs = berth (66667) + other (100000) + owner (300000) + loan interest (17500) = 484167
+    expect(aug.tier1FixedCostsCents).toBe(Math.round((2 * 400000) / 12) + 100000 + 300000 + 17500)
+    expect(aug.operatingCashFlowCents).toBe(26150 - aug.tier1FixedCostsCents)
+
     expect(aug.isCurrentMonth).toBe(true)
+  })
+
+  it('handles multiple distinct loans with individual and aggregated debt freedom metrics', () => {
+    const customLoans = [
+      {
+        id: 'loan-boat-1',
+        name: 'Lening Curaçao',
+        principalTotalCents: 2500000, // € 25.000
+        monthlyPrincipalCents: 50000, // € 500
+        monthlyInterestCents: 11000, // € 110
+        interestRatePct: 5.0,
+      },
+      {
+        id: 'loan-boat-2',
+        name: 'Lening Tweede Boot',
+        principalTotalCents: 1500000, // € 15.000
+        monthlyPrincipalCents: 30000, // € 300
+        monthlyInterestCents: 7000, // € 70
+        interestRatePct: 5.5,
+      },
+    ]
+
+    const settings = {
+      ...DEFAULT_BUDGET_SETTINGS,
+      loans: customLoans,
+    }
+
+    const result = computeMonthlyCockpit({
+      year: 2026,
+      bookings: [],
+      shifts: [],
+      settings,
+    })
+
+    const month1 = result.months[0]
+    // Aggregated monthly principal = 500 + 300 = € 800
+    expect(month1.loanPrincipalCents).toBe(80000)
+    // Aggregated monthly interest = 110 + 70 = € 180
+    expect(month1.loanInterestCents).toBe(18000)
+    expect(month1.totalDebtServiceCents).toBe(98000)
+
+    // Totals summary
+    expect(result.totals.loansSummary.length).toBe(2)
+    expect(result.totals.loansSummary[0].name).toBe('Lening Curaçao')
+    expect(result.totals.loansSummary[0].monthsUntilPaidOff).toBe(Math.ceil(2500000 / 50000)) // 50 months
+    expect(result.totals.loansSummary[1].name).toBe('Lening Tweede Boot')
+    expect(result.totals.loansSummary[1].monthsUntilPaidOff).toBe(Math.ceil(1500000 / 30000)) // 50 months
+
+    expect(result.totals.totalLoanPrincipalCents).toBe(80000 * 12)
+    expect(result.totals.totalLoanInterestCents).toBe(18000 * 12)
+  })
+
+  it('calculates marketing what-if scenario (€ 4.000 vs € 2.000) and Amsterdam Light Festival breakeven', () => {
+    const alfCategories = [
+      { id: 'c1', name: 'Cat 1: Curaçao', active: true, feeCents: 190000, ticketPriceCents: 3500 },
+      { id: 'c2', name: 'Cat 2: Open Sloep', active: false, feeCents: 190000, ticketPriceCents: 3500 },
+    ]
+
+    const settings = {
+      ...DEFAULT_BUDGET_SETTINGS,
+      marketingScenarioSpendCents: 400000, // € 4.000
+      alfCategories,
+    }
+
+    const result = computeMonthlyCockpit({
+      year: 2026,
+      bookings: [
+        {
+          id: 'b1',
+          booking_date: '2026-12-10',
+          status: 'confirmed',
+          stripe_amount: 35000, // € 350
+        },
+      ],
+      shifts: [],
+      settings,
+    })
+
+    // Marketing Scenario:
+    expect(result.totals.marketingScenario.baselineSpendCents).toBe(200000)
+    expect(result.totals.marketingScenario.activeSpendCents).toBe(400000)
+    expect(result.totals.marketingScenario.deltaSpendCents).toBe(200000)
+    expect(result.totals.marketingScenario.breakevenCruisesNeeded).toBeGreaterThan(0)
+
+    // ALF Scenario:
+    expect(result.totals.alfScenario.totalActiveCategories).toBe(1)
+    expect(result.totals.alfScenario.totalFeesCents).toBe(190000)
+    const cat1 = result.totals.alfScenario.categories.find(c => c.id === 'c1')!
+    expect(cat1.active).toBe(true)
+    expect(cat1.feeCents).toBe(190000)
+    expect(cat1.breakevenTickets).toBe(Math.ceil(190000 / 3500)) // 55 tickets
+
+    // Dec ALF allocation (50% in December = € 950)
+    const dec = result.months.find(m => m.month === '2026-12')!
+    expect(dec.alfFeesMonthlyCents).toBe(95000)
   })
 })
