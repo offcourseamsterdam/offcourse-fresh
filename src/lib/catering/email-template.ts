@@ -65,5 +65,5 @@ export function buildCateringEmailText(input: CateringEmailInput): string {
 export function buildCateringEmailSubject(cruiseName: string, dateStr: string | null, timeStr: string | null): string {
   const dateLabel = fmtDate(dateStr)
   const timeLabel = fmtTime(timeStr)
-  return `Catering order — ${cruiseName} — ${dateLabel} ${timeLabel}`
+  return `Catering order - ${cruiseName} - ${dateLabel} ${timeLabel}`
 }
