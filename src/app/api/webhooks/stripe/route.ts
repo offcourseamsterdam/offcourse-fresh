@@ -223,6 +223,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true })
     }
 
+    // Stripe Invoice payments are handled in invoice.paid below.
+    if (pi.invoice || meta.booking_source === 'stripe_invoice') {
+      return NextResponse.json({ received: true })
+    }
+
     // Google Ads conversion — fires once per successful payment (own dedupe).
     // Reported on the real payment regardless of booking outcome; a later
     // deliberate refund retracts it via charge.refunded.

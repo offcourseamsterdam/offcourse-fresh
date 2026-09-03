@@ -29,7 +29,7 @@ export async function postSlackText(text: string): Promise<void> {
  * `channel` overrides the destination (a Slack user ID also works — Slack opens
  * the DM automatically) — defaults to the shared alert DM used by postSlackCritical.
  */
-export async function postSlackDM(text: string, channel = process.env.SLACK_ALERT_DM_CHANNEL || 'D08PRAXD13R'): Promise<boolean> {
+export async function postSlackDM(text: string, channel = process.env.SLACK_ALERT_DM_CHANNEL || 'U08PRAX8A07'): Promise<boolean> {
   const token = process.env.SLACK_BOT_TOKEN
   if (!token) return false
 
@@ -77,8 +77,5 @@ export async function postSlackCritical(text: string): Promise<void> {
  * (postSlackDM already logs the reason) but never leaks to the shared channel.
  */
 export async function postSlackOps(text: string): Promise<void> {
-  const sentToDm = await postSlackDM(text)
-  if (!sentToDm) {
-    await postSlackText(text)
-  }
+  await postSlackDM(text)
 }
