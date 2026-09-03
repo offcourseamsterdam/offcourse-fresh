@@ -29,6 +29,7 @@ import {
   Trash2,
   Layers,
   HelpCircle,
+  FileText,
 } from 'lucide-react'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { fmtAdminAmount, fmtAdminAmountRounded } from '@/lib/admin/format'
@@ -38,8 +39,9 @@ import type {
   CockpitBudgetSettings,
   LoanItem,
   AlfCategorySetting,
+  FixedCostItem,
 } from '@/lib/finance/profit-cockpit-calculator'
-import { DEFAULT_LOANS, DEFAULT_ALF_CATEGORIES } from '@/lib/finance/profit-cockpit-calculator'
+import { DEFAULT_LOANS, DEFAULT_ALF_CATEGORIES, DEFAULT_FIXED_COST_ITEMS } from '@/lib/finance/profit-cockpit-calculator'
 
 export interface ProfitCockpitResponse {
   year: number
@@ -65,6 +67,7 @@ export function ProfitCockpitTab() {
   const [selectedYear, setSelectedYear] = useState<number>(currentYear)
   const [expandedMonth, setExpandedMonth] = useState<string | null>(null)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [showWhatIfDrawer, setShowWhatIfDrawer] = useState(false)
 
   const { data, isLoading, error, refresh } = useAdminFetch<ProfitCockpitResponse>(
     `/api/admin/finance/profit-cockpit?year=${selectedYear}`
@@ -79,6 +82,7 @@ export function ProfitCockpitTab() {
     boatCount: number
     berthFeePerBoatYearlyEuros: number
     otherFixedCostsMonthlyEuros: number
+    fixedCostItems: FixedCostItem[]
     zettleCogsPct: number
     loans: LoanItem[]
     marketingScenarioSpendEuros: number
@@ -95,6 +99,7 @@ export function ProfitCockpitTab() {
     boatCount: 2,
     berthFeePerBoatYearlyEuros: 4000,
     otherFixedCostsMonthlyEuros: 1200,
+    fixedCostItems: DEFAULT_FIXED_COST_ITEMS,
     zettleCogsPct: 28,
     loans: DEFAULT_LOANS,
     marketingScenarioSpendEuros: 2000,
@@ -115,6 +120,9 @@ export function ProfitCockpitTab() {
         boatCount: data.settings.boatCount ?? 2,
         berthFeePerBoatYearlyEuros: Math.round((data.settings.berthFeePerBoatYearlyCents ?? 400000) / 100),
         otherFixedCostsMonthlyEuros: Math.round((data.settings.otherFixedCostsMonthlyCents ?? 120000) / 100),
+        fixedCostItems: data.settings.fixedCostItems && data.settings.fixedCostItems.length > 0
+          ? data.settings.fixedCostItems
+          : DEFAULT_FIXED_COST_ITEMS,
         zettleCogsPct: data.settings.zettleCogsPct ?? 28,
         loans: data.settings.loans && data.settings.loans.length > 0 ? data.settings.loans : DEFAULT_LOANS,
         marketingScenarioSpendEuros: Math.round((data.settings.marketingScenarioSpendCents ?? 200000) / 100),
@@ -126,6 +134,34 @@ export function ProfitCockpitTab() {
       })
     }
     setShowSettingsModal(true)
+  }
+
+  function handleAddFixedCostItem() {
+    setSettingsForm(prev => ({
+      ...prev,
+      fixedCostItems: [
+        ...prev.fixedCostItems,
+        {
+          id: `fc-${Date.now()}`,
+          name: 'Nieuw abonnement (bv. Telefoon)',
+          monthlyCents: 4500,
+        },
+      ],
+    }))
+  }
+
+  function handleUpdateFixedCostItem(id: string, patch: Partial<FixedCostItem>) {
+    setSettingsForm(prev => ({
+      ...prev,
+      fixedCostItems: prev.fixedCostItems.map(item => item.id === id ? { ...item, ...patch } : item),
+    }))
+  }
+
+  function handleRemoveFixedCostItem(id: string) {
+    setSettingsForm(prev => ({
+      ...prev,
+      fixedCostItems: prev.fixedCostItems.filter(item => item.id !== id),
+    }))
   }
 
   async function handleQuickScenarioUpdate(patch: Partial<CockpitBudgetSettings>) {
@@ -145,6 +181,7 @@ export function ProfitCockpitTab() {
     e.preventDefault()
     setSavingSettings(true)
     try {
+      const computedOtherFixedMonthlyCents = settingsForm.fixedCostItems.reduce((s, i) => s + i.monthlyCents, 0)
       await fetch('/api/admin/finance/profit-cockpit/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -155,7 +192,8 @@ export function ProfitCockpitTab() {
           ownerSalaryMonthlyCents: Number(settingsForm.ownerSalaryMonthlyEuros) * 100,
           boatCount: Number(settingsForm.boatCount),
           berthFeePerBoatYearlyCents: Number(settingsForm.berthFeePerBoatYearlyEuros) * 100,
-          otherFixedCostsMonthlyCents: Number(settingsForm.otherFixedCostsMonthlyEuros) * 100,
+          otherFixedCostsMonthlyCents: computedOtherFixedMonthlyCents,
+          fixedCostItems: settingsForm.fixedCostItems,
           zettleCogsPct: Number(settingsForm.zettleCogsPct),
           loans: settingsForm.loans,
           marketingScenarioSpendCents: Number(settingsForm.marketingScenarioSpendEuros) * 100,
@@ -299,378 +337,252 @@ export function ProfitCockpitTab() {
         </div>
       </div>
 
-      {/* ── 2. 3-TIER KOSTENHIËRARCHIE (HIËRARCHIE VAN KOSTEN) ── */}
-      <div className="space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Layers className="w-5 h-5 text-indigo-600" />
-            <h3 className="text-sm font-bold text-zinc-900 tracking-tight">Hiërarchie van Kosten &amp; Marges</h3>
-            <span className="text-xs text-zinc-500">
-              — Van bruto omzet naar dekkingsbijdrage, break-even en vrije winst
-            </span>
-          </div>
-          <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200">
-            Kostenpiramide ✓
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Tier 3: Variabele Kosten */}
-          <div className="bg-gradient-to-b from-blue-50/60 to-white rounded-2xl border border-blue-200 p-4 space-y-3 shadow-sm">
-            <div className="flex items-center justify-between border-b border-blue-100 pb-2">
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
-                  Tier 3: Variabel (COGS)
-                </span>
-                <h4 className="text-sm font-bold text-zinc-900 mt-1">Directe Vaartkosten</h4>
-              </div>
-              <UtensilsCrossed className="w-5 h-5 text-blue-600" />
-            </div>
-
-            <div className="space-y-1.5 text-xs text-zinc-600">
-              <div className="flex justify-between">
-                <span>Drank- &amp; Barinkoop (incl. Zettle):</span>
-                <span className="font-semibold text-zinc-900">{fmtAdminAmount(totals.totalCateringCostCents)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Captains / Schipperskosten:</span>
-                <span className="font-semibold text-zinc-900">{fmtAdminAmount(totals.totalSkipperCostCents)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Commissies &amp; City Tax:</span>
-                <span className="font-semibold text-zinc-900">{fmtAdminAmount(Math.max(0, totals.totalTier3VariableCostsCents - totals.totalCateringCostCents - totals.totalSkipperCostCents))}</span>
-              </div>
-            </div>
-
-            <div className="pt-2 border-t border-blue-100">
-              <div className="text-[11px] text-zinc-500">Totale Variabele Kosten:</div>
-              <div className="text-base font-bold text-blue-950">
-                − {fmtAdminAmount(totals.totalTier3VariableCostsCents)}
-              </div>
-              <div className="mt-2 bg-blue-100/60 rounded-xl p-2 text-xs">
-                <span className="text-blue-900 font-semibold">Dekkingsbijdrage (Gross Margin):</span>
-                <div className="text-lg font-black text-blue-950">
-                  {fmtAdminAmount(totals.totalGrossContributionMarginCents)} <span className="text-xs font-normal text-blue-700">({totals.overallGrossContributionMarginPct}%)</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Tier 1: Vaste Kosten */}
-          <div className="bg-gradient-to-b from-amber-50/60 to-white rounded-2xl border border-amber-200 p-4 space-y-3 shadow-sm">
-            <div className="flex items-center justify-between border-b border-amber-100 pb-2">
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
-                  Tier 1: Vast (Fundament)
-                </span>
-                <h4 className="text-sm font-bold text-zinc-900 mt-1">Vaste Bedrijfslasten</h4>
-              </div>
-              <Anchor className="w-5 h-5 text-amber-700" />
-            </div>
-
-            <div className="space-y-1.5 text-xs text-zinc-600">
-              <div className="flex justify-between">
-                <span>Liggeld ({settings.boatCount} boten à €4k ex):</span>
-                <span className="font-semibold text-zinc-900">{fmtAdminAmount(totals.totalBerthFeeCents)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Vaste Overhead &amp; Software:</span>
-                <span className="font-semibold text-zinc-900">{fmtAdminAmount(Math.max(0, totals.totalFixedCostsCents - totals.totalBerthFeeCents))}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Eigenaar Basissalaris (Beer):</span>
-                <span className="font-semibold text-zinc-900">{fmtAdminAmount(totals.totalOwnerSalaryCents)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Vaste Rentelasten Leningen:</span>
-                <span className="font-semibold text-zinc-900">{fmtAdminAmount(totals.totalLoanInterestCents)}</span>
-              </div>
-            </div>
-
-            <div className="pt-2 border-t border-amber-100">
-              <div className="text-[11px] text-zinc-500">Totale Vaste Lasten:</div>
-              <div className="text-base font-bold text-amber-950">
-                − {fmtAdminAmount(totals.totalTier1FixedCostsCents)}
-              </div>
-              <div className="mt-2 bg-amber-100/60 rounded-xl p-2 text-xs">
-                <span className="text-amber-900 font-semibold">Operationele Break-even Cash:</span>
-                <div className="text-lg font-black text-amber-950">
-                  {fmtAdminAmount(totals.totalOperatingCashFlowCents)}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Tier 2: Dynamische Kosten & Investeringen */}
-          <div className="bg-gradient-to-b from-emerald-50/60 to-white rounded-2xl border border-emerald-200 p-4 space-y-3 shadow-sm">
-            <div className="flex items-center justify-between border-b border-emerald-100 pb-2">
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
-                  Tier 2: Dynamisch / Groei
-                </span>
-                <h4 className="text-sm font-bold text-zinc-900 mt-1">Investeringen &amp; Potjes</h4>
-              </div>
-              <Sparkles className="w-5 h-5 text-emerald-600" />
-            </div>
-
-            <div className="space-y-1.5 text-xs text-zinc-600">
-              <div className="flex justify-between">
-                <span>Aflossing Leningen (Schuldvrij):</span>
-                <span className="font-semibold text-zinc-900">{fmtAdminAmount(totals.totalLoanPrincipalCents)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Onderhoudsreservering Boten:</span>
-                <span className="font-semibold text-zinc-900">{fmtAdminAmount(totals.totalMaintenanceReservedCents)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Marketing ({fmtAdminAmount(totals.marketingScenario.activeSpendCents)}/mnd):</span>
-                <span className="font-semibold text-zinc-900">{fmtAdminAmount(totals.totalMarketingBudgetCents)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Amsterdam Light Festival:</span>
-                <span className="font-semibold text-zinc-900">{fmtAdminAmount(totals.alfScenario.totalFeesCents)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Winstpot ({settings.profitFirstProfitPct}%):</span>
-                <span className="font-semibold text-zinc-900">{fmtAdminAmount(totals.totalProfitFirstProfitCents)}</span>
-              </div>
-            </div>
-
-            <div className="pt-2 border-t border-emerald-100">
-              <div className="text-[11px] text-zinc-500">Totale Reserveringen &amp; Aflossing:</div>
-              <div className="text-base font-bold text-emerald-950">
-                − {fmtAdminAmount(totals.totalTier2InvestmentsCents)}
-              </div>
-              <div className="mt-2 bg-emerald-100/70 rounded-xl p-2 text-xs">
-                <span className="text-emerald-900 font-semibold">Netto Overwinst (Echte Vrije Cash):</span>
-                <div className="text-lg font-black text-emerald-900">
-                  {fmtAdminAmount(totals.totalNetRetainedCashCents)}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── 3. WHAT-IF BESLISSINGSSIMULATOR ── */}
-      <div className="bg-gradient-to-br from-indigo-950 via-zinc-900 to-indigo-950 text-white rounded-2xl p-5 shadow-xl space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-800/60 pb-3">
-          <div className="flex items-center gap-2">
-            <Zap className="w-5 h-5 text-amber-400" />
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-              What-If Beslissingssimulator &amp; Investeringen
-            </h3>
-            <span className="text-xs text-zinc-400">
-              — Test direct het effect van hogere advertentiekosten of festivaldeelname
-            </span>
-          </div>
-          <span className="text-[11px] font-semibold bg-amber-400/20 text-amber-300 border border-amber-400/30 px-2.5 py-0.5 rounded-full">
-            Live Scenario Berekening
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {/* Module 1: Marketing Spend Slider / Knoppen */}
-          <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-xs font-bold text-sky-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <Megaphone className="w-4 h-4 text-sky-400" />
-                  Marketing Investering (€ 2.000 vs. € 4.000)
-                </span>
-                <p className="text-[11px] text-zinc-400 mt-0.5">
-                  Wat als ik hier € 4.000 in stop i.p.v. € 2.000?
-                </p>
-              </div>
-              <span className="text-sm font-black text-white bg-sky-500/20 border border-sky-400/30 px-2.5 py-1 rounded-lg">
-                {fmtAdminAmount(totals.marketingScenario.activeSpendCents)} / mnd
+      {/* ── 2. INVESTERINGS-THERMOMETER & STOPLICHT (IN 1 OOGOPSLAG) ── */}
+      <div className="bg-white border border-zinc-200/90 rounded-2xl p-4 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-start sm:items-center gap-3">
+          <div className={`w-4 h-4 rounded-full shrink-0 mt-0.5 sm:mt-0 ${
+            totals.investmentGauge.status === 'green' ? 'bg-emerald-500 ring-4 ring-emerald-100' :
+            totals.investmentGauge.status === 'orange' ? 'bg-amber-500 ring-4 ring-amber-100' :
+            'bg-rose-500 ring-4 ring-rose-100'
+          }`} />
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">Investerings-Thermometer:</span>
+              <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
+                totals.investmentGauge.status === 'green' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
+                totals.investmentGauge.status === 'orange' ? 'bg-amber-50 text-amber-800 border border-amber-200' :
+                'bg-rose-50 text-rose-800 border border-rose-200'
+              }`}>
+                {totals.investmentGauge.status === 'green' ? '🟢 Veilig om te Investeren' :
+                 totals.investmentGauge.status === 'orange' ? '🟡 Beperkte Ruimte' :
+                 '🔴 Alleen Noodzakelijke Lasten'}
               </span>
             </div>
-
-            {/* Quick buttons */}
-            <div className="grid grid-cols-4 gap-2">
-              {[2000, 3000, 4000, 5000].map(amt => (
-                <button
-                  key={amt}
-                  onClick={() => handleQuickScenarioUpdate({ marketingScenarioSpendCents: amt * 100 })}
-                  className={`py-1.5 px-2 rounded-lg text-xs font-bold transition-all ${
-                    Math.round(totals.marketingScenario.activeSpendCents / 100) === amt
-                      ? 'bg-sky-500 text-white shadow-md shadow-sky-500/30 ring-2 ring-sky-300'
-                      : 'bg-white/10 text-zinc-300 hover:bg-white/20'
-                  }`}
-                >
-                  € {amt.toLocaleString('nl-NL')}
-                  {amt === 2000 && <span className="block text-[9px] font-normal opacity-80">Basis</span>}
-                  {amt === 4000 && <span className="block text-[9px] font-normal opacity-80">Groeispurt</span>}
-                </button>
-              ))}
-            </div>
-
-            {/* Live KPI impact */}
-            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/10 text-center">
-              <div className="bg-white/5 rounded-lg p-2">
-                <span className="text-[10px] text-zinc-400 block">Extra Spend:</span>
-                <span className="text-xs font-bold text-white">
-                  {totals.marketingScenario.deltaSpendCents > 0
-                    ? `+${fmtAdminAmount(totals.marketingScenario.deltaSpendCents)}`
-                    : '€ 0'}
-                </span>
-              </div>
-              <div className="bg-white/5 rounded-lg p-2">
-                <span className="text-[10px] text-zinc-400 block">Break-even Vaarten:</span>
-                <span className="text-xs font-bold text-amber-300">
-                  +{totals.marketingScenario.breakevenCruisesNeeded} cruises
-                </span>
-              </div>
-              <div className="bg-white/5 rounded-lg p-2">
-                <span className="text-[10px] text-zinc-400 block">Verwachte Winst:</span>
-                <span className={`text-xs font-bold ${totals.marketingScenario.projectedNetExtraProfitCents >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {totals.marketingScenario.projectedNetExtraProfitCents >= 0 ? '+' : ''}{fmtAdminAmount(totals.marketingScenario.projectedNetExtraProfitCents)}
-                </span>
-              </div>
-            </div>
-            <p className="text-[10px] text-zinc-400">
-              *Gebaseerd op dekkingsbijdrage per privévaart en ~€ 150 acquisitiekosten per extra boeking.
+            <p className="text-xs text-zinc-600 mt-1">
+              {totals.investmentGauge.recommendationText}
             </p>
           </div>
+        </div>
 
-          {/* Module 2: Amsterdam Light Festival (ALF) Toggles */}
-          <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-amber-400" />
-                  Amsterdam Light Festival (€ 1.900 per categorie)
+        <div className="flex items-center gap-3 self-end md:self-center shrink-0">
+          <div className="text-right">
+            <span className="text-[10px] text-zinc-400 block uppercase font-medium">Vrije Investeringsruimte:</span>
+            <span className="text-base font-black text-zinc-900">
+              {fmtAdminAmount(totals.investmentGauge.freeInvestmentCapacityCents)}/mnd
+            </span>
+          </div>
+          <button
+            onClick={() => setShowWhatIfDrawer(!showWhatIfDrawer)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
+              showWhatIfDrawer
+                ? 'bg-zinc-900 text-white border-zinc-900 shadow-sm'
+                : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-700 border-zinc-200'
+            }`}
+          >
+            <Zap className="w-3.5 h-3.5 text-amber-400" />
+            <span>{showWhatIfDrawer ? 'Verberg What-If & Leningen ▲' : '⚡ What-If Simulator & Leningen ▼'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── 3. COMPACTE VASTE LASTEN & LENINGEN STRIP ── */}
+      <div className="bg-zinc-50 border border-zinc-200/80 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-600">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-1.5">
+            <Anchor className="w-3.5 h-3.5 text-blue-600" />
+            <span><strong>Liggeld:</strong> 1/4 opzij in okt, nov, feb, mrt ({fmtAdminAmount(Math.round(totals.totalBerthFeeCents / 4))}/keer)</span>
+          </div>
+          <div className="hidden sm:inline text-zinc-300">•</div>
+          <div className="flex items-center gap-1.5">
+            <FileText className="w-3.5 h-3.5 text-amber-600" />
+            <span><strong>Vaste Abonnementen:</strong> {totals.fixedCostItems.length} posten ({fmtAdminAmount(totals.fixedCostItems.reduce((s, i) => s + i.monthlyCents, 0))}/mnd)</span>
+          </div>
+          <div className="hidden sm:inline text-zinc-300">•</div>
+          <div className="flex items-center gap-1.5">
+            <CalendarCheck className="w-3.5 h-3.5 text-rose-600" />
+            <span><strong>Leningen:</strong> Restschuld {fmtAdminAmount(totals.remainingLoanPrincipalCents)} ({fmtAdminAmount(Math.round(totals.totalLoanPrincipalCents / 12 + totals.totalLoanInterestCents / 12))}/mnd)</span>
+          </div>
+        </div>
+
+        <button
+          onClick={openSettings}
+          className="text-xs font-semibold text-blue-600 hover:text-blue-800 underline underline-offset-2 ml-auto"
+        >
+          Beheer abonnementen &amp; potjes →
+        </button>
+      </div>
+
+      {/* ── INKLAPBARE WHAT-IF SIMULATOR & LENINGEN DRAWER ── */}
+      {showWhatIfDrawer && (
+        <div className="space-y-4 p-4 bg-zinc-900 rounded-2xl border border-zinc-800 text-white animate-in fade-in zoom-in-95 duration-150">
+          <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 text-amber-400" />
+              <h3 className="text-sm font-bold text-white tracking-tight">What-If Beslissingssimulator &amp; Leningen</h3>
+            </div>
+            <button
+              onClick={() => setShowWhatIfDrawer(false)}
+              className="text-zinc-400 hover:text-white text-xs"
+            >
+              Sluiten ✕
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Module 1: Marketing Scenario */}
+            <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold text-sky-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Megaphone className="w-4 h-4 text-sky-400" />
+                    Marketing Maandbudget
+                  </span>
+                  <p className="text-[11px] text-zinc-400 mt-0.5">
+                    Wat gebeurt er als je € 4.000 investeert i.p.v. € 2.000?
+                  </p>
+                </div>
+                <span className="text-sm font-black text-sky-300 bg-sky-400/20 border border-sky-400/30 px-2.5 py-1 rounded-lg">
+                  {fmtAdminAmount(totals.marketingScenario.activeSpendCents)}/mnd
                 </span>
-                <p className="text-[11px] text-zinc-400 mt-0.5">
-                  Wel of niet € 1.900 inschrijfgeld betalen per bootcategorie?
-                </p>
               </div>
-              <span className="text-sm font-black text-amber-300 bg-amber-400/20 border border-amber-400/30 px-2.5 py-1 rounded-lg">
-                {fmtAdminAmount(totals.alfScenario.totalFeesCents)}
+
+              <div className="grid grid-cols-4 gap-2">
+                {[2000, 3000, 4000, 5000].map(amt => (
+                  <button
+                    key={amt}
+                    onClick={() => handleQuickScenarioUpdate({ marketingScenarioSpendCents: amt * 100 })}
+                    className={`py-2 px-1 text-center rounded-lg text-xs font-bold transition-all ${
+                      totals.marketingScenario.activeSpendCents === amt * 100
+                        ? 'bg-sky-500 text-white shadow-md shadow-sky-500/30 ring-2 ring-sky-300'
+                        : 'bg-white/10 text-zinc-300 hover:bg-white/20'
+                    }`}
+                  >
+                    € {amt.toLocaleString('nl-NL')}
+                    {amt === 2000 && <span className="block text-[9px] font-normal opacity-80">Basis</span>}
+                    {amt === 4000 && <span className="block text-[9px] font-normal opacity-80">Groeispurt</span>}
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/10 text-center">
+                <div className="bg-white/5 rounded-lg p-2">
+                  <span className="text-[10px] text-zinc-400 block">Extra Spend:</span>
+                  <span className="text-xs font-bold text-white">
+                    {totals.marketingScenario.deltaSpendCents > 0
+                      ? `+${fmtAdminAmount(totals.marketingScenario.deltaSpendCents)}`
+                      : '€ 0'}
+                  </span>
+                </div>
+                <div className="bg-white/5 rounded-lg p-2">
+                  <span className="text-[10px] text-zinc-400 block">Break-even Vaarten:</span>
+                  <span className="text-xs font-bold text-amber-300">
+                    +{totals.marketingScenario.breakevenCruisesNeeded} cruises
+                  </span>
+                </div>
+                <div className="bg-white/5 rounded-lg p-2">
+                  <span className="text-[10px] text-zinc-400 block">Verwachte Winst:</span>
+                  <span className={`text-xs font-bold ${totals.marketingScenario.projectedNetExtraProfitCents >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {totals.marketingScenario.projectedNetExtraProfitCents >= 0 ? '+' : ''}{fmtAdminAmount(totals.marketingScenario.projectedNetExtraProfitCents)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Module 2: Amsterdam Light Festival */}
+            <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    Amsterdam Light Festival (€ 1.900 per categorie)
+                  </span>
+                  <p className="text-[11px] text-zinc-400 mt-0.5">
+                    Inschrijfgeld voor dec &amp; jan vaarten
+                  </p>
+                </div>
+                <span className="text-sm font-black text-amber-300 bg-amber-400/20 border border-amber-400/30 px-2.5 py-1 rounded-lg">
+                  {fmtAdminAmount(totals.alfScenario.totalFeesCents)}
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                {totals.alfScenario.categories.map(cat => (
+                  <div
+                    key={cat.id}
+                    className={`flex items-center justify-between p-2 rounded-lg border transition-all ${
+                      cat.active
+                        ? 'bg-amber-400/10 border-amber-400/40 text-white'
+                        : 'bg-white/5 border-white/10 text-zinc-400'
+                    }`}
+                  >
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-bold">{cat.name}</span>
+                      <p className="text-[10px] text-zinc-300">
+                        Break-even: {cat.breakevenTickets} tickets à € 35 OF {cat.breakevenCruises} privécruises
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        const updated = totals.alfScenario.categories.map(c =>
+                          c.id === cat.id ? { ...c, active: !c.active } : c
+                        )
+                        handleQuickScenarioUpdate({
+                          alfCategories: updated.map(c => ({
+                            id: c.id,
+                            name: c.name,
+                            active: c.active,
+                            feeCents: c.feeCents,
+                          })),
+                        })
+                      }}
+                      className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${
+                        cat.active
+                          ? 'bg-amber-400 text-zinc-950 shadow-sm'
+                          : 'bg-white/10 text-zinc-400 hover:bg-white/20'
+                      }`}
+                    >
+                      {cat.active ? 'Meedoen ✓' : 'Niet meedoen'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Module 3: Leningen Details in Drawer */}
+          <div className="bg-white/5 border border-white/10 rounded-xl p-3.5 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-rose-300 uppercase tracking-wider flex items-center gap-1.5">
+                <CalendarCheck className="w-3.5 h-3.5 text-rose-400" />
+                Leningen Overzicht ({totals.loansSummary.length})
+              </span>
+              <span className="text-xs text-zinc-400">
+                Totale Restschuld: <strong className="text-white">{fmtAdminAmount(totals.remainingLoanPrincipalCents)}</strong>
               </span>
             </div>
 
-            {/* Category toggles */}
-            <div className="space-y-2">
-              {totals.alfScenario.categories.map(cat => (
-                <div
-                  key={cat.id}
-                  className={`flex items-center justify-between p-2.5 rounded-lg border transition-all ${
-                    cat.active
-                      ? 'bg-amber-400/10 border-amber-400/40 text-white'
-                      : 'bg-white/5 border-white/10 text-zinc-400'
-                  }`}
-                >
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold">{cat.name}</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-white/10">
-                        {fmtAdminAmount(cat.feeCents)}
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-zinc-300">
-                      Break-even: {cat.breakevenTickets} tickets à € 35 OF {cat.breakevenCruises} privécruises
-                    </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {totals.loansSummary.map(loan => (
+                <div key={loan.id} className="bg-white/5 border border-white/10 rounded-lg p-2.5 text-xs space-y-1">
+                  <div className="flex justify-between font-semibold">
+                    <span>{loan.name}</span>
+                    <span className="text-rose-300">{loan.interestRatePct}% rente</span>
                   </div>
-
-                  <button
-                    onClick={() => {
-                      const updated = totals.alfScenario.categories.map(c =>
-                        c.id === cat.id ? { ...c, active: !c.active } : c
-                      )
-                      handleQuickScenarioUpdate({
-                        alfCategories: updated.map(c => ({
-                          id: c.id,
-                          name: c.name,
-                          active: c.active,
-                          feeCents: c.feeCents,
-                        })),
-                      })
-                    }}
-                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${
-                      cat.active
-                        ? 'bg-amber-400 text-zinc-950 shadow-sm'
-                        : 'bg-white/10 text-zinc-400 hover:bg-white/20'
-                    }`}
-                  >
-                    {cat.active ? 'Meedoen ✓' : 'Niet meedoen'}
-                  </button>
+                  <div className="flex justify-between text-[11px] text-zinc-400">
+                    <span>Restschuld:</span>
+                    <span className="text-white font-bold">{fmtAdminAmount(loan.remainingPrincipalCents)}</span>
+                  </div>
+                  <div className="flex justify-between text-[11px] text-zinc-400">
+                    <span>Aflossing:</span>
+                    <span>{fmtAdminAmount(loan.monthlyPrincipalCents)}/mnd</span>
+                  </div>
                 </div>
               ))}
             </div>
-
-            <div className="pt-2 border-t border-white/10 flex justify-between items-center text-xs">
-              <span className="text-zinc-400">Totaal benodigde ALF vaarten:</span>
-              <span className="font-bold text-amber-300">
-                {totals.alfScenario.breakevenTotalCruises} vaarten in dec &amp; jan
-              </span>
-            </div>
           </div>
         </div>
-      </div>
-
-      {/* ── 4. MULTI-LOAN DEBT FREEDOM MANAGER ── */}
-      <div className="bg-gradient-to-r from-rose-50 via-white to-amber-50 border border-rose-200/80 rounded-2xl p-4 shadow-sm space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <CalendarCheck className="w-4 h-4 text-rose-600" />
-            <h4 className="text-xs font-bold text-rose-950 uppercase tracking-wider">
-              Leningen &amp; Schuldvrij Aflosplan ({totals.loansSummary.length} actieve {totals.loansSummary.length === 1 ? 'lening' : 'leningen'})
-            </h4>
-          </div>
-          <div className="flex items-center gap-3 text-xs">
-            <span className="text-zinc-600">
-              Totale Restschuld: <strong className="text-rose-900 font-bold">{fmtAdminAmount(totals.remainingLoanPrincipalCents)}</strong>
-            </span>
-            <span className="text-rose-700 bg-rose-100/70 px-2 py-0.5 rounded-full font-semibold text-[11px]">
-              Volledig schuldenvrij in ~{totals.monthsUntilDebtFree} maanden
-            </span>
-          </div>
-        </div>
-
-        {/* Global Progress Bar */}
-        <div className="w-full bg-rose-100/60 h-2.5 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-rose-500 to-emerald-500 rounded-full transition-all"
-            style={{
-              width: `${totals.remainingLoanPrincipalCents > 0 ? Math.min(100, Math.round(((totals.totalLoanPrincipalCents) / (totals.remainingLoanPrincipalCents + totals.totalLoanPrincipalCents)) * 100)) : 100}%`
-            }}
-          />
-        </div>
-
-        {/* Individual Loan Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
-          {totals.loansSummary.map(loan => (
-            <div key={loan.id} className="bg-white border border-rose-200/80 rounded-xl p-3 space-y-1.5 shadow-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-zinc-900">{loan.name}</span>
-                <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded">
-                  {loan.interestRatePct}% rente
-                </span>
-              </div>
-              <div className="flex justify-between items-baseline text-xs">
-                <span className="text-zinc-500">Restschuld:</span>
-                <span className="font-bold text-rose-950">{fmtAdminAmount(loan.remainingPrincipalCents)}</span>
-              </div>
-              <div className="flex justify-between items-baseline text-[11px] text-zinc-500">
-                <span>Aflossing:</span>
-                <span>{fmtAdminAmount(loan.monthlyPrincipalCents)}/mnd</span>
-              </div>
-              <div className="flex justify-between items-baseline text-[11px] text-zinc-500">
-                <span>Rente:</span>
-                <span>{fmtAdminAmount(loan.monthlyInterestCents)}/mnd</span>
-              </div>
-              <div className="pt-1.5 border-t border-zinc-100 flex justify-between items-center text-[11px]">
-                <span className="text-zinc-400">Schuldvrij in:</span>
-                <span className="font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
-                  ~{loan.monthsUntilPaidOff} mnd
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      )}
 
       {/* ── 4. KPI Cards & Doelen ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1235,12 +1147,17 @@ export function ProfitCockpitTab() {
 
               {/* Vaste Lasten & Liggeld Blok */}
               <div className="bg-zinc-50 border border-zinc-200/80 p-3.5 rounded-xl space-y-3">
-                <h4 className="font-bold text-zinc-900 flex items-center gap-1.5">
-                  <Anchor className="w-4 h-4 text-zinc-700" />
-                  Vaste Lasten &amp; Liggeld
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-zinc-900 flex items-center gap-1.5">
+                    <Anchor className="w-4 h-4 text-zinc-700" />
+                    Liggeld &amp; Vaste Seizoensbuffer
+                  </h4>
+                  <span className="text-[10px] font-semibold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                    1/4 in okt, nov, feb, mrt
+                  </span>
+                </div>
 
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <label className="font-semibold text-zinc-700">Aantal Boten</label>
                     <input
@@ -1254,7 +1171,7 @@ export function ProfitCockpitTab() {
                   </div>
 
                   <div className="space-y-1">
-                    <label className="font-semibold text-zinc-700">Liggeld (€/boot/jaar)</label>
+                    <label className="font-semibold text-zinc-700">Liggeld (€/boot/jaar ex)</label>
                     <input
                       type="number"
                       step="500"
@@ -1262,20 +1179,81 @@ export function ProfitCockpitTab() {
                       value={settingsForm.berthFeePerBoatYearlyEuros}
                       onChange={e => setSettingsForm({ ...settingsForm, berthFeePerBoatYearlyEuros: Number(e.target.value) })}
                     />
-                    <p className="text-[10px] text-zinc-400">Ex BTW (bv. € 4.000)</p>
+                    <p className="text-[10px] text-zinc-400">Jaarlijks tarief Waternet (bv. € 4.000)</p>
+                  </div>
+                </div>
+
+                <div className="bg-blue-50/70 border border-blue-200/60 rounded-lg p-2.5 text-[11px] text-blue-900 space-y-0.5">
+                  <span className="font-bold">📌 Seizoensreservering voor Waternet:</span>
+                  <p className="text-blue-800/80">
+                    Er wordt telkens 25% (€ {Math.round((settingsForm.boatCount * settingsForm.berthFeePerBoatYearlyEuros) / 4).toLocaleString('nl-NL')}) opzij gezet in oktober, november, februari en maart. Zo blijft de zomersprint maximaal liquide en staat het geld klaar voor de factuur.
+                  </p>
+                </div>
+              </div>
+
+              {/* Vaste Bedrijfsabonnementen (Itemized) */}
+              <div className="bg-amber-50/40 border border-amber-200/80 p-3.5 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-bold text-zinc-900 flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-amber-600" />
+                      Vaste Abonnementen &amp; Bedrijfskosten ({settingsForm.fixedCostItems.length})
+                    </h4>
+                    <p className="text-[10px] text-zinc-500 mt-0.5">
+                      Voeg abonnementen toe zoals mobiele telefoon, software of verzekering
+                    </p>
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="font-semibold text-zinc-700">Overig vast (€/mnd)</label>
-                    <input
-                      type="number"
-                      step="100"
-                      className="w-full border border-zinc-200 rounded-lg p-2 text-sm text-zinc-900 bg-white"
-                      value={settingsForm.otherFixedCostsMonthlyEuros}
-                      onChange={e => setSettingsForm({ ...settingsForm, otherFixedCostsMonthlyEuros: Number(e.target.value) })}
-                    />
-                    <p className="text-[10px] text-zinc-400">Verzekering, software, adm</p>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddFixedCostItem}
+                    className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-amber-100 text-amber-900 hover:bg-amber-200 transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Abonnement Toevoegen
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {settingsForm.fixedCostItems.map(item => (
+                    <div key={item.id} className="flex items-center gap-2 bg-white border border-zinc-200 p-2 rounded-lg">
+                      <input
+                        type="text"
+                        value={item.name}
+                        onChange={e => handleUpdateFixedCostItem(item.id, { name: e.target.value })}
+                        className="flex-1 px-2 py-1 text-xs border border-zinc-200 rounded text-zinc-900"
+                        placeholder="Naam (bv. Telefoon KPN)"
+                      />
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-zinc-400">€</span>
+                        <input
+                          type="number"
+                          step="5"
+                          value={Math.round(item.monthlyCents / 100)}
+                          onChange={e => handleUpdateFixedCostItem(item.id, { monthlyCents: Math.round(Number(e.target.value) * 100) })}
+                          className="w-20 px-2 py-1 text-xs border border-zinc-200 rounded text-zinc-900 text-right font-medium"
+                          placeholder="45"
+                        />
+                        <span className="text-[10px] text-zinc-400">/mnd</span>
+                      </div>
+                      {settingsForm.fixedCostItems.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFixedCostItem(item.id)}
+                          className="text-zinc-400 hover:text-rose-600 p-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex justify-between items-center pt-1 text-xs font-semibold text-zinc-700">
+                  <span>Totale vaste abonnementen:</span>
+                  <span className="text-zinc-900 font-bold">
+                    € {Math.round(settingsForm.fixedCostItems.reduce((s, i) => s + i.monthlyCents, 0) / 100).toLocaleString('nl-NL')} / maand
+                  </span>
                 </div>
               </div>
 

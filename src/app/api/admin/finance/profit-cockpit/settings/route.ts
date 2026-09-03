@@ -39,6 +39,7 @@ export const POST = withRoute(async (request: NextRequest) => {
   if (Array.isArray(body.loans)) patch.loans = body.loans
   if (Array.isArray(body.alfCategories)) patch.alf_categories = body.alfCategories
   if (typeof body.marketingScenarioSpendCents === 'number') patch.marketing_scenario_spend_cents = body.marketingScenarioSpendCents
+  if (Array.isArray(body.fixedCostItems)) patch.fixed_cost_items = body.fixedCostItems
 
   const { data, error } = await supabase
     .from('finance_budget_settings')

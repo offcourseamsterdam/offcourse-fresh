@@ -84,10 +84,18 @@ describe('profit-cockpit-calculator', () => {
     expect(aug.cateringSellingCents).toBe(16500)
     expect(aug.cateringCostCents).toBe(3250 + 2500) // 5750
 
-    // Liggeld = 2 * 400000 / 12 = 66667 (€ 666,67)
-    expect(aug.berthFeeMonthlyCents).toBe(Math.round((2 * 400000) / 12))
+    // Liggeld: In augustus (hoogseizoen) is liggeldreservering € 0.
+    // Liggeld wordt 1/4 per keer opzij gezet in okt, nov, feb en mrt.
+    expect(aug.berthFeeMonthlyCents).toBe(0)
     expect(aug.otherFixedCostsMonthlyCents).toBe(100000)
-    expect(aug.totalFixedCostsCents).toBe(Math.round((2 * 400000) / 12) + 100000)
+    expect(aug.totalFixedCostsCents).toBe(100000)
+
+    // Check October and November (1/4 each = € 2.000)
+    const oct = result.months.find(m => m.month === '2026-10')!
+    const nov = result.months.find(m => m.month === '2026-11')!
+    expect(oct.berthFeeMonthlyCents).toBe(200000)
+    expect(nov.berthFeeMonthlyCents).toBe(200000)
+    expect(result.totals.totalBerthFeeCents).toBe(800000) // 2 * € 4.000
 
     // Profit First allocations:
     // Profit Pot (10% of 45000) = 4500
@@ -109,11 +117,39 @@ describe('profit-cockpit-calculator', () => {
     expect(aug.grossContributionMarginCents).toBe(26150)
     expect(aug.grossContributionMarginPct).toBe(Math.round((26150 / 45000) * 100))
 
-    // Tier 1 Fixed Costs = berth (66667) + other (100000) + owner (300000) + loan interest (17500) = 484167
-    expect(aug.tier1FixedCostsCents).toBe(Math.round((2 * 400000) / 12) + 100000 + 300000 + 17500)
+    // Tier 1 Fixed Costs in August = berth (0) + other (100000) + owner (300000) + loan interest (17500) = 417500
+    expect(aug.tier1FixedCostsCents).toBe(0 + 100000 + 300000 + 17500)
     expect(aug.operatingCashFlowCents).toBe(26150 - aug.tier1FixedCostsCents)
 
+    // Investerings-thermometer gauge:
+    expect(result.totals.investmentGauge).toBeDefined()
+    expect(['green', 'orange', 'red']).toContain(result.totals.investmentGauge.status)
+
     expect(aug.isCurrentMonth).toBe(true)
+  })
+
+  it('supports itemized recurring fixed costs (phone subscription, software, insurance)', () => {
+    const fixedCostItems = [
+      { id: 'item-1', name: 'Telefoon KPN', monthlyCents: 4500 }, // € 45
+      { id: 'item-2', name: 'Software tools', monthlyCents: 12000 }, // € 120
+      { id: 'item-3', name: 'Boekhouder', monthlyCents: 15000 }, // € 150
+    ]
+
+    const settings = {
+      ...DEFAULT_BUDGET_SETTINGS,
+      fixedCostItems,
+    }
+
+    const result = computeMonthlyCockpit({
+      year: 2026,
+      bookings: [],
+      shifts: [],
+      settings,
+    })
+
+    const m1 = result.months[0]
+    expect(m1.otherFixedCostsMonthlyCents).toBe(4500 + 12000 + 15000) // € 315
+    expect(result.totals.fixedCostItems.length).toBe(3)
   })
 
   it('handles multiple distinct loans with individual and aggregated debt freedom metrics', () => {

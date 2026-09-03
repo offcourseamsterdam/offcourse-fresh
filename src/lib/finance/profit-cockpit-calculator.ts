@@ -19,6 +19,19 @@ export interface AlfCategorySetting {
   ticketPriceCents?: number // e.g. 3500 (€ 35)
 }
 
+export interface FixedCostItem {
+  id: string
+  name: string
+  monthlyCents: number
+}
+
+export const DEFAULT_FIXED_COST_ITEMS: FixedCostItem[] = [
+  { id: 'fc-phone', name: 'Telefoon & Mobiele Data', monthlyCents: 4500 },
+  { id: 'fc-software', name: 'Software & Tools (Vercel, Google, AI)', monthlyCents: 12000 },
+  { id: 'fc-admin', name: 'Boekhouding & Administratie', monthlyCents: 18000 },
+  { id: 'fc-insurance', name: 'Boot- & Bedrijfsverzekering', monthlyCents: 25000 },
+]
+
 export interface CockpitBudgetSettings {
   maintenancePct: number // default 8
   marketingPct: number // default 6
@@ -28,6 +41,7 @@ export interface CockpitBudgetSettings {
   boatCount: number // default 2
   berthFeePerBoatYearlyCents: number // default 400000 (€ 4.000 ex BTW per boot per jaar)
   otherFixedCostsMonthlyCents: number // default 120000 (€ 1.200 / maand)
+  fixedCostItems?: FixedCostItem[] // Itemized vaste kosten (zoals telefoonabonnement)
   zettleCogsPct: number // default 28 (28% inkoop op boordverkoop)
   // Multi-loans
   loans?: LoanItem[]
@@ -76,6 +90,7 @@ export const DEFAULT_BUDGET_SETTINGS: CockpitBudgetSettings = {
   boatCount: 2,
   berthFeePerBoatYearlyCents: 400000,
   otherFixedCostsMonthlyCents: 120000,
+  fixedCostItems: DEFAULT_FIXED_COST_ITEMS,
   zettleCogsPct: 28.0,
   loans: DEFAULT_LOANS,
   loanName: 'Bootfinanciering Curaçao',
@@ -269,6 +284,16 @@ export interface CockpitTotals {
     }>
     breakevenTotalCruises: number
   }
+
+  // Investerings-Thermometer & Stoplicht
+  investmentGauge: {
+    freeInvestmentCapacityCents: number
+    status: 'green' | 'orange' | 'red'
+    canInvest4kMarketing: boolean
+    canInvestAlf: boolean
+    recommendationText: string
+  }
+  fixedCostItems: FixedCostItem[]
 }
 
 const DUTCH_MONTH_NAMES = [
@@ -335,10 +360,22 @@ export function computeMonthlyCockpit({
     }
   }
 
-  // Monthly fixed costs (Overhead + Liggeld):
-  const monthlyBerthFeeCents = Math.round((settings.boatCount * settings.berthFeePerBoatYearlyCents) / 12)
-  const monthlyOtherFixedCostsCents = settings.otherFixedCostsMonthlyCents
-  const monthlyTotalFixedCostsCents = monthlyBerthFeeCents + monthlyOtherFixedCostsCents
+  // Fixed Cost items resolution (Abonnementen zoals telefoon, software, etc.):
+  const hasCustomFixedItems = Boolean(
+    settings.fixedCostItems &&
+    settings.fixedCostItems !== DEFAULT_FIXED_COST_ITEMS &&
+    settings.fixedCostItems.length > 0
+  )
+  const activeFixedCostItems: FixedCostItem[] = hasCustomFixedItems
+    ? settings.fixedCostItems!
+    : DEFAULT_FIXED_COST_ITEMS
+  const monthlyOtherFixedCostsCents = hasCustomFixedItems
+    ? activeFixedCostItems.reduce((sum, item) => sum + item.monthlyCents, 0)
+    : (settings.otherFixedCostsMonthlyCents ?? activeFixedCostItems.reduce((sum, item) => sum + item.monthlyCents, 0))
+
+  // Liggeld: 1/4 (25%) opzij zetten in oktober (9), november (10), februari (1) en maart (2)
+  const totalFleetBerthFeeYearlyCents = settings.boatCount * settings.berthFeePerBoatYearlyCents
+  const quarterlyBerthFeeCents = Math.round(totalFleetBerthFeeYearlyCents / 4)
 
   // Multi-loans resolution (falls back to legacy single loan if loans array is empty)
   const activeLoans: LoanItem[] = (settings.loans && settings.loans.length > 0)
@@ -398,6 +435,12 @@ export function computeMonthlyCockpit({
     const bList = bookingsByMonth[mKey] || []
     const sList = shiftsByMonth[mKey] || []
     const zData = zettleByMonth[mKey]
+
+    // Liggeld: Beer's regel: 1/4 opzij zetten in oktober (index 9), november (index 10), februari (index 1) en maart (index 2)
+    // om het recht te trekken met de rest van het jaar
+    const isBerthFeeSavingsMonth = (monthIndex === 9 || monthIndex === 10 || monthIndex === 1 || monthIndex === 2)
+    const berthFeeMonthlyCents = isBerthFeeSavingsMonth ? quarterlyBerthFeeCents : 0
+    const monthlyTotalFixedCostsCents = berthFeeMonthlyCents + monthlyOtherFixedCostsCents
 
     let bookingRevCents = 0
     let commissionCents = 0
@@ -566,7 +609,7 @@ export function computeMonthlyCockpit({
       operatingProfitCents,
       operatingProfitPct,
       profitPerHourCents,
-      berthFeeMonthlyCents: monthlyBerthFeeCents,
+      berthFeeMonthlyCents,
       otherFixedCostsMonthlyCents: monthlyOtherFixedCostsCents,
       totalFixedCostsCents: monthlyTotalFixedCostsCents,
       loanInterestCents: monthlyLoanInterestCents,
@@ -598,8 +641,8 @@ export function computeMonthlyCockpit({
     }
   })
 
-  const totalFixedCostsCents = monthlyTotalFixedCostsCents * 12
-  const totalBerthFeeCents = monthlyBerthFeeCents * 12
+  const totalBerthFeeCents = quarterlyBerthFeeCents * 4
+  const totalFixedCostsCents = totalBerthFeeCents + (monthlyOtherFixedCostsCents * 12)
   const totalDebtServiceCents = (monthlyLoanPrincipalCents + monthlyLoanInterestCents) * 12
   const finalRemainingLoanCents = Math.max(0, initialTotalLoanPrincipalCents - totalLoanPrincipalCents)
   const monthsUntilDebtFree = monthlyLoanPrincipalCents > 0
@@ -655,6 +698,29 @@ export function computeMonthlyCockpit({
     ? Math.ceil(totalActiveAlfFeesCents / avgMarginPerCruise)
     : 15
 
+  // Investerings-Thermometer & Stoplicht
+  const monthlyGrossMargin = totalBookingCount > 0 ? Math.round(totalGrossContributionMarginCents / 12) : 0
+  const monthlyFixedNeeds = Math.round(totalTier1FixedCostsCents / 12)
+  const monthlyNetCashFlow = monthlyGrossMargin - monthlyFixedNeeds
+  const freeInvestmentCapacityCents = Math.max(0, monthlyNetCashFlow)
+
+  let investmentStatus: 'green' | 'orange' | 'red' = 'green'
+  let canInvest4kMarketing = true
+  let canInvestAlf = true
+  let recommendationText = 'Groen licht: Je dekkingsbijdrage biedt voldoende speelgeld voor zowel € 4k marketing als Amsterdam Light Festival.'
+
+  if (freeInvestmentCapacityCents < 200000) {
+    investmentStatus = 'red'
+    canInvest4kMarketing = false
+    canInvestAlf = false
+    recommendationText = 'Stoplicht Rood: Focus nu op je vaste lasten en seizoenspotjes. Houd marketing op basis (€ 2.000) en vermijd extra verplichtingen.'
+  } else if (freeInvestmentCapacityCents < 400000) {
+    investmentStatus = 'orange'
+    canInvest4kMarketing = false
+    canInvestAlf = true
+    recommendationText = 'Stoplicht Oranje: Basis marketing (€ 2.000) is veilig. Kies voor óf € 4k marketing óf ALF Categorie 1, niet beide tegelijk.'
+  }
+
   const totals: CockpitTotals = {
     totalRevenueCents,
     totalOperatingProfitCents,
@@ -709,6 +775,15 @@ export function computeMonthlyCockpit({
       categories: alfCategoryDetails,
       breakevenTotalCruises: breakevenTotalAlfCruises,
     },
+
+    investmentGauge: {
+      freeInvestmentCapacityCents,
+      status: investmentStatus,
+      canInvest4kMarketing,
+      canInvestAlf,
+      recommendationText,
+    },
+    fixedCostItems: activeFixedCostItems,
   }
 
   return { months, totals }

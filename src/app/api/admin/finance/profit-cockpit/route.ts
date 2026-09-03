@@ -49,6 +49,9 @@ export async function GET(request: NextRequest) {
           ? (dbSettings as any).alf_categories
           : DEFAULT_BUDGET_SETTINGS.alfCategories,
         marketingScenarioSpendCents: (dbSettings as any).marketing_scenario_spend_cents ?? DEFAULT_BUDGET_SETTINGS.marketingScenarioSpendCents,
+        fixedCostItems: (dbSettings as any).fixed_cost_items && Array.isArray((dbSettings as any).fixed_cost_items) && (dbSettings as any).fixed_cost_items.length > 0
+          ? (dbSettings as any).fixed_cost_items
+          : DEFAULT_BUDGET_SETTINGS.fixedCostItems,
         fixedCostsMonthlyCents: dbSettings.fixed_costs_monthly_cents ?? DEFAULT_BUDGET_SETTINGS.fixedCostsMonthlyCents,
         winterBufferTargetCents: dbSettings.winter_buffer_target_cents ?? DEFAULT_BUDGET_SETTINGS.winterBufferTargetCents,
         defaultMonthlyRevenueTargetCents: dbSettings.default_monthly_revenue_target_cents ?? DEFAULT_BUDGET_SETTINGS.defaultMonthlyRevenueTargetCents,
