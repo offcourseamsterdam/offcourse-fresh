@@ -124,28 +124,81 @@ interface BoatLocalBatchRow {
   lines: BoatLocalLineRow[]
 }
 
-const TABS = [
-  { key: 'partners', label: 'Partners' },
-  { key: 'invoices', label: 'Open Facturen (Stripe)' },
-  { key: 'btw-dashboard', label: 'BTW dashboard' },
-  { key: 'vat', label: 'BTW & Stripe' },
-  { key: 'viator', label: 'Viator' },
-  { key: 'getyourguide', label: 'GetYourGuide' },
-  { key: 'boatlocal', label: 'BoatLocal' },
-  { key: 'withlocals', label: 'Withlocals' },
-  { key: 'clickandboat', label: 'Click & Boat' },
-  { key: 'getmyboat', label: 'GetMyBoat' },
-  { key: 'barqo', label: 'Barqo' },
-  { key: 'revolut', label: 'Revolut' },
-  { key: 'city-tax', label: 'City Tax' },
-  { key: 'zettle', label: 'Zettle' },
-  { key: 'fareharbor', label: 'FareHarbor' },
-  { key: 'kasboek', label: 'Kasboek bronnen' },
+const ALL_TAB_KEYS = [
+  'partners',
+  'invoices',
+  'btw-dashboard',
+  'vat',
+  'viator',
+  'getyourguide',
+  'boatlocal',
+  'withlocals',
+  'clickandboat',
+  'getmyboat',
+  'barqo',
+  'revolut',
+  'city-tax',
+  'zettle',
+  'fareharbor',
+  'kasboek',
 ] as const
-type TabKey = (typeof TABS)[number]['key']
+type TabKey = (typeof ALL_TAB_KEYS)[number]
+
+interface ChannelStatusItem {
+  key: TabKey
+  sourceKey: string
+  label: string
+  allTimeRevenueCents: number
+  hasPreviousMonthData: boolean
+  isArchived: boolean
+}
+
+interface FinanceChannelStatusData {
+  previousMonth: {
+    key: string
+    label: string
+  }
+  openInvoicesCount: number
+  outstandingPartnersCount: number
+  channels: ChannelStatusItem[]
+}
+
+const DEFAULT_CHANNELS: ChannelStatusItem[] = [
+  { key: 'fareharbor', sourceKey: 'fareharbor', label: 'FareHarbor', allTimeRevenueCents: 1895734, hasPreviousMonthData: false, isArchived: true },
+  { key: 'vat', sourceKey: 'stripe', label: 'Stripe (Website)', allTimeRevenueCents: 1865417, hasPreviousMonthData: true, isArchived: false },
+  { key: 'zettle', sourceKey: 'zettle', label: 'Zettle', allTimeRevenueCents: 1225540, hasPreviousMonthData: true, isArchived: false },
+  { key: 'withlocals', sourceKey: 'withlocals', label: 'Withlocals', allTimeRevenueCents: 1014488, hasPreviousMonthData: false, isArchived: false },
+  { key: 'getyourguide', sourceKey: 'getyourguide', label: 'GetYourGuide', allTimeRevenueCents: 675590, hasPreviousMonthData: true, isArchived: false },
+  { key: 'viator', sourceKey: 'viator', label: 'Viator', allTimeRevenueCents: 640088, hasPreviousMonthData: true, isArchived: false },
+  { key: 'boatlocal', sourceKey: 'boatlocal', label: 'BoatLocal', allTimeRevenueCents: 435744, hasPreviousMonthData: true, isArchived: false },
+  { key: 'revolut', sourceKey: 'revolut', label: 'Revolut', allTimeRevenueCents: 391952, hasPreviousMonthData: false, isArchived: false },
+  { key: 'clickandboat', sourceKey: 'clickandboat', label: 'Click & Boat', allTimeRevenueCents: 258956, hasPreviousMonthData: false, isArchived: false },
+  { key: 'getmyboat', sourceKey: 'getmyboat', label: 'GetMyBoat', allTimeRevenueCents: 104100, hasPreviousMonthData: false, isArchived: false },
+  { key: 'barqo', sourceKey: 'barqo', label: 'Barqo', allTimeRevenueCents: 50366, hasPreviousMonthData: false, isArchived: false },
+]
+
+function formatShortEuro(cents: number): string {
+  if (cents >= 100000) {
+    const k = (cents / 100000).toFixed(1).replace('.', ',')
+    return `€ ${k}k`
+  }
+  return `€ ${Math.round(cents / 100).toLocaleString('nl-NL')}`
+}
 
 export default function FinancePage() {
-  const [tab, setTab] = useState<TabKey>('partners')
+  const [tab, setTab] = useState<TabKey>('btw-dashboard')
+
+  const { data: statusData } = useAdminFetch<FinanceChannelStatusData>(
+    '/api/admin/finance/channel-status'
+  )
+
+  const openInvoicesCount = statusData?.openInvoicesCount ?? 0
+  const outstandingPartnersCount = statusData?.outstandingPartnersCount ?? 0
+  const previousMonthLabel = statusData?.previousMonth?.label ?? 'aug'
+
+  const channels = statusData?.channels && statusData.channels.length > 0
+    ? statusData.channels
+    : DEFAULT_CHANNELS
 
   return (
     <div className="p-8 max-w-none space-y-6">
@@ -163,22 +216,190 @@ export default function FinancePage() {
         <FinanceShareLinks />
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-zinc-200">
-        {TABS.map(t => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === t.key
-                ? 'border-zinc-900 text-zinc-900'
-                : 'border-transparent text-zinc-500 hover:text-zinc-700'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* Redesigned Navigation */}
+      <div className="space-y-4 bg-zinc-50/80 p-4 rounded-2xl border border-zinc-200/70 shadow-xs">
+        {/* Tier 1: Core Overzichten & Beheer */}
+        <div>
+          <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mb-2 px-1">
+            Overzichten &amp; Beheer
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setTab('btw-dashboard')}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                tab === 'btw-dashboard'
+                  ? 'bg-zinc-900 text-white shadow-sm'
+                  : 'bg-white text-zinc-700 hover:bg-zinc-100/80 border border-zinc-200/80'
+              }`}
+            >
+              <span>BTW dashboard</span>
+              <span className={`text-[10px] font-normal px-1.5 py-0.5 rounded ${tab === 'btw-dashboard' ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-100 text-zinc-500'}`}>
+                Totaal
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTab('invoices')}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                tab === 'invoices'
+                  ? 'bg-zinc-900 text-white shadow-sm'
+                  : 'bg-white text-zinc-700 hover:bg-zinc-100/80 border border-zinc-200/80'
+              }`}
+            >
+              <span>Open Facturen (Stripe)</span>
+              {openInvoicesCount > 0 ? (
+                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-bold ${
+                  tab === 'invoices'
+                    ? 'bg-amber-400 text-amber-950 ring-2 ring-amber-300'
+                    : 'bg-amber-100 text-amber-800 border border-amber-300 animate-pulse'
+                }`}>
+                  {openInvoicesCount} open
+                </span>
+              ) : (
+                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-medium ${
+                  tab === 'invoices'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                }`}>
+                  0 open ✓
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTab('partners')}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                tab === 'partners'
+                  ? 'bg-zinc-900 text-white shadow-sm'
+                  : 'bg-white text-zinc-700 hover:bg-zinc-100/80 border border-zinc-200/80'
+              }`}
+            >
+              <span>Partners</span>
+              {outstandingPartnersCount > 0 ? (
+                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-semibold ${
+                  tab === 'partners'
+                    ? 'bg-amber-400 text-amber-950'
+                    : 'bg-amber-50 text-amber-800 border border-amber-200'
+                }`}>
+                  {outstandingPartnersCount} open
+                </span>
+              ) : (
+                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[11px] font-medium ${
+                  tab === 'partners'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                }`}>
+                  Voldaan ✓
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTab('city-tax')}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                tab === 'city-tax'
+                  ? 'bg-zinc-900 text-white shadow-sm'
+                  : 'bg-white text-zinc-700 hover:bg-zinc-100/80 border border-zinc-200/80'
+              }`}
+            >
+              <span>City Tax</span>
+              <span className={`text-[10px] font-normal px-1.5 py-0.5 rounded ${tab === 'city-tax' ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-100 text-zinc-500'}`}>
+                Gemeente
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTab('kasboek')}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                tab === 'kasboek'
+                  ? 'bg-zinc-900 text-white shadow-sm'
+                  : 'bg-white text-zinc-700 hover:bg-zinc-100/80 border border-zinc-200/80'
+              }`}
+            >
+              <span>Kasboek bronnen</span>
+              <span className={`text-[10px] font-normal px-1.5 py-0.5 rounded ${tab === 'kasboek' ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-100 text-zinc-500'}`}>
+                Reconciliatie
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* Tier 2: Verkoopkanalen (Gerangschikt op All-Time Omzet) */}
+        <div>
+          <div className="flex items-center justify-between text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mb-2 px-1">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              Verkoopkanalen · gerangschikt op all-time omzet
+            </span>
+            <span className="text-[11px] text-zinc-400 font-normal lowercase">
+              status recente maand ({previousMonthLabel})
+            </span>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {channels.map((ch, idx) => {
+              const isActive = tab === ch.key
+              return (
+                <button
+                  key={ch.key}
+                  type="button"
+                  onClick={() => setTab(ch.key)}
+                  className={`group flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border transition-all ${
+                    isActive
+                      ? 'bg-zinc-900 text-white border-zinc-900 shadow-sm ring-1 ring-zinc-900'
+                      : 'bg-white text-zinc-700 border-zinc-200/80 hover:border-zinc-300 hover:bg-zinc-50'
+                  }`}
+                >
+                  <span className={`text-[10px] font-mono px-1 py-0.5 rounded ${
+                    isActive ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-100 text-zinc-500'
+                  }`}>
+                    #{idx + 1}
+                  </span>
+
+                  <span className="font-semibold">{ch.label}</span>
+
+                  <span className={`text-[11px] font-mono font-medium ${
+                    isActive ? 'text-emerald-300' : 'text-zinc-500'
+                  }`}>
+                    {formatShortEuro(ch.allTimeRevenueCents)}
+                  </span>
+
+                  {/* Status chip */}
+                  {ch.isArchived ? (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-normal ${
+                      isActive ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-100 text-zinc-500'
+                    }`}>
+                      Archief
+                    </span>
+                  ) : ch.hasPreviousMonthData ? (
+                    <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+                      isActive
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    }`}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      {previousMonthLabel} ✓
+                    </span>
+                  ) : (
+                    <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                      isActive
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                        : 'bg-amber-50 text-amber-700 border border-amber-200'
+                    }`}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                      {previousMonthLabel} ontbreekt
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </div>
       </div>
 
       {tab === 'partners' && <PartnersTab />}
