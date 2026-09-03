@@ -11,6 +11,7 @@ import { postSlackOps } from '@/lib/slack/send-notification'
 import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
 import { formatAmsterdamTime } from '@/lib/utils'
 import { CITY_TAX_CENTS_PER_GUEST } from '@/lib/booking/constants'
+import { allocateInvoiceNumber } from '@/lib/booking/allocate-invoice-number'
 
 interface SendInvoiceBody {
   companyName: string
@@ -116,6 +117,16 @@ export async function POST(
     const cityTaxCents = guestCount * CITY_TAX_CENTS_PER_GUEST
     const bookingDate = booking.booking_date || new Date().toISOString().slice(0, 10)
 
+    // 2b. Allocate sequential invoice number (e.g. OC-2026-00070) aligned with Belastingdienst sequence
+    let invoiceNumber: string | null = booking.invoice_number ?? null
+    if (!invoiceNumber) {
+      const piRef = booking.stripe_payment_intent_id || `b2b_${booking.id}`
+      if (!booking.stripe_payment_intent_id) {
+        await supabase.from('bookings').update({ stripe_payment_intent_id: piRef }).eq('id', booking.id)
+      }
+      invoiceNumber = await allocateInvoiceNumber(piRef)
+    }
+
     // 3. Create, finalize and send invoice via Stripe
     const invoiceResult = await createAndSendStripeInvoice({
       customerId: stripeCustomer.id,
@@ -132,6 +143,7 @@ export async function POST(
       category: booking.category,
       note: booking.guest_note,
       daysAfterTour: body.daysAfterTour ?? 14,
+      invoiceNumber,
     })
 
     // 4. Upsert business profile directory entry
@@ -179,6 +191,7 @@ export async function POST(
         company_vat: vatNumber,
         company_address: companyAddressStr || null,
         invoice_due_date: invoiceResult.dueDate,
+        invoice_number: invoiceNumber || invoiceResult.invoiceNumber,
         payment_status: 'stripe_invoice_sent',
         stripe_amount: invoiceResult.amountDueCents,
         booking_source: booking.booking_source || 'stripe_invoice',

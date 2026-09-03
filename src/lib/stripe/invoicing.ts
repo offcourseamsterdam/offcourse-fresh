@@ -32,6 +32,7 @@ export interface CreateInvoiceInput {
   category?: string | null
   note?: string | null
   daysAfterTour?: number // Defaults to 14
+  invoiceNumber?: string | null // e.g. 'OC-2026-00070'
 }
 
 export interface StripeInvoiceResult {
@@ -219,6 +220,7 @@ export async function createAndSendStripeInvoice(input: CreateInvoiceInput): Pro
     collection_method: 'send_invoice',
     due_date: dueDateTimestamp,
     auto_advance: true,
+    ...(input.invoiceNumber ? { number: input.invoiceNumber } : {}),
     custom_fields: [
       { name: 'Tourdatum', value: tourDateFormatted },
     ],
@@ -228,6 +230,7 @@ export async function createAndSendStripeInvoice(input: CreateInvoiceInput): Pro
       listing_title: input.listingTitle,
       booking_date: input.bookingDate,
       tour_date_formatted: tourDateFormatted,
+      invoice_number: input.invoiceNumber ?? '',
       booking_source: 'stripe_invoice',
       guest_count: String(guestCount),
     },
