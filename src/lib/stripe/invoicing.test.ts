@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeInvoiceDueDate } from './invoicing'
+import { computeInvoiceDueDate, formatTourDateDutch } from './invoicing'
 
 describe('computeInvoiceDueDate', () => {
   it('computes due date as exactly 14 days after the tour date', () => {
@@ -18,5 +18,17 @@ describe('computeInvoiceDueDate', () => {
     const { dueDateTimestamp } = computeInvoiceDueDate(pastTourDate, 14)
     const nowTimestamp = Math.floor(Date.now() / 1000)
     expect(dueDateTimestamp).toBeGreaterThan(nowTimestamp)
+  })
+})
+
+describe('formatTourDateDutch', () => {
+  it('formats YYYY-MM-DD into Dutch readable format', () => {
+    const formatted = formatTourDateDutch('2026-08-28')
+    expect(formatted).toBe('28 augustus 2026')
+  })
+
+  it('formats YYYY-MM-DD with ISO start time into Amsterdam time', () => {
+    const formatted = formatTourDateDutch('2026-08-28', '2026-08-28T17:00:00+00:00')
+    expect(formatted).toBe('28 augustus 2026 om 19:00')
   })
 })

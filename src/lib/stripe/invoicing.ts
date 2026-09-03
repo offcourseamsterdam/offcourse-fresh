@@ -168,6 +168,35 @@ export async function getOrCreateStripeCustomer(input: BusinessCustomerInput): P
 }
 
 /**
+ * Format tour date and optional start time into readable Dutch format.
+ * Example: '2026-08-28' with '2026-08-28T17:00:00+00:00' -> '28 augustus 2026 om 19:00'
+ */
+export function formatTourDateDutch(dateStr: string, startTime?: string | null): string {
+  try {
+    const d = new Date(dateStr + (dateStr.length === 10 ? 'T12:00:00Z' : ''))
+    const formatted = d.toLocaleDateString('nl-NL', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'Europe/Amsterdam',
+    })
+    if (startTime) {
+      const timeStr = new Date(startTime).toLocaleTimeString('nl-NL', {
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Europe/Amsterdam',
+      })
+      if (timeStr && timeStr !== '—') {
+        return `${formatted} om ${timeStr}`
+      }
+    }
+    return formatted
+  } catch {
+    return dateStr
+  }
+}
+
+/**
  * Create, finalize, and email a Stripe Invoice with Virtual IBAN / SEPA transfer support
  * and Dutch VAT breakdown lines.
  */
@@ -181,6 +210,7 @@ export async function createAndSendStripeInvoice(input: CreateInvoiceInput): Pro
   const guestCount = Number(input.guestCount ?? 1)
   const cityTaxCents = input.cityTaxCents ?? (guestCount * CITY_TAX_CENTS_PER_GUEST)
   const discountCents = Number(input.discountAmountCents ?? 0)
+  const tourDateFormatted = formatTourDateDutch(input.bookingDate, input.startTime)
 
   // Step 1: Create the draft Stripe Invoice (with Virtual IBAN / customer_balance in EUR)
   const baseInvoiceParams: Stripe.InvoiceCreateParams = {
@@ -189,15 +219,19 @@ export async function createAndSendStripeInvoice(input: CreateInvoiceInput): Pro
     collection_method: 'send_invoice',
     due_date: dueDateTimestamp,
     auto_advance: true,
+    custom_fields: [
+      { name: 'Tourdatum', value: tourDateFormatted },
+    ],
     metadata: {
       booking_id: input.bookingId,
       fareharbor_uuid: input.fhBookingUuid ?? '',
       listing_title: input.listingTitle,
       booking_date: input.bookingDate,
+      tour_date_formatted: tourDateFormatted,
       booking_source: 'stripe_invoice',
       guest_count: String(guestCount),
     },
-    description: `Off Course Amsterdam — ${input.listingTitle} (${input.bookingDate})`,
+    description: `Off Course Amsterdam — ${input.listingTitle} (Tourdatum: ${tourDateFormatted})`,
     footer: 'Bedankt voor uw boeking bij Off Course Amsterdam. U kunt betalen via iDEAL, creditcard of overboeking op deze factuur.',
   }
 
@@ -244,7 +278,7 @@ export async function createAndSendStripeInvoice(input: CreateInvoiceInput): Pro
       invoice: invoice.id,
       amount: input.baseAmountCents,
       currency: 'eur',
-      description: `${input.listingTitle} (${guestCount} ${guestCount === 1 ? 'guest' : 'guests'}) — 9% BTW incl.`,
+      description: `${input.listingTitle} — Tourdatum: ${tourDateFormatted} (${guestCount} ${guestCount === 1 ? 'gast' : 'gasten'}) — 9% BTW incl.`,
     })
   }
 
