@@ -54,6 +54,12 @@ export interface ProfitCockpitResponse {
       totalEurCents: number
       primaryAccountName: string | null
     }
+    stripe?: {
+      configured: boolean
+      availableEurCents: number
+      pendingEurCents: number
+      totalEurCents: number
+    }
     effectiveBankCashCents: number
     openInvoicesCents: number
     openDirectBookingsCents?: number
@@ -276,67 +282,84 @@ export function ProfitCockpitTab() {
       </div>
 
       {/* ── 1. Live Cash & Liquiditeit Banner ── */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-gradient-to-br from-zinc-900 via-zinc-850 to-zinc-900 text-white rounded-2xl p-5 shadow-xl">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 bg-gradient-to-br from-zinc-900 via-zinc-850 to-zinc-900 text-white rounded-2xl p-5 shadow-xl">
         {/* Revolut Saldo */}
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <Wallet className="w-4 h-4 text-emerald-400" />
-            <span className="text-xs font-medium text-zinc-400">Revolut Banksaldo</span>
+            <span className="text-xs font-medium text-zinc-400">Revolut Saldo</span>
             {cash.revolut.configured ? (
               <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300">Live</span>
             ) : (
-              <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-zinc-700 text-zinc-300">Handmatig / Demo</span>
+              <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-zinc-700 text-zinc-300">Handmatig</span>
             )}
           </div>
-          <div className="text-2xl font-bold tracking-tight text-white">
+          <div className="text-xl font-bold tracking-tight text-white">
             {fmtAdminAmount(cash.effectiveBankCashCents)}
           </div>
           <p className="text-[11px] text-zinc-400">
-            {cash.revolut.primaryAccountName || 'Direct op bankrekening'}
+            {cash.revolut.primaryAccountName || 'Op bankrekening'}
           </p>
         </div>
 
-        {/* Te Ontvangen (Directe Boekingen & Facturen) */}
-        <div className="space-y-1 md:border-l md:border-zinc-800 md:pl-4">
+        {/* Stripe Balans (Directe Boekingen) */}
+        <div className="space-y-1 sm:border-l sm:border-zinc-800 sm:pl-3">
           <div className="flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-sky-400" />
-            <span className="text-xs font-medium text-zinc-400">Te Ontvangen</span>
+            <CreditCard className="w-4 h-4 text-purple-400" />
+            <span className="text-xs font-medium text-zinc-400">Stripe Balans</span>
+            <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+              Direct Live
+            </span>
           </div>
-          <div className="text-2xl font-bold tracking-tight text-sky-300">
-            + {fmtAdminAmount(cash.totalReceivablesCents ?? (cash.openInvoicesCents + (cash.openDirectBookingsCents || 0)))}
+          <div className="text-xl font-bold tracking-tight text-purple-300">
+            {fmtAdminAmount(cash.stripe?.totalEurCents ?? 0)}
           </div>
           <p className="text-[11px] text-zinc-400">
-            {typeof cash.openDirectBookingsCents === 'number' && cash.openDirectBookingsCents > 0
-              ? `${fmtAdminAmount(cash.openDirectBookingsCents)} direct + ${fmtAdminAmount(cash.openInvoicesCents)} facturen`
-              : 'Directe boekingen & openstaande B2B facturen'}
+            {cash.stripe?.configured
+              ? `${fmtAdminAmount(cash.stripe.availableEurCents)} vrij · ${fmtAdminAmount(cash.stripe.pendingEurCents)} onderweg`
+              : 'Directe websiteboekingen in transit'}
           </p>
         </div>
 
-        {/* Gereserveerd voor Schippers & Catering */}
-        <div className="space-y-1 md:border-l md:border-zinc-800 md:pl-4">
+        {/* Openstaande Facturen & Betaallinks */}
+        <div className="space-y-1 lg:border-l lg:border-zinc-800 lg:pl-3">
+          <div className="flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-sky-400" />
+            <span className="text-xs font-medium text-zinc-400">Openstaand Facturen</span>
+          </div>
+          <div className="text-xl font-bold tracking-tight text-sky-300">
+            + {fmtAdminAmount((cash.openInvoicesCents || 0) + (cash.openDirectBookingsCents || 0))}
+          </div>
+          <p className="text-[11px] text-zinc-400">
+            B2B &amp; betaallinks te ontvangen
+          </p>
+        </div>
+
+        {/* Lopend Operationeel */}
+        <div className="space-y-1 sm:border-l sm:border-zinc-800 sm:pl-3">
           <div className="flex items-center gap-2">
             <Anchor className="w-4 h-4 text-amber-400" />
             <span className="text-xs font-medium text-zinc-400">Lopend Operationeel</span>
           </div>
-          <div className="text-2xl font-bold tracking-tight text-amber-300">
+          <div className="text-xl font-bold tracking-tight text-amber-300">
             − {fmtAdminAmount(cash.currentMonthLiabilitiesCents)}
           </div>
           <p className="text-[11px] text-zinc-400">
-            Schippersuren &amp; catering deze maand
+            Schippers &amp; catering deze maand
           </p>
         </div>
 
-        {/* VRIJ BESCHIKBARE CASH */}
-        <div className="space-y-1 bg-emerald-950/40 border border-emerald-500/30 rounded-xl p-3.5 md:border-l-0">
+        {/* Vrij Beschikbare Cash */}
+        <div className="space-y-1 bg-emerald-950/40 border border-emerald-500/30 rounded-xl p-3 sm:border-l-0">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-emerald-300 uppercase tracking-wider">Vrij Beschikbaar</span>
+            <span className="text-[11px] font-semibold text-emerald-300 uppercase tracking-wider">Vrij Beschikbaar</span>
             <Sparkles className="w-4 h-4 text-emerald-400" />
           </div>
-          <div className="text-2xl font-black tracking-tight text-emerald-400">
+          <div className="text-xl font-black tracking-tight text-emerald-400">
             {fmtAdminAmount(cash.freeAvailableCashCents)}
           </div>
-          <p className="text-[11px] text-emerald-300/80">
-            Na aftrek van potjes, lening &amp; lasten
+          <p className="text-[10px] text-emerald-300/80">
+            Bank + Stripe na potjes &amp; lasten
           </p>
         </div>
       </div>

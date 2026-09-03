@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { computeMonthlyCockpit, DEFAULT_BUDGET_SETTINGS, type CockpitBudgetSettings } from '@/lib/finance/profit-cockpit-calculator'
 import { revolut } from '@/lib/revolut/client'
+import { getStripe } from '@/lib/stripe/server'
 
 export async function GET(request: NextRequest) {
   const denied = await requireAdmin()
@@ -148,7 +149,29 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const totalReceivablesCents = openInvoicesCents + openDirectBookingsCents
+    // 7. Live Stripe balance (Direct bookings collected online, awaiting payout to Revolut)
+    let stripeBalance = {
+      configured: false,
+      availableEurCents: 0,
+      pendingEurCents: 0,
+      totalEurCents: 0,
+    }
+    try {
+      const stripe = getStripe()
+      const bal = await stripe.balance.retrieve()
+      const avail = (bal.available || []).find(a => a.currency === 'eur')?.amount || 0
+      const pending = (bal.pending || []).find(p => p.currency === 'eur')?.amount || 0
+      stripeBalance = {
+        configured: true,
+        availableEurCents: avail,
+        pendingEurCents: pending,
+        totalEurCents: avail + pending,
+      }
+    } catch (sErr) {
+      console.warn('[profit-cockpit] Could not fetch live Stripe balance:', sErr)
+    }
+
+    const totalReceivablesCents = openInvoicesCents + openDirectBookingsCents + stripeBalance.totalEurCents
 
     // Current month free cash calculation
     const currentMonthKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
@@ -160,12 +183,15 @@ export async function GET(request: NextRequest) {
     // Gereserveerde potjes YTD
     const totalPotsReservedCents = totals.totalMaintenanceReservedCents + totals.totalMarketingBudgetCents
 
-    // Vrij beschikbare cash
+    // Vrij beschikbare cash (inclusief Stripe directe boekingen & te ontvangen facturen)
     const effectiveBankCashCents = revolutBalance.configured
       ? revolutBalance.totalEurCents
       : (dbSettings?.revolut_manual_balance_cents || 3425000) // Fallback demo cash if not configured
 
-    const freeAvailableCashCents = Math.max(0, effectiveBankCashCents + totalReceivablesCents - currentMonthLiabilitiesCents - totalPotsReservedCents)
+    const freeAvailableCashCents = Math.max(
+      0,
+      effectiveBankCashCents + stripeBalance.totalEurCents + openInvoicesCents + openDirectBookingsCents - currentMonthLiabilitiesCents - totalPotsReservedCents
+    )
 
     return apiOk({
       year,
@@ -174,6 +200,7 @@ export async function GET(request: NextRequest) {
       settings,
       cash: {
         revolut: revolutBalance,
+        stripe: stripeBalance,
         effectiveBankCashCents,
         openInvoicesCents,
         openDirectBookingsCents,
