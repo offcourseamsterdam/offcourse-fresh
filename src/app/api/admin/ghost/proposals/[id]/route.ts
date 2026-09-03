@@ -387,6 +387,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           endTime: payload.endTime ?? null,
           guests: payload.parsed?.guests ?? null,
           experienceName: payload.parsed?.experienceName ?? null,
+          estimatedPriceCents: (payload.parsed as any)?.estimatedPriceCents ?? null,
+          estimatedCommissionCents: (payload.parsed as any)?.estimatedCommissionCents ?? null,
         })
         if (!result.ok) {
           // Release the claim so the human can retry after fixing the cause.

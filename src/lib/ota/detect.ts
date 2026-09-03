@@ -59,6 +59,8 @@ export interface OtaDetection {
     dateISO: string | null
     guests: number | null
     experienceName: string | null
+    estimatedPriceCents?: number | null
+    estimatedCommissionCents?: number | null
   }
 }
 
@@ -135,6 +137,11 @@ function detectWithlocals(subject: string, bodyText: string): OtaDetection | nul
   const guestsRaw = bodyText.match(/Number of guests\r?\n(\d+)/)?.[1]
   const guests = guestsRaw ? parseInt(guestsRaw, 10) : null
 
+  // Extract financial details: Withlocals puts "Price details\nTotal price\n€315.00"
+  const priceRaw = bodyText.match(/(?:Total price|Price details)[\s\r\n]*€\s*([\d,.]+)/i)?.[1]
+  const estimatedPriceCents = priceRaw ? Math.round(parseFloat(priceRaw.replace(',', '.')) * 100) : null
+  const estimatedCommissionCents = estimatedPriceCents ? Math.round(estimatedPriceCents * 0.20) : null
+
   return {
     platform: 'withlocals',
     kind: isConfirmed ? 'confirmed' : isRequest ? 'new_request' : 'other',
@@ -144,7 +151,15 @@ function detectWithlocals(subject: string, bodyText: string): OtaDetection | nul
     guestPhone: null,
     endTime: null,
     stripePaymentIntentId: null,
-    parsed: { date, time: null, dateISO: isoDateFromWithlocals(date), guests, experienceName },
+    parsed: {
+      date,
+      time: null,
+      dateISO: isoDateFromWithlocals(date),
+      guests,
+      experienceName,
+      estimatedPriceCents,
+      estimatedCommissionCents,
+    },
   }
 }
 
@@ -289,6 +304,29 @@ function detectFareharborNotification(bodyText: string): OtaDetection | null {
   const stripePaymentIntentId = voucher?.startsWith('pi_') ? voucher : null
   const isOwnChannel = platform === 'boatlocal' && !!stripePaymentIntentId
 
+  // Extract or estimate price for financial visibility
+  const priceMatch = bodyText.match(/(?:Total|Total Paid|Amount|Price):\s*€?\s*([\d,.]+)/i)?.[1]
+  let estimatedPriceCents: number | null = priceMatch ? Math.round(parseFloat(priceMatch.replace(',', '.')) * 100) : null
+
+  if (!estimatedPriceCents && experienceName) {
+    const isShared = /shared/i.test(experienceName)
+    if (isShared && guests) {
+      estimatedPriceCents = guests * 3750 // € 37,50 incl BTW per guest
+    } else if (/private/i.test(experienceName)) {
+      if (time && endTime) {
+        const [sh, sm] = time.split(':').map(Number)
+        const [eh, em] = endTime.split(':').map(Number)
+        const durationHours = Math.max(1, (eh * 60 + em - (sh * 60 + sm)) / 60)
+        estimatedPriceCents = Math.round(durationHours * 22500)
+      } else {
+        estimatedPriceCents = 33750
+      }
+    }
+  }
+
+  const commissionRate = platform === 'boatlocal' ? 0.15 : 0.20
+  const estimatedCommissionCents = estimatedPriceCents ? Math.round(estimatedPriceCents * commissionRate) : null
+
   return {
     platform,
     kind: isOwnChannel ? 'own_channel' : 'needs_import',
@@ -298,7 +336,15 @@ function detectFareharborNotification(bodyText: string): OtaDetection | null {
     guestPhone,
     endTime,
     stripePaymentIntentId,
-    parsed: { date, time, dateISO, guests, experienceName },
+    parsed: {
+      date,
+      time,
+      dateISO,
+      guests,
+      experienceName,
+      estimatedPriceCents,
+      estimatedCommissionCents,
+    },
   }
 }
 

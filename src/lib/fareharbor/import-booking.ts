@@ -27,6 +27,8 @@ export interface ImportableBooking {
    * second, wrong figure for Finance to reconcile against.
    */
   stripePaymentIntentId?: string | null
+  estimatedPriceCents?: number | null
+  estimatedCommissionCents?: number | null
 }
 
 export type ImportBookingResult =
@@ -77,12 +79,17 @@ export async function importFareharborBooking(supabase: SupabaseAdmin, booking: 
   const startTime = amsterdamTimeToUtcIso(booking.dateISO, booking.time)
   const endTime = booking.endTime ? amsterdamTimeToUtcIso(booking.dateISO, booking.endTime) : null
 
-  // Real charge on our own Stripe (Boat Local) vs. paid-elsewhere comp (GYG/Viator).
+  // Real charge on our own Stripe (Boat Local) vs. platform payout pending (GYG/Viator/Withlocals).
   let stripeAmount = 0
-  let paymentStatus = 'paid_externally'
+  let baseAmountCents = booking.estimatedPriceCents ?? 0
+  let commissionAmountCents = booking.estimatedCommissionCents ?? 0
+  let paymentStatus = 'platform_payout_pending'
+
   if (booking.stripePaymentIntentId) {
     const pi = await getStripe().paymentIntents.retrieve(booking.stripePaymentIntentId)
     stripeAmount = pi.amount_received || pi.amount
+    baseAmountCents = stripeAmount
+    commissionAmountCents = 0
     paymentStatus = 'paid'
   }
 
@@ -106,6 +113,8 @@ export async function importFareharborBooking(supabase: SupabaseAdmin, booking: 
       booking_source: booking.bookingSource,
       stripe_payment_intent_id: booking.stripePaymentIntentId ?? null,
       stripe_amount: stripeAmount,
+      base_amount_cents: baseAmountCents,
+      commission_amount_cents: commissionAmountCents,
       discount_amount_cents: 0,
     })
     .select('id')

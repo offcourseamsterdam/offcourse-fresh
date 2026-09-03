@@ -207,6 +207,8 @@ describe('detectOtaEmail — Withlocals', () => {
         dateISO: '2026-09-24',
         guests: 2,
         experienceName: 'Private Canal Cruise with Local Captains and Hidden Gems',
+        estimatedPriceCents: 31500,
+        estimatedCommissionCents: 6300,
       },
     })
   })
@@ -232,6 +234,8 @@ describe('detectOtaEmail — Withlocals', () => {
         dateISO: '2026-09-24',
         guests: 2,
         experienceName: 'Private Canal Cruise with Local Captains and Hidden Gems',
+        estimatedPriceCents: null,
+        estimatedCommissionCents: null,
       },
     })
   })
@@ -315,6 +319,8 @@ describe('detectOtaEmail — FareHarbor notification', () => {
         dateISO: '2026-08-05',
         guests: 2,
         experienceName: 'Shared Cruise',
+        estimatedPriceCents: 7500,
+        estimatedCommissionCents: 1500,
       },
     })
   })
@@ -340,6 +346,8 @@ describe('detectOtaEmail — FareHarbor notification', () => {
         dateISO: '2026-08-06',
         guests: 2,
         experienceName: 'Shared Cruise',
+        estimatedPriceCents: 7500,
+        estimatedCommissionCents: 1125,
       },
     })
   })
@@ -380,6 +388,8 @@ describe('detectOtaEmail — FareHarbor notification', () => {
         dateISO: '2026-08-17',
         guests: 2,
         experienceName: 'Shared Cruise',
+        estimatedPriceCents: 7500,
+        estimatedCommissionCents: 1500,
       },
     })
   })

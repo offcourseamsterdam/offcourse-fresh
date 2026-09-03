@@ -325,6 +325,44 @@ export async function GET(request: NextRequest) {
       effectiveBankCashCents + stripeBalance.totalEurCents + openInvoicesCents + openDirectBookingsCents - currentMonthLiabilitiesCents - totalPotsReservedCents
     )
 
+    // 8. Calculate Accrued Platform Payouts (GetYourGuide, Viator, Withlocals, BoatLocal)
+    // Bookings that have been completed on platforms awaiting monthly batch payout
+    const { data: otaPending } = await supabase
+      .from('bookings')
+      .select('id, booking_source, base_amount_cents, commission_amount_cents, booking_date')
+      .neq('status', 'cancelled')
+      .in('payment_status', ['platform_payout_pending', 'paid_externally'])
+      .in('booking_source', ['getyourguide', 'tripadvisor', 'viator', 'withlocals', 'boatlocal'])
+      .gte('booking_date', `${year}-01-01`)
+      .lte('booking_date', `${year}-12-31`)
+
+    const platformPayouts = {
+      totalGrossCents: 0,
+      totalCommissionCents: 0,
+      totalNetCents: 0,
+      count: 0,
+      byPlatform: {
+        getyourguide: 0,
+        tripadvisor: 0,
+        withlocals: 0,
+        boatlocal: 0,
+      } as Record<string, number>,
+    }
+
+    for (const b of (otaPending || [])) {
+      const gross = b.base_amount_cents || 0
+      const commission = b.commission_amount_cents || 0
+      const net = Math.max(0, gross - commission)
+      if (net > 0) {
+        platformPayouts.totalGrossCents += gross
+        platformPayouts.totalCommissionCents += commission
+        platformPayouts.totalNetCents += net
+        platformPayouts.count++
+        const src = b.booking_source === 'viator' ? 'tripadvisor' : b.booking_source
+        platformPayouts.byPlatform[src] = (platformPayouts.byPlatform[src] || 0) + net
+      }
+    }
+
     return apiOk({
       year,
       months,
@@ -342,6 +380,7 @@ export async function GET(request: NextRequest) {
         freeAvailableCashCents,
       },
       stripeInsights,
+      platformPayouts,
     })
   } catch (err: any) {
     console.error('[profit-cockpit] GET error:', err)

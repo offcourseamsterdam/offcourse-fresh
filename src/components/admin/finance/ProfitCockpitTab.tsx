@@ -30,6 +30,7 @@ import {
   Layers,
   HelpCircle,
   FileText,
+  Globe,
 } from 'lucide-react'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { fmtAdminAmount, fmtAdminAmountRounded } from '@/lib/admin/format'
@@ -102,6 +103,13 @@ export interface ProfitCockpitResponse {
       dueDate: string | null
       agingStatus: 'on_track' | 'due_soon' | 'overdue'
     }>
+  }
+  platformPayouts?: {
+    totalGrossCents: number
+    totalCommissionCents: number
+    totalNetCents: number
+    count: number
+    byPlatform: Record<string, number>
   }
 }
 
@@ -538,6 +546,23 @@ export function ProfitCockpitTab() {
               <div className="flex items-center gap-1.5" title={`${data.stripeInsights.monthlyFees.chargeCount} betalingen verwerkt deze maand`}>
                 <CreditCard className="w-3.5 h-3.5 text-purple-600" />
                 <span><strong>Stripe Fees:</strong> {fmtAdminAmount(data.stripeInsights.monthlyFees.totalFeesCents)} ({data.stripeInsights.monthlyFees.avgFeePct}%)</span>
+              </div>
+            </>
+          )}
+          {data?.platformPayouts && data.platformPayouts.totalNetCents > 0 && (
+            <>
+              <div className="hidden sm:inline text-zinc-300">•</div>
+              <div
+                className="flex items-center gap-1.5"
+                title={`Bruto ${fmtAdminAmount(data.platformPayouts.totalGrossCents)} minus ${fmtAdminAmount(data.platformPayouts.totalCommissionCents)} commissie over ${data.platformPayouts.count} ritten. Wordt begin volgende maand overgemaakt.`}
+              >
+                <Globe className="w-3.5 h-3.5 text-sky-600" />
+                <span>
+                  <strong>Platform Payouts:</strong> ~{fmtAdminAmount(data.platformPayouts.totalNetCents)}
+                  <span className="text-[10px] text-zinc-400 ml-1">
+                    (GYG {fmtAdminAmount(data.platformPayouts.byPlatform.getyourguide || 0)} · Viator {fmtAdminAmount(data.platformPayouts.byPlatform.tripadvisor || 0)})
+                  </span>
+                </span>
               </div>
             </>
           )}
