@@ -56,6 +56,8 @@ export interface ProfitCockpitResponse {
     }
     effectiveBankCashCents: number
     openInvoicesCents: number
+    openDirectBookingsCents?: number
+    totalReceivablesCents?: number
     currentMonthLiabilitiesCents: number
     totalPotsReservedCents: number
     freeAvailableCashCents: number
@@ -294,17 +296,19 @@ export function ProfitCockpitTab() {
           </p>
         </div>
 
-        {/* Te ontvangen facturen */}
+        {/* Te Ontvangen (Directe Boekingen & Facturen) */}
         <div className="space-y-1 md:border-l md:border-zinc-800 md:pl-4">
           <div className="flex items-center gap-2">
             <Building2 className="w-4 h-4 text-sky-400" />
-            <span className="text-xs font-medium text-zinc-400">Te Ontvangen (Facturen)</span>
+            <span className="text-xs font-medium text-zinc-400">Te Ontvangen</span>
           </div>
           <div className="text-2xl font-bold tracking-tight text-sky-300">
-            + {fmtAdminAmount(cash.openInvoicesCents)}
+            + {fmtAdminAmount(cash.totalReceivablesCents ?? (cash.openInvoicesCents + (cash.openDirectBookingsCents || 0)))}
           </div>
           <p className="text-[11px] text-zinc-400">
-            Openstaande B2B Stripe facturen
+            {typeof cash.openDirectBookingsCents === 'number' && cash.openDirectBookingsCents > 0
+              ? `${fmtAdminAmount(cash.openDirectBookingsCents)} direct + ${fmtAdminAmount(cash.openInvoicesCents)} facturen`
+              : 'Directe boekingen & openstaande B2B facturen'}
           </p>
         </div>
 

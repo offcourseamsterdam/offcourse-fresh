@@ -118,14 +118,37 @@ export async function GET(request: NextRequest) {
     // 6. Cash & Receivables overview
     const revolutBalance = await revolut.getBalanceSummary()
 
-    // Fetch open Stripe invoices amount
-    const { data: openInvoices } = await supabase
+    // Fetch all open receivables: direct bookings + invoices
+    const { data: openBookings } = await supabase
       .from('bookings')
-      .select('stripe_amount')
-      .in('payment_status', ['stripe_invoice_sent', 'pending'])
-      .not('stripe_invoice_id', 'is', null)
+      .select('id, stripe_amount, base_amount_cents, extras_amount_cents, payment_status, booking_source, stripe_invoice_id')
+      .neq('status', 'cancelled')
+      .in('payment_status', [
+        'pending',
+        'stripe_invoice_sent',
+        'partner_invoice_pending',
+        'awaiting_payment',
+        'needs_reconciliation',
+      ])
 
-    const openInvoicesCents = (openInvoices || []).reduce((sum, i) => sum + (i.stripe_amount || 0), 0)
+    let openInvoicesCents = 0 // B2B facturen & partner invoices
+    let openDirectBookingsCents = 0 // Directe website/walk-in boekingen
+
+    for (const b of (openBookings || [])) {
+      const amount = (typeof b.stripe_amount === 'number' && b.stripe_amount > 0)
+        ? b.stripe_amount
+        : ((b.base_amount_cents || 0) + (b.extras_amount_cents || 0))
+
+      if (amount <= 0) continue
+
+      if (b.stripe_invoice_id || b.payment_status === 'stripe_invoice_sent' || b.payment_status === 'partner_invoice_pending') {
+        openInvoicesCents += amount
+      } else {
+        openDirectBookingsCents += amount
+      }
+    }
+
+    const totalReceivablesCents = openInvoicesCents + openDirectBookingsCents
 
     // Current month free cash calculation
     const currentMonthKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
@@ -142,7 +165,7 @@ export async function GET(request: NextRequest) {
       ? revolutBalance.totalEurCents
       : (dbSettings?.revolut_manual_balance_cents || 3425000) // Fallback demo cash if not configured
 
-    const freeAvailableCashCents = Math.max(0, effectiveBankCashCents + openInvoicesCents - currentMonthLiabilitiesCents - totalPotsReservedCents)
+    const freeAvailableCashCents = Math.max(0, effectiveBankCashCents + totalReceivablesCents - currentMonthLiabilitiesCents - totalPotsReservedCents)
 
     return apiOk({
       year,
@@ -153,6 +176,8 @@ export async function GET(request: NextRequest) {
         revolut: revolutBalance,
         effectiveBankCashCents,
         openInvoicesCents,
+        openDirectBookingsCents,
+        totalReceivablesCents,
         currentMonthLiabilitiesCents,
         totalPotsReservedCents,
         freeAvailableCashCents,
