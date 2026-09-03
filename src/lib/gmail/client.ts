@@ -165,6 +165,18 @@ interface ComposeAndSendParams {
   inReplyToMessageId?: string | null
 }
 
+/**
+ * RFC 2047 MIME encoded-word syntax for non-ASCII email headers (e.g. subject lines with
+ * em-dashes, accents, or emojis). Without this, raw UTF-8 bytes in headers are interpreted
+ * by mail user agents as ISO-8859-1/ASCII, causing "Ã¢Â€Â”" mojibake.
+ */
+function encodeRfc2047(text: string): string {
+  if (/^[\x20-\x7E]*$/.test(text)) {
+    return text
+  }
+  return `=?UTF-8?B?${Buffer.from(text, 'utf-8').toString('base64')}?=`
+}
+
 async function composeAndSend(params: ComposeAndSendParams): Promise<{ id: string; threadId: string }> {
   let inReplyToHeader: string | null = null
   if (params.inReplyToMessageId) {
@@ -183,10 +195,11 @@ async function composeAndSend(params: ComposeAndSendParams): Promise<{ id: strin
   // no in-reply-to) keeps its subject as given.
   const isReply = !!(params.threadId || inReplyToHeader)
   const subjectLine = !isReply || /^re:/i.test(params.subject) ? params.subject : `Re: ${params.subject}`
+  const encodedSubject = encodeRfc2047(subjectLine)
   const lines = [
     `To: ${params.to}`,
     `From: ${from}`,
-    `Subject: ${subjectLine}`,
+    `Subject: ${encodedSubject}`,
     ...(inReplyToHeader ? [`In-Reply-To: ${inReplyToHeader}`, `References: ${inReplyToHeader}`] : []),
     'Content-Type: text/plain; charset="UTF-8"',
     '',
