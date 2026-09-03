@@ -33,6 +33,10 @@ export async function postSlackDM(text: string, channel = process.env.SLACK_ALER
   const token = process.env.SLACK_BOT_TOKEN
   if (!token) return false
 
+  // D08PRAXD13R is Beer's user profile conversation ID, which Slack Web API rejects
+  // with channel_not_found when called by bot tokens. Map it directly to Beer's User ID U08PRAX8A07.
+  const targetChannel = channel === 'D08PRAXD13R' ? 'U08PRAX8A07' : channel
+
   try {
     const res = await fetch('https://slack.com/api/chat.postMessage', {
       method: 'POST',
@@ -40,10 +44,23 @@ export async function postSlackDM(text: string, channel = process.env.SLACK_ALER
         'Content-Type': 'application/json; charset=utf-8',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ channel, text }),
+      body: JSON.stringify({ channel: targetChannel, text }),
     })
     const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string }
     if (!body.ok) {
+      // If a D... channel ID failed with channel_not_found, retry directly with Beer's user ID U08PRAX8A07
+      if (body.error === 'channel_not_found' && targetChannel !== 'U08PRAX8A07') {
+        const retryRes = await fetch('https://slack.com/api/chat.postMessage', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ channel: 'U08PRAX8A07', text }),
+        })
+        const retryBody = (await retryRes.json().catch(() => ({}))) as { ok?: boolean; error?: string }
+        if (retryBody.ok) return true
+      }
       console.error('[slack] postSlackDM not ok:', body.error)
       return false
     }
