@@ -43,6 +43,10 @@ env-local-backup.txt
 # Local credential handoff files — NEVER commit (contain live secrets)
 *credentials*.md
 *.secrets.md
+certs/
+*.key
+*.cer
+*.crt
 
 # vercel
 .vercel
