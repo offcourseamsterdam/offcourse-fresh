@@ -95,6 +95,13 @@ describe('profit-cockpit-calculator', () => {
     // Owner salary = 300000 (€ 3.000)
     expect(aug.ownerSalaryPotCents).toBe(300000)
 
+    // Debt Service (Aflossing + Rente):
+    expect(aug.loanPrincipalCents).toBe(75000) // € 750
+    expect(aug.loanInterestCents).toBe(17500) // € 175
+    expect(aug.totalDebtServiceCents).toBe(92500) // € 925
+    expect(result.totals.totalDebtServiceCents).toBe(92500 * 12)
+    expect(result.totals.monthsUntilDebtFree).toBe(Math.ceil(4000000 / 75000))
+
     expect(aug.isCurrentMonth).toBe(true)
   })
 })

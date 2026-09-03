@@ -21,7 +21,8 @@ import {
   CreditCard,
   Crown,
   PiggyBank,
-  Check
+  Banknote,
+  CalendarCheck
 } from 'lucide-react'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { fmtAdminAmount, fmtAdminAmountRounded } from '@/lib/admin/format'
@@ -66,6 +67,12 @@ export function ProfitCockpitTab() {
     berthFeePerBoatYearlyEuros: 4000,
     otherFixedCostsMonthlyEuros: 1200,
     zettleCogsPct: 28,
+    loanName: 'Bootfinanciering',
+    loanPrincipalTotalEuros: 40000,
+    loanMonthlyPrincipalEuros: 750,
+    loanMonthlyInterestEuros: 175,
+    loanInterestRatePct: 5.5,
+    loanTargetPayoffYear: 2028,
     winterBufferTargetEuros: 25000,
     monthlyRevenueTargetEuros: 40000,
     targetSkipperRatioPct: 18,
@@ -83,6 +90,12 @@ export function ProfitCockpitTab() {
         berthFeePerBoatYearlyEuros: Math.round((data.settings.berthFeePerBoatYearlyCents ?? 400000) / 100),
         otherFixedCostsMonthlyEuros: Math.round((data.settings.otherFixedCostsMonthlyCents ?? 120000) / 100),
         zettleCogsPct: data.settings.zettleCogsPct ?? 28,
+        loanName: data.settings.loanName ?? 'Bootfinanciering',
+        loanPrincipalTotalEuros: Math.round((data.settings.loanPrincipalTotalCents ?? 4000000) / 100),
+        loanMonthlyPrincipalEuros: Math.round((data.settings.loanMonthlyPrincipalCents ?? 75000) / 100),
+        loanMonthlyInterestEuros: Math.round((data.settings.loanMonthlyInterestCents ?? 17500) / 100),
+        loanInterestRatePct: data.settings.loanInterestRatePct ?? 5.5,
+        loanTargetPayoffYear: data.settings.loanTargetPayoffYear ?? 2028,
         winterBufferTargetEuros: Math.round(data.settings.winterBufferTargetCents / 100),
         monthlyRevenueTargetEuros: Math.round(data.settings.defaultMonthlyRevenueTargetCents / 100),
         targetSkipperRatioPct: data.settings.targetSkipperRatioPct,
@@ -108,6 +121,12 @@ export function ProfitCockpitTab() {
           berthFeePerBoatYearlyCents: Number(settingsForm.berthFeePerBoatYearlyEuros) * 100,
           otherFixedCostsMonthlyCents: Number(settingsForm.otherFixedCostsMonthlyEuros) * 100,
           zettleCogsPct: Number(settingsForm.zettleCogsPct),
+          loanName: settingsForm.loanName,
+          loanPrincipalTotalCents: Number(settingsForm.loanPrincipalTotalEuros) * 100,
+          loanMonthlyPrincipalCents: Number(settingsForm.loanMonthlyPrincipalEuros) * 100,
+          loanMonthlyInterestCents: Number(settingsForm.loanMonthlyInterestEuros) * 100,
+          loanInterestRatePct: Number(settingsForm.loanInterestRatePct),
+          loanTargetPayoffYear: Number(settingsForm.loanTargetPayoffYear),
           winterBufferTargetCents: Number(settingsForm.winterBufferTargetEuros) * 100,
           defaultMonthlyRevenueTargetCents: Number(settingsForm.monthlyRevenueTargetEuros) * 100,
           targetSkipperRatioPct: Number(settingsForm.targetSkipperRatioPct),
@@ -126,7 +145,7 @@ export function ProfitCockpitTab() {
   if (isLoading && !data) {
     return (
       <div className="py-16 text-center text-sm text-zinc-500">
-        Winst-, vaste lasten en Profit First data berekenen...
+        Winst-, vaste lasten, lening- en Profit First data berekenen...
       </div>
     )
   }
@@ -150,11 +169,11 @@ export function ProfitCockpitTab() {
           <div className="flex items-center gap-2">
             <h2 className="text-xl font-bold text-zinc-900 tracking-tight">Winst &amp; Cash Cockpit</h2>
             <span className="text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300/60">
-              Profit First Edition
+              Profit First &amp; Lening Plan
             </span>
           </div>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Volledige sturing op omzet, Zettle boordverkoop, schippers, catering, vaste lasten (liggeld) en eigenaarssalaris.
+            Sturing op omzet, Zettle pin aan boord, schippers, catering, liggeld (€ 4k/boot), rente &amp; aflossing en eigenaarsloon.
           </p>
         </div>
 
@@ -178,7 +197,7 @@ export function ProfitCockpitTab() {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-200 bg-white text-xs font-medium text-zinc-700 hover:bg-zinc-50 shadow-sm transition-colors"
           >
             <Sliders className="w-3.5 h-3.5 text-zinc-500" />
-            Vaste Lasten &amp; Profit First
+            Vaste Lasten, Lening &amp; Potjes
           </button>
         </div>
       </div>
@@ -242,19 +261,19 @@ export function ProfitCockpitTab() {
             {fmtAdminAmount(cash.freeAvailableCashCents)}
           </div>
           <p className="text-[11px] text-emerald-300/80">
-            Na aftrek van potjes &amp; verplichtingen
+            Na aftrek van potjes, lening &amp; lasten
           </p>
         </div>
       </div>
 
-      {/* ── 2. PROFIT FIRST ALLOCATIES & VASTE LASTEN BANNER ── */}
+      {/* ── 2. PROFIT FIRST ALLOCATIES, VASTE LASTEN & LENING BANNER ── */}
       <div className="bg-amber-50/50 border border-amber-200/80 rounded-2xl p-4 shadow-sm space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200/60 pb-2.5">
           <div className="flex items-center gap-2">
             <PiggyBank className="w-5 h-5 text-amber-700" />
-            <h3 className="text-sm font-bold text-amber-950">Profit First Systeem &amp; Vaste Kosten</h3>
+            <h3 className="text-sm font-bold text-amber-950">Profit First Systeem &amp; Financiering</h3>
             <span className="text-xs text-amber-700 font-normal">
-              — Eerst winst &amp; salaris afromen, dán pas operationele kosten betalen
+              — Winst &amp; salaris als eerste afromen, schuldverplichting veiligstellen
             </span>
           </div>
           <span className="text-xs font-semibold text-amber-900 bg-amber-100 px-2.5 py-0.5 rounded-full">
@@ -262,86 +281,140 @@ export function ProfitCockpitTab() {
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           {/* Echte Winstpot (Profit First) */}
-          <div className="bg-white rounded-xl border border-amber-200 p-3.5 space-y-1">
+          <div className="bg-white rounded-xl border border-amber-200 p-3 space-y-1">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-amber-900 flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-amber-900 flex items-center gap-1">
                 <Sparkles className="w-3.5 h-3.5 text-amber-600" />
                 Winstpot ({settings.profitFirstProfitPct}%)
               </span>
-              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
+              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1 py-0.5 rounded">
                 Profit First
               </span>
             </div>
-            <div className="text-xl font-bold text-amber-900">
+            <div className="text-lg font-bold text-amber-900">
               {fmtAdminAmount(totals.totalProfitFirstProfitCents)}
             </div>
-            <p className="text-[11px] text-zinc-500">
-              Directe winstreservering (elke kwartaal 50% bonus, 50% reserve).
+            <p className="text-[10px] text-zinc-500">
+              Directe winstreservering (kwartaalbonus).
             </p>
           </div>
 
           {/* Eigenaarssalaris (Beer) */}
-          <div className="bg-white rounded-xl border border-amber-200 p-3.5 space-y-1">
+          <div className="bg-white rounded-xl border border-amber-200 p-3 space-y-1">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-amber-900 flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-amber-900 flex items-center gap-1">
                 <Crown className="w-3.5 h-3.5 text-amber-600" />
-                Eigenaarsbeloning
+                Eigenaarsloon
               </span>
               <span className="text-[10px] text-zinc-500">
-                {fmtAdminAmount(settings.ownerSalaryMonthlyCents)} / mnd
+                {fmtAdminAmount(settings.ownerSalaryMonthlyCents)}/mnd
               </span>
             </div>
-            <div className="text-xl font-bold text-amber-900">
+            <div className="text-lg font-bold text-amber-900">
               {fmtAdminAmount(totals.totalOwnerSalaryCents)}
             </div>
-            <p className="text-[11px] text-zinc-500">
-              Gereserveerd maandsalaris voor de ondernemer.
+            <p className="text-[10px] text-zinc-500">
+              Gereserveerd maandsalaris voor Beer.
             </p>
           </div>
 
           {/* Liggeld Boten */}
-          <div className="bg-white rounded-xl border border-amber-200 p-3.5 space-y-1">
+          <div className="bg-white rounded-xl border border-amber-200 p-3 space-y-1">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-amber-900 flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-amber-900 flex items-center gap-1">
                 <Anchor className="w-3.5 h-3.5 text-amber-600" />
                 Liggeld ({settings.boatCount} boten)
               </span>
               <span className="text-[10px] text-zinc-500">
-                € 4.000 ex BTW / boot
+                € 4.000 ex / boot
               </span>
             </div>
-            <div className="text-xl font-bold text-zinc-900">
+            <div className="text-lg font-bold text-zinc-900">
               {fmtAdminAmount(totals.totalBerthFeeCents)}
             </div>
-            <p className="text-[11px] text-zinc-500">
-              Vast liggeld: {fmtAdminAmount(Math.round((settings.boatCount * settings.berthFeePerBoatYearlyCents) / 12))} / maand.
+            <p className="text-[10px] text-zinc-500">
+              Vast liggeld: {fmtAdminAmount(Math.round((settings.boatCount * settings.berthFeePerBoatYearlyCents) / 12))}/mnd.
+            </p>
+          </div>
+
+          {/* Lening & Aflosplan */}
+          <div className="bg-white rounded-xl border border-rose-200 p-3 space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-rose-950 flex items-center gap-1">
+                <Banknote className="w-3.5 h-3.5 text-rose-600" />
+                {settings.loanName}
+              </span>
+              <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-1 py-0.5 rounded">
+                {settings.loanInterestRatePct}% rente
+              </span>
+            </div>
+            <div className="text-lg font-bold text-rose-900">
+              − {fmtAdminAmount(totals.totalDebtServiceCents)}
+            </div>
+            <p className="text-[10px] text-zinc-500">
+              Last: {fmtAdminAmount(settings.loanMonthlyPrincipalCents + settings.loanMonthlyInterestCents)}/mnd (aflos {fmtAdminAmount(settings.loanMonthlyPrincipalCents)} · rente {fmtAdminAmount(settings.loanMonthlyInterestCents)})
             </p>
           </div>
 
           {/* Zettle Boordverkoop Omzet */}
-          <div className="bg-white rounded-xl border border-amber-200 p-3.5 space-y-1">
+          <div className="bg-white rounded-xl border border-amber-200 p-3 space-y-1">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-amber-900 flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-amber-900 flex items-center gap-1">
                 <CreditCard className="w-3.5 h-3.5 text-amber-600" />
                 Zettle Boordomzet
               </span>
-              <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-semibold">
+              <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded font-semibold">
                 +{100 - settings.zettleCogsPct}% marge
               </span>
             </div>
-            <div className="text-xl font-bold text-zinc-900">
+            <div className="text-lg font-bold text-zinc-900">
               {fmtAdminAmount(totals.totalZettleSellingCents)}
             </div>
-            <p className="text-[11px] text-zinc-500">
-              Drank- en cateringverkoop direct op de pin aan boord.
+            <p className="text-[10px] text-zinc-500">
+              Drankjes &amp; snacks aan boord afgerekend.
             </p>
           </div>
         </div>
       </div>
 
-      {/* ── 3. KPI Cards & Doelen ── */}
+      {/* ── 3. LENING & SCHULDENVRIJ SPARRPLAN VOORTGANG ── */}
+      <div className="bg-gradient-to-r from-rose-50 via-white to-amber-50 border border-rose-200/80 rounded-2xl p-4 shadow-sm space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <CalendarCheck className="w-4 h-4 text-rose-600" />
+            <h4 className="text-xs font-bold text-rose-950 uppercase tracking-wider">
+              Aflosplan &amp; Schuldvrij Tracker ({settings.loanName})
+            </h4>
+          </div>
+          <div className="flex items-center gap-3 text-xs">
+            <span className="text-zinc-600">
+              Resterende Hoofdsom: <strong className="text-rose-900 font-bold">{fmtAdminAmount(totals.remainingLoanPrincipalCents)}</strong>
+            </span>
+            <span className="text-rose-700 bg-rose-100/70 px-2 py-0.5 rounded-full font-semibold text-[11px]">
+              Schuldenvrij in ~{totals.monthsUntilDebtFree} maanden ({settings.loanTargetPayoffYear})
+            </span>
+          </div>
+        </div>
+
+        <div className="w-full bg-rose-100/60 h-2.5 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-rose-500 to-emerald-500 rounded-full transition-all"
+            style={{
+              width: `${Math.min(100, Math.round(((settings.loanPrincipalTotalCents - totals.remainingLoanPrincipalCents) / settings.loanPrincipalTotalCents) * 100))}%`
+            }}
+          />
+        </div>
+
+        <div className="flex justify-between text-[11px] text-zinc-500">
+          <span>Oorspronkelijk: {fmtAdminAmount(settings.loanPrincipalTotalCents)}</span>
+          <span>Aflossing: {fmtAdminAmount(settings.loanMonthlyPrincipalCents)}/mnd · Rente: {fmtAdminAmount(settings.loanMonthlyInterestCents)}/mnd ({settings.loanInterestRatePct}%)</span>
+          <span>Doel: Volledig afgelost in {settings.loanTargetPayoffYear}</span>
+        </div>
+      </div>
+
+      {/* ── 4. KPI Cards & Doelen ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Doel van de Maand */}
         <div className="bg-white rounded-xl border border-zinc-200/80 p-4 shadow-sm space-y-2">
@@ -423,7 +496,7 @@ export function ProfitCockpitTab() {
         </div>
       </div>
 
-      {/* ── 4. Dynamische Potjes & Spaardoelen ── */}
+      {/* ── 5. Dynamische Potjes & Spaardoelen ── */}
       <div className="bg-white rounded-2xl border border-zinc-200/80 p-5 shadow-sm space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -500,12 +573,12 @@ export function ProfitCockpitTab() {
         </div>
       </div>
 
-      {/* ── 5. Maandelijkse Winst- & Rendementsmatrix ── */}
+      {/* ── 6. Maandelijkse Winst- & Rendementsmatrix ── */}
       <div className="bg-white rounded-2xl border border-zinc-200/80 overflow-hidden shadow-sm">
         <div className="p-4 border-b border-zinc-200 flex items-center justify-between bg-zinc-50/50">
           <div>
             <h3 className="text-sm font-bold text-zinc-900">Maandelijkse Winst- &amp; Rendementsmatrix ({selectedYear})</h3>
-            <p className="text-xs text-zinc-500">Inclusief Zettle omzet, liggeld, vaste kosten en Profit First toewijzingen</p>
+            <p className="text-xs text-zinc-500">Inclusief Zettle omzet, liggeld, rente &amp; aflossing en Profit First toewijzingen</p>
           </div>
           <div className="text-xs text-zinc-500 font-medium">
             Jaaromzet: <strong className="text-zinc-900">{fmtAdminAmount(totals.totalRevenueCents)}</strong> · 
@@ -523,6 +596,7 @@ export function ProfitCockpitTab() {
                 <th className="px-4 py-3 text-right">Schipper</th>
                 <th className="px-4 py-3 text-right">Catering Inkoop</th>
                 <th className="px-4 py-3 text-right">Vaste Lasten</th>
+                <th className="px-4 py-3 text-right">Lening (Aflos+Rente)</th>
                 <th className="px-4 py-3 text-right">Winstpot ({settings.profitFirstProfitPct}%)</th>
                 <th className="px-4 py-3 text-right">Eigenaarsloon</th>
                 <th className="px-4 py-3 text-right">Netto Vrij</th>
@@ -602,6 +676,14 @@ export function ProfitCockpitTab() {
                       </div>
                     </td>
 
+                    {/* Lening & Aflossing */}
+                    <td className="px-4 py-3 text-right text-rose-800">
+                      <div>
+                        <span className="font-semibold">− {fmtAdminAmount(m.totalDebtServiceCents)}</span>
+                        <span className="block text-[10px] text-rose-600">aflos {fmtAdminAmount(m.loanPrincipalCents)} · rente {fmtAdminAmount(m.loanInterestCents)}</span>
+                      </div>
+                    </td>
+
                     {/* Profit First Winstpot */}
                     <td className="px-4 py-3 text-right font-semibold text-amber-800">
                       {m.profitFirstProfitPotCents > 0 ? fmtAdminAmount(m.profitFirstProfitPotCents) : '—'}
@@ -634,10 +716,11 @@ export function ProfitCockpitTab() {
                 <td className="px-4 py-3 text-right text-zinc-700">− {fmtAdminAmount(totals.totalSkipperCostCents)}</td>
                 <td className="px-4 py-3 text-right text-zinc-700">− {fmtAdminAmount(totals.totalCateringCostCents)}</td>
                 <td className="px-4 py-3 text-right text-zinc-600">− {fmtAdminAmount(totals.totalFixedCostsCents)}</td>
+                <td className="px-4 py-3 text-right text-rose-800 font-bold">− {fmtAdminAmount(totals.totalDebtServiceCents)}</td>
                 <td className="px-4 py-3 text-right text-amber-800">{fmtAdminAmount(totals.totalProfitFirstProfitCents)}</td>
                 <td className="px-4 py-3 text-right text-zinc-800">{fmtAdminAmount(totals.totalOwnerSalaryCents)}</td>
                 <td className="px-4 py-3 text-right text-emerald-700 font-black text-sm">
-                  {fmtAdminAmount(totals.totalOperatingProfitCents - totals.totalFixedCostsCents - totals.totalProfitFirstProfitCents - totals.totalOwnerSalaryCents - totals.totalMaintenanceReservedCents - totals.totalMarketingBudgetCents)}
+                  {fmtAdminAmount(totals.totalOperatingProfitCents - totals.totalFixedCostsCents - totals.totalDebtServiceCents - totals.totalProfitFirstProfitCents - totals.totalOwnerSalaryCents - totals.totalMaintenanceReservedCents - totals.totalMarketingBudgetCents)}
                 </td>
                 <td className="px-3 py-3" />
               </tr>
@@ -653,7 +736,7 @@ export function ProfitCockpitTab() {
             <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
               <div className="flex items-center gap-2">
                 <Sliders className="w-5 h-5 text-amber-700" />
-                <h3 className="font-bold text-zinc-900">Vaste Lasten &amp; Profit First Instellingen</h3>
+                <h3 className="font-bold text-zinc-900">Vaste Lasten, Lening &amp; Profit First</h3>
               </div>
               <button
                 onClick={() => setShowSettingsModal(false)}
@@ -664,6 +747,85 @@ export function ProfitCockpitTab() {
             </div>
 
             <form onSubmit={handleSaveSettings} className="space-y-5 text-xs">
+              {/* Lening & Financiering Blok */}
+              <div className="bg-rose-50/60 border border-rose-200/80 p-3.5 rounded-xl space-y-3">
+                <h4 className="font-bold text-rose-950 flex items-center gap-1.5">
+                  <Banknote className="w-4 h-4 text-rose-700" />
+                  Lening &amp; Financiering (Rente &amp; Aflossing)
+                </h4>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="space-y-1 sm:col-span-3">
+                    <label className="font-semibold text-zinc-700">Omschrijving Lening</label>
+                    <input
+                      type="text"
+                      className="w-full border border-zinc-200 rounded-lg p-2 text-sm text-zinc-900 bg-white"
+                      value={settingsForm.loanName}
+                      onChange={e => setSettingsForm({ ...settingsForm, loanName: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-semibold text-zinc-700">Openstaande Schuld (€)</label>
+                    <input
+                      type="number"
+                      step="1000"
+                      className="w-full border border-zinc-200 rounded-lg p-2 text-sm text-zinc-900 bg-white"
+                      value={settingsForm.loanPrincipalTotalEuros}
+                      onChange={e => setSettingsForm({ ...settingsForm, loanPrincipalTotalEuros: Number(e.target.value) })}
+                    />
+                    <p className="text-[10px] text-zinc-400">bv. € 40.000</p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-semibold text-zinc-700">Aflossing (€ / mnd)</label>
+                    <input
+                      type="number"
+                      step="50"
+                      className="w-full border border-zinc-200 rounded-lg p-2 text-sm text-zinc-900 bg-white"
+                      value={settingsForm.loanMonthlyPrincipalEuros}
+                      onChange={e => setSettingsForm({ ...settingsForm, loanMonthlyPrincipalEuros: Number(e.target.value) })}
+                    />
+                    <p className="text-[10px] text-zinc-400">bv. € 750 / mnd</p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-semibold text-zinc-700">Rente (€ / mnd)</label>
+                    <input
+                      type="number"
+                      step="25"
+                      className="w-full border border-zinc-200 rounded-lg p-2 text-sm text-zinc-900 bg-white"
+                      value={settingsForm.loanMonthlyInterestEuros}
+                      onChange={e => setSettingsForm({ ...settingsForm, loanMonthlyInterestEuros: Number(e.target.value) })}
+                    />
+                    <p className="text-[10px] text-zinc-400">bv. € 175 / mnd</p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-semibold text-zinc-700">Rentepercentage (%)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      className="w-full border border-zinc-200 rounded-lg p-2 text-sm text-zinc-900 bg-white"
+                      value={settingsForm.loanInterestRatePct}
+                      onChange={e => setSettingsForm({ ...settingsForm, loanInterestRatePct: Number(e.target.value) })}
+                    />
+                    <p className="text-[10px] text-zinc-400">bv. 5.5%</p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-semibold text-zinc-700">Doel Schuldenvrij (Jaar)</label>
+                    <input
+                      type="number"
+                      className="w-full border border-zinc-200 rounded-lg p-2 text-sm text-zinc-900 bg-white"
+                      value={settingsForm.loanTargetPayoffYear}
+                      onChange={e => setSettingsForm({ ...settingsForm, loanTargetPayoffYear: Number(e.target.value) })}
+                    />
+                    <p className="text-[10px] text-zinc-400">bv. 2028</p>
+                  </div>
+                </div>
+              </div>
+
               {/* Profit First Blok */}
               <div className="bg-amber-50/60 border border-amber-200/80 p-3.5 rounded-xl space-y-3">
                 <h4 className="font-bold text-amber-950 flex items-center gap-1.5">

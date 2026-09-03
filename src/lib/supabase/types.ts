@@ -2072,6 +2072,12 @@ export type Database = {
           berth_fee_per_boat_yearly_cents: number
           other_fixed_costs_monthly_cents: number
           zettle_cogs_pct: number
+          loan_name: string
+          loan_principal_total_cents: number
+          loan_monthly_principal_cents: number
+          loan_monthly_interest_cents: number
+          loan_interest_rate_pct: number
+          loan_target_payoff_year: number
           fixed_costs_monthly_cents: number
           winter_buffer_target_cents: number
           default_monthly_revenue_target_cents: number
@@ -2092,6 +2098,12 @@ export type Database = {
           berth_fee_per_boat_yearly_cents?: number
           other_fixed_costs_monthly_cents?: number
           zettle_cogs_pct?: number
+          loan_name?: string
+          loan_principal_total_cents?: number
+          loan_monthly_principal_cents?: number
+          loan_monthly_interest_cents?: number
+          loan_interest_rate_pct?: number
+          loan_target_payoff_year?: number
           fixed_costs_monthly_cents?: number
           winter_buffer_target_cents?: number
           default_monthly_revenue_target_cents?: number
@@ -2112,6 +2124,12 @@ export type Database = {
           berth_fee_per_boat_yearly_cents?: number
           other_fixed_costs_monthly_cents?: number
           zettle_cogs_pct?: number
+          loan_name?: string
+          loan_principal_total_cents?: number
+          loan_monthly_principal_cents?: number
+          loan_monthly_interest_cents?: number
+          loan_interest_rate_pct?: number
+          loan_target_payoff_year?: number
           fixed_costs_monthly_cents?: number
           winter_buffer_target_cents?: number
           default_monthly_revenue_target_cents?: number

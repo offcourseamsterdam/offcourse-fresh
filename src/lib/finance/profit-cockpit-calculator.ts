@@ -10,6 +10,13 @@ export interface CockpitBudgetSettings {
   berthFeePerBoatYearlyCents: number // default 400000 (€ 4.000 ex BTW per boot per jaar)
   otherFixedCostsMonthlyCents: number // default 120000 (€ 1.200 / maand)
   zettleCogsPct: number // default 28 (28% inkoop op boordverkoop)
+  // Lening & Schuld Aflosplan
+  loanName: string // default 'Bootfinanciering'
+  loanPrincipalTotalCents: number // default 4000000 (€ 40.000)
+  loanMonthlyPrincipalCents: number // default 75000 (€ 750 / maand aflossing)
+  loanMonthlyInterestCents: number // default 17500 (€ 175 / maand rente)
+  loanInterestRatePct: number // default 5.5%
+  loanTargetPayoffYear: number // default 2028
   fixedCostsMonthlyCents: number // legacy fallback
   winterBufferTargetCents: number // default 2500000 (€ 25.000)
   defaultMonthlyRevenueTargetCents: number // default 4000000 (€ 40.000)
@@ -28,7 +35,13 @@ export const DEFAULT_BUDGET_SETTINGS: CockpitBudgetSettings = {
   berthFeePerBoatYearlyCents: 400000,
   otherFixedCostsMonthlyCents: 120000,
   zettleCogsPct: 28.0,
-  fixedCostsMonthlyCents: 186667, // (2 * 4000/12) + 1200 = ~1867
+  loanName: 'Bootfinanciering',
+  loanPrincipalTotalCents: 4000000,
+  loanMonthlyPrincipalCents: 75000,
+  loanMonthlyInterestCents: 17500,
+  loanInterestRatePct: 5.5,
+  loanTargetPayoffYear: 2028,
+  fixedCostsMonthlyCents: 186667,
   winterBufferTargetCents: 2500000,
   defaultMonthlyRevenueTargetCents: 4000000,
   targetSkipperRatioPct: 18.0,
@@ -101,13 +114,18 @@ export interface MonthlyCockpitRow {
   berthFeeMonthlyCents: number // Liggeld (€ 4.000 / 12 per boot)
   otherFixedCostsMonthlyCents: number
   totalFixedCostsCents: number
+  // Lening & Financiering (Rente + Aflossing)
+  loanInterestCents: number
+  loanPrincipalCents: number
+  totalDebtServiceCents: number
+  remainingLoanPrincipalCents: number
   // Profit First toewijzingen
   profitFirstProfitPotCents: number // Directe winstreservering
   ownerSalaryPotCents: number // Eigenaarsbeloning
   maintenancePotCents: number // 8% Capex
   marketingPotCents: number // 6% Groei
   fiscusReserveCents: number // BTW + City Tax
-  // Netto overblijvende vrije cash na alle potjes en vaste lasten
+  // Netto overblijvende vrije cash na alle potjes, vaste lasten en leningaflossing
   netFreeCashAfterPotsCents: number
   profitFirstHealth: 'healthy' | 'tight' | 'deficit'
   // Target comparisons
@@ -130,6 +148,11 @@ export interface CockpitTotals {
   totalBerthFeeCents: number
   totalOwnerSalaryCents: number
   totalProfitFirstProfitCents: number
+  totalLoanInterestCents: number
+  totalLoanPrincipalCents: number
+  totalDebtServiceCents: number
+  remainingLoanPrincipalCents: number
+  monthsUntilDebtFree: number
   totalMaintenanceReservedCents: number
   totalMarketingBudgetCents: number
   totalHoursCruised: number
@@ -201,10 +224,14 @@ export function computeMonthlyCockpit({
   }
 
   // Monthly fixed costs:
-  // Liggeld = (boatCount * berthFeePerBoatYearlyCents) / 12
   const monthlyBerthFeeCents = Math.round((settings.boatCount * settings.berthFeePerBoatYearlyCents) / 12)
   const monthlyOtherFixedCostsCents = settings.otherFixedCostsMonthlyCents
   const monthlyTotalFixedCostsCents = monthlyBerthFeeCents + monthlyOtherFixedCostsCents
+
+  // Monthly debt service (interest + principal)
+  const monthlyLoanPrincipalCents = settings.loanMonthlyPrincipalCents
+  const monthlyLoanInterestCents = settings.loanMonthlyInterestCents
+  const monthlyTotalDebtServiceCents = monthlyLoanPrincipalCents + monthlyLoanInterestCents
 
   let totalRevenueCents = 0
   let totalProfitCents = 0
@@ -216,9 +243,13 @@ export function computeMonthlyCockpit({
   let totalMarketingBudgetCents = 0
   let totalProfitFirstProfitCents = 0
   let totalOwnerSalaryCents = 0
+  let totalLoanInterestCents = 0
+  let totalLoanPrincipalCents = 0
   let totalHoursCruised = 0
 
-  const months: MonthlyCockpitRow[] = monthKeys.map(mKey => {
+  let cumulativePrincipalRepaid = 0
+
+  const months: MonthlyCockpitRow[] = monthKeys.map((mKey, idx) => {
     const monthIndex = parseInt(mKey.slice(5, 7), 10) - 1
     const monthLabel = `${DUTCH_MONTH_NAMES[monthIndex]} ${year}`
     const bList = bookingsByMonth[mKey] || []
@@ -286,13 +317,17 @@ export function computeMonthlyCockpit({
       mSkipperCost += Math.round(hours * rate)
     }
 
-    // Operating Profit (voor vaste lasten)
+    // Operating Profit (voor vaste lasten en lening)
     const operatingProfitCents = revCents - commissionCents - cityTaxCents - cateringCost - mSkipperCost
     const operatingProfitPct = revCents > 0 ? Math.round((operatingProfitCents / revCents) * 100) : 0
     const profitPerHourCents = mHours > 0 ? Math.round(operatingProfitCents / mHours) : 0
     const skipperRatioPct = revCents > 0 ? Math.round((mSkipperCost / revCents) * 100) : 0
 
-    // ── PROFIT FIRST TOEKIEZINGEN ──
+    // Debt service for this month
+    cumulativePrincipalRepaid += monthlyLoanPrincipalCents
+    const remainingLoanPrincipalCents = Math.max(0, settings.loanPrincipalTotalCents - cumulativePrincipalRepaid)
+
+    // ── PROFIT FIRST TOEWAIJZINGEN ──
     // 1. Winstpot (direct 5-10% afromen)
     const profitFirstProfitPotCents = Math.round(revCents * (settings.profitFirstProfitPct / 100))
 
@@ -310,9 +345,10 @@ export function computeMonthlyCockpit({
     // 5. Belastingreservering (BTW + City Tax + Zettle BTW)
     const fiscusReserveCents = Math.round(cityTaxCents + (bookingRevCents * 0.09) + zettleVat)
 
-    // 6. Netto Vrije Cash na aftrek van ALLE potjes EN vaste lasten
+    // 6. Netto Vrije Cash na aftrek van ALLE potjes, vaste lasten EN leningaflossing/rente
     const netFreeCashAfterPotsCents = operatingProfitCents 
       - monthlyTotalFixedCostsCents 
+      - monthlyTotalDebtServiceCents
       - profitFirstProfitPotCents 
       - ownerSalaryPotCents 
       - maintenancePotCents 
@@ -339,6 +375,8 @@ export function computeMonthlyCockpit({
     totalMarketingBudgetCents += marketingPotCents
     totalProfitFirstProfitCents += profitFirstProfitPotCents
     totalOwnerSalaryCents += ownerSalaryPotCents
+    totalLoanInterestCents += monthlyLoanInterestCents
+    totalLoanPrincipalCents += monthlyLoanPrincipalCents
     totalHoursCruised += mHours
 
     return {
@@ -365,6 +403,10 @@ export function computeMonthlyCockpit({
       berthFeeMonthlyCents: monthlyBerthFeeCents,
       otherFixedCostsMonthlyCents: monthlyOtherFixedCostsCents,
       totalFixedCostsCents: monthlyTotalFixedCostsCents,
+      loanInterestCents: monthlyLoanInterestCents,
+      loanPrincipalCents: monthlyLoanPrincipalCents,
+      totalDebtServiceCents: monthlyTotalDebtServiceCents,
+      remainingLoanPrincipalCents,
       profitFirstProfitPotCents,
       ownerSalaryPotCents,
       maintenancePotCents,
@@ -380,6 +422,11 @@ export function computeMonthlyCockpit({
 
   const totalFixedCostsCents = monthlyTotalFixedCostsCents * 12
   const totalBerthFeeCents = monthlyBerthFeeCents * 12
+  const totalDebtServiceCents = (monthlyLoanPrincipalCents + monthlyLoanInterestCents) * 12
+  const finalRemainingLoanCents = Math.max(0, settings.loanPrincipalTotalCents - totalLoanPrincipalCents)
+  const monthsUntilDebtFree = monthlyLoanPrincipalCents > 0
+    ? Math.ceil(settings.loanPrincipalTotalCents / monthlyLoanPrincipalCents)
+    : 0
 
   const totals: CockpitTotals = {
     totalRevenueCents,
@@ -397,6 +444,11 @@ export function computeMonthlyCockpit({
     totalBerthFeeCents,
     totalOwnerSalaryCents,
     totalProfitFirstProfitCents,
+    totalLoanInterestCents,
+    totalLoanPrincipalCents,
+    totalDebtServiceCents,
+    remainingLoanPrincipalCents: finalRemainingLoanCents,
+    monthsUntilDebtFree,
     totalMaintenanceReservedCents,
     totalMarketingBudgetCents,
     totalHoursCruised: Math.round(totalHoursCruised * 10) / 10,
