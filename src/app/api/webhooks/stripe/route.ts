@@ -224,7 +224,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Stripe Invoice payments are handled in invoice.paid below.
-    if (pi.invoice || meta.booking_source === 'stripe_invoice') {
+    if ((pi as { invoice?: unknown }).invoice || meta.booking_source === 'stripe_invoice') {
       return NextResponse.json({ received: true })
     }
 
