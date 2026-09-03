@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { BookingStatusBadge } from '@/components/admin/BookingStatusBadge'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
-import { fmtAdminDate, fmtAdminTime, fmtAdminAmountRounded } from '@/lib/admin/format'
+import { fmtAdminDate, fmtAdminTime, fmtAdminDatetime, fmtAdminAmountRounded } from '@/lib/admin/format'
 import { daysUntilCateringAutoSend } from '@/lib/catering/auto-send-cutoff'
 import type { AdminExtraLineItem } from '@/lib/admin/types'
 
@@ -448,21 +448,46 @@ export default function CateringPage() {
                           {!isCancelled && !isConfirmed && !isSent && (() => {
                             const days = daysUntilCateringAutoSend(b.booking_date)
                             if (days === null) return null
+                            const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Amsterdam' })
+                            const isPast = b.booking_date && b.booking_date < todayStr
+                            const isToday = b.booking_date && b.booking_date === todayStr
+
+                            if (isPast) {
+                              return (
+                                <p className="text-[10px] text-red-600 font-medium mt-0.5">
+                                  ⚠️ Vaart verstreken · Niet verzonden
+                                </p>
+                              )
+                            }
+                            if (isToday) {
+                              return (
+                                <p className="text-[10px] text-amber-700 font-medium mt-0.5">
+                                  ⚠️ Vaart vandaag · Niet automatisch verzonden
+                                </p>
+                              )
+                            }
+                            if (days > 0) {
+                              return (
+                                <p className="text-[10px] text-zinc-400 mt-0.5">
+                                  Auto-verzending over {days} {days === 1 ? 'dag' : 'dagen'}
+                                </p>
+                              )
+                            }
                             return (
-                              <p className="text-[10px] text-zinc-400 mt-0.5">
-                                {days > 0 ? `Auto-sends in ${days} day${days === 1 ? '' : 's'}` : 'Auto-sends today'}
+                              <p className="text-[10px] text-blue-600 mt-0.5">
+                                Gepland voor morgenochtend (08:30 UTC)
                               </p>
                             )
                           })()}
                           {isConfirmed && b.catering_confirmed_at ? (
-                            <p className="text-[10px] text-zinc-400 mt-0.5">
-                              {fmtAdminDate(b.catering_confirmed_at.split('T')[0])}
+                            <p className="text-[10px] text-violet-700 font-medium mt-0.5">
+                              Bevestigd: {fmtAdminDatetime(b.catering_confirmed_at)}
                             </p>
                           ) : (
                             isSent &&
                             b.catering_email_sent_at && (
-                              <p className="text-[10px] text-zinc-400 mt-0.5">
-                                {fmtAdminDate(b.catering_email_sent_at.split('T')[0])}
+                              <p className="text-[10px] text-emerald-700 font-medium mt-0.5">
+                                Verzonden: {fmtAdminDatetime(b.catering_email_sent_at)}
                               </p>
                             )
                           )}

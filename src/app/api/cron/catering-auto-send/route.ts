@@ -26,12 +26,14 @@ export async function GET(request: NextRequest) {
   if (denied) return denied
 
   const supabase = createAdminClient()
+  const today = cateringAutoSendCutoffDate(0)
   const cutoffDate = cateringAutoSendCutoffDate(7)
 
   const { data: candidates, error } = await supabase
     .from('bookings')
-    .select('id, extras_selected')
+    .select('id, booking_date, start_time, extras_selected')
     .in('status', ['confirmed', 'booked'])
+    .gte('booking_date', today)
     .lte('booking_date', cutoffDate)
     .is('catering_email_sent_at', null)
 
@@ -41,7 +43,16 @@ export async function GET(request: NextRequest) {
   }
 
   // Food only — this supplier doesn't handle drinks (those are stocked on the boat).
-  const eligible = (candidates ?? []).filter(b => hasFood(b.extras_selected as never))
+  // Also skip any cruises whose departure time has already passed.
+  const nowMs = Date.now()
+  const eligible = (candidates ?? []).filter(b => {
+    if (!hasFood(b.extras_selected as never)) return false
+    if (b.start_time) {
+      const departureMs = new Date(b.start_time).getTime()
+      if (!isNaN(departureMs) && departureMs < nowMs) return false
+    }
+    return true
+  })
 
   let sent = 0
   let failed = 0
