@@ -200,12 +200,12 @@ export const NOTIFICATION_CATALOG: NotificationEntry[] = [
   {
     id: 'shift-assigned',
     label: 'Shift assigned',
-    description: 'Admin assigns a shift to a staff member in the scheduling UI.',
+    description: "Admin assigns a shift to a staff member in the scheduling UI. Pings the captain's DM and sends an audit copy to Beer's DM.",
     trigger: 'Admin assigns shift in /admin/scheduling',
     direction: 'outbound',
     category: 'operations',
-    recipientType: 'webhook',
-    channel: '#bookings (SLACK_WEBHOOK_URL)',
+    recipientType: 'dm',
+    channel: "Captain DM + Beer's DM (SLACK_ALERT_DM_CHANNEL)",
     severity: 'info',
   },
   {

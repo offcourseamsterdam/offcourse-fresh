@@ -61,13 +61,12 @@ export async function notifyShiftAssigned(
         { type: 'shift-assigned-dm', triggeredBy: 'schedule' },
       )
     : false
-  if (dmSent) return
 
-  // Falls back for two distinct reasons — say which one, so whoever reads
-  // this in Slack knows whether to add a slack_member_id or check the bot
-  // token, instead of assuming the captain was told and closing the loop.
-  const reason = data.staff.slack_member_id ? 'DM failed — check SLACK_BOT_TOKEN' : 'no Slack ID on file — couldn\'t DM'
+  // Always notify Beer's DM for the scheduling audit trail (Beer, 2026-09-04)
+  const statusNote = dmSent
+    ? '✓ DM sent to captain'
+    : (data.staff.slack_member_id ? '⚠️ DM failed — check bot token' : '⚠️ no Slack ID on file')
   await postSlackDM(
-    `🧑‍✈️ ${data.staff.name} assigned: ${day} ${formatAmsterdamTime(data.start_at)}–${formatAmsterdamTime(data.end_at)} · ${data.boats.name} (${reason})`,
+    `🧑‍✈️ ${data.staff.name} assigned: ${day} ${formatAmsterdamTime(data.start_at)}–${formatAmsterdamTime(data.end_at)} · ${data.boats.name} · ${fmtCostEuros(cost)} (${statusNote})`,
   )
 }

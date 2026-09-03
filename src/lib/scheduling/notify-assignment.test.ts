@@ -38,7 +38,7 @@ describe('notifyShiftAssigned', () => {
     expect(slackId).toBe('U08PRAX8A07')
     expect(text).toContain('Diana')
     expect(text).toContain('€50.00') // 2h at €25/h
-    expect(postSlackDM).not.toHaveBeenCalled()
+    expect(postSlackDM).toHaveBeenCalledTimes(1)
   })
 
   it('includes a crew-call time one hour before the shift start', async () => {
@@ -154,7 +154,7 @@ describe('who is allowed to be messaged', () => {
     await notifyShiftAssigned(sb as never, 'shift-1')
 
     expect(postDm).toHaveBeenCalledTimes(1)
-    expect(postSlackDM).not.toHaveBeenCalled()
+    expect(postSlackDM).toHaveBeenCalledTimes(1)
   })
 
   it('routes the no-Slack-id fallback to Beer, never to the shared #bookings channel', async () => {

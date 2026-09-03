@@ -3,6 +3,7 @@ import { meteredMessage } from '@/lib/ai/usage'
 import { describeImageWithGemini } from '@/lib/ai/describe-image'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { extractJson } from '@/lib/ghost/ops-drafters'
+import { postSlackDM } from '@/lib/slack/send-notification'
 
 /**
  * The maintenance agent — shadow mode.
@@ -174,6 +175,15 @@ Return JSON only:
 
     if (proposal) {
       await supabase.from('maintenance_tasks').update({ proposal_id: proposal.id }).eq('id', task.id)
+
+      // Notify Beer (manager) directly in DM about the maintenance report (Beer, 2026-09-04)
+      await postSlackDM(
+        `🔧 *Nieuwe Maintenance Melding* door ${input.reporter || 'iemand'}:\n` +
+        `*${title}* (${priority.toUpperCase()})\n` +
+        `"${summary}"\n` +
+        (photoDescriptions.length > 0 ? `📸 ${photoDescriptions.length} foto('s) geanalyseerd door AI\n` : '') +
+        `👉 Bekijk & stuur offerteverzoek in Admin ➔ Maintenance: https://offcourse-fresh.vercel.app/nl/admin/maintenance`
+      )
     }
 
     return 'drafted'
