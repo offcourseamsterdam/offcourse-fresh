@@ -38,6 +38,10 @@ export interface MaintenanceInput {
   photos?: MaintenancePhoto[]
   /** 'slack' (default) or 'admin' for the admin-form path. */
   source?: 'slack' | 'admin'
+  /** Explicit boat ID when resolved from skipper shift or command input */
+  boatId?: string | null
+  /** Explicit boat name */
+  boatName?: string | null
 }
 
 const PHOTO_PROMPT =
@@ -120,17 +124,23 @@ Return JSON only:
 
     const title = typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : text.slice(0, 80) || 'Maintenance item'
     const summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : ''
-    const boatId =
-      typeof parsed.boat === 'string'
-        ? (boats ?? []).find(b => b.name.toLowerCase() === (parsed.boat as string).toLowerCase())?.id ?? null
-        : null
+
+    const resolvedBoatId =
+      input.boatId !== undefined
+        ? input.boatId
+        : typeof parsed.boat === 'string'
+          ? (boats ?? []).find(b => b.name.toLowerCase() === (parsed.boat as string).toLowerCase())?.id ?? null
+          : null
+    const resolvedBoatName =
+      input.boatName ||
+      (resolvedBoatId ? (boats ?? []).find(b => b.id === resolvedBoatId)?.name : null)
     const photoUrls = photos.map(p => p.url).filter((u): u is string => !!u)
 
     // ── Write the durable board record ────────────────────────────────────
     const { data: task, error: taskErr } = await supabase
       .from('maintenance_tasks')
       .insert({
-        boat_id: boatId,
+        boat_id: resolvedBoatId,
         title,
         description: summary || text || null,
         priority,
@@ -177,9 +187,11 @@ Return JSON only:
       await supabase.from('maintenance_tasks').update({ proposal_id: proposal.id }).eq('id', task.id)
 
       // Notify Beer (manager) directly in DM about the maintenance report (Beer, 2026-09-04)
+      const boatBadge = resolvedBoatName ? `⛵️ Boot: *${resolvedBoatName}*\n` : ''
       await postSlackDM(
         `🔧 *Nieuwe Maintenance Melding* door ${input.reporter || 'iemand'}:\n` +
         `*${title}* (${priority.toUpperCase()})\n` +
+        boatBadge +
         `"${summary}"\n` +
         (photoDescriptions.length > 0 ? `📸 ${photoDescriptions.length} foto('s) geanalyseerd door AI\n` : '') +
         `👉 Bekijk & stuur offerteverzoek in Admin ➔ Maintenance: https://offcourse-fresh.vercel.app/nl/admin/maintenance`

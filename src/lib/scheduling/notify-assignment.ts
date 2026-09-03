@@ -1,7 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { postSlackDM } from '@/lib/slack/send-notification'
-import { postDm } from '@/lib/slack/bot'
 import { formatAmsterdamTime } from '@/lib/utils'
 import { shiftCostCents, fmtCostEuros } from './shift-cost'
 
@@ -43,30 +42,13 @@ export async function notifyShiftAssigned(
   const crewCall = new Date(new Date(data.start_at).getTime() - 60 * 60_000).toISOString()
   const cost = shiftCostCents(data.staff.hourly_rate_cents, data.start_at, data.end_at)
 
-  // Opted out of automated messages — tell Beer instead of them, and stop.
-  if (data.staff.slack_notifications_enabled === false) {
-    await postSlackDM(
-      `🧑‍✈️ ${data.staff.name} assigned: ${day} ${formatAmsterdamTime(data.start_at)}–${formatAmsterdamTime(data.end_at)} · ${data.boats.name} · ${fmtCostEuros(cost)} (not messaged — Slack notifications are off for them)`,
-    )
-    return
-  }
-
-  const dmSent = data.staff.slack_member_id
-    ? await postDm(
-        data.staff.slack_member_id,
-        `🧑‍✈️ You're on for ${day}\n` +
-          `Crew call: ${formatAmsterdamTime(crewCall)} · Departure–return: ${formatAmsterdamTime(data.start_at)}–${formatAmsterdamTime(data.end_at)}\n` +
-          `Boat: ${data.boats.name}\n` +
-          `Pay: ${fmtCostEuros(cost)}`,
-        { type: 'shift-assigned-dm', triggeredBy: 'schedule' },
-      )
-    : false
-
-  // Always notify Beer's DM for the scheduling audit trail (Beer, 2026-09-04)
-  const statusNote = dmSent
-    ? '✓ DM sent to captain'
-    : (data.staff.slack_member_id ? '⚠️ DM failed — check bot token' : '⚠️ no Slack ID on file')
+  // Per user instruction (Beer, 2026-09-04): "doe alleen nog maar berichten naar mij voor alle ingeplande diensten."
+  // All shift notifications go exclusively to Beer's DM.
   await postSlackDM(
-    `🧑‍✈️ ${data.staff.name} assigned: ${day} ${formatAmsterdamTime(data.start_at)}–${formatAmsterdamTime(data.end_at)} · ${data.boats.name} · ${fmtCostEuros(cost)} (${statusNote})`,
+    `🧑‍✈️ Ingeroosterd: ${data.staff.name}\n` +
+      `📅 Datum: ${day} (${formatAmsterdamTime(data.start_at)}–${formatAmsterdamTime(data.end_at)})\n` +
+      `⛵️ Boot: ${data.boats.name}\n` +
+      `💶 Loon: ${fmtCostEuros(cost)}\n` +
+      `⏰ Crew call: ${formatAmsterdamTime(crewCall)}`,
   )
 }

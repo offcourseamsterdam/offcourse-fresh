@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireCronSecret } from '@/lib/auth/require-cron-secret'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { postDm, postToChannel } from '@/lib/slack/bot'
+import { postSlackDM } from '@/lib/slack/send-notification'
 import { formatAmsterdamTime, amsterdamToday } from '@/lib/utils'
 import { alertCronFailure } from '@/lib/cron/alert'
 
@@ -42,14 +43,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
       const staffName = shift.staff?.name ?? 'Captain'
       const boatName  = shift.boats?.name ?? 'de boot'
-      const msg = `⏰ Hey ${staffName}! Over 2 uur begint je dienst op de *${boatName}* (${formatAmsterdamTime(shift.start_at)}–${formatAmsterdamTime(shift.end_at)}). Tot zo!`
+      const msg = `⏰ *Dienst Reminder (over 2 uur)*:\n${staffName} staat ingepland op de *${boatName}* (${formatAmsterdamTime(shift.start_at)}–${formatAmsterdamTime(shift.end_at)}).`
 
-      const memberId = shift.staff?.slack_member_id
-      if (memberId) {
-        await postDm(memberId, msg, { type: 'shift-reminder-2h-dm', triggeredBy: 'schedule' })
-      } else {
-        await postToChannel(opsChannel, msg)
-      }
+      // Per instruction: all shift updates go to Beer
+      await postSlackDM(msg)
 
       await supabase
         .from('shifts')

@@ -3,6 +3,7 @@ import { verifySlackSignature } from '@/lib/slack/verify-request'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { performClock } from '@/lib/scheduling/perform-clock'
 import { draftMaintenanceTask } from '@/lib/ghost/maintenance-drafter'
+import { amsterdamToday } from '@/lib/utils'
 
 /**
  * `/in` and `/out` clock hours.
@@ -54,31 +55,84 @@ export async function POST(req: Request): Promise<NextResponse> {
       "Your Slack account isn't linked to a staff record yet. Ask Beer to link it in Admin → Scheduling → Staff.",
     )
   }
+  const staff = staffRow
+
+  // Helper to resolve boat from message text or skipper shift today
+  async function resolveBoatForStaff(msgText: string, staffId: string): Promise<{ boatId: string | null; boatName: string | null; ambiguous: boolean; candidateNames?: string[] }> {
+    const { data: allBoats } = await supabase.from('boats').select('id, name').order('name')
+    const boatList = allBoats ?? []
+
+    // 1. Did the skipper mention Diana or Curaçao in their text?
+    const lower = msgText.toLowerCase()
+    const mentionedBoat = boatList.find(b => {
+      const bLower = b.name.toLowerCase()
+      if (lower.includes(bLower)) return true
+      if (bLower === 'curaçao' && (lower.includes('curacao') || lower.includes('curacao'))) return true
+      return false
+    })
+    if (mentionedBoat) {
+      return { boatId: mentionedBoat.id, boatName: mentionedBoat.name, ambiguous: false }
+    }
+
+    // 2. Resolve from skipper's shift today
+    const today = amsterdamToday(0)
+    const { data: todayShifts } = await supabase
+      .from('shifts')
+      .select('boat_id, boats(name)')
+      .eq('staff_id', staffId)
+      .eq('date', today)
+      .in('status', ['assigned', 'confirmed'])
+
+    const distinctBoatIds = Array.from(new Set((todayShifts ?? []).map(s => s.boat_id).filter((id): id is string => Boolean(id))))
+    if (distinctBoatIds.length === 1) {
+      const bId = distinctBoatIds[0]
+      const bName = (todayShifts?.[0]?.boats as any)?.name ?? boatList.find(b => b.id === bId)?.name ?? 'de boot'
+      return { boatId: bId, boatName: bName, ambiguous: false }
+    }
+
+    // 0 shifts or multiple boats today -> ambiguous, must clarify!
+    return {
+      boatId: null,
+      boatName: null,
+      ambiguous: true,
+      candidateNames: boatList.map(b => b.name),
+    }
+  }
 
   // ── /defect COMMAND ───────────────────────────────────────────────────────
   if (action === 'defect') {
     if (!text) {
-      return slackText('Gebruik: /defect [beschrijving van het probleem of defect op de boot].')
+      return slackText('Gebruik: /defect [beschrijving van het probleem of defect op de boot].\nBijv: `/defect Diana: fenderlijn gebroken` of `/defect Curaçao: acculader laadt langzaam`.')
+    }
+
+    const boatResolution = await resolveBoatForStaff(text, staff.id)
+    if (boatResolution.ambiguous) {
+      const options = (boatResolution.candidateNames ?? ['Diana', 'Curaçao']).map(n => `• \`/defect ${n}: ${text}\``).join('\n')
+      return slackText(
+        `❓ *Op welke boot is dit defect?*\nJe staat vandaag niet op 1 specifieke boot ingepland. Geef alsjeblieft de bootnaam mee:\n${options}`,
+      )
     }
 
     after(async () => {
       await draftMaintenanceTask({
         slackEventId: `cmd_${Date.now()}_${slackUserId}`,
-        text: `[Gemeld door ${staffRow.name} via /defect]: ${text}`,
-        reporter: staffRow.name || 'Captain',
+        text: `[Gemeld door ${staff.name} via /defect]: ${text}`,
+        reporter: staff.name || 'Captain',
         source: 'slack',
+        boatId: boatResolution.boatId,
+        boatName: boatResolution.boatName,
       })
     })
 
     return slackText(
-      `🔧 Bedankt ${staffRow.name}! Je melding "${text}" is direct geregistreerd in Maintenance en gemeld bij de manager.`,
+      `🔧 Bedankt ${staff.name}! Je melding voor de *${boatResolution.boatName}* ("${text}") is direct geregistreerd in Maintenance en gemeld bij de manager.`,
       false,
     )
   }
 
   // ── /in AND /out COMMANDS ─────────────────────────────────────────────────
   try {
-    const outcome = await performClock(supabase, staffRow, action, 'slack')
+    const outcome = await performClock(supabase, staff, action, 'slack')
 
     // If captain passed a note or reported something during clock in/out
     if (text) {
@@ -93,12 +147,15 @@ export async function POST(req: Request): Promise<NextResponse> {
       // Check if text looks like a defect/maintenance issue
       const looksLikeDefect = /defect|kapot|stuk|fender|accu|batterij|motor|lek|schade|kraak|repareer|probleem|warning|issue/i.test(text)
       if (looksLikeDefect) {
+        const boatResolution = await resolveBoatForStaff(text, staff.id)
         after(async () => {
           await draftMaintenanceTask({
             slackEventId: `clock_${Date.now()}_${slackUserId}`,
-            text: `[Gemeld door ${staffRow.name} tijdens ${action === 'in' ? 'check-in' : 'check-out'}]: ${text}`,
-            reporter: staffRow.name || 'Captain',
+            text: `[Gemeld door ${staff.name} tijdens ${action === 'in' ? 'check-in' : 'check-out'}]: ${text}`,
+            reporter: staff.name || 'Captain',
             source: 'slack',
+            boatId: boatResolution.boatId,
+            boatName: boatResolution.boatName,
           })
         })
       }
