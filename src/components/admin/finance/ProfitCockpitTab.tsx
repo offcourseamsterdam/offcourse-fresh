@@ -68,6 +68,41 @@ export interface ProfitCockpitResponse {
     totalPotsReservedCents: number
     freeAvailableCashCents: number
   }
+  stripeInsights?: {
+    nextPayout: {
+      arrivalDate: string
+      amountCents: number
+      daysUntil: number
+    } | null
+    recentPayouts: Array<{
+      id: string
+      amountCents: number
+      arrivalDate: string
+      status: string
+    }>
+    monthlyFees: {
+      totalFeesCents: number
+      totalGrossCents: number
+      avgFeePct: number
+      chargeCount: number
+    }
+    refunds: {
+      monthlyRefundsCents: number
+      refundCount: number
+    }
+    disputes: {
+      activeCount: number
+      totalCount: number
+    }
+    invoiceAging: Array<{
+      id: string
+      number: string | null
+      customerName: string | null
+      amountCents: number
+      dueDate: string | null
+      agingStatus: 'on_track' | 'due_soon' | 'overdue'
+    }>
+  }
 }
 
 export function ProfitCockpitTab() {
@@ -76,6 +111,7 @@ export function ProfitCockpitTab() {
   const [expandedMonth, setExpandedMonth] = useState<string | null>(null)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [showWhatIfDrawer, setShowWhatIfDrawer] = useState(false)
+  const [showPayoutHistory, setShowPayoutHistory] = useState(false)
 
   const { data, isLoading, error, refresh } = useAdminFetch<ProfitCockpitResponse>(
     `/api/admin/finance/profit-cockpit?year=${selectedYear}`
@@ -303,22 +339,63 @@ export function ProfitCockpitTab() {
         </div>
 
         {/* Stripe Balans (Directe Boekingen) */}
-        <div className="space-y-1 sm:border-l sm:border-zinc-800 sm:pl-3">
-          <div className="flex items-center gap-2">
-            <CreditCard className="w-4 h-4 text-purple-400" />
-            <span className="text-xs font-medium text-zinc-400">Stripe Balans</span>
-            <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-              Direct Live
-            </span>
+        <div className="space-y-1 sm:border-l sm:border-zinc-800 sm:pl-3 relative">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <CreditCard className="w-4 h-4 text-purple-400" />
+              <span className="text-xs font-medium text-zinc-400">Stripe Balans</span>
+            </div>
+            {data?.stripeInsights?.disputes?.activeCount === 0 ? (
+              <span className="text-[10px] font-semibold text-emerald-400" title="0 actieve geschillen">
+                ✓ 0 claims
+              </span>
+            ) : (
+              <span className="text-[10px] font-bold text-rose-400 bg-rose-500/20 px-1 py-0.2 rounded">
+                ⚠️ Betwisting!
+              </span>
+            )}
           </div>
           <div className="text-xl font-bold tracking-tight text-purple-300">
             {fmtAdminAmount(cash.stripe?.totalEurCents ?? 0)}
           </div>
-          <p className="text-[11px] text-zinc-400">
-            {cash.stripe?.configured
-              ? `${fmtAdminAmount(cash.stripe.availableEurCents)} vrij · ${fmtAdminAmount(cash.stripe.pendingEurCents)} onderweg`
-              : 'Directe websiteboekingen in transit'}
-          </p>
+          <div className="flex items-center justify-between text-[11px] text-zinc-400">
+            <span>
+              {data?.stripeInsights?.nextPayout
+                ? `1 okt naar bank (${data.stripeInsights.nextPayout.daysUntil}d)`
+                : 'Directe boekingen in transit'}
+            </span>
+            {data?.stripeInsights?.recentPayouts && data.stripeInsights.recentPayouts.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowPayoutHistory(!showPayoutHistory)}
+                className="text-purple-300 hover:text-purple-200 text-[10px] underline ml-1 cursor-pointer"
+              >
+                {showPayoutHistory ? 'sluit' : 'historie ▾'}
+              </button>
+            )}
+          </div>
+
+          {/* Popover Recent Payouts */}
+          {showPayoutHistory && data?.stripeInsights?.recentPayouts && (
+            <div className="absolute top-full left-0 mt-2 z-30 w-56 bg-zinc-900 border border-zinc-700 rounded-xl p-3 shadow-2xl space-y-2 text-xs">
+              <div className="flex items-center justify-between font-semibold text-zinc-200 pb-1 border-b border-zinc-800 text-[11px]">
+                <span>Vorige Uitbetalingen</span>
+                <span className="text-emerald-400">Revolut</span>
+              </div>
+              <div className="space-y-1.5">
+                {data.stripeInsights.recentPayouts.slice(0, 3).map(p => (
+                  <div key={p.id} className="flex items-center justify-between text-[11px]">
+                    <span className="text-zinc-400">
+                      {new Date(p.arrivalDate).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })}
+                    </span>
+                    <span className="font-medium text-white">
+                      {fmtAdminAmount(p.amountCents)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Openstaande Facturen & Betaallinks */}
@@ -330,9 +407,35 @@ export function ProfitCockpitTab() {
           <div className="text-xl font-bold tracking-tight text-sky-300">
             + {fmtAdminAmount((cash.openInvoicesCents || 0) + (cash.openDirectBookingsCents || 0))}
           </div>
-          <p className="text-[11px] text-zinc-400">
-            B2B &amp; betaallinks te ontvangen
-          </p>
+          <div className="text-[11px]">
+            {data?.stripeInsights?.invoiceAging && data.stripeInsights.invoiceAging.length > 0 ? (
+              (() => {
+                const overdue = data.stripeInsights.invoiceAging.filter(i => i.agingStatus === 'overdue')
+                const dueSoon = data.stripeInsights.invoiceAging.filter(i => i.agingStatus === 'due_soon')
+                if (overdue.length > 0) {
+                  return (
+                    <span className="text-rose-400 font-medium">
+                      🔴 {overdue.length} factuur verlopen ({overdue[0].customerName?.slice(0, 14)})
+                    </span>
+                  )
+                }
+                if (dueSoon.length > 0) {
+                  return (
+                    <span className="text-amber-400 font-medium">
+                      🟡 {dueSoon.length} vervalt binnenkort
+                    </span>
+                  )
+                }
+                return (
+                  <span className="text-zinc-400">
+                    🟢 {data.stripeInsights.invoiceAging.length} op schema ({data.stripeInsights.invoiceAging[0].customerName?.slice(0, 15)})
+                  </span>
+                )
+              })()
+            ) : (
+              <span className="text-zinc-400">B2B &amp; betaallinks te ontvangen</span>
+            )}
+          </div>
         </div>
 
         {/* Lopend Operationeel */}
@@ -429,6 +532,15 @@ export function ProfitCockpitTab() {
             <CalendarCheck className="w-3.5 h-3.5 text-rose-600" />
             <span><strong>Leningen:</strong> Restschuld {fmtAdminAmount(totals.remainingLoanPrincipalCents)} ({fmtAdminAmount(Math.round(totals.totalLoanPrincipalCents / 12 + totals.totalLoanInterestCents / 12))}/mnd)</span>
           </div>
+          {data?.stripeInsights?.monthlyFees && data.stripeInsights.monthlyFees.totalFeesCents > 0 && (
+            <>
+              <div className="hidden sm:inline text-zinc-300">•</div>
+              <div className="flex items-center gap-1.5" title={`${data.stripeInsights.monthlyFees.chargeCount} betalingen verwerkt deze maand`}>
+                <CreditCard className="w-3.5 h-3.5 text-purple-600" />
+                <span><strong>Stripe Fees:</strong> {fmtAdminAmount(data.stripeInsights.monthlyFees.totalFeesCents)} ({data.stripeInsights.monthlyFees.avgFeePct}%)</span>
+              </div>
+            </>
+          )}
         </div>
 
         <button

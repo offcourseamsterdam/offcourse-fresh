@@ -149,26 +149,158 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 7. Live Stripe balance (Direct bookings collected online, awaiting payout to Revolut)
+    // 7. Live Stripe balance & financial insights (Direct bookings, Payout schedule, Fees, Disputes & Invoice aging)
     let stripeBalance = {
       configured: false,
       availableEurCents: 0,
       pendingEurCents: 0,
       totalEurCents: 0,
     }
+
+    let stripeInsights = {
+      nextPayout: null as {
+        arrivalDate: string
+        amountCents: number
+        daysUntil: number
+      } | null,
+      recentPayouts: [] as Array<{
+        id: string
+        amountCents: number
+        arrivalDate: string
+        status: string
+      }>,
+      monthlyFees: {
+        totalFeesCents: 0,
+        totalGrossCents: 0,
+        avgFeePct: 0,
+        chargeCount: 0,
+      },
+      refunds: {
+        monthlyRefundsCents: 0,
+        refundCount: 0,
+      },
+      disputes: {
+        activeCount: 0,
+        totalCount: 0,
+      },
+      invoiceAging: [] as Array<{
+        id: string
+        number: string | null
+        customerName: string | null
+        amountCents: number
+        dueDate: string | null
+        agingStatus: 'on_track' | 'due_soon' | 'overdue'
+      }>,
+    }
+
     try {
       const stripe = getStripe()
-      const bal = await stripe.balance.retrieve()
-      const avail = (bal.available || []).find(a => a.currency === 'eur')?.amount || 0
-      const pending = (bal.pending || []).find(p => p.currency === 'eur')?.amount || 0
-      stripeBalance = {
-        configured: true,
-        availableEurCents: avail,
-        pendingEurCents: pending,
-        totalEurCents: avail + pending,
+      const now = new Date()
+      const startOfMonthSec = Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000)
+
+      const [balRes, payoutsRes, txsRes, invoicesRes, disputesRes] = await Promise.allSettled([
+        stripe.balance.retrieve(),
+        stripe.payouts.list({ limit: 4 }),
+        stripe.balanceTransactions.list({ created: { gte: startOfMonthSec }, limit: 100 }),
+        stripe.invoices.list({ status: 'open', limit: 20 }),
+        stripe.disputes.list({ limit: 5 }),
+      ])
+
+      if (balRes.status === 'fulfilled') {
+        const bal = balRes.value
+        const avail = (bal.available || []).find(a => a.currency === 'eur')?.amount || 0
+        const pending = (bal.pending || []).find(p => p.currency === 'eur')?.amount || 0
+        stripeBalance = {
+          configured: true,
+          availableEurCents: avail,
+          pendingEurCents: pending,
+          totalEurCents: avail + pending,
+        }
+      }
+
+      if (payoutsRes.status === 'fulfilled') {
+        const pList = payoutsRes.value.data || []
+        stripeInsights.recentPayouts = pList.map(p => ({
+          id: p.id,
+          amountCents: p.amount,
+          arrivalDate: new Date(p.arrival_date * 1000).toISOString().slice(0, 10),
+          status: p.status,
+        }))
+
+        // Stripe pays out monthly on the 1st
+        const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+        const daysUntil = Math.max(1, Math.ceil((nextMonth.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
+        stripeInsights.nextPayout = {
+          arrivalDate: nextMonth.toISOString().slice(0, 10),
+          amountCents: stripeBalance.totalEurCents,
+          daysUntil,
+        }
+      }
+
+      if (txsRes.status === 'fulfilled') {
+        let fees = 0
+        let gross = 0
+        let refunds = 0
+        let charges = 0
+        let refundCnt = 0
+
+        for (const tx of txsRes.value.data) {
+          if (tx.type === 'charge' || tx.type === 'payment') {
+            gross += tx.amount
+            fees += tx.fee
+            charges++
+          } else if (tx.type === 'refund') {
+            refunds += Math.abs(tx.amount)
+            refundCnt++
+          }
+        }
+
+        stripeInsights.monthlyFees = {
+          totalFeesCents: fees,
+          totalGrossCents: gross,
+          avgFeePct: gross > 0 ? Math.round((fees / gross) * 1000) / 10 : 0,
+          chargeCount: charges,
+        }
+        stripeInsights.refunds = {
+          monthlyRefundsCents: refunds,
+          refundCount: refundCnt,
+        }
+      }
+
+      if (invoicesRes.status === 'fulfilled') {
+        const todayStr = now.toISOString().slice(0, 10)
+        stripeInsights.invoiceAging = invoicesRes.value.data.map(inv => {
+          const dueDateStr = inv.due_date ? new Date(inv.due_date * 1000).toISOString().slice(0, 10) : null
+          let agingStatus: 'on_track' | 'due_soon' | 'overdue' = 'on_track'
+          if (dueDateStr) {
+            if (dueDateStr < todayStr) {
+              agingStatus = 'overdue'
+            } else {
+              const diffDays = Math.ceil((new Date(dueDateStr).getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+              if (diffDays <= 3) agingStatus = 'due_soon'
+            }
+          }
+          return {
+            id: inv.id,
+            number: inv.number,
+            customerName: inv.customer_name || inv.customer_email || 'Klant',
+            amountCents: inv.amount_due,
+            dueDate: dueDateStr,
+            agingStatus,
+          }
+        })
+      }
+
+      if (disputesRes.status === 'fulfilled') {
+        const dList = disputesRes.value.data || []
+        const active = dList.filter(d => d.status === 'needs_response' || d.status === 'warning_needs_response')
+        stripeInsights.disputes = {
+          activeCount: active.length,
+          totalCount: dList.length,
+        }
       }
     } catch (sErr) {
-      console.warn('[profit-cockpit] Could not fetch live Stripe balance:', sErr)
+      console.warn('[profit-cockpit] Could not fetch live Stripe insights:', sErr)
     }
 
     const totalReceivablesCents = openInvoicesCents + openDirectBookingsCents + stripeBalance.totalEurCents
@@ -209,6 +341,7 @@ export async function GET(request: NextRequest) {
         totalPotsReservedCents,
         freeAvailableCashCents,
       },
+      stripeInsights,
     })
   } catch (err: any) {
     console.error('[profit-cockpit] GET error:', err)
