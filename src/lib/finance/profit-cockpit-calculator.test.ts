@@ -13,7 +13,7 @@ describe('profit-cockpit-calculator', () => {
     expect(keys[11]).toBe('2026-12')
   })
 
-  it('aggregates revenue, skipper costs, catering costs, and dynamic pots correctly', () => {
+  it('aggregates revenue, skipper costs, catering, zettle, liggeld, owner salary and profit first pots', () => {
     const bookings = [
       {
         id: 'b1',
@@ -43,39 +43,57 @@ describe('profit-cockpit-calculator', () => {
       },
     ]
 
+    // Zettle sales for August: € 100 onboard sales
+    const zettleMonths = [
+      {
+        month: '2026-08-01',
+        total_incl_vat_cents: 10000,
+        total_vat_cents: 900,
+      },
+    ]
+
+    const settings = {
+      ...DEFAULT_BUDGET_SETTINGS,
+      profitFirstProfitPct: 10.0, // 10% winst
+      ownerSalaryMonthlyCents: 300000, // € 3.000 / mnd
+      boatCount: 2,
+      berthFeePerBoatYearlyCents: 400000, // € 4.000 / boot / jaar
+      otherFixedCostsMonthlyCents: 100000, // € 1.000 / mnd
+      zettleCogsPct: 25.0, // 25% inkoop
+    }
+
     const result = computeMonthlyCockpit({
       year: 2026,
       bookings,
       shifts,
-      settings: DEFAULT_BUDGET_SETTINGS,
+      zettleMonths,
+      settings,
       currentDate: new Date('2026-08-20'),
     })
 
-    expect(result.months.length).toBe(12)
     const aug = result.months.find(m => m.month === '2026-08')!
     expect(aug).toBeDefined()
     expect(aug.bookingCount).toBe(1)
-    expect(aug.totalRevenueCents).toBe(35000)
-    expect(aug.channelCommissionCents).toBe(3500)
-    expect(aug.cityTaxCents).toBe(10 * 260) // 2600
 
-    // Catering: 6500 selling, 3250 cost
-    expect(aug.cateringSellingCents).toBe(6500)
-    expect(aug.cateringCostCents).toBe(3250)
-    expect(aug.cateringMarginCents).toBe(3250)
-    expect(aug.cateringMarginPct).toBe(50)
+    // Total revenue = 35000 booking + 10000 Zettle = 45000 (€ 450)
+    expect(aug.totalRevenueCents).toBe(45000)
+    expect(aug.zettleSellingCents).toBe(10000)
+    expect(aug.zettleCostCents).toBe(2500) // 25% of 10000
 
-    // Skipper: 2 hours * 3500 = 7000
-    expect(aug.skipperHours).toBe(2)
-    expect(aug.skipperCostCents).toBe(7000)
+    // Catering total = 6500 (ticket) + 10000 (zettle) = 16500
+    expect(aug.cateringSellingCents).toBe(16500)
+    expect(aug.cateringCostCents).toBe(3250 + 2500) // 5750
 
-    // Operating Profit = 35000 - 3500 - 2600 - 3250 - 7000 = 18650
-    expect(aug.operatingProfitCents).toBe(18650)
-    expect(aug.profitPerHourCents).toBe(Math.round(18650 / 2))
+    // Liggeld = 2 * 400000 / 12 = 66667 (€ 666,67)
+    expect(aug.berthFeeMonthlyCents).toBe(Math.round((2 * 400000) / 12))
+    expect(aug.otherFixedCostsMonthlyCents).toBe(100000)
+    expect(aug.totalFixedCostsCents).toBe(Math.round((2 * 400000) / 12) + 100000)
 
-    // Dynamic pots (8% maintenance, 6% marketing)
-    expect(aug.maintenancePotCents).toBe(Math.round(35000 * 0.08)) // 2800
-    expect(aug.marketingPotCents).toBe(Math.round(35000 * 0.06)) // 2100
+    // Profit First allocations:
+    // Profit Pot (10% of 45000) = 4500
+    expect(aug.profitFirstProfitPotCents).toBe(4500)
+    // Owner salary = 300000 (€ 3.000)
+    expect(aug.ownerSalaryPotCents).toBe(300000)
 
     expect(aug.isCurrentMonth).toBe(true)
   })

@@ -29,6 +29,13 @@ export async function GET(request: NextRequest) {
       settings = {
         maintenancePct: Number(dbSettings.maintenance_pct) || DEFAULT_BUDGET_SETTINGS.maintenancePct,
         marketingPct: Number(dbSettings.marketing_pct) || DEFAULT_BUDGET_SETTINGS.marketingPct,
+        profitFirstProfitPct: Number((dbSettings as any).profit_first_profit_pct) || DEFAULT_BUDGET_SETTINGS.profitFirstProfitPct,
+        ownerSalaryMonthlyCents: (dbSettings as any).owner_salary_monthly_cents ?? DEFAULT_BUDGET_SETTINGS.ownerSalaryMonthlyCents,
+        ownerSalaryPct: Number((dbSettings as any).owner_salary_pct) || DEFAULT_BUDGET_SETTINGS.ownerSalaryPct,
+        boatCount: (dbSettings as any).boat_count ?? DEFAULT_BUDGET_SETTINGS.boatCount,
+        berthFeePerBoatYearlyCents: (dbSettings as any).berth_fee_per_boat_yearly_cents ?? DEFAULT_BUDGET_SETTINGS.berthFeePerBoatYearlyCents,
+        otherFixedCostsMonthlyCents: (dbSettings as any).other_fixed_costs_monthly_cents ?? DEFAULT_BUDGET_SETTINGS.otherFixedCostsMonthlyCents,
+        zettleCogsPct: Number((dbSettings as any).zettle_cogs_pct) || DEFAULT_BUDGET_SETTINGS.zettleCogsPct,
         fixedCostsMonthlyCents: dbSettings.fixed_costs_monthly_cents ?? DEFAULT_BUDGET_SETTINGS.fixedCostsMonthlyCents,
         winterBufferTargetCents: dbSettings.winter_buffer_target_cents ?? DEFAULT_BUDGET_SETTINGS.winterBufferTargetCents,
         defaultMonthlyRevenueTargetCents: dbSettings.default_monthly_revenue_target_cents ?? DEFAULT_BUDGET_SETTINGS.defaultMonthlyRevenueTargetCents,
@@ -74,11 +81,19 @@ export async function GET(request: NextRequest) {
 
     if (sError) return apiError(sError.message)
 
-    // 5. Compute Monthly Cockpit & Totals
+    // 5. Fetch Zettle onboard sales for the year
+    const { data: zettleData } = await supabase
+      .from('zettle_monthly_sales')
+      .select('month, total_incl_vat_cents, total_excl_vat_cents, card_gross_cents, cash_zettle_cents, vat9_vat_cents, vat21_vat_cents, total_vat_cents')
+      .gte('month', fromDate)
+      .lte('month', toDate)
+
+    // 6. Compute Monthly Cockpit & Totals
     const { months, totals } = computeMonthlyCockpit({
       year,
       bookings: bookingsData ?? [],
       shifts: (shiftsData as any) ?? [],
+      zettleMonths: (zettleData as any) ?? [],
       catalog: catalogExtras ?? [],
       settings,
       currentDate: new Date(),

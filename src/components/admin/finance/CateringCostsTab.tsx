@@ -8,7 +8,8 @@ import {
   TrendingUp,
   Package,
   Sliders,
-  DollarSign
+  CreditCard,
+  Ticket
 } from 'lucide-react'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { fmtAdminAmount } from '@/lib/admin/format'
@@ -25,7 +26,7 @@ export function CateringCostsTab() {
   if (isLoading && !data) {
     return (
       <div className="py-16 text-center text-sm text-zinc-500">
-        Cateringkosten en marges berekenen...
+        Catering- en Zettle boorddata berekenen...
       </div>
     )
   }
@@ -48,10 +49,10 @@ export function CateringCostsTab() {
         <div>
           <div className="flex items-center gap-2">
             <UtensilsCrossed className="w-5 h-5 text-zinc-800" />
-            <h2 className="text-xl font-bold text-zinc-900 tracking-tight">Catering Inkoop &amp; Brutomarges</h2>
+            <h2 className="text-xl font-bold text-zinc-900 tracking-tight">Catering Inkoop, Zettle &amp; Marges</h2>
           </div>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Volledig inzicht in cateringverkoop, inkoopkosten (COGS) en gerealiseerde marge op eten &amp; drinken.
+            Gecombineerd overzicht van vooraf bestelde catering (tickets) én losse drank/snack verkoop aan boord via Zettle pin.
           </p>
         </div>
 
@@ -68,23 +69,38 @@ export function CateringCostsTab() {
       </div>
 
       {/* ── KPI Cards ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Totale Catering & Drank Verkoop */}
         <div className="bg-white rounded-xl border border-zinc-200/80 p-4 shadow-sm space-y-1">
-          <span className="text-xs font-medium text-zinc-500">Totale Catering Verkoop ({selectedYear})</span>
+          <span className="text-xs font-medium text-zinc-500">Totale Verkoop ({selectedYear})</span>
           <div className="text-2xl font-bold text-zinc-900">
             {fmtAdminAmount(totals.totalCateringSellingCents)}
           </div>
-          <p className="text-[11px] text-zinc-400">Bruto omzet uit eten &amp; drank</p>
+          <p className="text-[11px] text-zinc-400">Tickets + Zettle boordverkoop</p>
         </div>
 
+        {/* Waarvan Zettle Pin aan Boord */}
+        <div className="bg-white rounded-xl border border-zinc-200/80 p-4 shadow-sm space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-zinc-500">Waarvan Zettle Pin</span>
+            <CreditCard className="w-3.5 h-3.5 text-blue-600" />
+          </div>
+          <div className="text-2xl font-bold text-blue-900">
+            {fmtAdminAmount(totals.totalZettleSellingCents)}
+          </div>
+          <p className="text-[11px] text-zinc-400">Drankjes &amp; extra’s aan boord afgerekend</p>
+        </div>
+
+        {/* Totale Inkoopkosten */}
         <div className="bg-white rounded-xl border border-zinc-200/80 p-4 shadow-sm space-y-1">
           <span className="text-xs font-medium text-zinc-500">Totale Inkoopkosten (COGS)</span>
           <div className="text-2xl font-bold text-zinc-800">
             − {fmtAdminAmount(totals.totalCateringCostCents)}
           </div>
-          <p className="text-[11px] text-zinc-400">Wat betaald is aan cateraars/inkoop</p>
+          <p className="text-[11px] text-zinc-400">Wat betaald is aan cateraar &amp; inkoop drank</p>
         </div>
 
+        {/* Brutowinst & Marge */}
         <div className="bg-white rounded-xl border border-emerald-200 bg-emerald-50/40 p-4 shadow-sm space-y-1">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-emerald-800">Catering Brutowinst</span>
@@ -95,14 +111,14 @@ export function CateringCostsTab() {
           <div className="text-2xl font-black text-emerald-700">
             {fmtAdminAmount(totals.totalCateringSellingCents - totals.totalCateringCostCents)}
           </div>
-          <p className="text-[11px] text-emerald-800/70">Netto winstbijdrage van catering</p>
+          <p className="text-[11px] text-emerald-800/70">Directe winstbijdrage van eten &amp; drinken</p>
         </div>
       </div>
 
       {/* ── Maandtabel ── */}
       <div className="bg-white rounded-2xl border border-zinc-200/80 overflow-hidden shadow-sm">
         <div className="p-4 border-b border-zinc-200 bg-zinc-50/50 flex items-center justify-between">
-          <h3 className="text-sm font-bold text-zinc-900">Catering Marge per Maand ({selectedYear})</h3>
+          <h3 className="text-sm font-bold text-zinc-900">Catering &amp; Bar Marge per Maand ({selectedYear})</h3>
           <span className="text-xs text-zinc-500">{monthsWithCatering.length} actieve cateringmaanden</span>
         </div>
 
@@ -111,11 +127,13 @@ export function CateringCostsTab() {
             <thead className="bg-zinc-100/70 border-b border-zinc-200 text-zinc-600 uppercase tracking-wider font-semibold text-[11px]">
               <tr>
                 <th className="px-4 py-3">Maand</th>
-                <th className="px-4 py-3 text-right">Catering Verkoop</th>
+                <th className="px-4 py-3 text-right">Totale Verkoop</th>
+                <th className="px-4 py-3 text-right">Vooraf (Tickets)</th>
+                <th className="px-4 py-3 text-right">Boord (Zettle)</th>
                 <th className="px-4 py-3 text-right">Inkoopkosten</th>
                 <th className="px-4 py-3 text-right">Brutomarge (€)</th>
                 <th className="px-4 py-3 text-right">Marge %</th>
-                <th className="px-4 py-3 text-right">Aandeel in Maandomzet</th>
+                <th className="px-4 py-3 text-right">Aandeel Omzet</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -134,15 +152,33 @@ export function CateringCostsTab() {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right font-medium text-zinc-900">
+
+                    {/* Totale Catering Verkoop */}
+                    <td className="px-4 py-3 text-right font-semibold text-zinc-900">
                       {m.cateringSellingCents > 0 ? fmtAdminAmount(m.cateringSellingCents) : '—'}
                     </td>
+
+                    {/* Tickets */}
+                    <td className="px-4 py-3 text-right text-zinc-600">
+                      {m.ticketCateringSellingCents > 0 ? fmtAdminAmount(m.ticketCateringSellingCents) : '—'}
+                    </td>
+
+                    {/* Zettle */}
+                    <td className="px-4 py-3 text-right text-blue-700 font-medium">
+                      {m.zettleSellingCents > 0 ? `+ ${fmtAdminAmount(m.zettleSellingCents)}` : '—'}
+                    </td>
+
+                    {/* Inkoopkosten */}
                     <td className="px-4 py-3 text-right text-zinc-700">
                       {m.cateringCostCents > 0 ? `− ${fmtAdminAmount(m.cateringCostCents)}` : '—'}
                     </td>
+
+                    {/* Brutomarge */}
                     <td className="px-4 py-3 text-right font-bold text-emerald-700">
                       {m.cateringMarginCents > 0 ? fmtAdminAmount(m.cateringMarginCents) : '—'}
                     </td>
+
+                    {/* Marge % */}
                     <td className="px-4 py-3 text-right font-semibold">
                       {m.cateringSellingCents > 0 ? (
                         <span className={`px-2 py-0.5 rounded text-xs ${
@@ -154,6 +190,8 @@ export function CateringCostsTab() {
                         <span className="text-zinc-300">—</span>
                       )}
                     </td>
+
+                    {/* Aandeel Omzet */}
                     <td className="px-4 py-3 text-right text-zinc-500">
                       {shareOfRev > 0 ? `${shareOfRev}%` : '—'}
                     </td>
@@ -165,6 +203,8 @@ export function CateringCostsTab() {
               <tr>
                 <td className="px-4 py-3">TOTAAL {selectedYear}</td>
                 <td className="px-4 py-3 text-right">{fmtAdminAmount(totals.totalCateringSellingCents)}</td>
+                <td className="px-4 py-3 text-right text-zinc-600">{fmtAdminAmount(totals.totalCateringSellingCents - totals.totalZettleSellingCents)}</td>
+                <td className="px-4 py-3 text-right text-blue-700 font-bold">+{fmtAdminAmount(totals.totalZettleSellingCents)}</td>
                 <td className="px-4 py-3 text-right text-zinc-700">− {fmtAdminAmount(totals.totalCateringCostCents)}</td>
                 <td className="px-4 py-3 text-right text-emerald-700">{fmtAdminAmount(totals.totalCateringSellingCents - totals.totalCateringCostCents)}</td>
                 <td className="px-4 py-3 text-right text-emerald-700">{totals.overallCateringMarginPct}%</td>

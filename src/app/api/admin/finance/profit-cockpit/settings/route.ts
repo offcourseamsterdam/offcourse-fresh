@@ -17,6 +17,13 @@ export const POST = withRoute(async (request: NextRequest) => {
 
   if (typeof body.maintenancePct === 'number') patch.maintenance_pct = body.maintenancePct
   if (typeof body.marketingPct === 'number') patch.marketing_pct = body.marketingPct
+  if (typeof body.profitFirstProfitPct === 'number') patch.profit_first_profit_pct = body.profitFirstProfitPct
+  if (typeof body.ownerSalaryMonthlyCents === 'number') patch.owner_salary_monthly_cents = body.ownerSalaryMonthlyCents
+  if (typeof body.ownerSalaryPct === 'number') patch.owner_salary_pct = body.ownerSalaryPct
+  if (typeof body.boatCount === 'number') patch.boat_count = body.boatCount
+  if (typeof body.berthFeePerBoatYearlyCents === 'number') patch.berth_fee_per_boat_yearly_cents = body.berthFeePerBoatYearlyCents
+  if (typeof body.otherFixedCostsMonthlyCents === 'number') patch.other_fixed_costs_monthly_cents = body.otherFixedCostsMonthlyCents
+  if (typeof body.zettleCogsPct === 'number') patch.zettle_cogs_pct = body.zettleCogsPct
   if (typeof body.defaultMonthlyRevenueTargetCents === 'number') patch.default_monthly_revenue_target_cents = body.defaultMonthlyRevenueTargetCents
   if (typeof body.winterBufferTargetCents === 'number') patch.winter_buffer_target_cents = body.winterBufferTargetCents
   if (typeof body.targetSkipperRatioPct === 'number') patch.target_skipper_ratio_pct = body.targetSkipperRatioPct

@@ -2065,6 +2065,13 @@ export type Database = {
           id: string
           maintenance_pct: number
           marketing_pct: number
+          profit_first_profit_pct: number
+          owner_salary_monthly_cents: number
+          owner_salary_pct: number
+          boat_count: number
+          berth_fee_per_boat_yearly_cents: number
+          other_fixed_costs_monthly_cents: number
+          zettle_cogs_pct: number
           fixed_costs_monthly_cents: number
           winter_buffer_target_cents: number
           default_monthly_revenue_target_cents: number
@@ -2078,6 +2085,13 @@ export type Database = {
           id?: string
           maintenance_pct?: number
           marketing_pct?: number
+          profit_first_profit_pct?: number
+          owner_salary_monthly_cents?: number
+          owner_salary_pct?: number
+          boat_count?: number
+          berth_fee_per_boat_yearly_cents?: number
+          other_fixed_costs_monthly_cents?: number
+          zettle_cogs_pct?: number
           fixed_costs_monthly_cents?: number
           winter_buffer_target_cents?: number
           default_monthly_revenue_target_cents?: number
@@ -2091,6 +2105,13 @@ export type Database = {
           id?: string
           maintenance_pct?: number
           marketing_pct?: number
+          profit_first_profit_pct?: number
+          owner_salary_monthly_cents?: number
+          owner_salary_pct?: number
+          boat_count?: number
+          berth_fee_per_boat_yearly_cents?: number
+          other_fixed_costs_monthly_cents?: number
+          zettle_cogs_pct?: number
           fixed_costs_monthly_cents?: number
           winter_buffer_target_cents?: number
           default_monthly_revenue_target_cents?: number

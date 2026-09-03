@@ -3,7 +3,14 @@ import { calculateCateringOrderCosts, resolveItemCostPrice, type ExtraCatalogIte
 export interface CockpitBudgetSettings {
   maintenancePct: number // default 8
   marketingPct: number // default 6
-  fixedCostsMonthlyCents: number // default 200000 (€ 2.000)
+  profitFirstProfitPct: number // default 5 (5% van omzet direct naar winstrekening)
+  ownerSalaryMonthlyCents: number // default 350000 (€ 3.500 / maand)
+  ownerSalaryPct: number // default 0 (of als % van omzet)
+  boatCount: number // default 2
+  berthFeePerBoatYearlyCents: number // default 400000 (€ 4.000 ex BTW per boot per jaar)
+  otherFixedCostsMonthlyCents: number // default 120000 (€ 1.200 / maand)
+  zettleCogsPct: number // default 28 (28% inkoop op boordverkoop)
+  fixedCostsMonthlyCents: number // legacy fallback
   winterBufferTargetCents: number // default 2500000 (€ 25.000)
   defaultMonthlyRevenueTargetCents: number // default 4000000 (€ 40.000)
   targetSkipperRatioPct: number // default 18
@@ -14,7 +21,14 @@ export interface CockpitBudgetSettings {
 export const DEFAULT_BUDGET_SETTINGS: CockpitBudgetSettings = {
   maintenancePct: 8.0,
   marketingPct: 6.0,
-  fixedCostsMonthlyCents: 200000,
+  profitFirstProfitPct: 5.0,
+  ownerSalaryMonthlyCents: 350000,
+  ownerSalaryPct: 0.0,
+  boatCount: 2,
+  berthFeePerBoatYearlyCents: 400000,
+  otherFixedCostsMonthlyCents: 120000,
+  zettleCogsPct: 28.0,
+  fixedCostsMonthlyCents: 186667, // (2 * 4000/12) + 1200 = ~1867
   winterBufferTargetCents: 2500000,
   defaultMonthlyRevenueTargetCents: 4000000,
   targetSkipperRatioPct: 18.0,
@@ -48,6 +62,17 @@ export interface ShiftForCockpit {
   } | null
 }
 
+export interface ZettleMonthForCockpit {
+  month: string // '2026-08-01'
+  total_incl_vat_cents?: number | null
+  total_excl_vat_cents?: number | null
+  card_gross_cents?: number | null
+  cash_zettle_cents?: number | null
+  vat9_vat_cents?: number | null
+  vat21_vat_cents?: number | null
+  total_vat_cents?: number | null
+}
+
 export interface MonthlyCockpitRow {
   month: string // '2026-08'
   monthLabel: string // 'Aug 2026'
@@ -55,21 +80,36 @@ export interface MonthlyCockpitRow {
   totalRevenueCents: number
   channelCommissionCents: number
   cityTaxCents: number
+  // Catering & Bar (incl Zettle boordverkoop)
   cateringSellingCents: number
   cateringCostCents: number
   cateringMarginCents: number
   cateringMarginPct: number
+  ticketCateringSellingCents: number
+  ticketCateringCostCents: number
+  zettleSellingCents: number
+  zettleCostCents: number
+  // Schippers
   skipperCostCents: number
   skipperHours: number
   skipperRatioPct: number
+  // Winst voor vaste lasten (Operationele marge)
   operatingProfitCents: number
   operatingProfitPct: number
   profitPerHourCents: number
-  // Dynamic pots (move with monthly revenue)
-  maintenancePotCents: number
-  marketingPotCents: number
-  fiscusReserveCents: number
+  // Vaste lasten
+  berthFeeMonthlyCents: number // Liggeld (€ 4.000 / 12 per boot)
+  otherFixedCostsMonthlyCents: number
+  totalFixedCostsCents: number
+  // Profit First toewijzingen
+  profitFirstProfitPotCents: number // Directe winstreservering
+  ownerSalaryPotCents: number // Eigenaarsbeloning
+  maintenancePotCents: number // 8% Capex
+  marketingPotCents: number // 6% Groei
+  fiscusReserveCents: number // BTW + City Tax
+  // Netto overblijvende vrije cash na alle potjes en vaste lasten
   netFreeCashAfterPotsCents: number
+  profitFirstHealth: 'healthy' | 'tight' | 'deficit'
   // Target comparisons
   revenueTargetCents: number
   revenueTargetProgressPct: number
@@ -85,6 +125,11 @@ export interface CockpitTotals {
   totalCateringSellingCents: number
   totalCateringCostCents: number
   overallCateringMarginPct: number
+  totalZettleSellingCents: number
+  totalFixedCostsCents: number
+  totalBerthFeeCents: number
+  totalOwnerSalaryCents: number
+  totalProfitFirstProfitCents: number
   totalMaintenanceReservedCents: number
   totalMarketingBudgetCents: number
   totalHoursCruised: number
@@ -108,6 +153,7 @@ export function computeMonthlyCockpit({
   year,
   bookings,
   shifts,
+  zettleMonths = [],
   catalog,
   settings = DEFAULT_BUDGET_SETTINGS,
   currentDate = new Date(),
@@ -115,6 +161,7 @@ export function computeMonthlyCockpit({
   year: number
   bookings: BookingForCockpit[]
   shifts: ShiftForCockpit[]
+  zettleMonths?: ZettleMonthForCockpit[]
   catalog?: ExtraCatalogItem[] | null
   settings?: CockpitBudgetSettings
   currentDate?: Date
@@ -143,13 +190,32 @@ export function computeMonthlyCockpit({
     }
   }
 
+  // Group Zettle by month
+  const zettleByMonth: Record<string, ZettleMonthForCockpit> = {}
+  for (const z of zettleMonths) {
+    if (!z.month) continue
+    const m = z.month.slice(0, 7)
+    if (m && m.startsWith(String(year))) {
+      zettleByMonth[m] = z
+    }
+  }
+
+  // Monthly fixed costs:
+  // Liggeld = (boatCount * berthFeePerBoatYearlyCents) / 12
+  const monthlyBerthFeeCents = Math.round((settings.boatCount * settings.berthFeePerBoatYearlyCents) / 12)
+  const monthlyOtherFixedCostsCents = settings.otherFixedCostsMonthlyCents
+  const monthlyTotalFixedCostsCents = monthlyBerthFeeCents + monthlyOtherFixedCostsCents
+
   let totalRevenueCents = 0
   let totalProfitCents = 0
   let totalSkipperCostCents = 0
   let totalCateringSellingCents = 0
   let totalCateringCostCents = 0
+  let totalZettleSellingCents = 0
   let totalMaintenanceReservedCents = 0
   let totalMarketingBudgetCents = 0
+  let totalProfitFirstProfitCents = 0
+  let totalOwnerSalaryCents = 0
   let totalHoursCruised = 0
 
   const months: MonthlyCockpitRow[] = monthKeys.map(mKey => {
@@ -157,31 +223,49 @@ export function computeMonthlyCockpit({
     const monthLabel = `${DUTCH_MONTH_NAMES[monthIndex]} ${year}`
     const bList = bookingsByMonth[mKey] || []
     const sList = shiftsByMonth[mKey] || []
+    const zData = zettleByMonth[mKey]
 
-    let revCents = 0
+    let bookingRevCents = 0
     let commissionCents = 0
     let guestCount = 0
-    let cateringSell = 0
-    let cateringCost = 0
+    let ticketCatSell = 0
+    let ticketCatCost = 0
 
     for (const b of bList) {
-      // Revenue calculation: prefer stripe_amount or sum of base + extras
       const bookingRev = typeof b.stripe_amount === 'number' && b.stripe_amount > 0
         ? b.stripe_amount
         : (b.base_amount_cents || 0) + (b.extras_amount_cents || 0)
-      revCents += bookingRev
+      bookingRevCents += bookingRev
 
       commissionCents += b.commission_amount_cents || 0
       guestCount += b.guest_count || 0
 
-      // Catering
       const catRes = calculateCateringOrderCosts(
         b.extras_selected as Array<{ name: string; amount_cents: number; quantity?: number; category?: string }>,
         catalog
       )
-      cateringSell += catRes.sellingCents
-      cateringCost += catRes.costCents
+      ticketCatSell += catRes.sellingCents
+      ticketCatCost += catRes.costCents
     }
+
+    // Zettle onboard catering / drinks
+    let zettleSell = 0
+    let zettleCost = 0
+    let zettleVat = 0
+    if (zData) {
+      zettleSell = zData.total_incl_vat_cents ?? ((zData.card_gross_cents ?? 0) + (zData.cash_zettle_cents ?? 0))
+      zettleCost = Math.round(zettleSell * (settings.zettleCogsPct / 100))
+      zettleVat = zData.total_vat_cents ?? 0
+    }
+
+    // Totale omzet (boekingen + Zettle boordomzet)
+    const revCents = bookingRevCents + zettleSell
+
+    // Totale Catering (tickets + Zettle)
+    const cateringSell = ticketCatSell + zettleSell
+    const cateringCost = ticketCatCost + zettleCost
+    const cateringMarginCents = Math.max(0, cateringSell - cateringCost)
+    const cateringMarginPct = cateringSell > 0 ? Math.round((cateringMarginCents / cateringSell) * 100) : 0
 
     // City Tax (€ 2,60 / guest)
     const cityTaxCents = guestCount * 260
@@ -202,20 +286,43 @@ export function computeMonthlyCockpit({
       mSkipperCost += Math.round(hours * rate)
     }
 
-    // Operating Profit
+    // Operating Profit (voor vaste lasten)
     const operatingProfitCents = revCents - commissionCents - cityTaxCents - cateringCost - mSkipperCost
     const operatingProfitPct = revCents > 0 ? Math.round((operatingProfitCents / revCents) * 100) : 0
     const profitPerHourCents = mHours > 0 ? Math.round(operatingProfitCents / mHours) : 0
-
-    const cateringMarginCents = Math.max(0, cateringSell - cateringCost)
-    const cateringMarginPct = cateringSell > 0 ? Math.round((cateringMarginCents / cateringSell) * 100) : 0
     const skipperRatioPct = revCents > 0 ? Math.round((mSkipperCost / revCents) * 100) : 0
 
-    // Dynamic Pots
+    // ── PROFIT FIRST TOEKIEZINGEN ──
+    // 1. Winstpot (direct 5-10% afromen)
+    const profitFirstProfitPotCents = Math.round(revCents * (settings.profitFirstProfitPct / 100))
+
+    // 2. Eigenaarssalaris (vast bedrag of % van omzet)
+    const ownerSalaryPotCents = settings.ownerSalaryPct > 0
+      ? Math.round(revCents * (settings.ownerSalaryPct / 100))
+      : settings.ownerSalaryMonthlyCents
+
+    // 3. Vloot & Onderhoud (8%)
     const maintenancePotCents = Math.round(revCents * (settings.maintenancePct / 100))
+
+    // 4. Marketing & Groei (6%)
     const marketingPotCents = Math.round(revCents * (settings.marketingPct / 100))
-    const fiscusReserveCents = Math.round(cityTaxCents + (revCents * 0.09)) // 9% average BTW + City Tax
-    const netFreeCashAfterPotsCents = operatingProfitCents - maintenancePotCents - marketingPotCents
+
+    // 5. Belastingreservering (BTW + City Tax + Zettle BTW)
+    const fiscusReserveCents = Math.round(cityTaxCents + (bookingRevCents * 0.09) + zettleVat)
+
+    // 6. Netto Vrije Cash na aftrek van ALLE potjes EN vaste lasten
+    const netFreeCashAfterPotsCents = operatingProfitCents 
+      - monthlyTotalFixedCostsCents 
+      - profitFirstProfitPotCents 
+      - ownerSalaryPotCents 
+      - maintenancePotCents 
+      - marketingPotCents
+
+    // Profit First Health Check
+    let profitFirstHealth: 'healthy' | 'tight' | 'deficit' = 'healthy'
+    if (netFreeCashAfterPotsCents < 0) {
+      profitFirstHealth = netFreeCashAfterPotsCents < -100000 ? 'deficit' : 'tight'
+    }
 
     // Revenue target
     const target = settings.defaultMonthlyRevenueTargetCents
@@ -227,8 +334,11 @@ export function computeMonthlyCockpit({
     totalSkipperCostCents += mSkipperCost
     totalCateringSellingCents += cateringSell
     totalCateringCostCents += cateringCost
+    totalZettleSellingCents += zettleSell
     totalMaintenanceReservedCents += maintenancePotCents
     totalMarketingBudgetCents += marketingPotCents
+    totalProfitFirstProfitCents += profitFirstProfitPotCents
+    totalOwnerSalaryCents += ownerSalaryPotCents
     totalHoursCruised += mHours
 
     return {
@@ -242,21 +352,34 @@ export function computeMonthlyCockpit({
       cateringCostCents: cateringCost,
       cateringMarginCents,
       cateringMarginPct,
+      ticketCateringSellingCents: ticketCatSell,
+      ticketCateringCostCents: ticketCatCost,
+      zettleSellingCents: zettleSell,
+      zettleCostCents: zettleCost,
       skipperCostCents: mSkipperCost,
       skipperHours: Math.round(mHours * 10) / 10,
       skipperRatioPct,
       operatingProfitCents,
       operatingProfitPct,
       profitPerHourCents,
+      berthFeeMonthlyCents: monthlyBerthFeeCents,
+      otherFixedCostsMonthlyCents: monthlyOtherFixedCostsCents,
+      totalFixedCostsCents: monthlyTotalFixedCostsCents,
+      profitFirstProfitPotCents,
+      ownerSalaryPotCents,
       maintenancePotCents,
       marketingPotCents,
       fiscusReserveCents,
       netFreeCashAfterPotsCents,
+      profitFirstHealth,
       revenueTargetCents: target,
       revenueTargetProgressPct: targetProgressPct,
       isCurrentMonth: mKey === currentMonthKey,
     }
   })
+
+  const totalFixedCostsCents = monthlyTotalFixedCostsCents * 12
+  const totalBerthFeeCents = monthlyBerthFeeCents * 12
 
   const totals: CockpitTotals = {
     totalRevenueCents,
@@ -269,6 +392,11 @@ export function computeMonthlyCockpit({
     overallCateringMarginPct: totalCateringSellingCents > 0
       ? Math.round(((totalCateringSellingCents - totalCateringCostCents) / totalCateringSellingCents) * 100)
       : 0,
+    totalZettleSellingCents,
+    totalFixedCostsCents,
+    totalBerthFeeCents,
+    totalOwnerSalaryCents,
+    totalProfitFirstProfitCents,
     totalMaintenanceReservedCents,
     totalMarketingBudgetCents,
     totalHoursCruised: Math.round(totalHoursCruised * 10) / 10,
