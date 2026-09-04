@@ -257,6 +257,143 @@ export type Database = {
           },
         ]
       }
+      bank_transactions: {
+        Row: {
+          account_id: string
+          amount_cents: number
+          balance_after_cents: number | null
+          boat_id: string | null
+          category: string | null
+          classification_reason: string | null
+          classified_by: string | null
+          completed_at: string | null
+          confidence: number | null
+          counterparty: Json | null
+          created_at: string
+          currency: string
+          description: string | null
+          fee_cents: number
+          first_seen_at: string
+          goal_id: string | null
+          id: string
+          invoice_id: string | null
+          last_synced_at: string
+          loan_payment_id: string | null
+          merchant: Json | null
+          needs_review: boolean
+          obligation_id: string | null
+          raw: Json
+          reference: string | null
+          request_id: string | null
+          reviewed_at: string | null
+          revolut_id: string
+          state: string
+          subcategory: string | null
+          type: string
+          updated_at: string
+          vat_cents: number | null
+        }
+        Insert: {
+          account_id: string
+          amount_cents: number
+          balance_after_cents?: number | null
+          boat_id?: string | null
+          category?: string | null
+          classification_reason?: string | null
+          classified_by?: string | null
+          completed_at?: string | null
+          confidence?: number | null
+          counterparty?: Json | null
+          created_at: string
+          currency?: string
+          description?: string | null
+          fee_cents?: number
+          first_seen_at?: string
+          goal_id?: string | null
+          id?: string
+          invoice_id?: string | null
+          last_synced_at?: string
+          loan_payment_id?: string | null
+          merchant?: Json | null
+          needs_review?: boolean
+          obligation_id?: string | null
+          raw: Json
+          reference?: string | null
+          request_id?: string | null
+          reviewed_at?: string | null
+          revolut_id: string
+          state: string
+          subcategory?: string | null
+          type: string
+          updated_at: string
+          vat_cents?: number | null
+        }
+        Update: {
+          account_id?: string
+          amount_cents?: number
+          balance_after_cents?: number | null
+          boat_id?: string | null
+          category?: string | null
+          classification_reason?: string | null
+          classified_by?: string | null
+          completed_at?: string | null
+          confidence?: number | null
+          counterparty?: Json | null
+          created_at?: string
+          currency?: string
+          description?: string | null
+          fee_cents?: number
+          first_seen_at?: string
+          goal_id?: string | null
+          id?: string
+          invoice_id?: string | null
+          last_synced_at?: string
+          loan_payment_id?: string | null
+          merchant?: Json | null
+          needs_review?: boolean
+          obligation_id?: string | null
+          raw?: Json
+          reference?: string | null
+          request_id?: string | null
+          reviewed_at?: string | null
+          revolut_id?: string
+          state?: string
+          subcategory?: string | null
+          type?: string
+          updated_at?: string
+          vat_cents?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bank_transactions_boat_id_fkey"
+            columns: ["boat_id"]
+            isOneToOne: false
+            referencedRelation: "boats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bank_transactions_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: false
+            referencedRelation: "finance_goals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bank_transactions_loan_payment_id_fkey"
+            columns: ["loan_payment_id"]
+            isOneToOne: false
+            referencedRelation: "finance_loan_payments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bank_transactions_obligation_id_fkey"
+            columns: ["obligation_id"]
+            isOneToOne: false
+            referencedRelation: "finance_obligations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       barqo_bookings: {
         Row: {
           boat_name: string | null
@@ -3969,6 +4106,96 @@ export type Database = {
           },
         ]
       }
+      revolut_balance_snapshots: {
+        Row: {
+          account_id: string
+          balance_cents: number
+          currency: string
+          id: string
+          source: string
+          taken_at: string
+        }
+        Insert: {
+          account_id: string
+          balance_cents: number
+          currency?: string
+          id?: string
+          source?: string
+          taken_at?: string
+        }
+        Update: {
+          account_id?: string
+          balance_cents?: number
+          currency?: string
+          id?: string
+          source?: string
+          taken_at?: string
+        }
+        Relationships: []
+      }
+      revolut_connection: {
+        Row: {
+          access_token_enc: string | null
+          access_token_expires_at: string | null
+          account_id: string | null
+          account_name: string | null
+          client_id: string | null
+          consented_at: string | null
+          environment: string
+          id: string
+          last_sync_at: string | null
+          last_sync_error: string | null
+          redirect_uri: string | null
+          refresh_lock_until: string | null
+          refresh_token_enc: string | null
+          scopes: string[]
+          updated_at: string
+          webhook_id: string | null
+          webhook_secret_enc: string | null
+          webhook_url: string | null
+        }
+        Insert: {
+          access_token_enc?: string | null
+          access_token_expires_at?: string | null
+          account_id?: string | null
+          account_name?: string | null
+          client_id?: string | null
+          consented_at?: string | null
+          environment?: string
+          id?: string
+          last_sync_at?: string | null
+          last_sync_error?: string | null
+          redirect_uri?: string | null
+          refresh_lock_until?: string | null
+          refresh_token_enc?: string | null
+          scopes?: string[]
+          updated_at?: string
+          webhook_id?: string | null
+          webhook_secret_enc?: string | null
+          webhook_url?: string | null
+        }
+        Update: {
+          access_token_enc?: string | null
+          access_token_expires_at?: string | null
+          account_id?: string | null
+          account_name?: string | null
+          client_id?: string | null
+          consented_at?: string | null
+          environment?: string
+          id?: string
+          last_sync_at?: string | null
+          last_sync_error?: string | null
+          redirect_uri?: string | null
+          refresh_lock_until?: string | null
+          refresh_token_enc?: string | null
+          scopes?: string[]
+          updated_at?: string
+          webhook_id?: string | null
+          webhook_secret_enc?: string | null
+          webhook_url?: string | null
+        }
+        Relationships: []
+      }
       revolut_transactions: {
         Row: {
           created_at: string
@@ -4014,6 +4241,39 @@ export type Database = {
           updated_at?: string
           vat21_gross_cents?: number | null
           vat9_gross_cents?: number | null
+        }
+        Relationships: []
+      }
+      revolut_webhook_events: {
+        Row: {
+          dedupe_key: string
+          error: string | null
+          event_type: string
+          id: string
+          payload: Json
+          processed_at: string | null
+          received_at: string
+          transaction_id: string | null
+        }
+        Insert: {
+          dedupe_key: string
+          error?: string | null
+          event_type: string
+          id?: string
+          payload: Json
+          processed_at?: string | null
+          received_at?: string
+          transaction_id?: string | null
+        }
+        Update: {
+          dedupe_key?: string
+          error?: string | null
+          event_type?: string
+          id?: string
+          payload?: Json
+          processed_at?: string | null
+          received_at?: string
+          transaction_id?: string | null
         }
         Relationships: []
       }

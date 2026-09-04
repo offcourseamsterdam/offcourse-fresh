@@ -9,6 +9,7 @@ import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getRevolutCashInput } from '@/lib/revolut/cash'
 import { computeCockpit } from './compute'
 import { todayISO, type ISODate } from './dates'
 import { goalProgress } from './goals'
@@ -108,10 +109,13 @@ export async function loadCockpitInputs(opts: LoadOptions = {}): Promise<LoadedC
     boatId: r.boat_id,
   }))
 
+  // Cash: live Revolut snapshot when connected, else the manual balance from settings.
+  const cash = opts.cash ?? (await getRevolutCashInput(supabase)) ?? cashFromSettings(settings)
+
   const inputs: CockpitInputs = {
     today,
     horizon,
-    cash: opts.cash ?? cashFromSettings(settings),
+    cash,
     obligations: expandObligations(obligationRows, loanPayments, { today, horizon }),
     operationalCoverageCents: settings.operational_coverage_cents,
     ownerSalary: {

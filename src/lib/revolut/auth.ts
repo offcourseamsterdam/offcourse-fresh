@@ -1,230 +1,130 @@
-import crypto from 'crypto'
-import fs from 'fs'
-import path from 'path'
+/**
+ * Revolut Business API — OAuth with a JWT client assertion.
+ *
+ * Verified against developer.revolut.com on 2026-09-04:
+ * - Consent URL: https://business.revolut.com/app-confirm?client_id=…&redirect_uri=…&response_type=code[&scope=READ,WRITE]
+ *   (sandbox: https://sandbox-business.revolut.com/app-confirm). The code is valid for 2 minutes.
+ * - Token endpoint: POST {base}/auth/token, x-www-form-urlencoded, with
+ *   client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer.
+ * - Client assertion JWT, RS256: iss = the DOMAIN of the OAuth redirect URI (no scheme),
+ *   sub = client ID, aud = "https://revolut.com", exp = unix seconds.
+ * - access_token expires in 40 minutes; refresh_token does not expire; refreshing
+ *   INVALIDATES the previous access token (so tokens must live in one shared store).
+ *
+ * This module is pure I/O against Revolut: no database, no process-level cache.
+ * Storage lives in token-store.ts.
+ */
 
-export interface RevolutTokenResponse {
+import { createSign } from 'node:crypto'
+import { b64url } from './crypto'
+
+export type RevolutEnvironment = 'sandbox' | 'production'
+
+export const REVOLUT_API_BASE: Record<RevolutEnvironment, string> = {
+  sandbox: 'https://sandbox-b2b.revolut.com/api/1.0',
+  production: 'https://b2b.revolut.com/api/1.0',
+}
+
+export const REVOLUT_CONSENT_BASE: Record<RevolutEnvironment, string> = {
+  sandbox: 'https://sandbox-business.revolut.com/app-confirm',
+  production: 'https://business.revolut.com/app-confirm',
+}
+
+export type RevolutScope = 'READ' | 'WRITE' | 'PAY' | 'READ_SENSITIVE_CARD_DATA'
+
+export interface TokenResponse {
   access_token: string
   token_type: string
   expires_in: number
   refresh_token?: string
 }
 
-let cachedAccessToken: {
-  token: string
-  expiresAt: number
-} | null = null
-
-function base64UrlEncode(str: string | Buffer): string {
-  return Buffer.from(str)
-    .toString('base64')
-    .replace(/=/g, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
+/** The domain Revolut expects as `iss`: the redirect URI's host, no scheme, no path. */
+export function issuerFromRedirectUri(redirectUri: string): string {
+  return new URL(redirectUri).hostname
 }
 
-/**
- * Reads the Revolut private key from file or environment variable.
- */
-export function getRevolutPrivateKey(): string | null {
-  if (process.env.REVOLUT_PRIVATE_KEY) {
-    let key = process.env.REVOLUT_PRIVATE_KEY
-    if (key.includes('\\n')) key = key.replace(/\\n/g, '\n')
-    return key
-  }
-
-  // Fallback to local certs file
-  const localKeyPath = path.join(process.cwd(), 'certs', 'revolut', 'private.key')
-  if (fs.existsSync(localKeyPath)) {
-    return fs.readFileSync(localKeyPath, 'utf8')
-  }
-
-  return null
+export function buildAuthorizeUrl(args: { environment: RevolutEnvironment; clientId: string; redirectUri: string; scopes?: RevolutScope[] }): string {
+  const u = new URL(REVOLUT_CONSENT_BASE[args.environment])
+  u.searchParams.set('client_id', args.clientId)
+  u.searchParams.set('redirect_uri', args.redirectUri)
+  u.searchParams.set('response_type', 'code')
+  if (args.scopes && args.scopes.length > 0) u.searchParams.set('scope', args.scopes.join(','))
+  return u.toString()
 }
 
-/**
- * Reads the Revolut public certificate from file.
- */
-export function getRevolutPublicCert(): string | null {
-  const localCertPath = path.join(process.cwd(), 'certs', 'revolut', 'public.cer')
-  if (fs.existsSync(localCertPath)) {
-    return fs.readFileSync(localCertPath, 'utf8')
-  }
-  return null
+export function normalizePrivateKey(raw: string): string {
+  const s = raw.trim()
+  if (s.includes('-----BEGIN')) return s.replace(/\\n/g, '\n').trim()
+  // Allow a base64-encoded PEM (handy for env vars on Vercel).
+  return Buffer.from(s, 'base64').toString('utf8').trim()
 }
 
-/**
- * Generates a signed JWT client assertion for Revolut Business API OAuth.
- */
-export function generateClientAssertion(
-  clientId: string,
-  privateKeyPem: string,
-  algorithm: 'RS256' | 'PS256' = 'RS256'
-): string {
-  const header = {
-    alg: algorithm,
-    typ: 'JWT',
-  }
-  const now = Math.floor(Date.now() / 1000)
-  const payload = {
-    iss: clientId,
-    sub: clientId,
-    aud: 'https://revolut.com',
-    iat: now,
-    exp: now + 120, // 2 minutes validity
-  }
-
-  const encodedHeader = base64UrlEncode(JSON.stringify(header))
-  const encodedPayload = base64UrlEncode(JSON.stringify(payload))
-  const message = `${encodedHeader}.${encodedPayload}`
-
-  const signer = crypto.createSign('RSA-SHA256')
-  signer.update(message)
-
-  let signatureBase64 = ''
-  if (algorithm === 'PS256') {
-    signatureBase64 = signer.sign(
-      {
-        key: privateKeyPem,
-        padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
-        saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
-      },
-      'base64'
-    )
-  } else {
-    signatureBase64 = signer.sign(privateKeyPem, 'base64')
-  }
-
-  const signature = signatureBase64
-    .replace(/=/g, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-
-  return `${message}.${signature}`
-}
-
-/**
- * Exchange an OAuth authorization code for access_token and refresh_token.
- */
-export async function exchangeAuthCode(params: {
-  code: string
+export function buildClientAssertion(args: {
   clientId: string
   redirectUri: string
   privateKeyPem: string
-  isSandbox?: boolean
-}): Promise<RevolutTokenResponse> {
-  const { code, clientId, redirectUri, privateKeyPem, isSandbox = false } = params
-  const clientAssertion = generateClientAssertion(clientId, privateKeyPem)
-  const baseUrl = isSandbox ? 'https://sandbox-b2b.revolut.com/api/1.0' : 'https://b2b.revolut.com/api/1.0'
-
-  const body = new URLSearchParams({
-    grant_type: 'authorization_code',
-    code,
-    client_id: clientId,
-    client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
-    client_assertion: clientAssertion,
-  })
-
-  const res = await fetch(`${baseUrl}/auth/token`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Accept: 'application/json',
-    },
-    body: body.toString(),
-  })
-
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '')
-    throw new Error(`Revolut auth error (${res.status}): ${errText || res.statusText}`)
+  now?: Date
+  ttlSeconds?: number
+}): string {
+  const now = Math.floor((args.now ?? new Date()).getTime() / 1000)
+  const header = { alg: 'RS256', typ: 'JWT' }
+  const payload = {
+    iss: issuerFromRedirectUri(args.redirectUri),
+    sub: args.clientId,
+    aud: 'https://revolut.com',
+    iat: now,
+    exp: now + (args.ttlSeconds ?? 300),
   }
-
-  const data: RevolutTokenResponse = await res.json()
-  if (data.access_token) {
-    cachedAccessToken = {
-      token: data.access_token,
-      expiresAt: Date.now() + (data.expires_in - 60) * 1000,
-    }
-  }
-  return data
+  const signingInput = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(payload))}`
+  const signer = createSign('RSA-SHA256')
+  signer.update(signingInput)
+  const signature = signer.sign(args.privateKeyPem)
+  return `${signingInput}.${b64url(signature)}`
 }
 
-/**
- * Use a refresh_token to obtain a new access_token.
- */
-export async function refreshAccessToken(params: {
-  refreshToken: string
+interface TokenCall {
+  environment: RevolutEnvironment
   clientId: string
+  redirectUri: string
   privateKeyPem: string
-  isSandbox?: boolean
-}): Promise<RevolutTokenResponse> {
-  const { refreshToken, clientId, privateKeyPem, isSandbox = false } = params
-  const clientAssertion = generateClientAssertion(clientId, privateKeyPem)
-  const baseUrl = isSandbox ? 'https://sandbox-b2b.revolut.com/api/1.0' : 'https://b2b.revolut.com/api/1.0'
-
-  const body = new URLSearchParams({
-    grant_type: 'refresh_token',
-    refresh_token: refreshToken,
-    client_id: clientId,
-    client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
-    client_assertion: clientAssertion,
-  })
-
-  const res = await fetch(`${baseUrl}/auth/token`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Accept: 'application/json',
-    },
-    body: body.toString(),
-  })
-
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '')
-    throw new Error(`Revolut token refresh error (${res.status}): ${errText || res.statusText}`)
-  }
-
-  const data: RevolutTokenResponse = await res.json()
-  if (data.access_token) {
-    cachedAccessToken = {
-      token: data.access_token,
-      expiresAt: Date.now() + (data.expires_in - 60) * 1000,
-    }
-  }
-  return data
+  fetchImpl?: typeof fetch
 }
 
-/**
- * Returns a valid access token for Revolut Business API requests.
- * Automatically refreshes the token if expired.
- */
-export async function getValidRevolutAccessToken(): Promise<string | null> {
-  // 1. Static API Key override (from .env or sandbox)
-  if (process.env.REVOLUT_BUSINESS_API_KEY && process.env.REVOLUT_BUSINESS_API_KEY.trim().length > 0) {
-    return process.env.REVOLUT_BUSINESS_API_KEY.trim()
+export async function exchangeAuthorizationCode(args: TokenCall & { code: string }): Promise<TokenResponse> {
+  return postToken(args, { grant_type: 'authorization_code', code: args.code })
+}
+
+export async function refreshAccessToken(args: TokenCall & { refreshToken: string }): Promise<TokenResponse> {
+  return postToken(args, { grant_type: 'refresh_token', refresh_token: args.refreshToken })
+}
+
+async function postToken(args: TokenCall, grant: Record<string, string>): Promise<TokenResponse> {
+  const body = new URLSearchParams({
+    ...grant,
+    client_id: args.clientId,
+    client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+    client_assertion: buildClientAssertion({ clientId: args.clientId, redirectUri: args.redirectUri, privateKeyPem: args.privateKeyPem }),
+  })
+  const f = args.fetchImpl ?? fetch
+  const res = await f(`${REVOLUT_API_BASE[args.environment]}/auth/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+    body: body.toString(),
+    cache: 'no-store',
+  })
+  const text = await res.text()
+  if (!res.ok) {
+    throw new Error(`Revolut token request failed (${res.status}): ${redact(text)}`)
   }
-
-  // 2. Active memory cached token
-  if (cachedAccessToken && cachedAccessToken.expiresAt > Date.now()) {
-    return cachedAccessToken.token
+  const json = JSON.parse(text) as TokenResponse
+  if (!json.access_token || typeof json.expires_in !== 'number') {
+    throw new Error('Revolut token response missing access_token/expires_in')
   }
+  return json
+}
 
-  // 3. OAuth with refresh token
-  const clientId = process.env.REVOLUT_CLIENT_ID
-  const refreshToken = process.env.REVOLUT_REFRESH_TOKEN
-  const privateKey = getRevolutPrivateKey()
-
-  if (clientId && refreshToken && privateKey) {
-    try {
-      const refreshed = await refreshAccessToken({
-        clientId,
-        refreshToken,
-        privateKeyPem: privateKey,
-      })
-      return refreshed.access_token
-    } catch (err) {
-      console.error('[revolut-auth] Failed to refresh Revolut access token:', err)
-    }
-  }
-
-  return null
+/** Never let a token or code leak into logs through an error message. */
+export function redact(s: string): string {
+  return s.replace(/oa_(prod|sand)_[A-Za-z0-9_-]+/g, 'oa_$1_[redacted]').slice(0, 500)
 }

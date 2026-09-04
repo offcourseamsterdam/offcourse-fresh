@@ -190,8 +190,13 @@ describe('admin route auth contract', () => {
     // 153 = 151 (this branch) + review-sms and sms-ready (merged in from main's
     // post-cruise review SMS feature: manual send + the "ready to send" list
     // on the admin Reviews page).
+    // 176 = 161 + 15 /api/admin/finance/cockpit/** routes (Financial Management
+    // Module Phase 1, docs/plans/2026-09-04-financial-management-module.md):
+    // overview, settings, obligations (+ [id], [id]/mark-paid, [id]/reopen),
+    // loans (+ [id], [id]/payments/[paymentId]/mark-paid + /reopen, impact),
+    // goals (+ [id], [id]/complete, [id]/events).
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`161`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`184`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {
