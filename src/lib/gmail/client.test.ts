@@ -5,7 +5,7 @@ const h = vi.hoisted(() => ({
 }))
 vi.mock('./auth', () => ({ getGmailAccessToken: h.getGmailAccessToken }))
 
-import { listNewMessages, getMessage, sendReply, extractSenderEmail } from './client'
+import { listNewMessages, getMessage, sendReply, extractSenderEmail, extractRecipients } from './client'
 
 function b64url(s: string): string {
   return Buffer.from(s, 'utf-8').toString('base64url')
@@ -60,6 +60,40 @@ describe('extractSenderEmail', () => {
   })
 })
 
+describe('extractRecipients', () => {
+  it('parses a single recipient the same way extractSenderEmail does', () => {
+    expect(extractRecipients('facturen@offcourseamsterdam.com')).toEqual([
+      { email: 'facturen@offcourseamsterdam.com', name: 'facturen@offcourseamsterdam.com' },
+    ])
+  })
+
+  it('splits several recipients on comma', () => {
+    expect(extractRecipients('Jane Doe <jane@example.com>, info@offcourseamsterdam.com')).toEqual([
+      { email: 'jane@example.com', name: 'Jane Doe' },
+      { email: 'info@offcourseamsterdam.com', name: 'info@offcourseamsterdam.com' },
+    ])
+  })
+
+  it('does not split on a comma inside a quoted display name (the real "Doe, Jane" shape)', () => {
+    expect(extractRecipients('"Doe, Jane" <jane@example.com>, facturen@offcourseamsterdam.com')).toEqual([
+      { email: 'jane@example.com', name: 'Doe, Jane' },
+      { email: 'facturen@offcourseamsterdam.com', name: 'facturen@offcourseamsterdam.com' },
+    ])
+  })
+
+  it('returns an empty list for an empty header', () => {
+    expect(extractRecipients('')).toEqual([])
+  })
+
+  it('ignores stray whitespace between addresses', () => {
+    expect(extractRecipients('a@x.com,   b@x.com ,c@x.com')).toEqual([
+      { email: 'a@x.com', name: 'a@x.com' },
+      { email: 'b@x.com', name: 'b@x.com' },
+      { email: 'c@x.com', name: 'c@x.com' },
+    ])
+  })
+})
+
 describe('listNewMessages', () => {
   it('lists a single page of results', async () => {
     mockFetchOnce({ messages: [{ id: 'm1', threadId: 't1' }, { id: 'm2', threadId: 't1' }] })
@@ -105,6 +139,7 @@ describe('getMessage', () => {
       id: 'm1',
       threadId: 't1',
       from: { email: 'jane@example.com', name: 'Jane Doe' },
+      to: [],
       subject: 'Booking question',
       messageIdHeader: '<abc123@mail.gmail.com>',
       bodyText: 'Hi, can we book Saturday?',

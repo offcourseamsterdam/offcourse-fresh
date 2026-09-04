@@ -1293,6 +1293,7 @@ export type Database = {
           ota_source: string | null
           ota_status: string | null
           provider_thread_id: string | null
+          source_category: string | null
           status: string
           subject: string | null
           unread_count: number
@@ -1314,6 +1315,7 @@ export type Database = {
           ota_source?: string | null
           ota_status?: string | null
           provider_thread_id?: string | null
+          source_category?: string | null
           status?: string
           subject?: string | null
           unread_count?: number
@@ -1335,6 +1337,7 @@ export type Database = {
           ota_source?: string | null
           ota_status?: string | null
           provider_thread_id?: string | null
+          source_category?: string | null
           status?: string
           subject?: string | null
           unread_count?: number

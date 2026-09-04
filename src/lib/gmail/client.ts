@@ -55,6 +55,14 @@ export interface GmailMessage {
   id: string
   threadId: string
   from: GmailSender
+  /**
+   * Every address in the `To` header, parsed the same way `from` is. A
+   * message can be addressed to several recipients at once (a shared inbox
+   * plus a Cc-like alias), so this is a list, not a single sender-shaped
+   * value. Used to tell which alias on the shared mailbox a message actually
+   * arrived on — see `finance/inbox/detect.ts`, the first consumer.
+   */
+  to: GmailSender[]
   subject: string
   /** The RFC 2822 `Message-ID` header — needed for In-Reply-To/References on a reply, distinct from Gmail's own `id`. */
   messageIdHeader: string | null
@@ -127,6 +135,32 @@ export function extractSenderEmail(fromHeader: string): GmailSender {
   return { email, name: email }
 }
 
+/**
+ * Splits a `To` header on commas and parses each address the same way
+ * `extractSenderEmail` does. A display name can itself contain a comma
+ * ("Doe, Jane" <jane@x.com>), so splitting is comma-aware of quoted/angle
+ * sections rather than a blind `.split(',')`.
+ */
+export function extractRecipients(toHeader: string): GmailSender[] {
+  const parts: string[] = []
+  let current = ''
+  let inAngleBrackets = false
+  let inQuotes = false
+  for (const char of toHeader) {
+    if (char === '"') inQuotes = !inQuotes
+    if (char === '<' && !inQuotes) inAngleBrackets = true
+    if (char === '>' && !inQuotes) inAngleBrackets = false
+    if (char === ',' && !inAngleBrackets && !inQuotes) {
+      parts.push(current)
+      current = ''
+      continue
+    }
+    current += char
+  }
+  if (current.trim()) parts.push(current)
+  return parts.map(p => p.trim()).filter(Boolean).map(extractSenderEmail)
+}
+
 export async function getMessage(id: string): Promise<GmailMessage> {
   const json = await gmailFetch<GmailApiMessage>(`/messages/${id}?format=full`)
   const headers = json.payload?.headers ?? []
@@ -140,6 +174,7 @@ export async function getMessage(id: string): Promise<GmailMessage> {
     id: json.id,
     threadId: json.threadId,
     from: extractSenderEmail(header('From')),
+    to: extractRecipients(header('To')),
     subject: header('Subject'),
     messageIdHeader: header('Message-ID') || null,
     bodyText,

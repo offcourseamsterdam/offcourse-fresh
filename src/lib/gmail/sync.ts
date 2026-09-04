@@ -15,6 +15,7 @@ import { summarizeInboundEmail } from './summarize'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { alertCronFailure } from '@/lib/cron/alert'
 import { findOrCreateContactByField } from '@/lib/contacts/find-or-create'
+import { detectFinanceInvoice } from '@/lib/finance/inbox/detect'
 import { listNewMessages, getMessage, type GmailMessage } from './client'
 
 /**
@@ -85,7 +86,13 @@ function inboxQuery(): string {
   // explicitly excluding spam/trash, since a sent reply never lives in the
   // inbox at all.
   const fromClauses = [...ourOwnAddresses()].map(a => `from:${a}`).join(' OR ')
-  return `(to:${supportAddress} OR ${fromClauses}) -in:spam -in:trash -category:promotions newer_than:1d`
+  // GMAIL_FINANCE_ADDRESS (§6a, docs/plans/2026-09-04-financial-management-module.md)
+  // is a second alias on the same shared mailbox, dedicated to skipper/supplier
+  // invoices. Purely additive: unset today, so this clause is absent and the
+  // query is byte-for-byte what it was before — nothing changes until Beer
+  // actually creates the alias and sets the env var.
+  const financeClause = process.env.GMAIL_FINANCE_ADDRESS ? ` OR to:${process.env.GMAIL_FINANCE_ADDRESS}` : ''
+  return `(to:${supportAddress}${financeClause} OR ${fromClauses}) -in:spam -in:trash -category:promotions newer_than:1d`
 }
 
 type SupabaseAdmin = ReturnType<typeof createAdminClient>
@@ -144,6 +151,7 @@ async function findOrCreateConversation(
   threadId: string,
   subject: string,
   ota: OtaDetection | null,
+  sourceCategory: 'finance' | null = null,
 ): Promise<{ id: string; unreadCount: number }> {
   if (ota?.bookingRef) {
     const existingByRef = await lookupConversationByOtaRef(supabase, ota.platform, ota.bookingRef)
@@ -163,6 +171,7 @@ async function findOrCreateConversation(
       ota_source: ota?.platform ?? null,
       ota_booking_ref: ota?.bookingRef ?? null,
       ota_guest_name: ota?.guestName ?? null,
+      source_category: sourceCategory,
     })
     .select('id')
     .single()
@@ -394,6 +403,17 @@ export async function syncGmailInbox(queryOverride?: string): Promise<GmailSyncR
   const refs = await listNewMessages(queryOverride ?? inboxQuery())
   const ourAddresses = ourOwnAddresses()
 
+  // Loaded once per poll, not per message. Only queried when the Finance
+  // Inbox alias is actually configured — a no-op extra query is still a
+  // query, and this feature is off by default until Beer sets the env var.
+  // finance_suppliers doesn't exist yet (arrives with the rest of the §6
+  // invoice pipeline), so every sender starts as 'unknown' until then —
+  // detectFinanceInvoice() already handles an empty supplier list correctly.
+  const financeAddress = process.env.GMAIL_FINANCE_ADDRESS || null
+  const knownStaff = financeAddress
+    ? ((await supabase.from('staff').select('id, email')).data ?? [])
+    : []
+
   let imported = 0
   let skipped = 0
   // Collected instead of alerted inline per-message: a shared-cause outage
@@ -440,8 +460,15 @@ export async function syncGmailInbox(queryOverride?: string): Promise<GmailSyncR
     let inserted: { id: string } | null
     try {
       ota = detectOtaEmail({ fromEmail: message.from.email, subject: message.subject, bodyText: message.bodyText })
+      const finance = detectFinanceInvoice({
+        toAddresses: (message.to ?? []).map(t => t.email),
+        fromEmail: message.from.email,
+        financeAddress,
+        knownStaff,
+        knownSuppliers: [], // finance_suppliers arrives with the rest of the §6 pipeline
+      })
       const contactId = await findOrCreateContactByField(supabase, 'email', message.from.email, message.from.name)
-      const conv = await findOrCreateConversation(supabase, contactId, message.threadId, message.subject, ota)
+      const conv = await findOrCreateConversation(supabase, contactId, message.threadId, message.subject, ota, finance?.category ?? null)
       conversationId = conv.id
 
       const { data, error: insertError } = await supabase

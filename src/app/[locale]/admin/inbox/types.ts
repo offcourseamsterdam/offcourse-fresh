@@ -20,6 +20,8 @@ export interface InboxListItem {
   wa_window_expires_at: string | null
   /** Set only for OTA notification emails (Withlocals, GetMyBoat, GetYourGuide) — null for real customer conversations. */
   ota_source: string | null
+  /** Set when this message arrived at a dedicated alias with its own handling — currently only 'finance' (GMAIL_FINANCE_ADDRESS, skipper/supplier invoices). Null for ordinary inbox mail. */
+  source_category: 'finance' | null
   /**
    * 'waiting' = new request, just an availability check. 'confirmed' = guest
    * already paid the platform, ready to create the booking. 'needs_import' =

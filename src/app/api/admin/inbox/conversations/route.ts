@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
       .from('conversations')
       .select(
         `id, channel, status, subject, unread_count, last_message_at, created_at, wa_window_expires_at,
-         provider_thread_id, ota_source, ota_status, ota_guest_name, ota_available, ai_summary,
+         provider_thread_id, ota_source, ota_status, ota_guest_name, ota_available, ai_summary, source_category,
          contact:contacts(id, name, email, phone_e164),
          messages(body, direction, created_at),
          last_outbound:messages(created_at)`,
@@ -133,6 +133,7 @@ export async function GET(req: NextRequest) {
       ota_guest_name: c.ota_guest_name,
       ota_available: c.ota_available,
       ai_summary: c.ai_summary,
+      source_category: c.source_category,
       is_catering_thread: !!c.provider_thread_id && cateringThreadIds.has(c.provider_thread_id),
       last_outbound_at: c.last_outbound[0]?.created_at ?? null,
       next_booking:
