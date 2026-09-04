@@ -426,6 +426,43 @@ experiment with something Beer can use (manual cash + real loans + goals).
 6. **Built on the ai-ops branch/worktree**, migrations continue at 148. (Superseded the earlier idea of a fresh branch from main.)
 7. **Investment Tracker (Firebase) stays the loan source of truth for now**; we seed its six loans once and edit here afterwards. If Beer wants a live link later, the export format is already the contract.
 
+## 12b. Derived obligations and batch payouts (added 2026-09-04, after Beer's feedback)
+
+The cockpit was only as good as what Beer typed into it. Three commitments are already knowable
+from data we hold, and one of them is money that is not his at all.
+
+| Source | Rhythm | Status | Where the number comes from |
+|---|---|---|---|
+| City tax | quarterly | **built** (`derived/city-tax.ts`) | `bookings.guest_count` × the per-guest rate, yearly exemption consumed chronologically |
+| Standing charges (insurance, berth, subscriptions) | detected per charge | **built** (`derived/recurring.ts`) | the bank feed itself: same counterparty, steady interval, stable amount |
+| Skipper hours | monthly | **built, starved of data** (`derived/skipper-hours.ts`) | `shifts` + `time_entries`, priced at the rate frozen at clock-in |
+| Catering purchasing | per cruise | **blocked** | needs a cost price per extra; `extras.cost_price_value` was deliberately dropped in Phase 0 |
+
+Rules that keep these from corrupting the formula:
+
+1. **Derived obligations are proposals until confirmed.** Auto-creating them would double-count
+   against anything Beer entered by hand for the same thing. The obligations modal is where a
+   proposal becomes a row.
+2. **An accrual is replaced by its invoice, never added to it.** When a skipper invoice arrives in
+   Phase 4 for a month that already has an accrued obligation, the invoice supersedes it. Otherwise
+   the same hours are owed twice.
+3. **A running period is included but labelled.** Q3's city tax is real money already collected,
+   so hiding it until the quarter closes is the exact error this exists to prevent. Its title says
+   it is still accruing.
+4. **A gap is reported, never rounded away.** City tax names the bookings it could not count, and
+   the skipper accrual names anyone whose hours have no rate rather than pricing them at zero.
+
+**Batch payouts.** Revolut takes several payments in one draft as long as they leave the same
+account, which matches the monthly skipper run exactly: one draft, one line per skipper, one
+approval in the Revolut app. `buildPayoutRun()` already produces those lines and holds back anyone
+who cannot be priced. Wiring it to `POST /payment-drafts` is Phase 4 work, sharing the code path
+the Finance Inbox uses for supplier invoices.
+
+**UI consequences** (Beer, 2026-09-04):
+- Drop the owner-salary card from the dashboard; those settings move into the settings modal.
+- "Komende verplichtingen" gets a modal that manages every obligation, including a section to
+  read in the detected standing charges: name, interval, amount, next date, confirm or dismiss.
+
 ## 13. Which model builds which phase
 
 The plan is written so each phase is specified tightly enough for a cheaper model to execute; the
