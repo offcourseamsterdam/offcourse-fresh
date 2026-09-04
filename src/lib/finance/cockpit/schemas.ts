@@ -9,6 +9,7 @@
 import { z } from 'zod'
 import type { NextRequest } from 'next/server'
 import { apiError } from '@/lib/api/response'
+import { isCategory, isSubcategory } from './classify/taxonomy'
 
 // ── Primitives ───────────────────────────────────────────────────────────────
 
@@ -199,3 +200,134 @@ export function parseQuery<S extends z.ZodTypeAny>(request: NextRequest, key: st
   if (!parsed.success) return { ok: false, response: apiError(`${key}: ${parsed.error.issues[0]?.message ?? 'invalid'}`, 400) }
   return { ok: true, data: parsed.data }
 }
+
+// ── Classification (Phase 3) ────────────────────────────────────────────────
+
+export const classificationMatchFieldSchema = z.enum(['counterparty_name', 'merchant_name', 'description', 'reference'])
+export const classificationDirectionSchema = z.enum(['in', 'out', 'any'])
+
+/** category/subcategory must exist in the taxonomy (classify/taxonomy.ts); an unknown pair is a 400, not a silently stored typo. */
+function checkTaxonomy(ctx: z.RefinementCtx, category: string, subcategory: string | null | undefined): void {
+  if (!isCategory(category)) {
+    ctx.addIssue({ code: 'custom', message: `Unknown category: ${category}`, path: ['category'] })
+    return
+  }
+  if (subcategory != null && !isSubcategory(category, subcategory)) {
+    ctx.addIssue({ code: 'custom', message: `Unknown subcategory "${subcategory}" for category "${category}"`, path: ['subcategory'] })
+  }
+}
+
+export const classifyTransactionSchema = z
+  .object({
+    category: z.string().trim().min(1),
+    subcategory: z.string().trim().min(1).nullable().optional(),
+    boat_id: uuid.nullable().optional(),
+    goal_id: uuid.nullable().optional(),
+    remember_rule: z.boolean().optional(),
+    rule: z
+      .object({
+        match_field: classificationMatchFieldSchema,
+        pattern: z.string().trim().min(2).max(500),
+        direction: classificationDirectionSchema,
+      })
+      .optional(),
+  })
+  .superRefine((obj, ctx) => {
+    checkTaxonomy(ctx, obj.category, obj.subcategory)
+    if (obj.remember_rule && !obj.rule) {
+      ctx.addIssue({ code: 'custom', message: 'remember_rule requires rule', path: ['rule'] })
+    }
+  })
+export type ClassifyTransactionInput = z.infer<typeof classifyTransactionSchema>
+
+export const classifyBatchSchema = z.object({
+  limit: z.number().int().min(1).max(500).optional(),
+})
+export type ClassifyBatchInput = z.infer<typeof classifyBatchSchema>
+
+const classificationRuleFields = {
+  match_field: classificationMatchFieldSchema,
+  pattern: z.string().trim().min(2).max(500),
+  direction: classificationDirectionSchema,
+  category: z.string().trim().min(1),
+  subcategory: z.string().trim().min(1).nullable().optional(),
+  boat_id: uuid.nullable().optional(),
+  goal_id: uuid.nullable().optional(),
+  priority: z.number().int().min(0).max(1000).optional(),
+  note: z.string().trim().max(2000).nullable().optional(),
+}
+export const classificationRuleCreateSchema = z
+  .object({ ...classificationRuleFields, direction: classificationDirectionSchema.default('any'), priority: z.number().int().min(0).max(1000).default(100) })
+  .superRefine((obj, ctx) => checkTaxonomy(ctx, obj.category, obj.subcategory))
+export type ClassificationRuleCreate = z.infer<typeof classificationRuleCreateSchema>
+
+export const classificationRuleUpdateSchema = z
+  .object({ ...classificationRuleFields, is_active: z.boolean().optional() })
+  .partial()
+  .refine(obj => Object.keys(obj).length > 0, 'No fields to update')
+  .superRefine((obj, ctx) => {
+    if (obj.category !== undefined) checkTaxonomy(ctx, obj.category, obj.subcategory)
+  })
+export type ClassificationRuleUpdate = z.infer<typeof classificationRuleUpdateSchema>
+export const CLASSIFICATION_RULE_KEYS = [...Object.keys(classificationRuleFields), 'is_active']
+
+// ── Derived obligations (plan §12b/12c) ─────────────────────────────────────
+
+/** GET ?year= for city-tax; falls back to the current year when absent. */
+export const yearQuerySchema = z.string().regex(/^\d{4}$/, 'Expected a 4-digit year').transform(Number)
+/** GET ?months= lookback window, used by recurring and skipper-hours. */
+export const monthsQuerySchema = z.string().regex(/^\d+$/, 'Expected a whole number of months').transform(Number).pipe(z.number().int().min(1).max(60))
+/** GET ?month= 'YYYY-MM' for the skipper-hours payout run. */
+export const yearMonthQuerySchema = z.string().regex(/^\d{4}-\d{2}$/, "Expected a month as 'YYYY-MM'")
+
+/** POST body shared by city-tax and vat: confirm one or more derived proposals by their `key`. */
+export const derivedConfirmKeysSchema = z.object({
+  keys: z.array(z.string().trim().min(1)).min(1, 'keys is required'),
+})
+export type DerivedConfirmKeys = z.infer<typeof derivedConfirmKeysSchema>
+
+const recurrenceIntervalSchema = z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12)])
+
+/** Mirrors RecurringProposal (derived/recurring.ts) — the client posts back the exact proposal it saw. */
+export const recurringProposalSchema = z.object({
+  key: z.string().trim().min(1),
+  label: z.string().trim().min(1),
+  intervalMonths: recurrenceIntervalSchema,
+  amountCents: z.number().int(),
+  minAmountCents: z.number().int(),
+  maxAmountCents: z.number().int(),
+  amountVaries: z.boolean(),
+  occurrences: z.number().int(),
+  firstSeen: isoDate,
+  lastSeen: isoDate,
+  nextExpected: isoDate,
+  confidence: z.number(),
+  category: z.string().nullable(),
+  subcategory: z.string().nullable(),
+})
+export type RecurringProposalInput = z.infer<typeof recurringProposalSchema>
+
+export const recurringConfirmSchema = z.object({
+  selections: z
+    .array(
+      z.object({
+        key: z.string().trim().min(1),
+        kind: obligationKindSchema,
+        proposal: recurringProposalSchema,
+      }),
+    )
+    .min(1, 'selections is required'),
+})
+export type RecurringConfirm = z.infer<typeof recurringConfirmSchema>
+
+export const skipperHoursConfirmSchema = z.object({
+  selections: z
+    .array(
+      z.object({
+        month: z.string().regex(/^\d{4}-\d{2}$/, "Expected a month as 'YYYY-MM'"),
+        staffId: uuid,
+      }),
+    )
+    .min(1, 'selections is required'),
+})
+export type SkipperHoursConfirm = z.infer<typeof skipperHoursConfirmSchema>

@@ -196,7 +196,7 @@ describe('admin route auth contract', () => {
     // loans (+ [id], [id]/payments/[paymentId]/mark-paid + /reopen, impact),
     // goals (+ [id], [id]/complete, [id]/events).
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`184`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`194`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {

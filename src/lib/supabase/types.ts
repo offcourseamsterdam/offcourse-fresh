@@ -2491,6 +2491,7 @@ export type Database = {
           paid_transaction_id: string | null
           recurrence_months: number | null
           recurrence_until: string | null
+          source_key: string | null
           status: string
           title: string
           updated_at: string
@@ -2509,6 +2510,7 @@ export type Database = {
           paid_transaction_id?: string | null
           recurrence_months?: number | null
           recurrence_until?: string | null
+          source_key?: string | null
           status?: string
           title: string
           updated_at?: string
@@ -2527,6 +2529,7 @@ export type Database = {
           paid_transaction_id?: string | null
           recurrence_months?: number | null
           recurrence_until?: string | null
+          source_key?: string | null
           status?: string
           title?: string
           updated_at?: string
