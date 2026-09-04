@@ -82,6 +82,15 @@ export const markPaidSchema = z.object({
   paid_transaction_id: uuid.nullable().optional(),
 })
 
+// ── Finance Inbox invoices (§6) ────────────────────────────────────────────────
+
+export const invoiceApproveSchema = z.object({
+  note: z.string().trim().max(2000).optional(),
+})
+export const invoiceRejectSchema = z.object({
+  note: z.string().trim().max(2000).optional(),
+})
+
 // ── Loans ────────────────────────────────────────────────────────────────────
 
 export const repaymentTypeSchema = z.enum(['linear', 'annuity', 'interest_only'])

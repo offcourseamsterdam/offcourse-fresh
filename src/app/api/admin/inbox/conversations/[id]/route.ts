@@ -26,7 +26,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
       .from('conversations')
       .select(
         `id, channel, status, subject, unread_count, last_message_at, created_at, booking_id, wa_window_expires_at,
-         ota_source, ota_status, ota_booking_ref, ota_guest_name,
+         ota_source, ota_status, ota_booking_ref, ota_guest_name, source_category,
          contact:contacts(id, name, email, phone_e164, locale, notes)`,
       )
       .eq('id', id)
@@ -34,7 +34,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     if (error) return apiError(error.message)
     if (!conversation) return apiError('Conversation not found', 404)
 
-    const [{ data: messages, error: msgError }, bookings, ghost] = await Promise.all([
+    const [{ data: messages, error: msgError }, bookings, ghost, financeInvoices] = await Promise.all([
       supabase
         .from('messages')
         .select('id, direction, body, body_html, author_name, status, error, created_at, recording_url')
@@ -43,6 +43,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
         .limit(500),
       loadContactBookings(supabase, conversation.contact),
       loadGhostProposals(supabase, id, !!conversation.ota_source),
+      conversation.source_category === 'finance' ? loadFinanceInvoices(supabase, id) : Promise.resolve([]),
     ])
     if (msgError) return apiError(msgError.message)
 
@@ -51,7 +52,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
       await supabase.from('conversations').update({ unread_count: 0 }).eq('id', id)
     }
 
-    return apiOk({ conversation, messages: messages ?? [], bookings, ghost })
+    return apiOk({ conversation, messages: messages ?? [], bookings, ghost, financeInvoices })
   } catch (err) {
     return apiError(err instanceof Error ? err.message : 'Failed to load conversation')
   }
@@ -103,6 +104,31 @@ async function loadContactBookings(
   return merged
     .sort((a, b) => String(b.booking_date ?? '').localeCompare(String(a.booking_date ?? '')))
     .slice(0, 10)
+}
+
+/**
+ * Every finance_invoices row filed from a PDF attached to a message in this
+ * thread (§6/§6a) — newest first. A thread almost always has one, but a
+ * follow-up email or a multi-PDF message can add more, so this is a list,
+ * not a single row. Only ever queried for a source_category='finance'
+ * conversation (see the caller), so this stays a no-op for every other thread.
+ */
+async function loadFinanceInvoices(supabase: ReturnType<typeof createAdminClient>, conversationId: string) {
+  const { data: msgs } = await supabase.from('messages').select('id').eq('conversation_id', conversationId)
+  const messageIds = (msgs ?? []).map(m => m.id)
+  if (!messageIds.length) return []
+
+  const { data } = await supabase
+    .from('finance_invoices')
+    .select(
+      `id, status, file_path, extracted, matched_shift_id, matched_booking_id, expected_amount_cents, checks,
+       decision, decision_note, obligation_id, created_at,
+       supplier:finance_suppliers(id, name, iban)`,
+    )
+    .in('source_message_id', messageIds)
+    .order('created_at', { ascending: false })
+    .limit(10)
+  return data ?? []
 }
 
 /** The narrowed columns we pull per proposal — never the whole payload/outcome. */

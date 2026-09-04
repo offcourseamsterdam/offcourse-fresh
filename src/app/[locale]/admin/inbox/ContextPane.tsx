@@ -2,14 +2,14 @@
 
 import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { CalendarDays, CalendarPlus, Check, CheckCircle2, Download, Ghost, Globe, Languages, Loader2, Mail, Phone, Plus, Sparkles, Wrench, XCircle } from 'lucide-react'
+import { CalendarDays, CalendarPlus, Check, CheckCircle2, Download, Ghost, Globe, Languages, Loader2, Mail, Phone, Plus, Receipt, Sparkles, Wrench, XCircle } from 'lucide-react'
 import { adminMutate } from '@/hooks/useAdminSave'
 import { replySimilarity } from '@/lib/ghost/similarity'
 import { fmtAdminDate, fmtAdminTime } from '@/lib/admin/format'
 import { OTA_PLATFORM_NAME } from '@/lib/ota/detect'
 import { pickCheapestPrivateOption } from '@/lib/ota/availability-shape'
 import { draftNeedsEnglish } from '@/lib/i18n/needs-translation'
-import { hasGhostCoPilotContent, type InboxConversationDetail, type InboxGhostProposal } from './types'
+import { hasGhostCoPilotContent, type InboxConversationDetail, type InboxFinanceInvoice, type InboxGhostProposal } from './types'
 
 const SIM_BADGE: Record<string, { text: string; cls: string }> = {
   match: { text: '≈ matched', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
@@ -36,7 +36,7 @@ interface Props {
 
 /** Right pane — who you're talking to: Ghost co-pilot, contact card, bookings, workflow. */
 export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
-  const { conversation, bookings, ghost } = detail
+  const { conversation, bookings, ghost, financeInvoices } = detail
   const contact = conversation.contact
   const [saving, setSaving] = useState(false)
   // The booking Ghost found by name/date when the contact's own email doesn't
@@ -84,6 +84,25 @@ export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
           {ghost.otaBookingReady && <OtaBookingReadyCard proposal={ghost.otaBookingReady} />}
           {ghost.fhImportReady && <FhImportReadyCard proposal={ghost.fhImportReady} onChanged={onChanged} />}
           {ghost.history.length > 0 && <LearningTrail history={ghost.history} />}
+        </div>
+      )}
+
+      {/* Finance Inbox — §6/§6a. Never alongside the Ghost co-pilot block above:
+          a finance-category message never gets a Ghost proposal (see gmail/sync.ts). */}
+      {conversation.source_category === 'finance' && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+          <p className="text-[10px] font-semibold tracking-widest uppercase text-amber-600 mb-2 inline-flex items-center gap-1.5">
+            <Receipt className="w-3.5 h-3.5" /> Factuur controleren
+          </p>
+          {financeInvoices.length === 0 ? (
+            <p className="text-xs text-zinc-400">Geen PDF-bijlage gevonden in dit bericht.</p>
+          ) : (
+            <div className="space-y-2.5">
+              {financeInvoices.map(invoice => (
+                <FinanceInvoiceReview key={invoice.id} invoice={invoice} onChanged={onChanged} />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -779,6 +798,139 @@ function CancellationApproval({ proposal, onChanged }: { proposal: InboxGhostPro
         </div>
       )}
       {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+    </div>
+  )
+}
+
+const CHECK_LABEL: Record<string, string> = {
+  skipper: 'Skipper',
+  booking: 'Dienst',
+  date: 'Datum',
+  hours: 'Uren',
+  rate: 'Tarief',
+  amount: 'Bedrag',
+  duplicate: 'Dubbele factuur',
+  iban: 'IBAN',
+}
+
+/** Same busy/error/run shape as useProposalAction, parameterized by action name instead of a fixed agent_proposals URL — an invoice isn't a Ghost proposal. */
+function useInvoiceAction(invoiceId: string, onChanged: () => void) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  async function run(action: 'approve' | 'reject', body: Record<string, unknown>, fallbackError: string) {
+    setBusy(true)
+    setError(null)
+    try {
+      await adminMutate(`/api/admin/finance/cockpit/invoices/${invoiceId}/${action}`, 'POST', body)
+      onChanged()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : fallbackError)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return { busy, error, run }
+}
+
+/**
+ * One PDF's match/checks result (src/lib/finance/invoices/match.ts) with
+ * Goedkeuren/Afwijzen actions. "Goedkeuren & betalen" (the Revolut payment
+ * draft step) isn't built yet — Goedkeuren here only creates the
+ * finance_obligations row, same as a manually entered obligation, so nothing
+ * gets lost while that's still coming.
+ */
+function FinanceInvoiceReview({ invoice, onChanged }: { invoice: InboxFinanceInvoice; onChanged: () => void }) {
+  const { busy, error, run } = useInvoiceAction(invoice.id, onChanged)
+  const [rejecting, setRejecting] = useState(false)
+  const [note, setNote] = useState('')
+  const ext = invoice.extracted
+  const filename = invoice.file_path.split('/').pop() ?? invoice.file_path
+  const allOk = invoice.checks.length > 0 && invoice.checks.every(c => c.ok)
+  const decided = !!invoice.decision
+
+  return (
+    <div className="rounded-lg bg-white border border-amber-100 px-3 py-2 text-xs text-zinc-700 space-y-2">
+      <div className="flex items-start justify-between gap-2">
+        <span className="font-semibold text-zinc-900 truncate">{invoice.supplier?.name ?? ext?.supplierName ?? 'Onbekende afzender'}</span>
+        {ext?.amountCents != null && <span className="font-semibold text-zinc-900 shrink-0">€{(ext.amountCents / 100).toFixed(2)}</span>}
+      </div>
+      <p className="text-[11px] text-zinc-400 truncate">
+        {filename}
+        {ext?.invoiceNumber ? ` · #${ext.invoiceNumber}` : ''}
+        {ext?.tourDate ? ` · ${ext.tourDate}` : ''}
+      </p>
+
+      {invoice.checks.length === 0 ? (
+        <p className="text-[11px] text-zinc-400">
+          {invoice.status === 'received' ? 'Wordt nog verwerkt…' : 'Kon niet automatisch worden gecontroleerd.'}
+        </p>
+      ) : (
+        <div className="space-y-1">
+          {invoice.checks.map(c => (
+            <p key={c.key} className="flex items-start gap-1.5">
+              {c.ok ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-green-600 shrink-0 mt-0.5" />
+              ) : (
+                <XCircle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
+              )}
+              <span className={c.ok ? 'text-zinc-600' : 'text-red-700'}>
+                <span className="font-medium">{CHECK_LABEL[c.key] ?? c.key}:</span> {c.detail}
+              </span>
+            </p>
+          ))}
+        </div>
+      )}
+
+      {decided ? (
+        <p
+          className={`inline-flex items-center gap-1 text-xs font-semibold ${
+            invoice.decision === 'rejected' ? 'text-red-600' : 'text-emerald-600'
+          }`}
+        >
+          {invoice.decision === 'rejected' ? <XCircle className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
+          {invoice.decision === 'approved' ? 'Goedgekeurd' : invoice.decision === 'approved_override' ? 'Goedgekeurd (met afwijking)' : 'Afgewezen'}
+          {invoice.decision_note ? ` — ${invoice.decision_note}` : ''}
+        </p>
+      ) : rejecting ? (
+        <div className="space-y-1.5">
+          <textarea
+            value={note}
+            onChange={ev => setNote(ev.target.value)}
+            placeholder="Reden (optioneel)"
+            rows={2}
+            className="w-full rounded-lg border border-zinc-200 px-2 py-1.5 text-xs"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => run('reject', { note: note.trim() || undefined }, 'Kon factuur niet afwijzen')}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-red-700 disabled:opacity-50"
+            >
+              {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />} Ja, afwijzen
+            </button>
+            <button onClick={() => setRejecting(false)} disabled={busy} className="text-xs text-zinc-500 hover:text-zinc-700">
+              Annuleren
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => run('approve', {}, 'Kon factuur niet goedkeuren')}
+            disabled={busy}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50 ${
+              allOk ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-600 hover:bg-amber-700'
+            }`}
+          >
+            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+            {allOk ? 'Goedkeuren' : 'Toch goedkeuren'}
+          </button>
+          <button onClick={() => setRejecting(true)} disabled={busy} className="text-xs text-zinc-500 hover:text-zinc-700 underline">
+            Afwijzen
+          </button>
+        </div>
+      )}
+      {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   )
 }

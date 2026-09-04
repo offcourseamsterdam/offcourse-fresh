@@ -1,3 +1,5 @@
+import type { ExtractedInvoiceFields, InvoiceCheck } from '@/lib/finance/invoices/match'
+
 /** Shapes shared by the three inbox panes (mirror the admin inbox API). */
 
 export interface InboxContact {
@@ -174,6 +176,28 @@ export interface InboxGhostProposal {
   } | null
 }
 
+/**
+ * One finance_invoices row (§6/§6a) — a PDF filed from a message in this
+ * thread, from receipt through the match/checks engine (src/lib/finance/invoices/match.ts).
+ * `extracted`/`checks` are null/empty until Gemini extraction has actually run
+ * (status='received' briefly, or permanently if extraction itself failed).
+ */
+export interface InboxFinanceInvoice {
+  id: string
+  status: string
+  file_path: string
+  extracted: ExtractedInvoiceFields | null
+  matched_shift_id: string | null
+  matched_booking_id: string | null
+  expected_amount_cents: number | null
+  checks: InvoiceCheck[]
+  decision: 'approved' | 'approved_override' | 'rejected' | null
+  decision_note: string | null
+  obligation_id: string | null
+  created_at: string
+  supplier: { id: string; name: string; iban: string | null } | null
+}
+
 export interface InboxConversationDetail {
   conversation: {
     id: string
@@ -190,10 +214,14 @@ export interface InboxConversationDetail {
     ota_source: string | null
     ota_status: InboxListItem['ota_status']
     ota_guest_name: string | null
+    /** Same field as InboxListItem — drives the "Factuur controleren" card below instead of the Ghost co-pilot. */
+    source_category: 'finance' | null
     contact: InboxContact | null
   }
   messages: InboxMessage[]
   bookings: InboxBooking[]
+  /** Only ever populated for a source_category='finance' thread — see loadFinanceInvoices in conversations/[id]/route.ts. */
+  financeInvoices: InboxFinanceInvoice[]
   /** The Ghost's suggestions for this thread + the per-conversation learning trail. */
   ghost: {
     replyDraft: InboxGhostProposal | null
