@@ -273,11 +273,11 @@ src/app/api/cron/finance-missing-invoices/route.ts    (weekly)
 src/app/[locale]/admin/finance/
   page.tsx                (existing kasboek — unchanged, gets the FinanceSubnav on top)
   overview/page.tsx       Financieel overzicht (the dashboard)
-  inbox/page.tsx          Finance Inbox
   transactions/page.tsx
   goals/page.tsx
   loans/page.tsx
   investments/page.tsx
+  (no inbox/page.tsx — see §6a: the Finance Inbox is a view inside the existing /admin/inbox, not a new page)
 src/components/admin/finance/cockpit/
   FinanceSubnav, StatCard (new shared), AllocationBar, WhyDrawer, StatusPill,
   GoalCard/GoalModal, ObligationsCard, TransactionsCard/TransactionReviewModal,
@@ -292,7 +292,7 @@ Every `/api/admin/**` route starts with `requireAdmin()` (contract test). Routes
 ## 6. Finance Inbox — how matching works
 
 ```
-PDF (upload; email later) → finance-attachments bucket → finance_invoices(received)
+PDF (upload, or email — see §6a) → finance-attachments bucket → finance_invoices(received)
   → Gemini extraction (extracted jsonb + per-field confidence)                → extracted
   → supplier resolved by IBAN, then name (else needs_review: "Leverancier onbekend")
   → candidates = shifts where staff_id = supplier.staff_id and date within ±3d of tour_date
@@ -306,6 +306,10 @@ PDF (upload; email later) → finance-attachments bucket → finance_invoices(re
   → feed sees the completed transfer → invoice_id set on bank_transactions → paid → obligation paid → reconciled
 ```
 
+This pipeline (extraction → match → checks → approve → pay → reconcile) is unchanged regardless of how
+the PDF arrives. §6a is only about *delivery*: how the PDF gets into `finance-attachments` in the first
+place.
+
 Rejected or overridden decisions are stored with a note; overrides never edit the extracted data.
 
 **Data dependencies to be honest about**
@@ -316,6 +320,53 @@ Rejected or overridden decisions are stored with a note; overrides never edit th
   fails with "Geen afgesproken tarief" (never silently accept). Beer fills these in on `/admin/scheduling`
   (Staff tab) or directly in the table before Phase 4 ships.
 - Missing-invoice insight: shifts with `staff_id`, end < today − 14d, no `finance_invoices.matched_shift_id`.
+
+## 6a. Delivery: reuse the operations inbox instead of a new Finance Inbox UI (decided 2026-09-04)
+
+Beer's instruction: *"die UI daarvoor kunnen we de UI gebruiken uit de inbox van de operations email.
+gewoon een ander ontvangend mailadres en klaar."* Investigated before committing to it (agent research,
+2026-09-04) — the reuse is real and worth doing, but it is **not** "just a different address": the
+existing `GMAIL_SUPPORT_ADDRESS` is a single value, nothing today parses the `To:` header to know which
+address a message arrived on, and the inbox has **never ingested an attachment** — every existing Gmail
+message is text-only (`src/lib/gmail/client.ts`'s `GmailMessage` has no `attachments` field). Three
+small, well-scoped additions close that gap; everything else (the three-pane shell, the AI-summary
+pipeline, the channel-agnostic `conversations`/`messages` schema, the cron+push sync architecture) is
+already exactly right and needs no change.
+
+**What's a clean drop-in (build nothing new):**
+- `src/app/[locale]/admin/inbox/{page,ConversationList,ThreadPane}.tsx` — the three-pane shell.
+- `conversations` / `messages` (migration `070_customer_chat.sql` + later additions) — "new rows, not
+  new tables" is the documented philosophy (`docs/features/customer-chat-inbox.md`) and it holds here.
+- `src/lib/gmail/summarize.ts` — the Haiku one-line summary works the same for a finance thread.
+- The sender-pattern-detection idiom in `src/lib/ota/detect.ts` is the template for `finance/detect.ts`.
+- The `finance-attachments` bucket + `src/lib/finance/attachment-storage.ts` (private, 5-min signed
+  URLs) — built for manually-uploaded payout PDFs, reused as-is as the storage target for
+  email-delivered invoice PDFs too.
+
+**What's genuinely new (small, three pieces):**
+1. **A dedicated address + `To:`-header parsing.** New env var `GMAIL_FINANCE_ADDRESS` (e.g.
+   `facturen@offcourseamsterdam.com`), added alongside `GMAIL_SUPPORT_ADDRESS` in `inboxQuery()`'s
+   Gmail search. `src/lib/gmail/client.ts` currently never reads the `To` header (Gmail API already
+   returns it in `payload.headers`, just unused) — add that, then `finance/detect.ts` decides
+   `source_category` from it. Because this address is money-adjacent, `finance/detect.ts` also checks
+   the *sender* against known suppliers/skippers, the same way `ota/detect.ts` checks sender domains —
+   an email arriving at `facturen@` from an unknown sender is flagged for review, never auto-trusted,
+   matching §17's "AI should never silently invent" rule for the extraction step itself.
+2. **A `conversations.source_category` column** (new migration, next number after 154 in sequence —
+   this table lives outside the `finance_*` migration range, so it gets its own number when written),
+   parallel to the existing `ota_source` column, plus a `'finance'` entry in `ConversationList.tsx`'s
+   `SOURCE_FILTERS`.
+3. **Attachment ingestion, gated to `source_category = 'finance'` only.** A new step in
+   `syncGmailInbox()` fetches attachment parts via the Gmail API for finance-category messages only
+   (customer/OTA/catering mail stays text-only, unchanged), stores each PDF into `finance-attachments`
+   via the existing helper, and creates a `finance_invoices` row with `source_message_id` pointing back
+   at the `messages` row — so a PDF that arrived by email and one uploaded by hand run through the exact
+   same extraction/match/approve pipeline above.
+
+**UI:** no new `/admin/finance/inbox` route. A finance thread's `ContextPane` (today's slot for the
+Ghost co-pilot's booking suggestions) gets a new card type — "Factuur controleren" — showing the same
+match/checks UI from the pipeline above (skipper ✓ booking ✓ date ✓ hours ✓ rate ✓ amount ✓) with
+Goedkeuren / Goedkeuren & betalen buttons, right where Beer is already reading the email.
 
 ---
 
@@ -384,7 +435,7 @@ Before Revolut is connected the cash card reads "Handmatig ingevoerd op {date}" 
 | **1 — Engine + loans + dashboard v0** (2–3 days) | `compute.ts`, `obligations.ts`, `loans/schedule.ts`, `goals.ts`, `status.ts`. Settings, obligations, loans, goals CRUD + pages. Dashboard with manual cash. Loan seed script for the 6 real loans. WhyDrawer. Loan-impact modal (`/loans/impact`). | Loan engine reproduces the export tables to the cent (Tijs bullet, Jelka linear, Irma `interestFree == duration`, Enrico tranches: 2025 interest €10, Erik starting exactly on a payment date so 2026 = one €2.494 period, Tijs mid-period start pro-rata €127 in 2025). Horizon expansion (30d/3m/12m loan totals above). Reconciling bar. Negative space → €0 growth + shortfall. Double-count guards. |
 | **2 — Revolut feed** (2–3 days) | Cert + consent flow (admin "Koppel Revolut" → callback → encrypted tokens). `token-store` with refresh lock. `sync.ts` + cron (15 min). Webhook route. `bank_transactions` + snapshots. Transactions page (raw, unclassified). Cash card goes live. Bank-side reconciliation. Built on **sandbox** first, then production cert. | Signature verifier (valid, tampered, stale timestamp, rotated-secret dual signatures). Sync upsert idempotency + state transitions. Pagination by `created_at`. Token refresh race (two callers, one refresh). Route tests with mocked Supabase. |
 | **3 — Classification + linking** (2 days) | Taxonomy, rules, Claude classifier, review modal, boat/goal/obligation linking, salary depletion, goal completion, "onthoud dit" rules. Slack ops alert on sync failure / reconciliation gap. | Rule precedence; threshold routing; side-effects only on `completed`; goal overage never negative; salary floor 0. |
-| **4 — Finance Inbox** (3 days) | Suppliers (+ Revolut counterparty creation), upload, Gemini extraction, `match.ts`, review modal, approve/reject/override, obligation creation, payment draft, paid→reconciled via feed, missing-invoice cron. | `match.ts` on fixtures: exact match, +€100, wrong hours, wrong rate, duplicate number, IBAN changed, no rate on staff, no shift. Extraction returns `Niet gevonden` for absent fields (mocked Gemini). Status machine transitions. |
+| **4 — Finance Inbox** (3 days) | §6a delivery: `GMAIL_FINANCE_ADDRESS` + `To:`-header parsing, `finance/detect.ts`, `conversations.source_category`, gated attachment ingestion into `finance-attachments`. Then the unchanged §6 pipeline: suppliers (+ Revolut counterparty creation), Gemini extraction, `match.ts`, the "Factuur controleren" `ContextPane` card (approve/reject/override), obligation creation, payment draft, paid→reconciled via feed, missing-invoice cron. Manual upload stays as a fallback for a PDF that never went through Gmail. | `match.ts` on fixtures: exact match, +€100, wrong hours, wrong rate, duplicate number, IBAN changed, no rate on staff, no shift. Extraction returns `Niet gevonden` for absent fields (mocked Gemini). Status machine transitions. `finance/detect.ts` on fixtures: known supplier → auto-category, unknown sender at the finance address → flagged, a message to the old support address never gets the finance category. |
 | **5 — Allocation, insights, investments** (2 days) | Monthly allocation cron (proposals applied only when free cash covers them; events written; Slack DM summary). `insights.ts`. Investments page + scenario (before/after via the same `computeCockpit`). Safety-margin warning. | Allocation never exceeds free cash; priority order; insight rules produce exactly the PRD sentences; scenario = compute(cash − amount). |
 | **6 — Nice-to-have** | "Vraag het aan de AI-assistent" (Claude + cockpit JSON, must state horizon/cash/deductions/margin). Inbound invoice email via Resend (`facturen@…` → inbox). `PAY` scope + direct `POST /pay` behind a setting, with a typed confirmation. Per-boat cost view. | Prompt contract test (answer contains horizon + margin). |
 
