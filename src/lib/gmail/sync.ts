@@ -15,7 +15,8 @@ import { summarizeInboundEmail } from './summarize'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { alertCronFailure } from '@/lib/cron/alert'
 import { findOrCreateContactByField } from '@/lib/contacts/find-or-create'
-import { detectFinanceInvoice } from '@/lib/finance/inbox/detect'
+import { detectFinanceInvoice, type FinanceInvoiceDetection } from '@/lib/finance/inbox/detect'
+import { ingestFinanceMessage } from '@/lib/finance/inbox/ingest'
 import { listNewMessages, getMessage, type GmailMessage } from './client'
 
 /**
@@ -406,13 +407,13 @@ export async function syncGmailInbox(queryOverride?: string): Promise<GmailSyncR
   // Loaded once per poll, not per message. Only queried when the Finance
   // Inbox alias is actually configured — a no-op extra query is still a
   // query, and this feature is off by default until Beer sets the env var.
-  // finance_suppliers doesn't exist yet (arrives with the rest of the §6
-  // invoice pipeline), so every sender starts as 'unknown' until then —
-  // detectFinanceInvoice() already handles an empty supplier list correctly.
   const financeAddress = process.env.GMAIL_FINANCE_ADDRESS || null
-  const knownStaff = financeAddress
-    ? ((await supabase.from('staff').select('id, email')).data ?? [])
-    : []
+  const [knownStaff, knownSuppliers] = financeAddress
+    ? await Promise.all([
+        supabase.from('staff').select('id, email').then(r => r.data ?? []),
+        supabase.from('finance_suppliers').select('id, email').then(r => r.data ?? []),
+      ])
+    : [[], []]
 
   let imported = 0
   let skipped = 0
@@ -456,16 +457,17 @@ export async function syncGmailInbox(queryOverride?: string): Promise<GmailSyncR
     // message and throws again, permanently wedging the whole inbox sync
     // behind it.
     let ota: OtaDetection | null
+    let finance: FinanceInvoiceDetection | null
     let conversationId: string
     let inserted: { id: string } | null
     try {
       ota = detectOtaEmail({ fromEmail: message.from.email, subject: message.subject, bodyText: message.bodyText })
-      const finance = detectFinanceInvoice({
+      finance = detectFinanceInvoice({
         toAddresses: (message.to ?? []).map(t => t.email),
         fromEmail: message.from.email,
         financeAddress,
         knownStaff,
-        knownSuppliers: [], // finance_suppliers arrives with the rest of the §6 pipeline
+        knownSuppliers,
       })
       const contactId = await findOrCreateContactByField(supabase, 'email', message.from.email, message.from.name)
       const conv = await findOrCreateConversation(supabase, contactId, message.threadId, message.subject, ota, finance?.category ?? null)
@@ -519,56 +521,64 @@ export async function syncGmailInbox(queryOverride?: string): Promise<GmailSyncR
     // built-in try/catch.
     let ghostContext: string | null = null
     try {
-      const cateringContext = await handlePendingCateringReply(supabase, message)
-      ghostContext = cateringContext
-      if (!cateringContext) {
-        ghostContext = await handleGygReviewNotification(supabase, message, conversationId)
-      }
-      if (!cateringContext && !ghostContext) {
-        if (ota) {
-          // OTA notification: never a customer email reply (you act on the
-          // platform, not by replying to info@withlocals.com) — a dedicated,
-          // read-only fact block instead. See lib/ota/handle-message.ts.
-          ghostContext = await handleOtaMessage(supabase, ota, conversationId, inserted?.id ?? null)
+      if (finance?.category === 'finance') {
+        // Never a customer message and never the Ghost/OTA pipeline — an
+        // invoice email at the finance alias gets its PDF(s) filed and
+        // matched instead. See finance/inbox/ingest.ts; this is the only
+        // branch that ever fetches an attachment, gated exactly per §6a.
+        ghostContext = await ingestFinanceMessage(supabase, message, inserted?.id ?? null, finance)
+      } else {
+        const cateringContext = await handlePendingCateringReply(supabase, message)
+        ghostContext = cateringContext
+        if (!cateringContext) {
+          ghostContext = await handleGygReviewNotification(supabase, message, conversationId)
+        }
+        if (!cateringContext && !ghostContext) {
+          if (ota) {
+            // OTA notification: never a customer email reply (you act on the
+            // platform, not by replying to info@withlocals.com) — a dedicated,
+            // read-only fact block instead. See lib/ota/handle-message.ts.
+            ghostContext = await handleOtaMessage(supabase, ota, conversationId, inserted?.id ?? null)
 
-          // A booking that exists in FareHarbor but not in OUR database is
-          // invisible to Bookings, Planning, Scheduling and Finance until a
-          // human clicks Import — so announce it rather than letting it sit
-          // (two Boat Local bookings went unnoticed for days, 2026-08-21).
-          if (ota.kind === 'needs_import') {
-            await notifyInboxItem({
-              conversationId,
-              from: `${OTA_PLATFORM_NAME[ota.platform]}${ota.guestName ? ` · ${ota.guestName}` : ''}`,
-              headline: 'Booking not in our database yet',
-              details: [
-                ota.parsed.experienceName,
-                [ota.parsed.date, ota.parsed.time].filter(Boolean).join(' at ') || null,
-                ota.parsed.guests ? `${ota.parsed.guests} guests` : null,
-                ota.bookingRef ? `FareHarbor #${ota.bookingRef}` : null,
-              ],
-              action: 'One click on the Import card adds it to Bookings, Planning and Finance.',
-            })
-          }
-        } else {
-          // Ghost drafts a reply/booking proposal — same pipeline webchat already
-          // uses, unmodified. Awaited directly (this runs inside a cron, not a
-          // request handler, so there's no after() to defer to).
-          const shadowResult = await draftShadowReply(conversationId, inserted?.id ?? null)
-          ghostContext = shadowResult
-            ? `Ghost ${shadowResult.kind === 'reply_draft' ? 'drafted a reply' : shadowResult.kind === 'booking_proposal' ? 'proposed a booking' : 'proposed a contact-info correction'}: ${shadowResult.reasoning}`
-            : null
+            // A booking that exists in FareHarbor but not in OUR database is
+            // invisible to Bookings, Planning, Scheduling and Finance until a
+            // human clicks Import — so announce it rather than letting it sit
+            // (two Boat Local bookings went unnoticed for days, 2026-08-21).
+            if (ota.kind === 'needs_import') {
+              await notifyInboxItem({
+                conversationId,
+                from: `${OTA_PLATFORM_NAME[ota.platform]}${ota.guestName ? ` · ${ota.guestName}` : ''}`,
+                headline: 'Booking not in our database yet',
+                details: [
+                  ota.parsed.experienceName,
+                  [ota.parsed.date, ota.parsed.time].filter(Boolean).join(' at ') || null,
+                  ota.parsed.guests ? `${ota.parsed.guests} guests` : null,
+                  ota.bookingRef ? `FareHarbor #${ota.bookingRef}` : null,
+                ],
+                action: 'One click on the Import card adds it to Bookings, Planning and Finance.',
+              })
+            }
+          } else {
+            // Ghost drafts a reply/booking proposal — same pipeline webchat already
+            // uses, unmodified. Awaited directly (this runs inside a cron, not a
+            // request handler, so there's no after() to defer to).
+            const shadowResult = await draftShadowReply(conversationId, inserted?.id ?? null)
+            ghostContext = shadowResult
+              ? `Ghost ${shadowResult.kind === 'reply_draft' ? 'drafted a reply' : shadowResult.kind === 'booking_proposal' ? 'proposed a booking' : 'proposed a contact-info correction'}: ${shadowResult.reasoning}`
+              : null
 
-          // A real guest is waiting — DM the draft so Beer can act from his
-          // phone instead of having to open the admin panel to notice at all.
-          if (shadowResult) {
-            await notifyInboxItem({
-              conversationId,
-              from: message.from.name || message.from.email,
-              headline: GHOST_KIND_HEADLINE[shadowResult.kind],
-              details: [message.subject],
-              draft: shadowResult.reply,
-              action: shadowResult.kind === 'reply_draft' ? undefined : 'Needs your approval in the admin panel.',
-            })
+            // A real guest is waiting — DM the draft so Beer can act from his
+            // phone instead of having to open the admin panel to notice at all.
+            if (shadowResult) {
+              await notifyInboxItem({
+                conversationId,
+                from: message.from.name || message.from.email,
+                headline: GHOST_KIND_HEADLINE[shadowResult.kind],
+                details: [message.subject],
+                draft: shadowResult.reply,
+                action: shadowResult.kind === 'reply_draft' ? undefined : 'Needs your approval in the admin panel.',
+              })
+            }
           }
         }
       }

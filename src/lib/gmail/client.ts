@@ -69,11 +69,26 @@ export interface GmailMessage {
   bodyText: string
   /** The RAW html part, before stripHtml() runs on it — UNTRUSTED. Null when the email has no HTML part at all (plain-text-only). Only ever render this through a sanitizer (see SafeEmailHtml.tsx); never trust it as safe just because it came from our own DB. */
   bodyHtml: string | null
+  /**
+   * Every attachment part, metadata only — no bytes fetched yet (most
+   * messages never need them; fetching every attachment on every poll would
+   * be wasted work). Call getAttachmentData() for the ones that matter, e.g.
+   * a PDF on a message routed to the Finance Inbox (source_category='finance').
+   */
+  attachments: GmailAttachmentRef[]
+}
+
+export interface GmailAttachmentRef {
+  filename: string
+  mimeType: string
+  attachmentId: string
+  size: number
 }
 
 interface GmailApiPart {
   mimeType?: string
-  body?: { data?: string }
+  filename?: string
+  body?: { data?: string; attachmentId?: string; size?: number }
   parts?: GmailApiPart[]
 }
 
@@ -121,6 +136,30 @@ function findBodyParts(part: GmailApiPart): { plain: string | null; html: string
     return { plain, html }
   }
   return { plain: null, html: null }
+}
+
+/**
+ * Walks arbitrarily nested MIME parts collecting every real attachment — a
+ * part with both a filename AND an attachmentId (Gmail never inlines an
+ * attachment's bytes into `body.data` the way it does a text/html part;
+ * they're always fetched separately via getAttachmentData()). A part with a
+ * filename but no attachmentId (rare — a tiny inline attachment Gmail chose
+ * to embed directly) is skipped rather than guessed at.
+ */
+function findAttachmentParts(part: GmailApiPart): GmailAttachmentRef[] {
+  const found: GmailAttachmentRef[] = []
+  if (part.filename && part.body?.attachmentId) {
+    found.push({
+      filename: part.filename,
+      mimeType: part.mimeType ?? 'application/octet-stream',
+      attachmentId: part.body.attachmentId,
+      size: part.body.size ?? 0,
+    })
+  }
+  for (const sub of part.parts ?? []) {
+    found.push(...findAttachmentParts(sub))
+  }
+  return found
 }
 
 /** Parses a `From` header ("Jane Doe <jane@example.com>" or bare "jane@example.com") into email + display name. */
@@ -179,7 +218,16 @@ export async function getMessage(id: string): Promise<GmailMessage> {
     messageIdHeader: header('Message-ID') || null,
     bodyText,
     bodyHtml: html,
+    attachments: json.payload ? findAttachmentParts(json.payload) : [],
   }
+}
+
+/** Fetches one attachment's raw bytes by id (from a GmailMessage's `attachments` list). */
+export async function getAttachmentData(messageId: string, attachmentId: string): Promise<Buffer> {
+  const json = await gmailFetch<{ data: string; size: number }>(
+    `/messages/${messageId}/attachments/${attachmentId}`,
+  )
+  return Buffer.from(json.data, 'base64url')
 }
 
 /** Fetches just the RFC Message-ID header (metadata-only, cheaper than a full fetch) for threading a reply. */

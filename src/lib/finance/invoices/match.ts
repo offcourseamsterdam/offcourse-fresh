@@ -26,7 +26,10 @@ export interface ExtractedInvoiceFields {
 
 export interface CandidateShift {
   id: string
+  /** bookings.id (uuid) — written straight through to finance_invoices.matched_booking_id, never compared against invoice text. */
   bookingId: string | null
+  /** bookings.booking_id (human-readable ref, e.g. "OC-2026-00123") — what a skipper might actually write on an invoice, compared against extracted.bookingRef. Never a uuid. */
+  bookingRef: string | null
   date: ISODate
   /** ISO datetime — used with endAt to derive the hours actually worked. */
   startAt: string
@@ -75,7 +78,7 @@ function shiftHours(shift: CandidateShift): number {
 function pickBestShift(extracted: ExtractedInvoiceFields, candidates: CandidateShift[]): CandidateShift | null {
   if (candidates.length === 0) return null
   if (extracted.bookingRef) {
-    const byRef = candidates.find(c => c.bookingId === extracted.bookingRef)
+    const byRef = candidates.find(c => c.bookingRef && c.bookingRef === extracted.bookingRef)
     if (byRef) return byRef
   }
   if (!extracted.tourDate) return candidates[0]

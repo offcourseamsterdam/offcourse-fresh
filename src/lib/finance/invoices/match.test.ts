@@ -17,7 +17,8 @@ const extracted = (o: Partial<ExtractedInvoiceFields> = {}): ExtractedInvoiceFie
 
 const shift = (o: Partial<CandidateShift> = {}): CandidateShift => ({
   id: 'shift-1',
-  bookingId: 'booking-1',
+  bookingId: 'uuid-booking-1',
+  bookingRef: 'OC-2026-00001',
   date: '2026-08-30',
   startAt: '2026-08-30T14:00:00Z',
   endAt: '2026-08-30T18:00:00Z', // 4 hours
@@ -44,7 +45,7 @@ describe('matchInvoice', () => {
     expect(result.status).toBe('ready')
     expect(result.checks.every(c => c.ok)).toBe(true)
     expect(result.matchedShiftId).toBe('shift-1')
-    expect(result.matchedBookingId).toBe('booking-1')
+    expect(result.matchedBookingId).toBe('uuid-booking-1')
     expect(result.expectedAmountCents).toBe(8000)
   })
 
@@ -190,8 +191,8 @@ describe('matchInvoice', () => {
   })
 
   it('picks the shift matching bookingRef over the nearest-date one when both are candidates', () => {
-    const near = shift({ id: 'shift-near', date: '2026-08-29', bookingId: 'booking-near' })
-    const byRef = shift({ id: 'shift-ref', date: '2026-08-25', bookingId: 'booking-ref-match' })
+    const near = shift({ id: 'shift-near', date: '2026-08-29', bookingId: 'uuid-near', bookingRef: 'OC-2026-00099' })
+    const byRef = shift({ id: 'shift-ref', date: '2026-08-25', bookingId: 'uuid-ref', bookingRef: 'booking-ref-match' })
     const result = matchInvoice({
       extracted: extracted({ bookingRef: 'booking-ref-match', tourDate: '2026-08-30' }),
       supplier: supplier(),

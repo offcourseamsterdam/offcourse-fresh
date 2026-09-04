@@ -5,7 +5,7 @@ const h = vi.hoisted(() => ({
 }))
 vi.mock('./auth', () => ({ getGmailAccessToken: h.getGmailAccessToken }))
 
-import { listNewMessages, getMessage, sendReply, extractSenderEmail, extractRecipients } from './client'
+import { listNewMessages, getMessage, sendReply, extractSenderEmail, extractRecipients, getAttachmentData } from './client'
 
 function b64url(s: string): string {
   return Buffer.from(s, 'utf-8').toString('base64url')
@@ -144,6 +144,7 @@ describe('getMessage', () => {
       messageIdHeader: '<abc123@mail.gmail.com>',
       bodyText: 'Hi, can we book Saturday?',
       bodyHtml: null,
+      attachments: [],
     })
   })
 
@@ -219,6 +220,76 @@ describe('getMessage', () => {
   it('throws with the response body when the Gmail API returns an error status', async () => {
     mockFetchOnce({ error: 'not found' }, false, 404)
     await expect(getMessage('missing')).rejects.toThrow(/404/)
+  })
+
+  it('collects a PDF attachment from a multipart payload', async () => {
+    mockFetchOnce({
+      id: 'm6',
+      threadId: 't6',
+      payload: {
+        headers: [{ name: 'From', value: 'skipper@example.com' }, { name: 'Subject', value: 'Factuur' }],
+        mimeType: 'multipart/mixed',
+        parts: [
+          { mimeType: 'text/plain', body: { data: b64url('zie bijlage') } },
+          {
+            mimeType: 'application/pdf',
+            filename: 'factuur-042.pdf',
+            body: { attachmentId: 'att-1', size: 54321 },
+          },
+        ],
+      },
+    })
+    const msg = await getMessage('m6')
+    expect(msg.attachments).toEqual([
+      { filename: 'factuur-042.pdf', mimeType: 'application/pdf', attachmentId: 'att-1', size: 54321 },
+    ])
+  })
+
+  it('finds attachments nested inside multiple levels of multipart', async () => {
+    mockFetchOnce({
+      id: 'm7',
+      threadId: 't7',
+      payload: {
+        headers: [{ name: 'From', value: 'skipper@example.com' }],
+        mimeType: 'multipart/mixed',
+        parts: [
+          {
+            mimeType: 'multipart/alternative',
+            parts: [{ mimeType: 'text/plain', body: { data: b64url('hoi') } }],
+          },
+          { mimeType: 'application/pdf', filename: 'a.pdf', body: { attachmentId: 'att-a', size: 1 } },
+        ],
+      },
+    })
+    const msg = await getMessage('m7')
+    expect(msg.attachments.map(a => a.filename)).toEqual(['a.pdf'])
+  })
+
+  it('ignores a part with a filename but no attachmentId, rather than guessing', async () => {
+    mockFetchOnce({
+      id: 'm8',
+      threadId: 't8',
+      payload: {
+        headers: [{ name: 'From', value: 'skipper@example.com' }],
+        mimeType: 'multipart/mixed',
+        parts: [{ mimeType: 'application/pdf', filename: 'weird.pdf', body: {} }],
+      },
+    })
+    const msg = await getMessage('m8')
+    expect(msg.attachments).toEqual([])
+  })
+})
+
+describe('getAttachmentData', () => {
+  it('decodes the base64url attachment payload into a Buffer', async () => {
+    mockFetchOnce({ data: b64url('%PDF-1.4 fake pdf bytes'), size: 23 })
+    const buf = await getAttachmentData('m1', 'att-1')
+    expect(buf.toString('utf-8')).toBe('%PDF-1.4 fake pdf bytes')
+  })
+
+  it('throws with the response body when the Gmail API returns an error status', async () => {
+    mockFetchOnce({ error: 'not found' }, false, 404)
+    await expect(getAttachmentData('m1', 'missing')).rejects.toThrow(/404/)
   })
 })
 
