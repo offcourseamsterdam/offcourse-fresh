@@ -98,6 +98,18 @@ describe('classifyStructural — people', () => {
     expect(classifyStructural(tx({ amountCents: 5000, description: 'Payment from Beer Zoomers' }), ctx())?.category)
       .not.toBe('owner')
   })
+
+  it('recognises a payment via an alias the bank prints instead of the real name (the real "Schipper MG" / Mia case)', () => {
+    const withAlias = ctx({ staff: [{ id: 's5', name: 'Mia Groen', role: 'skipper', aliases: ['MG', 'Schipper MG'] }] })
+    const c = classifyStructural(tx({ amountCents: -84700, description: 'To Schipper MG' }), withAlias)
+    expect(c).toMatchObject({ category: 'operating', subcategory: 'crew' })
+    expect(c?.reason).toContain('Mia Groen')
+  })
+
+  it('an alias too short to stand as its own word does not match inside another word', () => {
+    const withAlias = ctx({ staff: [{ id: 's6', name: 'Bo', role: 'skipper', aliases: ['B'] }] })
+    expect(classifyStructural(tx({ amountCents: -5000, description: 'Boatlocal payout' }), withAlias)).toBeNull()
+  })
 })
 
 describe('classifyStructural — suppliers', () => {

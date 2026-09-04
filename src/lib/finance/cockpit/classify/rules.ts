@@ -40,6 +40,8 @@ export interface StaffMember {
   id: string
   name: string
   role: string | null
+  /** Nicknames/initials the bank prints instead of the real name (e.g. "MG" for Mia). */
+  aliases?: string[]
 }
 
 export interface LoanPaymentCandidate {
@@ -285,7 +287,9 @@ export function classifyStructural(tx: ClassifiableTransaction, ctx: RuleContext
   // Someone on the staff list. Beer himself is owner salary, everyone else crew.
   if (outgoing) {
     for (const s of ctx.staff) {
-      if (!matchesStaffName(text, s.name)) continue
+      const nameMatch = matchesStaffName(text, s.name)
+      const aliasMatch = !nameMatch && (s.aliases ?? []).some(a => matchesStaffName(text, a))
+      if (!nameMatch && !aliasMatch) continue
       const isOwner = norm(s.role) === 'owner'
       return isOwner
         ? rule('owner', 'salary', 0.9, `Betaling aan ${s.name} (eigenaar)`, {})

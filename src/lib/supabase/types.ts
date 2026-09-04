@@ -4668,6 +4668,7 @@ export type Database = {
           max_shifts_per_week: number | null
           name: string
           notes: string | null
+          payment_aliases: string[]
           phone: string | null
           role: string
           slack_member_id: string | null
@@ -4684,6 +4685,7 @@ export type Database = {
           max_shifts_per_week?: number | null
           name: string
           notes?: string | null
+          payment_aliases?: string[]
           phone?: string | null
           role: string
           slack_member_id?: string | null
@@ -4700,6 +4702,7 @@ export type Database = {
           max_shifts_per_week?: number | null
           name?: string
           notes?: string | null
+          payment_aliases?: string[]
           phone?: string | null
           role?: string
           slack_member_id?: string | null
