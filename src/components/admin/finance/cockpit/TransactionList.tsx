@@ -117,11 +117,11 @@ export function TransactionList({ transactions, compact = false, onSelectTransac
                 <td className="py-2.5 pr-3 whitespace-nowrap text-zinc-600 tabular-nums">{dateNL(tx.completed_at ?? tx.created_at)}</td>
                 <td className="py-2.5 pr-3 min-w-0">
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-medium text-zinc-900 truncate max-w-[28rem]">{transactionLabel(tx)}</span>
+                    <span className="font-medium text-zinc-900 truncate max-w-[22rem]">{transactionLabel(tx)}</span>
                     <Badge state={tx.state} />
                   </div>
                 </td>
-                {!compact && <td className="py-2.5 pr-3 text-zinc-500 truncate max-w-[14rem]">{tx.reference ?? <span className="text-zinc-300">—</span>}</td>}
+                {!compact && <td className="py-2.5 pr-3 text-zinc-500 truncate max-w-[10rem]" title={tx.reference ?? undefined}>{tx.reference ?? <span className="text-zinc-300">—</span>}</td>}
                 <td className="py-2.5 pr-3 text-right"><Amount tx={tx} /></td>
                 {!compact && (
                   <td className="py-2.5 pr-3 text-right text-zinc-500 tabular-nums whitespace-nowrap">
