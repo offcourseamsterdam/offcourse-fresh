@@ -2198,6 +2198,85 @@ export type Database = {
         }
         Relationships: []
       }
+      finance_classification_rules: {
+        Row: {
+          boat_id: string | null
+          category: string
+          created_at: string
+          created_from_transaction_id: string | null
+          direction: string
+          goal_id: string | null
+          hit_count: number
+          id: string
+          is_active: boolean
+          last_hit_at: string | null
+          match_field: string
+          note: string | null
+          pattern: string
+          priority: number
+          subcategory: string | null
+          updated_at: string
+        }
+        Insert: {
+          boat_id?: string | null
+          category: string
+          created_at?: string
+          created_from_transaction_id?: string | null
+          direction?: string
+          goal_id?: string | null
+          hit_count?: number
+          id?: string
+          is_active?: boolean
+          last_hit_at?: string | null
+          match_field: string
+          note?: string | null
+          pattern: string
+          priority?: number
+          subcategory?: string | null
+          updated_at?: string
+        }
+        Update: {
+          boat_id?: string | null
+          category?: string
+          created_at?: string
+          created_from_transaction_id?: string | null
+          direction?: string
+          goal_id?: string | null
+          hit_count?: number
+          id?: string
+          is_active?: boolean
+          last_hit_at?: string | null
+          match_field?: string
+          note?: string | null
+          pattern?: string
+          priority?: number
+          subcategory?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_classification_rules_boat_id_fkey"
+            columns: ["boat_id"]
+            isOneToOne: false
+            referencedRelation: "boats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_classification_rules_created_from_transaction_id_fkey"
+            columns: ["created_from_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "bank_transactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_classification_rules_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: false
+            referencedRelation: "finance_goals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       finance_events: {
         Row: {
           actor: string
