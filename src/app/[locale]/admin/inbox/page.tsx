@@ -9,6 +9,7 @@ import { ConversationList, type StatusFilter } from './ConversationList'
 import { ThreadPane } from './ThreadPane'
 import { ContextPane } from './ContextPane'
 import { CallButton } from './CallButton'
+import { UploadInvoiceModal } from './UploadInvoiceModal'
 import { hasGhostCoPilotContent, type InboxConversationDetail, type InboxListItem } from './types'
 
 /**
@@ -64,7 +65,18 @@ export default function AdminInboxPage() {
           <h1 className="text-2xl font-semibold text-zinc-900">Inbox</h1>
           <p className="text-sm text-zinc-500 mt-1">Every customer conversation, one place.</p>
         </div>
-        <CallButton />
+        <div className="flex items-center gap-2">
+          <UploadInvoiceModal
+            onUploaded={id => {
+              // Setting these two triggers useAdminFetch's own URL-driven
+              // refetch for both panes — no explicit refresh() call needed,
+              // same as onFilterChange below.
+              setStatusFilter('all')
+              selectConversation(id)
+            }}
+          />
+          <CallButton />
+        </div>
       </div>
 
       <AdminErrorBanner error={list.error ?? detail.error} />

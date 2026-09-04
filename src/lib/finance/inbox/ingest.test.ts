@@ -156,7 +156,7 @@ describe('ingestFinanceMessage', () => {
     state.staff.push({ id: 'staff-1', name: 'Mare', hourly_rate_cents: 3750 })
     state.financeSuppliers.push({ id: 'sup-existing', name: 'Mare', staff_id: 'staff-1', iban: 'NL01TEST0123456789' })
 
-    await ingestFinanceMessage(supabase, gmailMessage(), null, detection({ senderKind: 'staff', staffId: 'staff-1', trusted: true }))
+    await ingestFinanceMessage(supabase, gmailMessage(), 'msgrow-1', detection({ senderKind: 'staff', staffId: 'staff-1', trusted: true }))
 
     expect(state.financeSuppliers).toHaveLength(1)
     expect(state.financeInvoices[0].supplier_id).toBe('sup-existing')
@@ -178,7 +178,7 @@ describe('ingestFinanceMessage', () => {
     state.financeSuppliers.push({ id: 'sup-marina', name: 'Jachthaven Westerdok', staff_id: null, iban: 'NL01TEST0123456789' })
     h.extractInvoiceFields.mockResolvedValue({ fields: { ...FULL_MATCH_EXTRACTED, hours: null, rateCents: null }, confidence: {} })
 
-    await ingestFinanceMessage(supabase, gmailMessage(), null, detection({ senderKind: 'supplier', supplierId: 'sup-marina', trusted: true }))
+    await ingestFinanceMessage(supabase, gmailMessage(), 'msgrow-1', detection({ senderKind: 'supplier', supplierId: 'sup-marina', trusted: true }))
 
     const invoice = state.financeInvoices[0]
     expect(invoice.matched_shift_id).toBeNull()
@@ -193,6 +193,13 @@ describe('ingestFinanceMessage', () => {
     expect(state.financeInvoices[0].supplier_id).toBeNull()
     expect(state.financeInvoices[0].status).toBe('needs_review')
     expect(result).toBe('factuur.pdf: nog te controleren')
+  })
+
+  it('a PDF attached but no messages-row id (should be unreachable in practice) — skips rather than inserting with a null attachment', async () => {
+    const result = await ingestFinanceMessage(supabase, gmailMessage(), null, detection({ trusted: true }))
+
+    expect(result).toContain('geen bericht-id')
+    expect(state.financeInvoices).toHaveLength(0)
   })
 
   it('unknown sender, no PDF attachment — flags for manual review, creates no invoice', async () => {
