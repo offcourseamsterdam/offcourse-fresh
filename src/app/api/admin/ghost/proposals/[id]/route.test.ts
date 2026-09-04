@@ -755,6 +755,8 @@ describe('POST import_fh_booking action — happy path', () => {
       endTime: '18:30',
       guests: 2,
       experienceName: 'Shared Cruise',
+      estimatedPriceCents: null,
+      estimatedCommissionCents: null,
     })
 
     // Newly-imported booking flows into Scheduling immediately, same hook every
