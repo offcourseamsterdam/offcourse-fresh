@@ -23,7 +23,7 @@ export const BUCKET_LABELS: Record<BucketKey, string> = {
 
 // ── Obligations ──────────────────────────────────────────────────────────────
 
-export type ObligationKind = 'tax' | 'loan' | 'insurance' | 'berth' | 'salary' | 'contract' | 'invoice' | 'other'
+export type ObligationKind = 'tax' | 'loan' | 'insurance' | 'berth' | 'salary' | 'crew' | 'contract' | 'invoice' | 'other'
 
 export const OBLIGATION_KIND_LABELS: Record<ObligationKind, string> = {
   tax: 'Belasting',
@@ -31,6 +31,7 @@ export const OBLIGATION_KIND_LABELS: Record<ObligationKind, string> = {
   insurance: 'Verzekering',
   berth: 'Ligplaats',
   salary: 'Salaris',
+  crew: 'Bemanning',
   contract: 'Contract',
   invoice: 'Factuur',
   other: 'Overig',

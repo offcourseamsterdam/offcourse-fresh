@@ -463,6 +463,22 @@ the Finance Inbox uses for supplier invoices.
 - "Komende verplichtingen" gets a modal that manages every obligation, including a section to
   read in the detected standing charges: name, interval, amount, next date, confirm or dismiss.
 
+### 12c. Follow-up answers (Beer, 2026-09-04)
+
+- **FareHarbor's monthly charge is genuinely variable** — confirmed, `amountVaries: true` already
+  flags it (fee scales with booking volume).
+- **Catering purchasing:** no invoice data yet, but sell price is always cost × 1.30. Built
+  `derived/catering-cost.ts` as an explicit *estimate* (`estimateCateringSpend`), never a stored
+  obligation or a transaction classification — Phase 4's real purchase invoices supersede it outright.
+- **"MG is Mia":** the bank often prints a nickname instead of the real name. Added
+  `staff.payment_aliases text[]` (migration 152) and alias matching in `classifyStructural()`.
+  **Mia is not in the `staff` table yet** — her alias can't be set until she's added there.
+- **BTW (high/low) as an obligation:** yes. `derived/vat.ts` wraps the existing
+  `computeBtwDashboard()` (already nets 9%/21% across all ten kasboek sources) into obligation
+  proposals, mirroring `city-tax.ts`. A net refund quarter is never proposed as owed.
+- Added obligation kind `'crew'` (migration 153) so skipper-hours accruals show as bemanning,
+  not "overig".
+
 ## 13. Which model builds which phase
 
 The plan is written so each phase is specified tightly enough for a cheaper model to execute; the

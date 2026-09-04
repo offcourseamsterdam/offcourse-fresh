@@ -54,7 +54,7 @@ export const SETTINGS_KEYS = [
 
 // ── Obligations ──────────────────────────────────────────────────────────────
 
-export const obligationKindSchema = z.enum(['tax', 'loan', 'insurance', 'berth', 'salary', 'contract', 'invoice', 'other'])
+export const obligationKindSchema = z.enum(['tax', 'loan', 'insurance', 'berth', 'salary', 'crew', 'contract', 'invoice', 'other'])
 export const obligationStatusFilterSchema = z.enum(['open', 'paid', 'cancelled', 'all'])
 
 const obligationFields = {
