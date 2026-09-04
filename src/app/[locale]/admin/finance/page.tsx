@@ -6,6 +6,7 @@ import { Loader2, RefreshCw, Receipt, ArrowRight, AlertTriangle, Upload, Chevron
 import { Button } from '@/components/ui/button'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { FinanceShareLinks } from '@/components/admin/FinanceShareLinks'
+import { FinanceSubnav } from '@/components/admin/finance/cockpit/FinanceSubnav'
 import { InvoicesTab } from '@/components/admin/finance/InvoicesTab'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { useFinanceUpload } from '@/hooks/useFinanceUpload'
@@ -202,6 +203,7 @@ export default function FinancePage() {
 
   return (
     <div className="p-8 max-w-none space-y-6">
+      <FinanceSubnav />
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
