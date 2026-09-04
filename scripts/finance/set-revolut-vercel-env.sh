@@ -27,9 +27,10 @@ set -euo pipefail
 ENVIRONMENT="${1:-}"
 REDIRECT_URI="${2:-}"
 CLIENT_ID="${3:-}"
+GIT_BRANCH="${4:-}"
 
 if [[ -z "$ENVIRONMENT" || -z "$REDIRECT_URI" ]]; then
-  echo "Gebruik: $0 <preview|production|development> <redirect-uri> [client-id]" >&2
+  echo "Gebruik: $0 <preview|production|development> <redirect-uri> [client-id] [git-branch]" >&2
   exit 1
 fi
 
@@ -58,14 +59,25 @@ if [[ "$REDIRECT_URI" != https://*/api/admin/finance/cockpit/revolut/callback ]]
 fi
 
 put() {
-  local name="$1" value="$2"
+  local name="$1" value="$2" out
   # --force overschrijft een bestaande waarde in dezelfde environment.
-  printf '%s' "$value" | npx vercel env add "$name" "$ENVIRONMENT" --force >/dev/null 2>&1 \
-    && echo "  gezet: $name" \
-    || { echo "  MISLUKT: $name" >&2; return 1; }
+  #
+  # De waarde gaat via --value in plaats van stdin: de Vercel CLI weigert stdin
+  # zodra hij geen echte terminal ziet en eist dan deze vorm. De waarde komt uit
+  # een shell-variabele die hier uit ~/.offcourse-secrets is gelezen, dus hij
+  # staat niet in dit script, niet in je shell-historie en niet in een chat. Hij
+  # is wel heel even zichtbaar in de procestabel van je eigen Mac.
+  if out=$(npx vercel env add "$name" "$ENVIRONMENT" ${GIT_BRANCH:+"$GIT_BRANCH"} --value "$value" --yes --force 2>&1); then
+    echo "  gezet: $name"
+  else
+    echo "  MISLUKT: $name" >&2
+    # Alleen de foutregels tonen, nooit de waarde zelf.
+    echo "$out" | grep -iE "error|invalid|denied" | head -3 >&2 || true
+    return 1
+  fi
 }
 
-echo "Revolut-variabelen zetten in environment '$ENVIRONMENT' (Revolut-omgeving: $REVOLUT_ENV)"
+echo "Revolut-variabelen zetten in environment '$ENVIRONMENT'${GIT_BRANCH:+ (branch: $GIT_BRANCH)} (Revolut-omgeving: $REVOLUT_ENV)"
 put REVOLUT_ENV "$REVOLUT_ENV"
 put REVOLUT_REDIRECT_URI "$REDIRECT_URI"
 put REVOLUT_PRIVATE_KEY "$(base64 < "$KEY_FILE" | tr -d '\n')"
