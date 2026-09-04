@@ -195,3 +195,98 @@ export interface BoatOption {
   id: string
   name: string
 }
+
+// ── Revolut (phase 2) ────────────────────────────────────────────────────────
+
+export type RevolutEnvironment = 'sandbox' | 'production'
+
+/** GET revolut/status — everything the connect card needs, without touching Revolut. */
+export interface RevolutStatus {
+  /** REVOLUT_CLIENT_ID + REVOLUT_PRIVATE_KEY (+ redirect URI) present in env. */
+  configured: boolean
+  environment: RevolutEnvironment
+  redirectUri: string | null
+  scopes: string[]
+  connected: boolean
+  consentedAt: string | null
+  accountId: string | null
+  accountName: string | null
+  lastSyncAt: string | null
+  lastSyncError: string | null
+  webhook: { id: string; url: string | null } | null
+  latestBalance: { cents: number; takenAt: string } | null
+  /** REVOLUT_TOKEN_KEY present — without it tokens can't be stored encrypted. */
+  tokenKeyConfigured: boolean
+}
+
+export interface RevolutConnectResponse {
+  authorizeUrl: string
+  environment: RevolutEnvironment
+  redirectUri: string
+  scopes: string[]
+}
+
+export interface RevolutAccount {
+  id: string
+  name: string | null
+  currency: string
+  state: string
+  accountType: string | null
+  balanceCents: number
+}
+
+export interface RevolutAccountsResponse {
+  selectedAccountId: string | null
+  accounts: RevolutAccount[]
+}
+
+export interface RevolutSyncResponse {
+  ok: boolean
+  accountId?: string
+  balanceCents?: number
+  fetched: number
+  upserted: number
+  stateChanges: Array<{ revolutId: string; from: string | null; to: string }>
+}
+
+export interface RevolutWebhookResponse {
+  id: string
+  url: string
+  events: string[]
+}
+
+/** One row of bank_transactions as GET transactions hands it back (signed cents, in = positive). */
+export interface TransactionApiRow {
+  id: string
+  revolut_id: string
+  type: string
+  state: string
+  created_at: string
+  completed_at: string | null
+  amount_cents: number
+  fee_cents: number
+  currency: string
+  balance_after_cents: number | null
+  reference: string | null
+  description: string | null
+  counterparty: Record<string, unknown> | null
+  merchant: Record<string, unknown> | null
+  category: string | null
+  subcategory: string | null
+  boat_id: string | null
+  goal_id: string | null
+  obligation_id: string | null
+  loan_payment_id: string | null
+  invoice_id: string | null
+  classified_by: string | null
+  confidence: number | null
+  classification_reason: string | null
+  needs_review: boolean
+  reviewed_at: string | null
+}
+
+export interface TransactionsResponse {
+  transactions: TransactionApiRow[]
+  /** created_at cursor for the next page; null when this was the last page. */
+  nextBefore: string | null
+}

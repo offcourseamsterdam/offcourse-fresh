@@ -18,9 +18,9 @@ const ITEMS: SubnavItem[] = [
   { href: '/admin/finance/overview', label: 'Overzicht' },
   { href: '/admin/finance/goals', label: 'Doelen' },
   { href: '/admin/finance/loans', label: 'Leningen' },
+  { href: '/admin/finance/transactions', label: 'Transacties' },
   { href: '/admin/finance', label: 'Kasboek' },
   { href: '/admin/finance/inbox', label: 'Inbox', soon: true },
-  { href: '/admin/finance/transactions', label: 'Transacties', soon: true },
   { href: '/admin/finance/investments', label: 'Investeringen', soon: true },
 ]
 

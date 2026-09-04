@@ -1,9 +1,10 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
-import { AlertTriangle, Loader2, Pencil, Plus, RefreshCw, Settings2, XCircle } from 'lucide-react'
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { AlertTriangle, Landmark, Loader2, Pencil, Plus, RefreshCw, Settings2, XCircle } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { AdminPageSkeleton } from '@/components/admin/AdminPageSkeleton'
@@ -24,7 +25,16 @@ import { WhyDrawer } from '@/components/admin/finance/cockpit/WhyDrawer'
 import { ObligationModal } from '@/components/admin/finance/cockpit/ObligationModal'
 import { SettingsModal, settingsPayloadFrom } from '@/components/admin/finance/cockpit/SettingsModal'
 import { ManualCashModal } from '@/components/admin/finance/cockpit/ManualCashModal'
-import { COCKPIT_API, type ObligationApiRow, type SettingsRow } from '@/components/admin/finance/cockpit/api-types'
+import { RevolutConnectCard, REVOLUT_API, syncSummary } from '@/components/admin/finance/cockpit/RevolutConnectCard'
+import { TransactionList } from '@/components/admin/finance/cockpit/TransactionList'
+import {
+  COCKPIT_API,
+  type ObligationApiRow,
+  type RevolutStatus,
+  type RevolutSyncResponse,
+  type SettingsRow,
+  type TransactionsResponse,
+} from '@/components/admin/finance/cockpit/api-types'
 import { eur, pct, dateNL, dateTimeNL } from '@/components/admin/finance/cockpit/money'
 import { useBoats, boatName } from '@/components/admin/finance/cockpit/useBoats'
 
@@ -33,9 +43,22 @@ const HORIZON_SHORT: Record<Horizon, string> = { '30d': '30 dagen', '3m': '3 maa
 
 const cardClass = 'rounded-2xl border border-zinc-200 bg-white shadow-sm'
 
+/** Dutch text for the ?revolut=error&reason=… Revolut sends us back with. */
+function revolutErrorMessage(reason: string | null): string {
+  switch (reason) {
+    case 'access_denied': return 'Toestemming geweigerd in Revolut.'
+    case 'no_code': return 'Revolut stuurde geen autorisatiecode terug.'
+    case 'not_configured': return 'Revolut is niet geconfigureerd (omgevingsvariabelen ontbreken).'
+    default: return reason ? `Koppelen mislukt: ${reason}` : 'Koppelen mislukt.'
+  }
+}
+
 export default function FinanceOverviewPage() {
   const params = useParams()
   const locale = (params?.locale as string | undefined) ?? 'en'
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
 
   // null = "whatever the settings say" — the API applies the stored horizon.
   const [horizon, setHorizon] = useState<Horizon | null>(null)
@@ -46,6 +69,18 @@ export default function FinanceOverviewPage() {
   const { data: openObligations, refresh: refreshObligations } = useAdminFetch<ObligationApiRow[]>(`${COCKPIT_API}/obligations?status=open`)
   const boats = useBoats()
   const { error: actionError, run } = useAdminSave()
+
+  // Revolut: status drives the connect card + what "Ververs" means.
+  const { data: revolut, isLoading: revolutLoading, refresh: refreshRevolut } = useAdminFetch<RevolutStatus>(`${REVOLUT_API}/status`)
+  const revolutConnected = revolut?.connected === true
+  const { data: recentTx, refresh: refreshRecentTx } = useAdminFetch<TransactionsResponse>(
+    revolutConnected ? `${COCKPIT_API}/transactions?limit=5` : null,
+  )
+  // The card is always shown while not connected; once connected it only
+  // appears when Revolut just sent us back here (?revolut=…) or Beer opened
+  // it from the header. Initial value read once — the query is stripped below.
+  const [revolutCardOpen, setRevolutCardOpen] = useState<boolean>(() => searchParams.get('revolut') != null)
+  const [syncing, setSyncing] = useState(false)
 
   const [whyOpen, setWhyOpen] = useState(false)
   const [whyTitle, setWhyTitle] = useState('Waarom dit bedrag?')
@@ -58,7 +93,44 @@ export default function FinanceOverviewPage() {
     refresh()
     refreshSettings()
     refreshObligations()
-  }, [refresh, refreshSettings, refreshObligations])
+    refreshRevolut()
+    refreshRecentTx()
+  }, [refresh, refreshSettings, refreshObligations, refreshRevolut, refreshRecentTx])
+
+  /**
+   * "Ververs" = pull from the bank when Revolut is connected, then reload the
+   * numbers. Without a connection it just re-reads what we already have.
+   */
+  const refreshFromBank = useCallback(async () => {
+    if (!revolutConnected) { refreshAll(); return }
+    setSyncing(true)
+    try {
+      const res = await adminMutate<RevolutSyncResponse>(`${REVOLUT_API}/sync`, 'POST', {})
+      toast.success('Bijgewerkt vanuit Revolut', { description: syncSummary(res) })
+    } catch (err) {
+      toast.error('Synchronisatie mislukt', { description: err instanceof Error ? err.message : undefined })
+    } finally {
+      setSyncing(false)
+      refreshAll()
+    }
+  }, [revolutConnected, refreshAll])
+
+  // Landing back from Revolut's consent screen: one toast, then strip the
+  // query so a reload doesn't repeat it. The ref keeps React's dev-mode
+  // double effect from toasting twice.
+  const handledRevolutReturn = useRef(false)
+  useEffect(() => {
+    const flag = searchParams.get('revolut')
+    if (!flag || handledRevolutReturn.current) return
+    handledRevolutReturn.current = true
+    if (flag === 'connected') {
+      const syncFailed = searchParams.get('sync') === 'failed'
+      toast.success('Revolut gekoppeld', syncFailed ? { description: 'De eerste synchronisatie mislukte — probeer "Nu synchroniseren".' } : undefined)
+    } else if (flag === 'error') {
+      toast.error(revolutErrorMessage(searchParams.get('reason')))
+    }
+    router.replace(pathname ?? `/${locale}/admin/finance/overview`)
+  }, [searchParams, router, pathname, locale])
 
   function openWhy(title: string) {
     setWhyTitle(title)
@@ -140,7 +212,9 @@ export default function FinanceOverviewPage() {
           <h1 className="text-2xl font-semibold text-zinc-900">Financieel overzicht</h1>
           <p className="text-sm text-zinc-500 mt-1">Wat kan Off Course verantwoord doen met zijn geld?</p>
           <p className="text-xs text-zinc-400 mt-1">
-            Laatst bijgewerkt: {cash.asOf ? `${dateTimeNL(cash.asOf)}${cash.source === 'manual' ? ' (handmatig)' : ''}` : 'geen saldo bekend'}
+            Laatst bijgewerkt: {cash.asOf
+              ? `${dateTimeNL(cash.asOf)} ${cash.source === 'revolut' ? '(Revolut)' : '(handmatig)'}`
+              : 'geen saldo bekend'}
           </p>
         </div>
 
@@ -163,9 +237,27 @@ export default function FinanceOverviewPage() {
               )
             })}
           </div>
-          <Button variant="outline" size="sm" onClick={refreshAll} disabled={isLoading} aria-label="Ververs">
-            {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={refreshFromBank}
+            disabled={isLoading || syncing}
+            aria-label="Ververs"
+            title={revolutConnected ? 'Haalt saldo en transacties op bij Revolut' : 'Herlaadt het overzicht'}
+          >
+            {isLoading || syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">Ververs</span>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setRevolutCardOpen(o => !o)}
+            aria-pressed={revolutCardOpen}
+            aria-label="Revolut"
+            title="Revolut-koppeling"
+          >
+            <Landmark className={`w-3.5 h-3.5 ${revolutConnected ? 'text-emerald-600' : ''}`} />
+            <span className="hidden sm:inline">Revolut</span>
           </Button>
           <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
             <Settings2 className="w-3.5 h-3.5" />
@@ -204,7 +296,7 @@ export default function FinanceOverviewPage() {
         ) : (
           <div className={`${cardClass} p-4 sm:p-5 flex flex-col gap-2 border-dashed`}>
             <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Cash</p>
-            <p className="text-sm text-zinc-600">Nog geen saldo — koppel Revolut (fase 2) of vul een saldo in.</p>
+            <p className="text-sm text-zinc-600">Nog geen saldo — koppel Revolut hieronder of vul een saldo in.</p>
             <div className="mt-auto pt-1">
               <Button size="sm" onClick={() => setCashOpen(true)}>Saldo invoeren</Button>
             </div>
@@ -237,6 +329,16 @@ export default function FinanceOverviewPage() {
           onWhy={() => openWhy('Komende verplichtingen')}
         />
       </div>
+
+      {/* Revolut — always while not connected; on demand once it is */}
+      {(!revolutConnected || revolutCardOpen) && (
+        <RevolutConnectCard
+          status={revolut}
+          loading={revolutLoading}
+          onChanged={refreshAll}
+          onDismiss={revolutConnected ? () => setRevolutCardOpen(false) : undefined}
+        />
+      )}
 
       {/* Allocation bar */}
       <section className={`${cardClass} p-4 sm:p-6 space-y-4`}>
@@ -379,6 +481,28 @@ export default function FinanceOverviewPage() {
           )}
         </section>
       </div>
+
+      {/* Recent transactions */}
+      <section className={`${cardClass} p-4 sm:p-5 flex flex-col gap-3`}>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-zinc-900">Recente transacties</h2>
+          <Link href={`/${locale}/admin/finance/transactions`} className="text-xs font-medium text-indigo-600 hover:text-indigo-800 min-h-[44px] sm:min-h-0 inline-flex items-center">
+            Alle transacties →
+          </Link>
+        </div>
+        {!revolutConnected ? (
+          <p className="text-sm text-zinc-500">
+            Koppel Revolut om transacties te zien.{' '}
+            <button type="button" onClick={() => setRevolutCardOpen(true)} className="text-indigo-600 hover:text-indigo-800 font-medium">Koppelen</button>
+          </p>
+        ) : !recentTx ? (
+          <p className="text-sm text-zinc-400 flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Transacties laden…</p>
+        ) : recentTx.transactions.length === 0 ? (
+          <p className="text-sm text-zinc-500">Nog geen transacties gesynchroniseerd. Klik op "Ververs" om ze op te halen.</p>
+        ) : (
+          <TransactionList transactions={recentTx.transactions} compact />
+        )}
+      </section>
 
       {/* Attention */}
       <section className={`${cardClass} p-4 sm:p-5 space-y-2`}>
