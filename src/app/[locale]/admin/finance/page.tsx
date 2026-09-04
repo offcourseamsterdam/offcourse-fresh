@@ -7,8 +7,6 @@ import { Button } from '@/components/ui/button'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { FinanceShareLinks } from '@/components/admin/FinanceShareLinks'
 import { InvoicesTab } from '@/components/admin/finance/InvoicesTab'
-import { ProfitCockpitTab } from '@/components/admin/finance/ProfitCockpitTab'
-import { CateringCostsTab } from '@/components/admin/finance/CateringCostsTab'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { useFinanceUpload } from '@/hooks/useFinanceUpload'
 import { fmtAdminAmount, fmtAdminAmountRounded, fmtAdminDate } from '@/lib/admin/format'
@@ -127,8 +125,6 @@ interface BoatLocalBatchRow {
 }
 
 const ALL_TAB_KEYS = [
-  'cockpit',
-  'catering-costs',
   'partners',
   'invoices',
   'btw-dashboard',
@@ -190,7 +186,7 @@ function formatShortEuro(cents: number): string {
 }
 
 export default function FinancePage() {
-  const [tab, setTab] = useState<TabKey>('cockpit')
+  const [tab, setTab] = useState<TabKey>('btw-dashboard')
 
   const { data: statusData } = useAdminFetch<FinanceChannelStatusData>(
     '/api/admin/finance/channel-status'
@@ -228,21 +224,6 @@ export default function FinancePage() {
             Overzichten &amp; Beheer
           </div>
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setTab('cockpit')}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
-                tab === 'cockpit'
-                  ? 'bg-zinc-900 text-white shadow-sm'
-                  : 'bg-white text-zinc-700 hover:bg-zinc-100/80 border border-zinc-200/80'
-              }`}
-            >
-              <span>Winst &amp; Cash</span>
-              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${tab === 'cockpit' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-emerald-50 text-emerald-700'}`}>
-                Cockpit
-              </span>
-            </button>
-
             <button
               type="button"
               onClick={() => setTab('btw-dashboard')}
@@ -285,18 +266,6 @@ export default function FinancePage() {
                   0 open ✓
                 </span>
               )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setTab('catering-costs')}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
-                tab === 'catering-costs'
-                  ? 'bg-zinc-900 text-white shadow-sm'
-                  : 'bg-white text-zinc-700 hover:bg-zinc-100/80 border border-zinc-200/80'
-              }`}
-            >
-              <span>Catering &amp; Inkoop</span>
             </button>
 
             <button
@@ -433,8 +402,6 @@ export default function FinancePage() {
         </div>
       </div>
 
-      {tab === 'cockpit' && <ProfitCockpitTab />}
-      {tab === 'catering-costs' && <CateringCostsTab />}
       {tab === 'partners' && <PartnersTab />}
       {tab === 'invoices' && <InvoicesTab />}
       {tab === 'btw-dashboard' && <BtwDashboardTab />}

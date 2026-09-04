@@ -27,7 +27,7 @@ export const PATCH = withRoute(async (request: NextRequest, { params }: { params
   const WRITABLE = ['name','name_nl','name_de','name_fr','name_es','name_pt','name_zh',
     'description','description_nl','description_de','description_fr','description_es',
     'description_pt','description_zh','image_url','category','scope',
-    'applicable_categories','price_type','price_value','cost_price_value','vat_rate',
+    'applicable_categories','price_type','price_value','vat_rate',
     'is_required','is_active','sort_order','ingredients',
     'quantity_mode','min_quantity','min_people','adults_only']
 
