@@ -260,6 +260,8 @@ export type Database = {
       bank_transactions: {
         Row: {
           account_id: string
+          allocation_applied: Json | null
+          allocation_applied_at: string | null
           amount_cents: number
           balance_after_cents: number | null
           boat_id: string | null
@@ -295,6 +297,8 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          allocation_applied?: Json | null
+          allocation_applied_at?: string | null
           amount_cents: number
           balance_after_cents?: number | null
           boat_id?: string | null
@@ -330,6 +334,8 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          allocation_applied?: Json | null
+          allocation_applied_at?: string | null
           amount_cents?: number
           balance_after_cents?: number | null
           boat_id?: string | null
