@@ -20,8 +20,10 @@ const ITEMS: SubnavItem[] = [
   { href: '/admin/finance/loans', label: 'Leningen' },
   { href: '/admin/finance/transactions', label: 'Transacties' },
   { href: '/admin/finance', label: 'Kasboek' },
-  { href: '/admin/finance/inbox', label: 'Inbox', soon: true },
-  { href: '/admin/finance/investments', label: 'Investeringen', soon: true },
+  // The Finance Inbox deliberately has no page of its own — §6a routes invoice
+  // review through the existing operations inbox, filtered to "Facturen".
+  { href: '/admin/inbox', label: 'Facturen' },
+  { href: '/admin/finance/investments', label: 'Investeringen' },
 ]
 
 /**

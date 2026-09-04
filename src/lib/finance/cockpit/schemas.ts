@@ -213,6 +213,60 @@ export function parseQuery<S extends z.ZodTypeAny>(request: NextRequest, key: st
   return { ok: true, data: parsed.data }
 }
 
+// ── Investments (Phase 5) ────────────────────────────────────────────────────
+
+export const investmentTypeSchema = z.enum(['growth', 'capacity', 'efficiency', 'maintenance', 'upgrade', 'risk', 'strategic'])
+export const investmentStatusSchema = z.enum(['idea', 'planned', 'approved', 'executed', 'dropped'])
+export const investmentStatusFilterSchema = z.enum(['idea', 'planned', 'approved', 'executed', 'dropped', 'open', 'all'])
+
+/** Every impact axis is a 1–5 judgement. Deliberately not euros — see the migration's comment. */
+const impactScore = z.number().int().min(1).max(5)
+export const investmentImpactSchema = z.object({
+  capacity: impactScore.optional(),
+  revenue: impactScore.optional(),
+  savings: impactScore.optional(),
+  reliability: impactScore.optional(),
+  lifespan: impactScore.optional(),
+  risk: impactScore.optional(),
+  urgency: impactScore.optional(),
+  confidence: impactScore.optional(),
+  notes: z.string().trim().max(2000).optional(),
+})
+
+const investmentFields = {
+  title: z.string().trim().min(1, 'Title is required').max(200),
+  amount_cents: nonNegCents,
+  boat_id: uuid.nullable().optional(),
+  type: investmentTypeSchema,
+  impact: investmentImpactSchema,
+  // Explicitly nullable: null means "not honestly quantifiable", never 0.
+  expected_return_cents: cents.nullable().optional(),
+  goal_id: uuid.nullable().optional(),
+  notes: z.string().trim().max(2000).nullable().optional(),
+}
+export const investmentCreateSchema = z.object({
+  ...investmentFields,
+  type: investmentTypeSchema.default('growth'),
+  impact: investmentImpactSchema.default({}),
+})
+export const investmentUpdateSchema = z
+  .object({ ...investmentFields, status: investmentStatusSchema, executed_transaction_id: uuid.nullable() })
+  .partial()
+  .refine(obj => Object.keys(obj).length > 0, 'No investment fields to update')
+export const INVESTMENT_KEYS = [...Object.keys(investmentFields), 'status', 'executed_transaction_id']
+
+/** The what-if: either an existing investment's id, or a bare amount. */
+export const investmentScenarioSchema = z
+  .object({
+    investment_id: uuid.optional(),
+    amount_cents: nonNegCents.optional(),
+    horizon: horizonSchema.optional(),
+  })
+  .refine(o => o.investment_id !== undefined || o.amount_cents !== undefined, {
+    message: 'Provide investment_id or amount_cents',
+    path: ['amount_cents'],
+  })
+
 // ── Classification (Phase 3) ────────────────────────────────────────────────
 
 export const classificationMatchFieldSchema = z.enum(['counterparty_name', 'merchant_name', 'description', 'reference'])

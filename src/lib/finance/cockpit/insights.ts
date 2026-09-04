@@ -186,7 +186,8 @@ export function buildInsights(input: InsightInput): Insight[] {
       message: n === 1
         ? 'Van één gevaren tocht is nog geen schippersfactuur binnen.'
         : `Van ${n} gevaren tochten is nog geen schippersfactuur binnen.`,
-      href: '/finance/inbox',
+      // §6a: invoice review lives in the operations inbox, not a finance sub-page.
+      href: '/inbox',
     })
   }
 

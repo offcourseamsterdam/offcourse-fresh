@@ -2381,6 +2381,76 @@ export type Database = {
           },
         ]
       }
+      finance_investments: {
+        Row: {
+          amount_cents: number
+          boat_id: string | null
+          created_at: string
+          executed_transaction_id: string | null
+          expected_return_cents: number | null
+          goal_id: string | null
+          id: string
+          impact: Json
+          notes: string | null
+          status: string
+          title: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          amount_cents: number
+          boat_id?: string | null
+          created_at?: string
+          executed_transaction_id?: string | null
+          expected_return_cents?: number | null
+          goal_id?: string | null
+          id?: string
+          impact?: Json
+          notes?: string | null
+          status?: string
+          title: string
+          type?: string
+          updated_at?: string
+        }
+        Update: {
+          amount_cents?: number
+          boat_id?: string | null
+          created_at?: string
+          executed_transaction_id?: string | null
+          expected_return_cents?: number | null
+          goal_id?: string | null
+          id?: string
+          impact?: Json
+          notes?: string | null
+          status?: string
+          title?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_investments_boat_id_fkey"
+            columns: ["boat_id"]
+            isOneToOne: false
+            referencedRelation: "boats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_investments_executed_transaction_id_fkey"
+            columns: ["executed_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "bank_transactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_investments_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: false
+            referencedRelation: "finance_goals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       finance_invoices: {
         Row: {
           checks: Json

@@ -290,3 +290,91 @@ export interface TransactionsResponse {
   /** created_at cursor for the next page; null when this was the last page. */
   nextBefore: string | null
 }
+
+// ── Investments (Phase 5) ────────────────────────────────────────────────────
+
+export type InvestmentType = 'growth' | 'capacity' | 'efficiency' | 'maintenance' | 'upgrade' | 'risk' | 'strategic'
+export type InvestmentStatus = 'idea' | 'planned' | 'approved' | 'executed' | 'dropped'
+
+export const INVESTMENT_TYPE_LABELS: Record<InvestmentType, string> = {
+  growth: 'Groei',
+  capacity: 'Capaciteit',
+  efficiency: 'Efficiëntie',
+  maintenance: 'Onderhoud',
+  upgrade: 'Upgrade',
+  risk: 'Risico',
+  strategic: 'Strategisch',
+}
+
+export const INVESTMENT_STATUS_LABELS: Record<InvestmentStatus, string> = {
+  idea: 'Idee',
+  planned: 'Gepland',
+  approved: 'Goedgekeurd',
+  executed: 'Uitgevoerd',
+  dropped: 'Afgevallen',
+}
+
+/** Every axis is a 1–5 judgement, never euros — see the migration's comment. */
+export interface InvestmentImpact {
+  capacity?: number
+  revenue?: number
+  savings?: number
+  reliability?: number
+  lifespan?: number
+  risk?: number
+  urgency?: number
+  confidence?: number
+  notes?: string
+}
+
+export const IMPACT_AXIS_LABELS: Record<string, string> = {
+  capacity: 'Capaciteit',
+  revenue: 'Omzet',
+  savings: 'Besparing',
+  reliability: 'Betrouwbaarheid',
+  lifespan: 'Levensduur',
+  risk: 'Risico',
+  urgency: 'Urgentie',
+  confidence: 'Zekerheid',
+}
+
+export interface InvestmentApiRow {
+  id: string
+  title: string
+  amount_cents: number
+  boat_id: string | null
+  type: InvestmentType
+  impact: InvestmentImpact
+  /** null = niet betrouwbaar te kwantificeren. Never 0 as a stand-in. */
+  expected_return_cents: number | null
+  status: InvestmentStatus
+  executed_transaction_id: string | null
+  goal_id: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface InvestmentPayload {
+  title: string
+  amount_cents: number
+  type: InvestmentType
+  impact: InvestmentImpact
+  boat_id?: string | null
+  expected_return_cents?: number | null
+  notes?: string | null
+}
+
+/** POST investments/scenario — the same computeCockpit, before and after the spend. */
+export interface ScenarioResult {
+  amountCents: number
+  investment: { id: string; title: string; amount_cents: number } | null
+  affordable: boolean
+  before: CockpitResult
+  after: CockpitResult
+  delta: {
+    financialSpaceCents: number
+    availableForGrowthCents: number
+    marginShortfallCents: number
+  }
+}
