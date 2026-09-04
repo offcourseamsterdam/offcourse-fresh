@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # set-revolut-vercel-env.sh — zet de Revolut-variabelen in Vercel zonder ze ooit
-# op het scherm te tonen. De private key en de token key worden rechtstreeks uit
-# ~/.offcourse-secrets/revolut/ gelezen en naar de Vercel CLI gepiped.
+# op het scherm te tonen. Dunne validerende wrapper om set-revolut-vercel-env.py,
+# dat de daadwerkelijke Vercel REST API-calls doet.
 #
-# Gebruik (vanuit de map die aan het juiste Vercel-project gekoppeld is):
-#   scripts/finance/set-revolut-vercel-env.sh <environment> <redirect-uri> [client-id]
+# Gebruik:
+#   scripts/finance/set-revolut-vercel-env.sh <preview|production> <redirect-uri> [client-id] [sleutelpaar]
 #
 # Voorbeeld preview:
 #   scripts/finance/set-revolut-vercel-env.sh preview \
@@ -17,37 +17,33 @@
 #     <client-id-uit-revolut>
 #
 # Laat je de client id weg, dan wordt alleen de rest gezet en kun je het script
-# later nog eens draaien met de id erbij.
+# later nog eens draaien met de id erbij. Het sleutelpaar (map onder
+# ~/.offcourse-secrets/revolut/) is standaard gelijk aan de environment-naam;
+# override met een vierde argument als je bewust een ander paar wilt gebruiken.
 #
 # Na afloop: één nieuwe deploy, want Vercel pakt gewijzigde variabelen pas op bij
-# een volgende deployment.
+# een volgende deployment. Bij een preview-deployment via 'vercel --yes' (los van
+# een git push) moet je daarna ook de alias opnieuw zetten:
+#   npx vercel alias set <nieuwe-deployment-url> offcourse-ai-ops-sync.vercel.app
 
 set -euo pipefail
 
 ENVIRONMENT="${1:-}"
 REDIRECT_URI="${2:-}"
 CLIENT_ID="${3:-}"
-GIT_BRANCH="${4:-}"
+KEY_SET_OVERRIDE="${4:-}"
 
 if [[ -z "$ENVIRONMENT" || -z "$REDIRECT_URI" ]]; then
-  echo "Gebruik: $0 <preview|production|development> <redirect-uri> [client-id] [git-branch]" >&2
+  echo "Gebruik: $0 <preview|production> <redirect-uri> [client-id] [sleutelpaar]" >&2
   exit 1
 fi
 
 case "$ENVIRONMENT" in
-  preview|production|development) ;;
-  *) echo "Onbekende environment: $ENVIRONMENT" >&2; exit 1 ;;
+  preview|production) ;;
+  *) echo "Onbekende environment: $ENVIRONMENT (alleen preview of production)" >&2; exit 1 ;;
 esac
 
-# Welke Revolut-omgeving: 'production' is je echte zakelijke rekening, 'sandbox'
-# is Revolut's testomgeving. Een preview-deployment die aan je echte certificaat
-# hangt is dus gewoon 'production'.
-REVOLUT_ENV="${REVOLUT_ENV:-production}"
-
-# Welk sleutelpaar. Elke deployment heeft er een eigen, zodat een lek op de
-# preview niet ook de live site raakt. Standaard hetzelfde als de environment.
-KEY_SET="${REVOLUT_KEY_SET:-$ENVIRONMENT}"
-
+KEY_SET="${KEY_SET_OVERRIDE:-$ENVIRONMENT}"
 SECRETS_DIR="$HOME/.offcourse-secrets/revolut"
 KEY_FILE="$SECRETS_DIR/$KEY_SET/privatecert.pem"
 TOKEN_KEY_FILE="$SECRETS_DIR/token-key.txt"
@@ -63,36 +59,4 @@ if [[ "$REDIRECT_URI" != https://*/api/admin/finance/cockpit/revolut/callback ]]
   exit 1
 fi
 
-put() {
-  local name="$1" value="$2" out
-  # --force overschrijft een bestaande waarde in dezelfde environment.
-  #
-  # De waarde gaat via --value in plaats van stdin: de Vercel CLI weigert stdin
-  # zodra hij geen echte terminal ziet en eist dan deze vorm. De waarde komt uit
-  # een shell-variabele die hier uit ~/.offcourse-secrets is gelezen, dus hij
-  # staat niet in dit script, niet in je shell-historie en niet in een chat. Hij
-  # is wel heel even zichtbaar in de procestabel van je eigen Mac.
-  if out=$(npx vercel env add "$name" "$ENVIRONMENT" ${GIT_BRANCH:+"$GIT_BRANCH"} --value "$value" --yes --force 2>&1); then
-    echo "  gezet: $name"
-  else
-    echo "  MISLUKT: $name" >&2
-    # Alleen de foutregels tonen, nooit de waarde zelf.
-    echo "$out" | grep -iE "error|invalid|denied" | head -3 >&2 || true
-    return 1
-  fi
-}
-
-echo "Revolut-variabelen zetten in environment '$ENVIRONMENT'${GIT_BRANCH:+ (branch: $GIT_BRANCH)} (Revolut-omgeving: $REVOLUT_ENV, sleutelpaar: $KEY_SET)"
-put REVOLUT_ENV "$REVOLUT_ENV"
-put REVOLUT_REDIRECT_URI "$REDIRECT_URI"
-put REVOLUT_PRIVATE_KEY "$(base64 < "$KEY_FILE" | tr -d '\n')"
-put REVOLUT_TOKEN_KEY "$(tr -d '\n' < "$TOKEN_KEY_FILE")"
-
-if [[ -n "$CLIENT_ID" ]]; then
-  put REVOLUT_CLIENT_ID "$CLIENT_ID"
-else
-  echo "  overgeslagen: REVOLUT_CLIENT_ID (nog niet meegegeven)"
-fi
-
-echo
-echo "Klaar. Deploy nu opnieuw, anders blijven de oude waarden actief."
+python3 "$(dirname "$0")/set-revolut-vercel-env.py" "$ENVIRONMENT" "$REDIRECT_URI" "$CLIENT_ID" "$KEY_SET"
