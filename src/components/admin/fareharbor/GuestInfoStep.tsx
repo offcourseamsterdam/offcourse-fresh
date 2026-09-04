@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/input'
 import { ArrowLeft, ChevronRight } from 'lucide-react'
 import { fmtTime, fmtPrice, ratePrice } from './helpers'
 import type { Contact, Listing, Slot, Rate } from './types'
+import type { BookingSource } from '@/lib/constants'
+import { BusinessDetailsPanel, type BusinessDetails } from './BusinessDetailsPanel'
 
 interface GuestInfoStepProps {
   contact: Contact
@@ -15,6 +17,9 @@ interface GuestInfoStepProps {
   selectedRate: Rate | null
   guestCount: number
   date: string
+  bookingSource?: BookingSource
+  businessDetails?: BusinessDetails
+  onBusinessDetailsChange?: (details: BusinessDetails) => void
   onBack: () => void
   onContinue: () => void
 }
@@ -27,14 +32,46 @@ export function GuestInfoStep({
   selectedRate,
   guestCount,
   date,
+  bookingSource,
+  businessDetails,
+  onBusinessDetailsChange,
   onBack,
   onContinue,
 }: GuestInfoStepProps) {
+  const isStripeInvoice = bookingSource === 'stripe_invoice'
+
+  function handleBusinessDetailsChange(newDetails: BusinessDetails) {
+    if (onBusinessDetailsChange) {
+      onBusinessDetailsChange(newDetails)
+    }
+    // Also auto-sync contact if empty or matching
+    onContactChange({
+      ...contact,
+      name: newDetails.contactName || contact.name || newDetails.companyName,
+      email: newDetails.contactEmail || contact.email,
+      phone: newDetails.contactPhone || contact.phone,
+    })
+  }
+
+  const isContinueDisabled =
+    !contact.name ||
+    !contact.email ||
+    !contact.phone ||
+    (isStripeInvoice && (!businessDetails?.companyName || !businessDetails?.addressLine1 || !businessDetails?.postalCode || !businessDetails?.city))
   return (
     <div className="space-y-4">
       <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-700 transition-colors">
         <ArrowLeft className="w-3.5 h-3.5" /> Back
       </button>
+
+      {/* Business Details for Stripe Invoicing */}
+      {isStripeInvoice && businessDetails && (
+        <BusinessDetailsPanel
+          value={businessDetails}
+          onChange={handleBusinessDetailsChange}
+          tourDate={date}
+        />
+      )}
 
       <Card>
         <CardHeader className="pb-3">
@@ -97,7 +134,7 @@ export function GuestInfoStep({
 
       <div className="flex justify-end">
         <Button
-          disabled={!contact.name || !contact.email || !contact.phone}
+          disabled={isContinueDisabled}
           onClick={onContinue}
         >
           Continue to extras

@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
 import { getStripe } from '@/lib/stripe/server'
+import { voidStripeInvoice } from '@/lib/stripe/invoicing'
 import { FHNotFoundError, FHValidationError } from '@/lib/fareharbor/types'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { postSlackOps } from '@/lib/slack/send-notification'
@@ -29,7 +30,7 @@ export async function POST(
     const supabase = createAdminClient()
     const { data: booking, error: fetchError } = await supabase
       .from('bookings')
-      .select('id, booking_uuid, booking_id, external_id, booking_date, status, booking_source, stripe_payment_intent_id, stripe_amount, customer_name, customer_email, listing_title, booking_date, start_time')
+      .select('id, booking_uuid, booking_id, external_id, booking_date, status, booking_source, payment_status, stripe_payment_intent_id, stripe_invoice_id, stripe_amount, customer_name, customer_email, listing_title, start_time')
       .eq('id', id)
       .single()
 
@@ -64,9 +65,36 @@ export async function POST(
       }
     }
 
+    // Void open Stripe Invoice if present (so customer cannot pay a cancelled booking)
+    let invoiceVoided = false
+    let invoiceAlreadyPaid = booking.payment_status === 'paid'
+
+    if (booking.stripe_invoice_id && !invoiceAlreadyPaid) {
+      try {
+        await voidStripeInvoice(booking.stripe_invoice_id)
+        invoiceVoided = true
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (msg.toLowerCase().includes('already paid') || msg.toLowerCase().includes('status is paid')) {
+          invoiceAlreadyPaid = true
+        }
+        console.warn('[cancel-booking] Failed to void Stripe Invoice:', err)
+      }
+    }
+
+    const updatePayload: Record<string, unknown> = {
+      status: 'cancelled',
+      updated_at: new Date().toISOString(),
+    }
+    if (!invoiceAlreadyPaid) {
+      updatePayload.payment_status = 'cancelled'
+    } else {
+      updatePayload.payment_status = 'paid'
+    }
+
     const { error: updateError } = await supabase
       .from('bookings')
-      .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+      .update(updatePayload)
       .eq('id', id)
 
     if (updateError) return apiError(updateError.message)
@@ -126,10 +154,11 @@ export async function POST(
       `👤 ${booking.customer_name ?? '—'} · ${booking.customer_email ?? '—'}`,
       `📅 ${booking.booking_date ?? '—'} · ${formatAmsterdamTime(booking.start_time)}`,
       `💰 Refund: ${refundLabel}`,
+      invoiceVoided ? `🧾 Stripe factuur ingetrokken (voided in Stripe)` : '',
       booking.booking_uuid ? `🎫 FH: ${booking.booking_uuid}` : '',
     ].filter(Boolean).join('\n')).catch(err => console.error('[cancel-booking] Slack error (ignored):', err))
 
-    return apiOk({ cancelled: true, refundId, refundError })
+    return apiOk({ cancelled: true, refundId, refundError, invoiceVoided })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return apiError(message)

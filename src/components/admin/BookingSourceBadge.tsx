@@ -12,6 +12,7 @@ const COLOR_MAP: Record<string, string> = {
   invoice_later: 'bg-indigo-100 text-indigo-700',
   boatlocal: 'bg-teal-100 text-teal-700',
   phone_walkin: 'bg-zinc-200 text-zinc-700',
+  stripe_invoice: 'bg-emerald-100 text-emerald-800',
 }
 
 interface Props {

@@ -42,6 +42,9 @@ export async function GET(request: Request) {
           fareharbor_customer_type_rate_pk, fareharbor_availability_pk, customer_type_name,
           campaign_id, promo_code_id, discount_amount_cents,
           partner_id, no_reschedule_ask, no_reschedule_reason,
+          stripe_invoice_id, stripe_invoice_url, stripe_customer_id,
+          business_profile_id, company_name, company_kvk, company_vat,
+          company_address, invoice_due_date,
           campaigns ( name ),
           promo_codes ( code ),
           partners ( name )

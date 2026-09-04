@@ -25,6 +25,9 @@ export async function GET(request: NextRequest) {
   const denied = requireCronSecret(request)
   if (denied) return denied
 
+  const dryRun = request.nextUrl.searchParams.get('dryRun') === 'true' || request.nextUrl.searchParams.get('dryRun') === '1'
+  const mockSend = request.nextUrl.searchParams.get('mockSend') === 'true' || request.nextUrl.searchParams.get('mockSend') === '1'
+
   const supabase = createAdminClient()
   const today = cateringAutoSendCutoffDate(0)
   const cutoffDate = cateringAutoSendCutoffDate(7)
@@ -54,9 +57,29 @@ export async function GET(request: NextRequest) {
     return true
   })
 
+  if (dryRun) {
+    return NextResponse.json({
+      ok: true,
+      dryRun: true,
+      checked: eligible.length,
+      eligible: eligible.map(b => ({ id: b.id, date: b.booking_date, startTime: b.start_time })),
+    })
+  }
+
   let sent = 0
   let failed = 0
   for (const booking of eligible) {
+    if (mockSend) {
+      // Stamp sent_at without actually sending emails to the real supplier
+      const { error: stampErr } = await supabase
+        .from('bookings')
+        .update({ catering_email_sent_at: new Date().toISOString() })
+        .eq('id', booking.id)
+      if (!stampErr) sent++
+      else failed++
+      continue
+    }
+
     const result = await sendCateringOrderEmailForBooking(booking.id)
     if (result.ok) {
       sent++
@@ -66,5 +89,5 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, checked: eligible.length, sent, failed })
+  return NextResponse.json({ ok: true, checked: eligible.length, sent, failed, mockSend })
 }

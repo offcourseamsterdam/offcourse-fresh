@@ -7,6 +7,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe } from '@/lib/stripe/server'
 import type { BookingSource } from '@/lib/constants'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { getOrCreateStripeCustomer, createAndSendStripeInvoice, voidStripeInvoice, type StripeInvoiceResult } from '@/lib/stripe/invoicing'
 import { validatePromoCodeById } from '@/lib/promo-codes/validate'
 import { normalizePartnerCode } from '@/lib/partner-codes/generate'
 import { validatePartnerCode, reasonMessage } from '@/lib/partner-codes/validate'
@@ -117,6 +118,14 @@ export async function POST(request: NextRequest) {
     const isInternal = bookingSource !== 'website'
     const isPartnerInvoice = bookingSource === 'partner_invoice'
     const isStripeRecovery = bookingSource === 'stripe_recovery'
+    const isStripeInvoice = bookingSource === 'stripe_invoice'
+
+    if (isStripeInvoice) {
+      const bd = body.businessDetails
+      if (!bd?.companyName?.trim() || !bd?.addressLine1?.trim() || !bd?.postalCode?.trim() || !bd?.city?.trim()) {
+        return apiError('Missing required business details: companyName, addressLine1, postalCode, city', 400)
+      }
+    }
 
     // Internal booking sources (partner_invoice, stripe_recovery, withlocals, etc.)
     // bypass Stripe payment verification and create real FareHarbor bookings and
@@ -394,6 +403,83 @@ export async function POST(request: NextRequest) {
     }
     const sessionId = pickBookingSessionId(piSessionId, body.sessionId as string | null)
 
+    let stripeInvoiceResult: StripeInvoiceResult | null = null
+    let stripeCustomerId: string | null = null
+    let businessProfileId: string | null = null
+
+    if (isStripeInvoice && body.businessDetails) {
+      const bd = body.businessDetails
+      const stripeCustomer = await getOrCreateStripeCustomer({
+        name: contact.name,
+        email: contact.email,
+        phone: contact.phone,
+        companyName: bd.companyName,
+        kvkNumber: bd.kvkNumber,
+        vatNumber: bd.vatNumber,
+        address: {
+          line1: bd.addressLine1,
+          postal_code: bd.postalCode,
+          city: bd.city,
+          country: bd.countryCode || 'NL',
+        },
+      })
+      stripeCustomerId = stripeCustomer.id
+
+      try {
+        const invoiceRes = await createAndSendStripeInvoice({
+          customerId: stripeCustomer.id,
+          bookingId: booking?.uuid ?? `inv_${Date.now()}`,
+          fhBookingUuid: booking?.uuid,
+          listingTitle: String(listingTitle ?? ''),
+          bookingDate: String(date ?? ''),
+          startTime: startAt ?? null,
+          guestCount: Number(guestCount),
+          baseAmountCents: Number(baseAmountCents ?? 0),
+          extrasSelected: (extrasSelected ?? []) as Array<{ name: string; amount_cents: number }>,
+          cityTaxCents: Number(guestCount) * CITY_TAX_CENTS_PER_GUEST,
+          discountAmountCents: Number(body.discountAmountCents ?? 0),
+          category: String(category ?? 'private'),
+          daysAfterTour: 14,
+        })
+        stripeInvoiceResult = invoiceRes
+      } catch (invoiceErr) {
+        if (booking?.uuid) {
+          try {
+            await fh.cancelBooking(booking.uuid)
+          } catch (cancelErr) {
+            console.error('[book] Failed to cancel FH booking after invoice failure:', cancelErr)
+          }
+        }
+        throw invoiceErr
+      }
+
+      // Upsert business profile for autocomplete
+      try {
+        const supabase = createAdminClient()
+        const { data: profile } = await supabase
+          .from('business_profiles')
+          .upsert({
+            company_name: bd.companyName.trim(),
+            kvk_number: bd.kvkNumber?.trim() || null,
+            vat_number: bd.vatNumber?.trim() || null,
+            contact_name: contact.name,
+            contact_email: contact.email,
+            contact_phone: contact.phone,
+            address_line1: bd.addressLine1.trim(),
+            postal_code: bd.postalCode.trim(),
+            city: bd.city.trim(),
+            country_code: bd.countryCode || 'NL',
+            stripe_customer_id: stripeCustomer.id,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'company_name' })
+          .select('id')
+          .maybeSingle()
+        if (profile?.id) businessProfileId = profile.id
+      } catch (err) {
+        console.warn('[book] business_profiles upsert failed:', err)
+      }
+    }
+
     const bookingPayload = buildBookingPayload(
       body,
       { uuid: booking?.uuid },
@@ -405,6 +491,17 @@ export async function POST(request: NextRequest) {
         gclid,
         sessionId,
       },
+      isStripeInvoice && body.businessDetails ? {
+        stripeInvoiceId: stripeInvoiceResult?.invoiceId ?? null,
+        stripeInvoiceUrl: stripeInvoiceResult?.hostedInvoiceUrl ?? null,
+        stripeCustomerId,
+        businessProfileId,
+        companyName: body.businessDetails.companyName,
+        companyKvk: body.businessDetails.kvkNumber || null,
+        companyVat: body.businessDetails.vatNumber || null,
+        companyAddress: `${body.businessDetails.addressLine1}, ${body.businessDetails.postalCode} ${body.businessDetails.city}`,
+        invoiceDueDate: stripeInvoiceResult?.dueDate ?? null,
+      } : undefined,
     )
 
     const saveResult = await saveToSupabase(bookingPayload)
@@ -420,6 +517,13 @@ export async function POST(request: NextRequest) {
             await fh.cancelBooking(booking.uuid)
           } catch (err) {
             console.error('[book] failed to cancel duplicate FH booking', booking.uuid, err)
+          }
+        }
+        if (stripeInvoiceResult?.invoiceId) {
+          try {
+            await voidStripeInvoice(stripeInvoiceResult.invoiceId)
+          } catch (err) {
+            console.error('[book] failed to void duplicate Stripe invoice', stripeInvoiceResult.invoiceId, err)
           }
         }
         return apiOk({ deduplicated: true })
@@ -557,7 +661,27 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    return apiOk({ booking })
+    if (stripeInvoiceResult && body.businessDetails) {
+      const bd = body.businessDetails
+      const totalCents = Number(baseAmountCents ?? 0) + Number(extrasAmountCents ?? 0) + (Number(guestCount) * CITY_TAX_CENTS_PER_GUEST) - Number(body.discountAmountCents ?? 0)
+      postSlackOps([
+        `📄 *Stripe Invoice Created & Sent!*`,
+        `🏢 *${bd.companyName}* · €${(totalCents / 100).toFixed(2)}`,
+        `👤 ${contact.name} (${contact.email})`,
+        `📅 Tour: ${date}  ·  Due: ${stripeInvoiceResult.dueDate} (14 days after tour)`,
+        `🎫 FH: ${booking?.uuid ?? '—'}  ·  Invoice: \`${stripeInvoiceResult.invoiceNumber || stripeInvoiceResult.invoiceId}\``,
+        stripeInvoiceResult.hostedInvoiceUrl ? `🔗 <${stripeInvoiceResult.hostedInvoiceUrl}|View Hosted Invoice>` : '',
+      ].filter(Boolean).join('\n')).catch(err => console.error('[book] Slack invoice notification error:', err))
+    }
+
+    return apiOk({
+      booking: booking ? {
+        ...booking,
+        stripe_invoice_id: stripeInvoiceResult?.invoiceId,
+        stripe_invoice_url: stripeInvoiceResult?.hostedInvoiceUrl,
+      } : booking,
+      invoice: stripeInvoiceResult,
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return apiError(message)
@@ -598,6 +722,16 @@ interface BookingPayload {
   gclid: string | null
   promoCodeId: string | null
   discountAmountCents: number
+  // Stripe Invoicing (Op Factuur)
+  stripeInvoiceId?: string | null
+  stripeInvoiceUrl?: string | null
+  stripeCustomerId?: string | null
+  businessProfileId?: string | null
+  companyName?: string | null
+  companyKvk?: string | null
+  companyVat?: string | null
+  companyAddress?: string | null
+  invoiceDueDate?: string | null
 }
 
 /**
@@ -650,6 +784,17 @@ function buildBookingPayload(
     gclid: string | null
     sessionId: string | null
   },
+  invoiceMeta?: {
+    stripeInvoiceId?: string | null
+    stripeInvoiceUrl?: string | null
+    stripeCustomerId?: string | null
+    businessProfileId?: string | null
+    companyName?: string | null
+    companyKvk?: string | null
+    companyVat?: string | null
+    companyAddress?: string | null
+    invoiceDueDate?: string | null
+  },
 ): BookingPayload {
   const baseAmt = Number(body.baseAmountCents ?? 0)
   const extrasAmt = Number(body.extrasAmountCents ?? 0)
@@ -690,7 +835,7 @@ function buildBookingPayload(
       ? (body.recoveryStripePaymentIntentId ? String(body.recoveryStripePaymentIntentId) : null)
       : isInternal ? null : String(body.stripePaymentIntentId ?? ''),
     bookingSource: (body.bookingSource && body.bookingSource !== 'undefined' ? String(body.bookingSource) : 'website') as BookingSource,
-    depositAmountCents: (isInternal && !isStripeRecovery) ? Number(body.depositAmountCents ?? 0) : null,
+    depositAmountCents: (isInternal && !isStripeRecovery && body.bookingSource !== 'stripe_invoice') ? Number(body.depositAmountCents ?? 0) : null,
     sessionId: attribution.sessionId,
     cookieCampaignId: attribution.campaignId,
     partnerId: attribution.partnerId,
@@ -698,6 +843,15 @@ function buildBookingPayload(
     gclid: attribution.gclid,
     promoCodeId: (body.promoCodeId as string | null) ?? null,
     discountAmountCents: Number(body.discountAmountCents ?? 0),
+    stripeInvoiceId: invoiceMeta?.stripeInvoiceId ?? null,
+    stripeInvoiceUrl: invoiceMeta?.stripeInvoiceUrl ?? null,
+    stripeCustomerId: invoiceMeta?.stripeCustomerId ?? null,
+    businessProfileId: invoiceMeta?.businessProfileId ?? null,
+    companyName: invoiceMeta?.companyName ?? null,
+    companyKvk: invoiceMeta?.companyKvk ?? null,
+    companyVat: invoiceMeta?.companyVat ?? null,
+    companyAddress: invoiceMeta?.companyAddress ?? null,
+    invoiceDueDate: invoiceMeta?.invoiceDueDate ?? null,
   }
 }
 
@@ -1006,10 +1160,10 @@ async function saveToSupabase(p: BookingPayload): Promise<{ ok: true; id: string
       customer_type_name: customerTypeName,
       stripe_payment_intent_id: p.stripePaymentIntentId,
       // Stripe recovery: use the admin-entered amount (real revenue). Other internal: 0.
-      // Website: compute from base + extras + city tax − discount.
+      // Website / stripe_invoice: compute from base + extras + city tax − discount.
       stripe_amount: isStripeRecovery
         ? p.amountCents
-        : isInternal
+        : (isInternal && p.bookingSource !== 'stripe_invoice')
           ? 0
           : p.baseAmountCents + p.extrasAmountCents + (p.guestCount * CITY_TAX_CENTS_PER_GUEST) - p.discountAmountCents,
       base_amount_cents: p.baseAmountCents,
@@ -1035,14 +1189,17 @@ async function saveToSupabase(p: BookingPayload): Promise<{ ok: true; id: string
       //   - partner_invoice / invoice_later: 'partner_invoice_pending' (awaiting
       //     partner payout — same real-world state whether the customer typed a
       //     QR code or an admin picked the partner directly)
+      //   - stripe_invoice: 'stripe_invoice_sent' (awaiting customer payment via Stripe)
       //   - stripe_recovery: 'paid' (real money came in, just manually recorded)
       //   - other internal:  'comp' (no money exchanged)
       //   - website:         'paid'
       payment_status: (p.bookingSource === 'partner_invoice' || p.bookingSource === 'invoice_later')
         ? 'partner_invoice_pending'
-        : isStripeRecovery
-          ? 'paid'
-          : (isInternal ? 'comp' : 'paid'),
+        : p.bookingSource === 'stripe_invoice'
+          ? 'stripe_invoice_sent'
+          : isStripeRecovery
+            ? 'paid'
+            : (isInternal ? 'comp' : 'paid'),
       currency: 'eur',
       booking_source: p.bookingSource,
       gclid: p.gclid,
@@ -1053,6 +1210,15 @@ async function saveToSupabase(p: BookingPayload): Promise<{ ok: true; id: string
       commission_amount_cents: p.commissionAmountCents,
       promo_code_id: p.promoCodeId,
       discount_amount_cents: p.discountAmountCents,
+      stripe_invoice_id: p.stripeInvoiceId || null,
+      stripe_invoice_url: p.stripeInvoiceUrl || null,
+      stripe_customer_id: p.stripeCustomerId || null,
+      business_profile_id: p.businessProfileId || null,
+      company_name: p.companyName || null,
+      company_kvk: p.companyKvk || null,
+      company_vat: p.companyVat || null,
+      company_address: p.companyAddress || null,
+      invoice_due_date: p.invoiceDueDate || null,
     })
       .select('id')
       .single()

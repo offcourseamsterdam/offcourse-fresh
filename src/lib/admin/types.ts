@@ -56,6 +56,15 @@ export interface AdminBooking {
   fareharbor_availability_pk: number | null
   no_reschedule_ask: boolean | null
   no_reschedule_reason: string | null
+  stripe_invoice_id?: string | null
+  stripe_invoice_url?: string | null
+  stripe_customer_id?: string | null
+  business_profile_id?: string | null
+  company_name?: string | null
+  company_kvk?: string | null
+  company_vat?: string | null
+  company_address?: string | null
+  invoice_due_date?: string | null
 }
 
 export interface AdminPromoCode {

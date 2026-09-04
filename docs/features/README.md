@@ -52,3 +52,4 @@ One file per track or major feature. Written before every PR and kept up to date
 | AI Ops Center (persistent admin header panel: approvals, skipped, automated, taken) | [ai-ops-center.md](ai-ops-center.md) | — | done |
 | Captain scheduling, time tracking & payroll | [captain-scheduling.md](captain-scheduling.md) | — | done |
 | Post-cruise review & recommendations SMS (Twilio) | [review-sms-twilio.md](review-sms-twilio.md) | — | done |
+| City tax (Amsterdam day-trip tourist tax) reporting | [city-tax.md](city-tax.md) | — | done (v1, known gaps) |

@@ -1745,6 +1745,7 @@ export default function PlanningPage() {
                 bookingUuid={selectedBooking.booking_uuid}
                 listingId={selectedBooking.listing_id}
                 status={selectedBooking.status}
+                paymentStatus={selectedBooking.payment_status}
                 stripePaymentIntentId={selectedBooking.stripe_payment_intent_id}
                 bookingDate={selectedBooking.booking_date}
                 startTime={selectedBooking.start_time}
@@ -1772,6 +1773,13 @@ export default function PlanningPage() {
                 trafficDetail={selectedBooking.traffic_detail}
                 noRescheduleAsk={selectedBooking.no_reschedule_ask ?? false}
                 noRescheduleReason={selectedBooking.no_reschedule_reason}
+                stripeInvoiceId={selectedBooking.stripe_invoice_id}
+                stripeInvoiceUrl={selectedBooking.stripe_invoice_url}
+                companyName={selectedBooking.company_name}
+                companyKvk={selectedBooking.company_kvk}
+                companyVat={selectedBooking.company_vat}
+                companyAddress={selectedBooking.company_address}
+                invoiceDueDate={selectedBooking.invoice_due_date}
               />
             </div>
           </div>

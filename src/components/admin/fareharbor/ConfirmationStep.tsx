@@ -15,6 +15,7 @@ interface ConfirmationStepProps {
   booking: unknown
   paymentIntentId: string | null
   paymentLinkUrl?: string | null
+  stripeInvoiceUrl?: string | null
   onReset: () => void
 }
 
@@ -28,8 +29,10 @@ export function ConfirmationStep({
   booking,
   paymentIntentId,
   paymentLinkUrl,
+  stripeInvoiceUrl,
   onReset,
 }: ConfirmationStepProps) {
+  const invoiceUrl = stripeInvoiceUrl || (booking && typeof booking === 'object' && 'stripeInvoiceUrl' in booking ? (booking as Record<string, string>).stripeInvoiceUrl : null)
   return (
     <div className="space-y-4">
       {bookingLoading && (
@@ -37,8 +40,8 @@ export function ConfirmationStep({
           <CardContent className="pt-6 flex items-center gap-3">
             <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
             <div>
-              <p className="text-sm font-medium text-zinc-900">Payment confirmed</p>
-              <p className="text-xs text-zinc-500 mt-0.5">Creating your FareHarbor booking…</p>
+              <p className="text-sm font-medium text-zinc-900">Processing booking</p>
+              <p className="text-xs text-zinc-500 mt-0.5">Creating your FareHarbor reservation & Stripe Invoice…</p>
             </div>
           </CardContent>
         </Card>
@@ -47,7 +50,7 @@ export function ConfirmationStep({
       {bookingError && (
         <Card className="border-red-200 bg-red-50">
           <CardContent className="pt-4 text-sm text-red-700 space-y-2">
-            <p className="font-semibold">Payment succeeded but booking failed</p>
+            <p className="font-semibold">Booking failed</p>
             <p>{bookingError}</p>
             {paymentIntentId && (
               <p className="text-xs text-red-500">Payment Intent: {paymentIntentId} — contact support with this ID.</p>
@@ -88,7 +91,7 @@ export function ConfirmationStep({
                 <Check className="w-3.5 h-3.5 text-white" />
               </div>
               <CardTitle className="text-sm text-emerald-900">
-                {paymentLinkUrl ? 'Betaallink verstuurd!' : 'Booking confirmed!'}
+                {invoiceUrl ? 'Stripe Factuur Verstuurd! 📄' : paymentLinkUrl ? 'Betaallink verstuurd!' : 'Booking confirmed!'}
               </CardTitle>
             </div>
             {paymentIntentId && (
@@ -98,6 +101,35 @@ export function ConfirmationStep({
             )}
           </CardHeader>
           <CardContent className="space-y-4">
+            {invoiceUrl && (
+              <div className="space-y-2">
+                <p className="text-xs text-emerald-800">
+                  De klant heeft de officiële Stripe factuur per e-mail ontvangen met een vervaltermijn van 14 dagen na de vaart. Inclusief Virtual IBAN (SEPA overboeking), iDEAL en creditcard.
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    readOnly
+                    value={invoiceUrl}
+                    className="flex-1 rounded border border-emerald-200 bg-white px-3 py-1.5 text-xs font-mono text-zinc-700 select-all min-w-0"
+                  />
+                  <button
+                    onClick={() => navigator.clipboard.writeText(invoiceUrl)}
+                    className="shrink-0 px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 transition-colors"
+                  >
+                    Copy
+                  </button>
+                  <a
+                    href={invoiceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 px-3 py-1.5 rounded bg-zinc-900 text-white text-xs font-medium hover:bg-zinc-800 transition-colors"
+                  >
+                    Open Factuur
+                  </a>
+                </div>
+              </div>
+            )}
+
             {paymentLinkUrl && (
               <div className="space-y-2">
                 <p className="text-xs text-emerald-700">Klant ontvangt betaallink per email. Link voor je eigen referentie:</p>
@@ -116,7 +148,7 @@ export function ConfirmationStep({
                 </div>
               </div>
             )}
-            {!paymentLinkUrl && (
+            {!paymentLinkUrl && !invoiceUrl && (
               <pre className="text-xs bg-white border border-emerald-100 rounded-lg p-4 overflow-auto max-h-80 text-zinc-700 whitespace-pre-wrap">
                 {JSON.stringify(booking, null, 2)}
               </pre>

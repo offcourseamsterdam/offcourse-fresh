@@ -88,10 +88,9 @@ describe('formatReviewSms', () => {
     reviewUrl: 'https://offcourseamsterdam.com/r/review',
   }
 
-  it('interpolates all four tokens into the default template', () => {
+  it('interpolates tokens into the default template', () => {
     const result = formatReviewSms(baseParams)
     expect(result).toContain('Hi John!')
-    expect(result).toContain('Sunset Canal Cruise')
     expect(result).toContain('https://offcourseamsterdam.com/r/map')
     expect(result).toContain('https://offcourseamsterdam.com/r/review')
   })
@@ -106,13 +105,15 @@ describe('formatReviewSms', () => {
     expect(result).toContain('Hi there!')
   })
 
-  it('falls back to "the cruise" when listingTitle is null', () => {
-    const result = formatReviewSms({ ...baseParams, listingTitle: null })
+  it('falls back to "the cruise" when listingTitle is null (custom template)', () => {
+    const custom = 'Hi {firstName}, thanks for joining us on {listingTitle}!'
+    const result = formatReviewSms({ ...baseParams, listingTitle: null, template: custom })
     expect(result).toContain('the cruise')
   })
 
-  it('falls back to "the cruise" when listingTitle is empty', () => {
-    const result = formatReviewSms({ ...baseParams, listingTitle: '' })
+  it('falls back to "the cruise" when listingTitle is empty (custom template)', () => {
+    const custom = 'Hi {firstName}, thanks for joining us on {listingTitle}!'
+    const result = formatReviewSms({ ...baseParams, listingTitle: '', template: custom })
     expect(result).toContain('the cruise')
   })
 
@@ -145,7 +146,6 @@ describe('formatReviewSms', () => {
 
   it('DEFAULT_SMS_TEMPLATE contains all token placeholders', () => {
     expect(DEFAULT_SMS_TEMPLATE).toContain('{firstName}')
-    expect(DEFAULT_SMS_TEMPLATE).toContain('{listingTitle}')
     expect(DEFAULT_SMS_TEMPLATE).toContain('{mapUrl}')
     expect(DEFAULT_SMS_TEMPLATE).toContain('{reviewUrl}')
     expect(DEFAULT_SMS_TEMPLATE).toContain('{signOff}')

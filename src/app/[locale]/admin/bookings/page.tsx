@@ -3,7 +3,7 @@
 import { useState, Fragment } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Loader2, RefreshCw, ChevronDown, ChevronUp, Plus, ArrowUp, ArrowDown, Search, X, CalendarRange } from 'lucide-react'
+import { Loader2, RefreshCw, ChevronDown, ChevronUp, Plus, ArrowUp, ArrowDown, Search, X, CalendarRange, FileText, Clock, CheckCircle2, AlertCircle } from 'lucide-react'
 import { BookingDetailRow } from '@/components/admin/BookingDetailRow'
 import { BookingStatusBadge } from '@/components/admin/BookingStatusBadge'
 import { BookingSourceBadge } from '@/components/admin/BookingSourceBadge'
@@ -15,7 +15,7 @@ import { dateCreatedThreshold, type DateCreatedFilter } from '@/lib/admin/date-f
 import { matchesBookingSearch } from '@/lib/admin/booking-search'
 import type { AdminBooking } from '@/lib/admin/types'
 
-type SourceFilter = 'all' | 'website' | 'internal'
+type SourceFilter = 'all' | 'website' | 'internal' | 'open_invoices'
 type SortField = 'booking_date' | 'created_at'
 type SortDir = 'asc' | 'desc'
 
@@ -24,6 +24,90 @@ function SortIcon({ field, sortField, sortDir }: { field: SortField; sortField: 
   return sortDir === 'asc'
     ? <ArrowUp className="w-3 h-3 text-zinc-900" />
     : <ArrowDown className="w-3 h-3 text-zinc-900" />
+}
+
+function InvoiceStatusIndicator({ booking }: { booking: AdminBooking }) {
+  const isInvoiceBooking = 
+    booking.booking_source === 'stripe_invoice' || 
+    booking.booking_source === 'invoice_later' || 
+    Boolean(booking.stripe_invoice_id)
+
+  if (!isInvoiceBooking || booking.status === 'cancelled') return null
+
+  const todayStr = new Date().toISOString().split('T')[0]
+  const today = new Date(todayStr)
+
+  // 1. Paid
+  if (booking.payment_status === 'paid') {
+    return (
+      <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 mt-1 whitespace-nowrap">
+        <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+        <span>Factuur voldaan</span>
+      </div>
+    )
+  }
+
+  // 2. Sent and open
+  if (booking.stripe_invoice_id || booking.payment_status === 'stripe_invoice_sent') {
+    let diffDays: number | null = null
+    if (booking.invoice_due_date) {
+      const dueDate = new Date(booking.invoice_due_date)
+      diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+    }
+
+    if (diffDays != null && diffDays < 0) {
+      return (
+        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 mt-1 whitespace-nowrap">
+          <AlertCircle className="w-3 h-3 text-red-600 shrink-0" />
+          <span>Factuur open · {Math.abs(diffDays)}d verlopen</span>
+        </div>
+      )
+    }
+
+    if (diffDays != null && diffDays === 0) {
+      return (
+        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 mt-1 whitespace-nowrap">
+          <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+          <span>Factuur open · Vervalt vandaag</span>
+        </div>
+      )
+    }
+
+    return (
+      <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-900 border border-amber-300 mt-1 whitespace-nowrap">
+        <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+        <span>Factuur open{diffDays != null ? ` · nog ${diffDays}d` : ''}</span>
+      </div>
+    )
+  }
+
+  // 3. Not sent yet: countdown to when it will be sent
+  if (booking.booking_date) {
+    const tourDate = new Date(booking.booking_date)
+    const tourDiffDays = Math.ceil((tourDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+
+    if (tourDiffDays > 0) {
+      return (
+        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-100 text-zinc-700 border border-zinc-300 mt-1 whitespace-nowrap" title="Factuur wordt automatisch verzonden na de tour">
+          <Clock className="w-3 h-3 text-zinc-400 shrink-0" />
+          <span>Versturen over {tourDiffDays}d (na tour)</span>
+        </div>
+      )
+    } else {
+      return (
+        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-800 border border-blue-200 mt-1 whitespace-nowrap">
+          <Clock className="w-3 h-3 text-blue-600 shrink-0" />
+          <span>Factuur klaar om te versturen</span>
+        </div>
+      )
+    }
+  }
+
+  return (
+    <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-100 text-zinc-600 mt-1 whitespace-nowrap">
+      <span>Factuur nog niet verzonden</span>
+    </div>
+  )
 }
 
 // ── Page ───────────────────────────────────────────────────────────────────
@@ -59,12 +143,15 @@ export default function BookingsPage() {
     }
   }
 
+  const openInvoicesCount = bookings?.filter(b => b.payment_status === 'stripe_invoice_sent').length ?? 0
+
   // Filter
   const threshold = dateCreatedThreshold(dateCreatedFilter)
   const filtered = (bookings ?? []).filter(b => {
     if (sourceFilter === 'website' && b.booking_source && b.booking_source !== 'website') return false
     if (sourceFilter === 'internal' && (!b.booking_source || b.booking_source === 'website')) return false
     if (reconciliationOnly && b.payment_status !== 'needs_reconciliation') return false
+    if (sourceFilter === 'open_invoices' && b.payment_status !== 'stripe_invoice_sent') return false
     if (threshold && b.created_at && new Date(b.created_at) < threshold) return false
     if (!matchesBookingSearch(b, search)) return false
     return true
@@ -80,7 +167,7 @@ export default function BookingsPage() {
 
   const confirmed = bookings?.filter(b => b.status === 'confirmed' || b.status === 'booked').length ?? 0
   const totalRevenue = bookings
-    ?.filter(b => (b.status === 'confirmed' || b.status === 'booked') && b.booking_source === 'website')
+    ?.filter(b => (b.status === 'confirmed' || b.status === 'booked') && (b.booking_source === 'website' || b.booking_source === 'stripe_invoice'))
     .reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0) ?? 0
   const needsReconciliationCount = bookings?.filter(b => b.payment_status === 'needs_reconciliation').length ?? 0
 
@@ -155,19 +242,47 @@ export default function BookingsPage() {
               </div>
               {/* Source filter */}
               <div className="flex items-center gap-1.5">
-                {(['all', 'website', 'internal'] as SourceFilter[]).map(f => (
-                  <button
-                    key={f}
-                    onClick={() => setSourceFilter(f)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                      sourceFilter === f
-                        ? 'bg-zinc-900 text-white'
-                        : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200'
-                    }`}
-                  >
-                    {f === 'all' ? 'All' : f === 'website' ? 'Regular' : 'Internal'}
-                  </button>
-                ))}
+                {(['all', 'website', 'internal', 'open_invoices'] as SourceFilter[]).map(f => {
+                  const isActive = sourceFilter === f
+                  if (f === 'open_invoices') {
+                    return (
+                      <button
+                        key={f}
+                        onClick={() => setSourceFilter(f)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                          isActive
+                            ? 'bg-amber-600 text-white shadow-xs'
+                            : openInvoicesCount > 0
+                            ? 'bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100'
+                            : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200'
+                        }`}
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>Open facturen</span>
+                        {openInvoicesCount > 0 && (
+                          <span className={`px-1.5 py-0.2 text-[10px] font-bold rounded-full ${
+                            isActive ? 'bg-white text-amber-700' : 'bg-amber-200 text-amber-900'
+                          }`}>
+                            {openInvoicesCount}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  }
+                  return (
+                    <button
+                      key={f}
+                      onClick={() => setSourceFilter(f)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        isActive
+                          ? 'bg-zinc-900 text-white'
+                          : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200'
+                      }`}
+                    >
+                      {f === 'all' ? 'All' : f === 'website' ? 'Regular' : 'Internal'}
+                    </button>
+                  )
+                })}
                 {needsReconciliationCount > 0 && (
                   <button
                     onClick={() => setReconciliationOnly(v => !v)}
@@ -283,7 +398,7 @@ export default function BookingsPage() {
                         {b.guest_count ?? '—'}
                       </td>
                       <td className="px-4 py-3 text-zinc-900 font-medium whitespace-nowrap">
-                        {b.booking_source === 'website' || b.booking_source === 'payment_link' || b.booking_source === 'phone_walkin' || !b.booking_source
+                        {b.booking_source === 'website' || b.booking_source === 'payment_link' || b.booking_source === 'phone_walkin' || b.booking_source === 'stripe_invoice' || b.booking_source === 'stripe_recovery' || !b.booking_source
                           ? fmtAdminAmountRounded(b.stripe_amount)
                           : (b.deposit_amount_cents != null ? `€${(b.deposit_amount_cents / 100).toFixed(0)}` : '—')
                         }
@@ -295,8 +410,9 @@ export default function BookingsPage() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex flex-col items-start gap-1">
+                        <div className="flex flex-col items-start gap-0.5">
                           <BookingStatusBadge status={b.status} />
+                          <InvoiceStatusIndicator booking={b} />
                           {b.payment_status === 'needs_reconciliation' && (
                             <span
                               title="Imported from the 2026 FareHarbor reconciliation — guest identity or amount unconfirmed. See the note below."
@@ -322,6 +438,7 @@ export default function BookingsPage() {
                             bookingUuid={b.booking_uuid}
                             listingId={b.listing_id}
                             status={b.status}
+                            paymentStatus={b.payment_status}
                             stripePaymentIntentId={b.stripe_payment_intent_id}
                             bookingDate={b.booking_date}
                             startTime={b.start_time}
@@ -349,6 +466,13 @@ export default function BookingsPage() {
                             customerTypeName={b.customer_type_name}
                             noRescheduleAsk={b.no_reschedule_ask ?? false}
                             noRescheduleReason={b.no_reschedule_reason}
+                            stripeInvoiceId={b.stripe_invoice_id}
+                            stripeInvoiceUrl={b.stripe_invoice_url}
+                            companyName={b.company_name}
+                            companyKvk={b.company_kvk}
+                            companyVat={b.company_vat}
+                            companyAddress={b.company_address}
+                            invoiceDueDate={b.invoice_due_date}
                           />
                         </td>
                       </tr>

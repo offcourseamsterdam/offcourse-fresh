@@ -116,7 +116,6 @@ describe('GET /api/admin/bookings/[id]/review-sms', () => {
     expect(res.status).toBe(200)
     expect(json.ok).toBe(true)
     expect(json.data.preview.message).toContain('Hi John!')
-    expect(json.data.preview.message).toContain('Sunset Cruise')
     expect(json.data.preview.message).toContain('The Off Course Team')
     expect(json.data.preview.normalizedPhone).toBe('+31612345678')
     expect(json.data.preview.alreadySent).toBe(false)

@@ -31,10 +31,10 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // ── Branded short links ─────────────────────────────────────────────────
-  // /r/<code> (e.g. /r/map, /r/review) is a public, locale-less route — the
-  // links embedded in SMS/email. Bypass the locale redirect so it doesn't
-  // become /en/r/<code> (which doesn't exist and 404s).
+  // ── Branded short links (map / review) ──────────────────────────────────
+  // /r/<code> is a public, locale-less route (src/app/r/[code]/route.ts —
+  // the review-SMS redirector). Bypass the locale redirect so it doesn't
+  // become /en/r/<code> (which doesn't exist) → 404.
   if (pathname.startsWith('/r/')) {
     return NextResponse.next()
   }

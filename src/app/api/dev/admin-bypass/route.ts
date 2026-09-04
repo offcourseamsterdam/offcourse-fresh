@@ -1,3 +1,4 @@
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAdminDevBypassEnabled } from '@/lib/auth/dev-bypass'
@@ -44,4 +45,41 @@ export async function POST() {
   }
 
   return apiOk({ signedInAs: email })
+}
+
+/**
+ * GET /api/dev/admin-bypass?to=/nl/admin/bookings
+ *
+ * Direct browser link: auto-logs into the admin dashboard and redirects.
+ */
+export async function GET(request: NextRequest) {
+  if (!isAdminDevBypassEnabled()) {
+    return apiError('Not found', 404)
+  }
+
+  const email = process.env.ADMIN_DEV_BYPASS_EMAIL!
+  const admin = createAdminClient()
+
+  const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
+    type: 'magiclink',
+    email,
+  })
+
+  const hashedToken = linkData?.properties?.hashed_token
+  if (linkError || !hashedToken) {
+    return apiError(linkError?.message ?? 'Failed to generate login link')
+  }
+
+  const supabase = await createClient()
+  const { error: verifyError } = await supabase.auth.verifyOtp({
+    type: 'magiclink',
+    token_hash: hashedToken,
+  })
+
+  if (verifyError) {
+    return apiError(verifyError.message, 401)
+  }
+
+  const to = request.nextUrl.searchParams.get('to') || '/nl/admin/bookings'
+  return NextResponse.redirect(new URL(to, request.url))
 }

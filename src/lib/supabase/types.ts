@@ -493,12 +493,17 @@ export type Database = {
           booking_id: string
           booking_source: string
           booking_uuid: string | null
+          business_profile_id: string | null
           campaign_id: string | null
           category: string | null
           catering_confirmed_at: string | null
           catering_email_sent_at: string | null
           catering_thread_id: string | null
           commission_amount_cents: number | null
+          company_address: string | null
+          company_kvk: string | null
+          company_name: string | null
+          company_vat: string | null
           created_at: string | null
           currency: string | null
           customer_email: string
@@ -520,6 +525,7 @@ export type Database = {
           guest_count: number | null
           guest_note: string | null
           id: string
+          invoice_due_date: string | null
           invoice_number: string | null
           listing_id: string | null
           listing_title: string | null
@@ -529,6 +535,7 @@ export type Database = {
           payment_link_expires_at: string | null
           payment_reminder_sent: boolean | null
           payment_status: string | null
+          payment_terms_days: number | null
           promo_code_id: string | null
           raw_payload: Json | null
           receipt_total: number | null
@@ -540,15 +547,8 @@ export type Database = {
           start_time: string | null
           status: string | null
           stripe_amount: number | null
-          stripe_fee_cents: number | null
-          business_profile_id: string | null
-          company_address: string | null
-          company_kvk: string | null
-          company_name: string | null
-          company_vat: string | null
-          invoice_due_date: string | null
-          payment_terms_days: number | null
           stripe_customer_id: string | null
+          stripe_fee_cents: number | null
           stripe_invoice_id: string | null
           stripe_invoice_url: string | null
           stripe_payment_intent_id: string | null
@@ -568,12 +568,17 @@ export type Database = {
           booking_id: string
           booking_source?: string
           booking_uuid?: string | null
+          business_profile_id?: string | null
           campaign_id?: string | null
           category?: string | null
           catering_confirmed_at?: string | null
           catering_email_sent_at?: string | null
           catering_thread_id?: string | null
           commission_amount_cents?: number | null
+          company_address?: string | null
+          company_kvk?: string | null
+          company_name?: string | null
+          company_vat?: string | null
           created_at?: string | null
           currency?: string | null
           customer_email: string
@@ -595,6 +600,7 @@ export type Database = {
           guest_count?: number | null
           guest_note?: string | null
           id?: string
+          invoice_due_date?: string | null
           invoice_number?: string | null
           listing_id?: string | null
           listing_title?: string | null
@@ -604,6 +610,7 @@ export type Database = {
           payment_link_expires_at?: string | null
           payment_reminder_sent?: boolean | null
           payment_status?: string | null
+          payment_terms_days?: number | null
           promo_code_id?: string | null
           raw_payload?: Json | null
           receipt_total?: number | null
@@ -615,15 +622,8 @@ export type Database = {
           start_time?: string | null
           status?: string | null
           stripe_amount?: number | null
-          stripe_fee_cents?: number | null
-          business_profile_id?: string | null
-          company_address?: string | null
-          company_kvk?: string | null
-          company_name?: string | null
-          company_vat?: string | null
-          invoice_due_date?: string | null
-          payment_terms_days?: number | null
           stripe_customer_id?: string | null
+          stripe_fee_cents?: number | null
           stripe_invoice_id?: string | null
           stripe_invoice_url?: string | null
           stripe_payment_intent_id?: string | null
@@ -643,12 +643,17 @@ export type Database = {
           booking_id?: string
           booking_source?: string
           booking_uuid?: string | null
+          business_profile_id?: string | null
           campaign_id?: string | null
           category?: string | null
           catering_confirmed_at?: string | null
           catering_email_sent_at?: string | null
           catering_thread_id?: string | null
           commission_amount_cents?: number | null
+          company_address?: string | null
+          company_kvk?: string | null
+          company_name?: string | null
+          company_vat?: string | null
           created_at?: string | null
           currency?: string | null
           customer_email?: string
@@ -670,6 +675,7 @@ export type Database = {
           guest_count?: number | null
           guest_note?: string | null
           id?: string
+          invoice_due_date?: string | null
           invoice_number?: string | null
           listing_id?: string | null
           listing_title?: string | null
@@ -679,6 +685,7 @@ export type Database = {
           payment_link_expires_at?: string | null
           payment_reminder_sent?: boolean | null
           payment_status?: string | null
+          payment_terms_days?: number | null
           promo_code_id?: string | null
           raw_payload?: Json | null
           receipt_total?: number | null
@@ -690,15 +697,8 @@ export type Database = {
           start_time?: string | null
           status?: string | null
           stripe_amount?: number | null
-          stripe_fee_cents?: number | null
-          business_profile_id?: string | null
-          company_address?: string | null
-          company_kvk?: string | null
-          company_name?: string | null
-          company_vat?: string | null
-          invoice_due_date?: string | null
-          payment_terms_days?: number | null
           stripe_customer_id?: string | null
+          stripe_fee_cents?: number | null
           stripe_invoice_id?: string | null
           stripe_invoice_url?: string | null
           stripe_payment_intent_id?: string | null
@@ -711,6 +711,13 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "bookings_business_profile_id_fkey"
+            columns: ["business_profile_id"]
+            isOneToOne: false
+            referencedRelation: "business_profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "bookings_campaign_id_fkey"
             columns: ["campaign_id"]
@@ -743,54 +750,51 @@ export type Database = {
       }
       business_profiles: {
         Row: {
-          address_line1: string
-          city: string
+          address_line1: string | null
+          city: string | null
           company_name: string
           contact_email: string | null
           contact_name: string | null
           contact_phone: string | null
           country_code: string | null
-          created_at: string
+          created_at: string | null
           id: string
           kvk_number: string | null
-          notes: string | null
-          postal_code: string
+          postal_code: string | null
           stripe_customer_id: string | null
-          updated_at: string
+          updated_at: string | null
           vat_number: string | null
         }
         Insert: {
-          address_line1: string
-          city: string
+          address_line1?: string | null
+          city?: string | null
           company_name: string
           contact_email?: string | null
           contact_name?: string | null
           contact_phone?: string | null
           country_code?: string | null
-          created_at?: string
+          created_at?: string | null
           id?: string
           kvk_number?: string | null
-          notes?: string | null
-          postal_code: string
+          postal_code?: string | null
           stripe_customer_id?: string | null
-          updated_at?: string
+          updated_at?: string | null
           vat_number?: string | null
         }
         Update: {
-          address_line1?: string
-          city?: string
+          address_line1?: string | null
+          city?: string | null
           company_name?: string
           contact_email?: string | null
           contact_name?: string | null
           contact_phone?: string | null
           country_code?: string | null
-          created_at?: string
+          created_at?: string | null
           id?: string
           kvk_number?: string | null
-          notes?: string | null
-          postal_code?: string
+          postal_code?: string | null
           stripe_customer_id?: string | null
-          updated_at?: string
+          updated_at?: string | null
           vat_number?: string | null
         }
         Relationships: []
@@ -1853,7 +1857,6 @@ export type Database = {
           name_zh: string | null
           price_type: string
           price_value: number
-          cost_price_value: number | null
           quantity_mode: string
           scope: string
           sort_order: number
@@ -1897,7 +1900,6 @@ export type Database = {
           name_zh?: string | null
           price_type: string
           price_value?: number
-          cost_price_value?: number | null
           quantity_mode?: string
           scope: string
           sort_order?: number
@@ -1941,7 +1943,6 @@ export type Database = {
           name_zh?: string | null
           price_type?: string
           price_value?: number
-          cost_price_value?: number | null
           quantity_mode?: string
           scope?: string
           sort_order?: number
@@ -2060,83 +2061,309 @@ export type Database = {
         }
         Relationships: []
       }
-      finance_budget_settings: {
+      finance_events: {
         Row: {
+          actor: string
+          delta_cents: number | null
+          entity_id: string | null
+          entity_type: string
+          event_type: string
           id: string
-          maintenance_pct: number
-          marketing_pct: number
-          profit_first_profit_pct: number
-          owner_salary_monthly_cents: number
-          owner_salary_pct: number
-          boat_count: number
-          berth_fee_per_boat_yearly_cents: number
-          other_fixed_costs_monthly_cents: number
-          zettle_cogs_pct: number
-          loan_name: string
-          loan_principal_total_cents: number
-          loan_monthly_principal_cents: number
-          loan_monthly_interest_cents: number
-          loan_interest_rate_pct: number
-          loan_target_payoff_year: number
-          fixed_costs_monthly_cents: number
-          winter_buffer_target_cents: number
-          default_monthly_revenue_target_cents: number
-          target_skipper_ratio_pct: number
-          target_catering_margin_pct: number
-          default_skipper_hourly_rate_cents: number
-          revolut_manual_balance_cents: number | null
+          occurred_at: string
+          payload: Json
+        }
+        Insert: {
+          actor: string
+          delta_cents?: number | null
+          entity_id?: string | null
+          entity_type: string
+          event_type: string
+          id?: string
+          occurred_at?: string
+          payload?: Json
+        }
+        Update: {
+          actor?: string
+          delta_cents?: number | null
+          entity_id?: string | null
+          entity_type?: string
+          event_type?: string
+          id?: string
+          occurred_at?: string
+          payload?: Json
+        }
+        Relationships: []
+      }
+      finance_goals: {
+        Row: {
+          boat_id: string | null
+          completed_at: string | null
+          completed_transaction_id: string | null
+          created_at: string
+          deadline: string | null
+          description: string | null
+          flexibility: string
+          funded_cents: number
+          id: string
+          monthly_funding_cents: number
+          name: string
+          priority: number
+          status: string
+          target_cents: number
           updated_at: string
         }
         Insert: {
+          boat_id?: string | null
+          completed_at?: string | null
+          completed_transaction_id?: string | null
+          created_at?: string
+          deadline?: string | null
+          description?: string | null
+          flexibility?: string
+          funded_cents?: number
           id?: string
-          maintenance_pct?: number
-          marketing_pct?: number
-          profit_first_profit_pct?: number
-          owner_salary_monthly_cents?: number
-          owner_salary_pct?: number
-          boat_count?: number
-          berth_fee_per_boat_yearly_cents?: number
-          other_fixed_costs_monthly_cents?: number
-          zettle_cogs_pct?: number
-          loan_name?: string
-          loan_principal_total_cents?: number
-          loan_monthly_principal_cents?: number
-          loan_monthly_interest_cents?: number
-          loan_interest_rate_pct?: number
-          loan_target_payoff_year?: number
-          fixed_costs_monthly_cents?: number
-          winter_buffer_target_cents?: number
-          default_monthly_revenue_target_cents?: number
-          target_skipper_ratio_pct?: number
-          target_catering_margin_pct?: number
-          default_skipper_hourly_rate_cents?: number
-          revolut_manual_balance_cents?: number | null
+          monthly_funding_cents?: number
+          name: string
+          priority?: number
+          status?: string
+          target_cents: number
           updated_at?: string
         }
         Update: {
+          boat_id?: string | null
+          completed_at?: string | null
+          completed_transaction_id?: string | null
+          created_at?: string
+          deadline?: string | null
+          description?: string | null
+          flexibility?: string
+          funded_cents?: number
           id?: string
-          maintenance_pct?: number
-          marketing_pct?: number
-          profit_first_profit_pct?: number
+          monthly_funding_cents?: number
+          name?: string
+          priority?: number
+          status?: string
+          target_cents?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_goals_boat_id_fkey"
+            columns: ["boat_id"]
+            isOneToOne: false
+            referencedRelation: "boats"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      finance_loan_payments: {
+        Row: {
+          created_at: string
+          due_date: string
+          id: string
+          interest_cents: number
+          is_paid: boolean
+          loan_id: string
+          paid_at: string | null
+          paid_transaction_id: string | null
+          principal_cents: number
+          total_cents: number
+        }
+        Insert: {
+          created_at?: string
+          due_date: string
+          id?: string
+          interest_cents?: number
+          is_paid?: boolean
+          loan_id: string
+          paid_at?: string | null
+          paid_transaction_id?: string | null
+          principal_cents?: number
+          total_cents?: number
+        }
+        Update: {
+          created_at?: string
+          due_date?: string
+          id?: string
+          interest_cents?: number
+          is_paid?: boolean
+          loan_id?: string
+          paid_at?: string | null
+          paid_transaction_id?: string | null
+          principal_cents?: number
+          total_cents?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_loan_payments_loan_id_fkey"
+            columns: ["loan_id"]
+            isOneToOne: false
+            referencedRelation: "finance_loans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      finance_loans: {
+        Row: {
+          created_at: string
+          duration_years: number
+          id: string
+          interest_free_years: number
+          interest_rate_pct: number
+          lender_name: string
+          name: string
+          notes: string | null
+          principal_cents: number
+          repayment_type: string
+          start_date: string
+          status: string
+          tranches: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          duration_years: number
+          id?: string
+          interest_free_years?: number
+          interest_rate_pct?: number
+          lender_name: string
+          name: string
+          notes?: string | null
+          principal_cents: number
+          repayment_type?: string
+          start_date: string
+          status?: string
+          tranches?: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          duration_years?: number
+          id?: string
+          interest_free_years?: number
+          interest_rate_pct?: number
+          lender_name?: string
+          name?: string
+          notes?: string | null
+          principal_cents?: number
+          repayment_type?: string
+          start_date?: string
+          status?: string
+          tranches?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      finance_obligations: {
+        Row: {
+          amount_cents: number
+          boat_id: string | null
+          created_at: string
+          due_date: string
+          id: string
+          invoice_id: string | null
+          kind: string
+          loan_id: string | null
+          notes: string | null
+          paid_at: string | null
+          paid_transaction_id: string | null
+          recurrence_months: number | null
+          recurrence_until: string | null
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          amount_cents: number
+          boat_id?: string | null
+          created_at?: string
+          due_date: string
+          id?: string
+          invoice_id?: string | null
+          kind: string
+          loan_id?: string | null
+          notes?: string | null
+          paid_at?: string | null
+          paid_transaction_id?: string | null
+          recurrence_months?: number | null
+          recurrence_until?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          amount_cents?: number
+          boat_id?: string | null
+          created_at?: string
+          due_date?: string
+          id?: string
+          invoice_id?: string | null
+          kind?: string
+          loan_id?: string | null
+          notes?: string | null
+          paid_at?: string | null
+          paid_transaction_id?: string | null
+          recurrence_months?: number | null
+          recurrence_until?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_obligations_boat_id_fkey"
+            columns: ["boat_id"]
+            isOneToOne: false
+            referencedRelation: "boats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_obligations_loan_id_fkey"
+            columns: ["loan_id"]
+            isOneToOne: false
+            referencedRelation: "finance_loans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      finance_settings: {
+        Row: {
+          allocation_priority: Json
+          id: string
+          manual_cash_at: string | null
+          manual_cash_cents: number | null
+          operational_coverage_cents: number
+          owner_salary_coverage_cents: number
+          owner_salary_monthly_cents: number
+          owner_salary_months: number
+          planning_horizon: string
+          safety_margin_cents: number
+          updated_at: string
+        }
+        Insert: {
+          allocation_priority?: Json
+          id?: string
+          manual_cash_at?: string | null
+          manual_cash_cents?: number | null
+          operational_coverage_cents?: number
+          owner_salary_coverage_cents?: number
           owner_salary_monthly_cents?: number
-          owner_salary_pct?: number
-          boat_count?: number
-          berth_fee_per_boat_yearly_cents?: number
-          other_fixed_costs_monthly_cents?: number
-          zettle_cogs_pct?: number
-          loan_name?: string
-          loan_principal_total_cents?: number
-          loan_monthly_principal_cents?: number
-          loan_monthly_interest_cents?: number
-          loan_interest_rate_pct?: number
-          loan_target_payoff_year?: number
-          fixed_costs_monthly_cents?: number
-          winter_buffer_target_cents?: number
-          default_monthly_revenue_target_cents?: number
-          target_skipper_ratio_pct?: number
-          target_catering_margin_pct?: number
-          default_skipper_hourly_rate_cents?: number
-          revolut_manual_balance_cents?: number | null
+          owner_salary_months?: number
+          planning_horizon?: string
+          safety_margin_cents?: number
+          updated_at?: string
+        }
+        Update: {
+          allocation_priority?: Json
+          id?: string
+          manual_cash_at?: string | null
+          manual_cash_cents?: number | null
+          operational_coverage_cents?: number
+          owner_salary_coverage_cents?: number
+          owner_salary_monthly_cents?: number
+          owner_salary_months?: number
+          planning_horizon?: string
+          safety_margin_cents?: number
           updated_at?: string
         }
         Relationships: []
@@ -4879,12 +5106,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -4908,11 +5135,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -4933,11 +5160,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -4958,11 +5185,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -4975,11 +5202,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

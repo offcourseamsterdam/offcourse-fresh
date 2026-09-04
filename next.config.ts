@@ -49,6 +49,14 @@ const nextConfig: NextConfig = {
   // webpack's server bundle otherwise mangles — keep it untouched by webpack
   // and let Node's native module resolution handle it directly.
   serverExternalPackages: ['pdfjs-dist'],
+  // pdf.worker.mjs is loaded via a dynamic import Vercel's file tracer can't
+  // follow (same class of problem serverExternalPackages works around above),
+  // so it silently gets left out of these routes' deployed bundle — "Setting
+  // up fake worker failed: Cannot find module '.../pdf.worker.mjs'" in
+  // production only. Force it into the trace explicitly.
+  outputFileTracingIncludes: {
+    '/api/admin/finance/**': ['./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs'],
+  },
   async headers() {
     return [
       {

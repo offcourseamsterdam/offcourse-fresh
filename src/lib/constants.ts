@@ -66,6 +66,7 @@ export const BOOKING_SOURCES = [
   // suggested invoice amount is computed from an active campaign's commission %
   // when one exists for that partner+listing, editable either way.
   { value: 'invoice_later', label: 'Invoice later', adminSelectable: true },
+  { value: 'stripe_invoice', label: 'Stripe Invoice (Factuur)', adminSelectable: true },
   { value: 'payment_link', label: 'Betaallink', adminSelectable: true },
   { value: 'stripe_recovery', label: 'Stripe recovery (already paid)', adminSelectable: true },
 ] as const

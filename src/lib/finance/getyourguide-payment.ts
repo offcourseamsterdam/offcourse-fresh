@@ -4,6 +4,7 @@
 // on a real payment-confirmation PDF).
 
 import { toCents } from './shared'
+import './pdfjs-node-polyfill'
 
 const MONTHS: Record<string, number> = {
   January: 0, February: 1, March: 2, April: 3, May: 4, June: 5,
