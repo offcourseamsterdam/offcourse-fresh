@@ -2381,6 +2381,121 @@ export type Database = {
           },
         ]
       }
+      finance_invoices: {
+        Row: {
+          checks: Json
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          decision: string | null
+          decision_note: string | null
+          expected_amount_cents: number | null
+          extracted: Json | null
+          file_path: string
+          id: string
+          matched_booking_id: string | null
+          matched_shift_id: string | null
+          obligation_id: string | null
+          paid_transaction_id: string | null
+          revolut_draft_id: string | null
+          source: string
+          source_message_id: string | null
+          status: string
+          supplier_id: string | null
+          updated_at: string
+          uploaded_at: string
+        }
+        Insert: {
+          checks?: Json
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decision?: string | null
+          decision_note?: string | null
+          expected_amount_cents?: number | null
+          extracted?: Json | null
+          file_path: string
+          id?: string
+          matched_booking_id?: string | null
+          matched_shift_id?: string | null
+          obligation_id?: string | null
+          paid_transaction_id?: string | null
+          revolut_draft_id?: string | null
+          source: string
+          source_message_id?: string | null
+          status?: string
+          supplier_id?: string | null
+          updated_at?: string
+          uploaded_at?: string
+        }
+        Update: {
+          checks?: Json
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decision?: string | null
+          decision_note?: string | null
+          expected_amount_cents?: number | null
+          extracted?: Json | null
+          file_path?: string
+          id?: string
+          matched_booking_id?: string | null
+          matched_shift_id?: string | null
+          obligation_id?: string | null
+          paid_transaction_id?: string | null
+          revolut_draft_id?: string | null
+          source?: string
+          source_message_id?: string | null
+          status?: string
+          supplier_id?: string | null
+          updated_at?: string
+          uploaded_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_invoices_matched_booking_id_fkey"
+            columns: ["matched_booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_invoices_matched_shift_id_fkey"
+            columns: ["matched_shift_id"]
+            isOneToOne: false
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_invoices_obligation_id_fkey"
+            columns: ["obligation_id"]
+            isOneToOne: false
+            referencedRelation: "finance_obligations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_invoices_paid_transaction_id_fkey"
+            columns: ["paid_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "bank_transactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_invoices_source_message_id_fkey"
+            columns: ["source_message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_invoices_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "finance_suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       finance_loan_payments: {
         Row: {
           created_at: string
@@ -2622,6 +2737,66 @@ export type Database = {
           token?: string
         }
         Relationships: []
+      }
+      finance_suppliers: {
+        Row: {
+          bic: string | null
+          created_at: string
+          default_boat_id: string | null
+          default_category: string | null
+          email: string | null
+          iban: string | null
+          id: string
+          is_active: boolean
+          name: string
+          revolut_counterparty_id: string | null
+          staff_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          bic?: string | null
+          created_at?: string
+          default_boat_id?: string | null
+          default_category?: string | null
+          email?: string | null
+          iban?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          revolut_counterparty_id?: string | null
+          staff_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          bic?: string | null
+          created_at?: string
+          default_boat_id?: string | null
+          default_category?: string | null
+          email?: string | null
+          iban?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          revolut_counterparty_id?: string | null
+          staff_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_suppliers_default_boat_id_fkey"
+            columns: ["default_boat_id"]
+            isOneToOne: false
+            referencedRelation: "boats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_suppliers_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       getmyboat_bookings: {
         Row: {
