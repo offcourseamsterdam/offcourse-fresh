@@ -80,20 +80,45 @@ What is left is the financial space. Compare it with the desired safety margin: 
 margin is "beschikbaar voor groei"; anything below is a shortfall. The horizon changes only the
 obligations, and it is shown next to every number.
 
-### Revolut connection (one-time, per environment)
+### Revolut connection (one certificate per deployment)
 
-1. Generate a key pair (already done on Beer's Mac in `~/.offcourse-secrets/revolut/{sandbox,production}/`):
-   `openssl genrsa -out privatecert.pem 2048` and `openssl req -new -x509 -key privatecert.pem -out publiccert.cer -days 1825 -subj "/CN=offcourseamsterdam.com"`.
-2. Revolut Business → Settings → APIs → Business API → **Add API certificate**: paste `publiccert.cer`,
-   OAuth redirect URI `https://offcourseamsterdam.com/api/admin/finance/cockpit/revolut/callback`
-   (sandbox: use the sandbox business app and the preview/staging host), title "Off Course cockpit".
-   Copy the **Client ID**.
-3. Env (local + Vercel): `REVOLUT_ENV`, `REVOLUT_CLIENT_ID`, `REVOLUT_PRIVATE_KEY` (base64 of the PEM),
-   `REVOLUT_TOKEN_KEY` (`~/.offcourse-secrets/revolut/token-key.txt`), and `NEXT_PUBLIC_SITE_URL`.
-4. Admin → Financieel overzicht → **Koppel Revolut** → consent with 2FA → back on the dashboard with a
-   first sync done. Pick the EUR main account if Revolut lists more than one.
-5. **Webhook aanzetten** registers `https://…/api/webhooks/revolut` with Revolut and stores the signing
-   secret encrypted. Optional: the 15-minute cron works without it.
+One Revolut API certificate carries exactly one OAuth redirect URI and yields one Client ID, so each
+deployment that connects needs its own. Both point at the same real business account; only the
+redirect URI differs. Each has its own key pair, so a leak on one does not reach the other.
+
+| | Preview | Production |
+|---|---|---|
+| Certificate title | `Preview Cockpit` (exists) | `Productie cockpit` (not created yet) |
+| OAuth redirect URI | `https://offcourse-ai-ops-sync.vercel.app/api/admin/finance/cockpit/revolut/callback` | `https://offcourseamsterdam.com/api/admin/finance/cockpit/revolut/callback` |
+| Key pair | `~/.offcourse-secrets/revolut/preview/` | `~/.offcourse-secrets/revolut/production/` |
+| Vercel scope | Preview, branch `feature/ai-ops-engine-main-sync` | Production |
+
+Steps for either one:
+
+1. Key pair (both already generated on Beer's Mac):
+   `openssl genrsa -out privatecert.pem 2048` and
+   `openssl req -new -x509 -key privatecert.pem -out publiccert.cer -days 1825 -subj "/C=NL/ST=Noord-Holland/L=Amsterdam/O=Off Course Amsterdam/CN=offcourseamsterdam.com"`.
+2. Revolut Business → Settings → APIs → Business API → **Add API certificate**: title, the redirect URI
+   from the table, and the contents of `publiccert.cer` including the BEGIN/END lines. Copy the
+   **Client ID**. Revolut then shows the `iss` it expects, which is the redirect URI's hostname; the
+   code derives the same value, so nothing needs configuring for it.
+3. Set the env vars with `scripts/finance/set-revolut-vercel-env.sh <environment> <redirect-uri>
+   [client-id] [git-branch]`, which reads the key straight from `~/.offcourse-secrets` so no secret
+   passes through a terminal or a chat. The key pair defaults to the environment name; override with
+   `REVOLUT_KEY_SET`.
+4. Deploy again. Vercel only applies changed env vars to new deployments.
+5. Revolut → the certificate → **Enable access**, and grant only **Read your account details** and
+   **Manage your account details**. Leave *Make payments* off, because payments go out as drafts that
+   are approved in the Revolut app. Leave *Read sensitive card details* off, because enabling it forces
+   IP whitelisting and Revolut then blocks every Business API call from a host without a fixed IP,
+   which Vercel does not have.
+6. You land back on the dashboard with a first sync done. Pick the EUR main account if Revolut lists
+   more than one.
+7. **Webhook aanzetten** registers `https://…/api/webhooks/revolut` and stores the signing secret
+   encrypted. Optional: the 15-minute cron works without it.
+
+The Production IP whitelist on the certificate page can stay empty as long as the sensitive-card scope
+is off.
 
 ### Data flow
 

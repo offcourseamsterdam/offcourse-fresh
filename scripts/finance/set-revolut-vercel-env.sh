@@ -39,12 +39,17 @@ case "$ENVIRONMENT" in
   *) echo "Onbekende environment: $ENVIRONMENT" >&2; exit 1 ;;
 esac
 
-# Sandbox of productie bij Revolut zelf. Een preview-deployment die aan je echte
-# Revolut-certificaat hangt is dus gewoon 'production'.
+# Welke Revolut-omgeving: 'production' is je echte zakelijke rekening, 'sandbox'
+# is Revolut's testomgeving. Een preview-deployment die aan je echte certificaat
+# hangt is dus gewoon 'production'.
 REVOLUT_ENV="${REVOLUT_ENV:-production}"
 
+# Welk sleutelpaar. Elke deployment heeft er een eigen, zodat een lek op de
+# preview niet ook de live site raakt. Standaard hetzelfde als de environment.
+KEY_SET="${REVOLUT_KEY_SET:-$ENVIRONMENT}"
+
 SECRETS_DIR="$HOME/.offcourse-secrets/revolut"
-KEY_FILE="$SECRETS_DIR/$REVOLUT_ENV/privatecert.pem"
+KEY_FILE="$SECRETS_DIR/$KEY_SET/privatecert.pem"
 TOKEN_KEY_FILE="$SECRETS_DIR/token-key.txt"
 
 [[ -f "$KEY_FILE" ]] || { echo "Private key niet gevonden: $KEY_FILE" >&2; exit 1; }
@@ -77,7 +82,7 @@ put() {
   fi
 }
 
-echo "Revolut-variabelen zetten in environment '$ENVIRONMENT'${GIT_BRANCH:+ (branch: $GIT_BRANCH)} (Revolut-omgeving: $REVOLUT_ENV)"
+echo "Revolut-variabelen zetten in environment '$ENVIRONMENT'${GIT_BRANCH:+ (branch: $GIT_BRANCH)} (Revolut-omgeving: $REVOLUT_ENV, sleutelpaar: $KEY_SET)"
 put REVOLUT_ENV "$REVOLUT_ENV"
 put REVOLUT_REDIRECT_URI "$REDIRECT_URI"
 put REVOLUT_PRIVATE_KEY "$(base64 < "$KEY_FILE" | tr -d '\n')"
