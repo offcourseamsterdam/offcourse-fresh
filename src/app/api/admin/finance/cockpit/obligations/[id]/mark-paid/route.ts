@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { logFinanceEvent } from '@/lib/finance/cockpit/events'
 import { isUuid, markPaidSchema, parseBody } from '@/lib/finance/cockpit/schemas'
+import { addMonths } from '@/lib/finance/cockpit/dates'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,9 +30,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (before.status === 'paid') return apiError('Obligation is already paid', 400)
 
     const paidAt = parsed.data.paid_at ? new Date(parsed.data.paid_at).toISOString() : new Date().toISOString()
+
+    // A recurring obligation is a rhythm, not a single bill: paying one occurrence rolls the
+    // row forward to the next due date and keeps it open. It only becomes 'paid' when the
+    // next occurrence would fall after recurrence_until.
+    const nextDue = before.recurrence_months ? addMonths(before.due_date, before.recurrence_months) : null
+    const rollsForward = nextDue !== null && (!before.recurrence_until || nextDue <= before.recurrence_until)
+    const patch = rollsForward
+      ? { due_date: nextDue as string, paid_at: paidAt, paid_transaction_id: parsed.data.paid_transaction_id ?? null, updated_at: new Date().toISOString() }
+      : { status: 'paid' as const, paid_at: paidAt, paid_transaction_id: parsed.data.paid_transaction_id ?? null, updated_at: new Date().toISOString() }
+
     const { data: after, error } = await supabase
       .from('finance_obligations')
-      .update({ status: 'paid', paid_at: paidAt, paid_transaction_id: parsed.data.paid_transaction_id ?? null, updated_at: new Date().toISOString() })
+      .update(patch)
       .eq('id', id)
       .select('*')
       .single()
@@ -43,7 +54,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       entity_type: 'obligation',
       entity_id: id,
       delta_cents: before.amount_cents,
-      payload: { title: before.title, due_date: before.due_date, paid_at: paidAt, paid_transaction_id: parsed.data.paid_transaction_id ?? null },
+      payload: {
+        title: before.title,
+        due_date: before.due_date,
+        paid_at: paidAt,
+        paid_transaction_id: parsed.data.paid_transaction_id ?? null,
+        ...(rollsForward ? { rolled_to: nextDue } : {}),
+      },
     })
 
     return apiOk(after)

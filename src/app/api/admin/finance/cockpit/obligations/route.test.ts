@@ -181,6 +181,27 @@ describe('/api/admin/finance/cockpit/obligations', () => {
       expect(event(mock.queries)).toMatchObject({ event_type: 'obligation_paid', entity_id: ID, delta_cents: 480_000 })
     })
 
+    it('a recurring obligation rolls forward to its next due date instead of closing', async () => {
+      const mock = db({ ...ROW, due_date: '2026-10-31', recurrence_months: 3, recurrence_until: null })
+      h.createAdminClient.mockReturnValue(mock.client)
+      const res = await MARK_PAID(req('POST', {}), params())
+      expect(res.status).toBe(200)
+      const update = opArg(mock.queries, 'finance_obligations', 'update') as Record<string, unknown>
+      expect(update.due_date).toBe('2027-01-31')
+      expect(update.status).toBeUndefined()
+      expect(event(mock.queries)).toMatchObject({ event_type: 'obligation_paid', delta_cents: 480_000 })
+      expect((event(mock.queries).payload as Record<string, unknown>).rolled_to).toBe('2027-01-31')
+    })
+
+    it('the last occurrence of a bounded recurrence closes the row', async () => {
+      const mock = db({ ...ROW, due_date: '2026-10-31', recurrence_months: 3, recurrence_until: '2026-12-31' })
+      h.createAdminClient.mockReturnValue(mock.client)
+      await MARK_PAID(req('POST', {}), params())
+      const update = opArg(mock.queries, 'finance_obligations', 'update') as Record<string, unknown>
+      expect(update.status).toBe('paid')
+      expect(update.due_date).toBeUndefined()
+    })
+
     it('honours an explicit paid_at and transaction id', async () => {
       const mock = db()
       h.createAdminClient.mockReturnValue(mock.client)
