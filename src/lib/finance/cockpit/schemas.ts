@@ -90,6 +90,9 @@ export const invoiceApproveSchema = z.object({
 export const invoiceRejectSchema = z.object({
   note: z.string().trim().max(2000).optional(),
 })
+export const invoicePaySchema = z.object({
+  note: z.string().trim().max(2000).optional(),
+})
 
 // ── Loans ────────────────────────────────────────────────────────────────────
 

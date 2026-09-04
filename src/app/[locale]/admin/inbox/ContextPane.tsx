@@ -817,7 +817,7 @@ const CHECK_LABEL: Record<string, string> = {
 function useInvoiceAction(invoiceId: string, onChanged: () => void) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  async function run(action: 'approve' | 'reject', body: Record<string, unknown>, fallbackError: string) {
+  async function run(action: 'approve' | 'reject' | 'pay', body: Record<string, unknown>, fallbackError: string, onError?: () => void) {
     setBusy(true)
     setError(null)
     try {
@@ -825,6 +825,7 @@ function useInvoiceAction(invoiceId: string, onChanged: () => void) {
       onChanged()
     } catch (err) {
       setError(err instanceof Error ? err.message : fallbackError)
+      onError?.()
     } finally {
       setBusy(false)
     }
@@ -834,14 +835,18 @@ function useInvoiceAction(invoiceId: string, onChanged: () => void) {
 
 /**
  * One PDF's match/checks result (src/lib/finance/invoices/match.ts) with
- * Goedkeuren/Afwijzen actions. "Goedkeuren & betalen" (the Revolut payment
- * draft step) isn't built yet — Goedkeuren here only creates the
- * finance_obligations row, same as a manually entered obligation, so nothing
- * gets lost while that's still coming.
+ * Goedkeuren / Goedkeuren & betalen / Afwijzen actions. Goedkeuren only
+ * creates the finance_obligations row, same as a manually entered one.
+ * Goedkeuren & betalen does that AND drafts the Revolut transfer — a real
+ * money action (though only a draft; Beer still approves it in the Revolut
+ * app), so it gets the same two-step ConfirmCreate confirm as a booking
+ * cancellation/refund elsewhere in this file, and only shows at all when a
+ * supplier IBAN is on file to pay.
  */
 function FinanceInvoiceReview({ invoice, onChanged }: { invoice: InboxFinanceInvoice; onChanged: () => void }) {
   const { busy, error, run } = useInvoiceAction(invoice.id, onChanged)
   const [rejecting, setRejecting] = useState(false)
+  const [paying, setPaying] = useState(false)
   const [note, setNote] = useState('')
   const ext = invoice.extracted
   const filename = invoice.file_path.split('/').pop() ?? invoice.file_path
@@ -888,7 +893,13 @@ function FinanceInvoiceReview({ invoice, onChanged }: { invoice: InboxFinanceInv
           }`}
         >
           {invoice.decision === 'rejected' ? <XCircle className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
-          {invoice.decision === 'approved' ? 'Goedgekeurd' : invoice.decision === 'approved_override' ? 'Goedgekeurd (met afwijking)' : 'Afgewezen'}
+          {invoice.decision === 'rejected'
+            ? 'Afgewezen'
+            : invoice.status === 'payment_pending'
+              ? 'Betaling klaargezet in Revolut'
+              : invoice.decision === 'approved_override'
+                ? 'Goedgekeurd (met afwijking)'
+                : 'Goedgekeurd'}
           {invoice.decision_note ? ` — ${invoice.decision_note}` : ''}
         </p>
       ) : rejecting ? (
@@ -913,6 +924,21 @@ function FinanceInvoiceReview({ invoice, onChanged }: { invoice: InboxFinanceInv
             </button>
           </div>
         </div>
+      ) : paying ? (
+        <ConfirmCreate
+          onYes={() => run('pay', {}, 'Kon betaling niet klaarzetten', () => setPaying(false))}
+          onCancel={() => setPaying(false)}
+          busy={busy}
+          message={
+            <>
+              Dit maakt een <span className="font-semibold">betaalopdracht klaar in Revolut</span> voor{' '}
+              <span className="font-semibold">€{ext?.amountCents != null ? (ext.amountCents / 100).toFixed(2) : '?'}</span> aan{' '}
+              {invoice.supplier?.name ?? ext?.supplierName}. Er wordt nog niets overgemaakt — jij keurt hem daarna goed in de
+              Revolut app. Doorgaan?
+            </>
+          }
+          confirmLabel="Ja, klaarzetten"
+        />
       ) : (
         <div className="flex items-center gap-2 flex-wrap">
           <button
@@ -925,6 +951,15 @@ function FinanceInvoiceReview({ invoice, onChanged }: { invoice: InboxFinanceInv
             {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
             {allOk ? 'Goedkeuren' : 'Toch goedkeuren'}
           </button>
+          {invoice.supplier?.iban && (
+            <button
+              onClick={() => setPaying(true)}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50"
+            >
+              <CalendarPlus className="w-3.5 h-3.5" /> Goedkeuren &amp; betalen
+            </button>
+          )}
           <button onClick={() => setRejecting(true)} disabled={busy} className="text-xs text-zinc-500 hover:text-zinc-700 underline">
             Afwijzen
           </button>
