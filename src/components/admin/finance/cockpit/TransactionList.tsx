@@ -8,6 +8,8 @@ interface TransactionListProps {
   transactions: TransactionApiRow[]
   /** Hide reference, balance-after and classification — the overview's "Recente transacties" card. */
   compact?: boolean
+  /** When set, every row becomes clickable and opens the classify/reclassify flow for it. */
+  onSelectTransaction?: (tx: TransactionApiRow) => void
 }
 
 const BADGE_STYLE = {
@@ -56,15 +58,21 @@ function Amount({ tx }: { tx: TransactionApiRow }) {
  * money.ts; every label through transaction-display.ts — this component only
  * lays them out.
  */
-export function TransactionList({ transactions, compact = false }: TransactionListProps) {
+export function TransactionList({ transactions, compact = false, onSelectTransaction }: TransactionListProps) {
   if (transactions.length === 0) return null
+
+  const clickable = Boolean(onSelectTransaction)
 
   return (
     <>
       {/* Mobile: stacked cards */}
       <ul className="sm:hidden divide-y divide-zinc-100">
         {transactions.map(tx => (
-          <li key={tx.id} className="py-3 flex flex-col gap-1.5">
+          <li
+            key={tx.id}
+            onClick={clickable ? () => onSelectTransaction!(tx) : undefined}
+            className={`py-3 flex flex-col gap-1.5 ${clickable ? 'cursor-pointer active:bg-zinc-50 -mx-4 px-4 sm:mx-0 sm:px-0 min-h-[44px]' : ''}`}
+          >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-zinc-900 truncate">{transactionLabel(tx)}</p>
@@ -101,7 +109,11 @@ export function TransactionList({ transactions, compact = false }: TransactionLi
           </thead>
           <tbody className="divide-y divide-zinc-100">
             {transactions.map(tx => (
-              <tr key={tx.id} className="align-top">
+              <tr
+                key={tx.id}
+                onClick={clickable ? () => onSelectTransaction!(tx) : undefined}
+                className={`align-top ${clickable ? 'cursor-pointer hover:bg-zinc-50' : ''}`}
+              >
                 <td className="py-2.5 pr-3 whitespace-nowrap text-zinc-600 tabular-nums">{dateNL(tx.completed_at ?? tx.created_at)}</td>
                 <td className="py-2.5 pr-3 min-w-0">
                   <div className="flex items-center gap-2 min-w-0">

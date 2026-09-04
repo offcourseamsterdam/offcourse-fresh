@@ -11,6 +11,7 @@ import { adminInputClass } from '@/components/admin/ui/fields'
 import { useAdminFetch, adminFetcher } from '@/hooks/useAdminFetch'
 import { FinanceSubnav } from '@/components/admin/finance/cockpit/FinanceSubnav'
 import { TransactionList } from '@/components/admin/finance/cockpit/TransactionList'
+import { TransactionReviewModal } from '@/components/admin/finance/cockpit/TransactionReviewModal'
 import { REVOLUT_API } from '@/components/admin/finance/cockpit/RevolutConnectCard'
 import {
   COCKPIT_API,
@@ -78,15 +79,22 @@ export default function FinanceTransactionsPage() {
   const connected = revolut?.connected === true
 
   const firstUrl = buildUrl({ state, direction, needsReview, q })
-  const { data, isLoading, error } = useAdminFetch<TransactionsResponse>(firstUrl)
+  const { data, isLoading, error, mutate } = useAdminFetch<TransactionsResponse>(firstUrl)
 
   const [extra, setExtra] = useState<ExtraPages | null>(null)
   const [loadingMore, setLoadingMore] = useState<string | null>(null)
   const [moreError, setMoreError] = useState<string | null>(null)
+  const [reviewTx, setReviewTx] = useState<TransactionApiRow | null>(null)
 
   const extraRows = extra?.forUrl === firstUrl ? extra.rows : []
   const nextBefore = extra?.forUrl === firstUrl ? extra.nextBefore : (data?.nextBefore ?? null)
   const rows = [...(data?.transactions ?? []), ...extraRows]
+
+  /** Patch one row in place after a successful (re)classify — in both the first page's SWR cache and any loaded extra pages. */
+  function patchTransaction(id: string, patch: Partial<TransactionApiRow>) {
+    mutate(prev => prev ? { ...prev, transactions: prev.transactions.map(t => (t.id === id ? { ...t, ...patch } : t)) } : prev, { revalidate: false })
+    setExtra(prev => (prev ? { ...prev, rows: prev.rows.map(t => (t.id === id ? { ...t, ...patch } : t)) } : prev))
+  }
 
   async function loadMore() {
     if (!nextBefore) return
@@ -186,7 +194,7 @@ export default function FinanceTransactionsPage() {
         </div>
       ) : (
         <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm p-4 sm:p-5 space-y-3">
-          <TransactionList transactions={rows} />
+          <TransactionList transactions={rows} onSelectTransaction={setReviewTx} />
           <div className="flex items-center justify-between gap-3 pt-2 border-t border-zinc-100 flex-wrap">
             <p className="text-xs text-zinc-400">{rows.length} {rows.length === 1 ? 'transactie' : 'transacties'} geladen{nextBefore ? ', er zijn er meer' : ''}</p>
             {nextBefore && (
@@ -198,6 +206,13 @@ export default function FinanceTransactionsPage() {
           </div>
         </section>
       )}
+
+      <TransactionReviewModal
+        open={reviewTx != null}
+        transaction={reviewTx}
+        onClose={() => setReviewTx(null)}
+        onSaved={patch => { if (reviewTx) patchTransaction(reviewTx.id, patch) }}
+      />
     </div>
   )
 }

@@ -23,6 +23,7 @@ import { StatusPill } from '@/components/admin/finance/cockpit/StatusPill'
 import { AllocationBar } from '@/components/admin/finance/cockpit/AllocationBar'
 import { WhyDrawer } from '@/components/admin/finance/cockpit/WhyDrawer'
 import { ObligationModal } from '@/components/admin/finance/cockpit/ObligationModal'
+import { ObligationsManagerModal } from '@/components/admin/finance/cockpit/ObligationsManagerModal'
 import { SettingsModal, settingsPayloadFrom } from '@/components/admin/finance/cockpit/SettingsModal'
 import { ManualCashModal } from '@/components/admin/finance/cockpit/ManualCashModal'
 import { RevolutConnectCard, REVOLUT_API, syncSummary } from '@/components/admin/finance/cockpit/RevolutConnectCard'
@@ -85,6 +86,7 @@ export default function FinanceOverviewPage() {
   const [whyOpen, setWhyOpen] = useState(false)
   const [whyTitle, setWhyTitle] = useState('Waarom dit bedrag?')
   const [obligationModal, setObligationModal] = useState<{ open: boolean; editing: ObligationApiRow | null }>({ open: false, editing: null })
+  const [obligationsManagerOpen, setObligationsManagerOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [cashOpen, setCashOpen] = useState(false)
   const [showAllObligations, setShowAllObligations] = useState(false)
@@ -200,7 +202,12 @@ export default function FinanceOverviewPage() {
   const visibleObligations = showAllObligations ? data.obligations : data.obligations.slice(0, 8)
   const topGoals = data.goals.slice(0, 3)
   const salary = data.ownerSalary
-  const salaryPct = salary.targetCents > 0 ? (salary.coverageCents / salary.targetCents) * 100 : 0
+  // No dedicated card any more (moved into Instellingen) — fold the coverage
+  // figure into the status pill's reasons so it isn't lost, just de-emphasised.
+  const salaryReason = salary.monthlyCents > 0
+    ? `Eigenaarssalaris: ${salary.monthsCovered} van ${salary.targetMonths} maanden gedekt (${eur(salary.coverageCents)} van ${eur(salary.targetCents)}).`
+    : null
+  const statusReasons = salaryReason ? [...data.status.reasons, salaryReason] : data.status.reasons
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl space-y-6">
@@ -269,7 +276,7 @@ export default function FinanceOverviewPage() {
       <AdminErrorBanner error={error ?? actionError} />
 
       <div className="flex flex-wrap items-center gap-3">
-        <StatusPill level={data.status.level} label={data.status.label} reasons={data.status.reasons} />
+        <StatusPill level={data.status.level} label={data.status.label} reasons={statusReasons} />
         <span className="text-xs text-zinc-400">Horizon: {HORIZON_LABELS[activeHorizon]} · tot {dateNL(data.horizonEnd)}</span>
       </div>
 
@@ -355,14 +362,14 @@ export default function FinanceOverviewPage() {
         />
       </section>
 
-      {/* Three cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {/* Two cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Obligations */}
-        <section className={`${cardClass} p-4 sm:p-5 flex flex-col gap-3 lg:col-span-2 xl:col-span-1`}>
+        <section className={`${cardClass} p-4 sm:p-5 flex flex-col gap-3`}>
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-base font-semibold text-zinc-900">Komende verplichtingen</h2>
-            <Button size="sm" variant="outline" onClick={() => setObligationModal({ open: true, editing: null })}>
-              <Plus className="w-3.5 h-3.5" /> Toevoegen
+            <Button size="sm" variant="outline" onClick={() => setObligationsManagerOpen(true)}>
+              <Plus className="w-3.5 h-3.5" /> Beheren
             </Button>
           </div>
           {data.obligations.length === 0 ? (
@@ -450,36 +457,6 @@ export default function FinanceOverviewPage() {
             </ul>
           )}
         </section>
-
-        {/* Owner salary */}
-        <section className={`${cardClass} p-4 sm:p-5 flex flex-col gap-3`}>
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-base font-semibold text-zinc-900">Eigenaarssalaris</h2>
-            <button type="button" onClick={() => setSettingsOpen(true)} aria-label="Salaris instellen" className="p-2 -m-2 rounded-md text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100">
-              <Pencil className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          {salary.monthlyCents <= 0 ? (
-            <p className="text-sm text-zinc-500">
-              Nog geen salaris ingesteld.{' '}
-              <button type="button" onClick={() => setSettingsOpen(true)} className="text-indigo-600 hover:text-indigo-800 font-medium">Instellen</button>
-            </p>
-          ) : (
-            <>
-              <p className="text-2xl font-semibold text-zinc-900 tabular-nums">
-                {salary.monthsCovered} <span className="text-sm font-normal text-zinc-500">van {salary.targetMonths} maanden gedekt</span>
-              </p>
-              <div className="h-2 rounded-full bg-zinc-100 overflow-hidden">
-                <div className={`h-full rounded-full transition-[width] ${salaryPct >= 100 ? 'bg-emerald-500' : 'bg-amber-400'}`} style={{ width: `${Math.min(100, Math.max(0, salaryPct))}%` }} />
-              </div>
-              <dl className="text-xs text-zinc-500 grid grid-cols-2 gap-y-1">
-                <dt>Gereserveerd</dt><dd className="text-right tabular-nums text-zinc-900">{eur(salary.coverageCents)}</dd>
-                <dt>Doel</dt><dd className="text-right tabular-nums text-zinc-900">{eur(salary.targetCents)}</dd>
-                <dt>Per maand</dt><dd className="text-right tabular-nums text-zinc-900">{eur(salary.monthlyCents)}</dd>
-              </dl>
-            </>
-          )}
-        </section>
       </div>
 
       {/* Recent transactions */}
@@ -535,6 +512,12 @@ export default function FinanceOverviewPage() {
         editing={obligationModal.editing}
         onClose={() => setObligationModal({ open: false, editing: null })}
         onSaved={refreshAll}
+      />
+
+      <ObligationsManagerModal
+        open={obligationsManagerOpen}
+        onClose={() => setObligationsManagerOpen(false)}
+        onChanged={refreshAll}
       />
 
       <SettingsModal open={settingsOpen} settings={settings ?? null} onClose={() => setSettingsOpen(false)} onSaved={refreshAll} />
