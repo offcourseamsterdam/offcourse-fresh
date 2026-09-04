@@ -172,6 +172,14 @@ const EXPENSE_PATTERN_LIST: ExpensePattern[] = [
   { match: 'allego', category: 'operating', subcategory: 'fuel', label: 'Allego' },
   { match: 'vattenfall', category: 'operating', subcategory: 'fuel', label: 'Vattenfall' },
   { match: 'eneco', category: 'operating', subcategory: 'fuel', label: 'Eneco' },
+  // Revolut's own subscription, which arrives as a charge rather than a fee type.
+  { match: 'plan fee', category: 'operating', subcategory: 'fees', label: 'Revolut-abonnement' },
+  { match: 'plan partial usage refund', category: 'operating', subcategory: 'fees', label: 'Revolut-abonnement' },
+  // Boat suppliers: unambiguous in this business.
+  { match: 'watersport', category: 'maintenance', subcategory: 'other', label: 'watersportzaak' },
+  { match: 'zeilmakerij', category: 'maintenance', subcategory: 'other', label: 'zeilmakerij' },
+  { match: 'scheepsbouw', category: 'maintenance', subcategory: 'hull', label: 'scheepsbouwer' },
+  { match: 'lovable', category: 'operating', subcategory: 'software', label: 'Lovable' },
   // Tax
   { match: 'belastingdienst', category: 'tax', subcategory: 'vat', label: 'Belastingdienst' },
 ]
