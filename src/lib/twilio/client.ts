@@ -43,6 +43,16 @@ export function normalizePhoneNumber(raw: string): string | null {
     cleaned = '+316' + cleaned.slice(2)
   }
 
+  // Convert 11-digit US number starting with 1 (e.g. 12816029365) to +12816029365
+  if (/^1\d{10}$/.test(cleaned)) {
+    cleaned = '+' + cleaned
+  }
+
+  // Convert 10-digit US/Canada local number (e.g. 2816029365) to +12816029365
+  if (/^[2-9]\d{9}$/.test(cleaned)) {
+    cleaned = '+1' + cleaned
+  }
+
   // Ensure starts with '+' and has between 7 and 15 digits (ITU-T E.164 specification)
   if (!cleaned.startsWith('+')) {
     return null
@@ -70,7 +80,19 @@ export async function sendTwilioSms(params: SendSmsParams): Promise<SendSmsResul
 
   const accountSid = process.env.TWILIO_ACCOUNT_SID
   const authToken = process.env.TWILIO_AUTH_TOKEN
-  const fromNumber = params.from || process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_SENDER_ID || 'Off Course'
+
+  // Smart sender selection:
+  // - North America (+1): US carriers do not support alphanumeric IDs, require E.164 phone number
+  // - Other international (+44, etc.): Alphanumeric sender ID 'Off Course' avoids cross-border carrier error 21612
+  // - Dutch (+31): Can use configured TWILIO_FROM_NUMBER or 'Off Course'
+  let defaultFrom = process.env.TWILIO_SENDER_ID || 'Off Course'
+  if (normalizedTo.startsWith('+1')) {
+    defaultFrom = process.env.TWILIO_US_NUMBER || '+17159974693'
+  } else if (process.env.TWILIO_FROM_NUMBER && normalizedTo.startsWith('+31')) {
+    defaultFrom = process.env.TWILIO_FROM_NUMBER
+  }
+
+  const fromNumber = params.from || defaultFrom || process.env.TWILIO_FROM_NUMBER || '+3197006532242'
 
   // If credentials are not configured, perform safe mock send (useful for local dev/testing)
   if (!accountSid || !authToken) {

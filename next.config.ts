@@ -54,8 +54,24 @@ const nextConfig: NextConfig = {
   // so it silently gets left out of these routes' deployed bundle — "Setting
   // up fake worker failed: Cannot find module '.../pdf.worker.mjs'" in
   // production only. Force it into the trace explicitly.
+  //
+  // @napi-rs/canvas has the exact same problem: pdfjs-dist requires it through
+  // a try/catch specifically to make it optional, which also makes it
+  // invisible to the tracer. Confirmed via Vercel's own runtime logs
+  // (2026-09-04): the package is genuinely present in node_modules after
+  // `npm ci` (package-lock.json records all platform variants, including
+  // linux-x64-gnu), so it's not a missing-dependency problem — it's excluded
+  // from the deployed function bundle the same way pdf.worker.mjs was. This
+  // is what was actually breaking `pdfjs-node-polyfill.ts`: that polyfill
+  // only sets `globalThis.DOMMatrix` if pdfjs's own check doesn't find one,
+  // but the real fix is letting pdfjs's own check succeed by making
+  // @napi-rs/canvas resolvable at runtime, same as the worker file below.
   outputFileTracingIncludes: {
-    '/api/admin/finance/**': ['./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs'],
+    '/api/admin/finance/**': [
+      './node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs',
+      './node_modules/@napi-rs/canvas/**',
+      './node_modules/@napi-rs/canvas-linux-x64-gnu/**',
+    ],
   },
   async headers() {
     return [
