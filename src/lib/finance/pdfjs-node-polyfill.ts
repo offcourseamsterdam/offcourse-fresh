@@ -83,3 +83,6 @@ if (typeof globalThis.DOMMatrix === 'undefined') {
   // @ts-expect-error — minimal Node-only polyfill, not the full DOM type
   globalThis.DOMMatrix = DOMMatrixPolyfill
 }
+
+export {}
+

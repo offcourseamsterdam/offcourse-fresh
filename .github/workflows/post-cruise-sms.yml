@@ -1,0 +1,28 @@
+name: Post-Cruise Review SMS Trigger
+
+on:
+  schedule:
+    # Runs every 15 minutes between 08:00 and 22:00 UTC (10:00 - 00:00 Amsterdam time)
+    - cron: '*/15 8-22 * * *'
+  workflow_dispatch:
+
+jobs:
+  trigger:
+    name: Check & Dispatch Post-Cruise SMS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger post-cruise-sms endpoint
+        run: |
+          response=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X GET "https://www.offcourseamsterdam.com/api/cron/post-cruise-sms" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+          
+          http_status=$(echo "$response" | grep "HTTP_STATUS:" | cut -d':' -f2)
+          body=$(echo "$response" | sed '/HTTP_STATUS:/d')
+          
+          echo "Response: $body"
+          echo "Status: $http_status"
+          
+          if [ "$http_status" -ne 200 ]; then
+            echo "Error: Trigger failed with status $http_status"
+            exit 1
+          fi

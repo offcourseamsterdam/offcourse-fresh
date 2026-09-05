@@ -44,13 +44,14 @@ describe('pdfjs-node-polyfill', () => {
     vi.resetModules()
     await import('./pdfjs-node-polyfill')
 
-    const DOMMatrixPolyfill = globalThis.DOMMatrix as new (init?: number[]) => {
+    interface Matrix {
       a: number; b: number; c: number; d: number; e: number; f: number
-      translate(tx?: number, ty?: number): { e: number; f: number }
-      scale(sx?: number, sy?: number): { a: number; d: number }
-      multiplySelf(other: unknown): { e: number; f: number }
-      invertSelf(): { a: number; d: number; e: number; f: number }
+      translate(tx?: number, ty?: number): Matrix
+      scale(sx?: number, sy?: number): Matrix
+      multiplySelf(other: unknown): Matrix
+      invertSelf(): Matrix
     }
+    const DOMMatrixPolyfill = globalThis.DOMMatrix as new (init?: number[]) => Matrix
 
     const identity = new DOMMatrixPolyfill()
     expect([identity.a, identity.b, identity.c, identity.d, identity.e, identity.f]).toEqual([1, 0, 0, 1, 0, 0])

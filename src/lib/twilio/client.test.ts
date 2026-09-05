@@ -19,6 +19,11 @@ describe('normalizePhoneNumber', () => {
     expect(normalizePhoneNumber('+44 7911 123456')).toBe('+447911123456')
   })
 
+  it('normalizes US numbers without + prefix', () => {
+    expect(normalizePhoneNumber('12816029365')).toBe('+12816029365')
+    expect(normalizePhoneNumber('2816029365')).toBe('+12816029365')
+  })
+
   it('returns null for invalid or empty numbers', () => {
     expect(normalizePhoneNumber('')).toBeNull()
     expect(normalizePhoneNumber('invalid-phone')).toBeNull()
