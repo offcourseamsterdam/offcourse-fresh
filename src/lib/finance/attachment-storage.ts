@@ -24,3 +24,10 @@ export async function getFinanceAttachmentSignedUrl(
   if (error || !data) return null
   return data.signedUrl
 }
+
+/** Reads a stored finance attachment back as bytes — used to forward the original document to the bookkeeping mailbox. */
+export async function downloadFinanceAttachment(supabase: SupabaseClient, path: string): Promise<Buffer | null> {
+  const { data, error } = await supabase.storage.from(BUCKET).download(path)
+  if (error || !data) return null
+  return Buffer.from(await data.arrayBuffer())
+}

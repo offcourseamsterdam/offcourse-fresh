@@ -3,6 +3,22 @@
 import { useCallback, useState } from 'react'
 
 /**
+ * Thrown by adminMutate on a `{ ok: false }` response. A plain `Error`
+ * subclass — every existing `catch (err) { err instanceof Error ? err.message
+ * : ... }` call site keeps working unchanged — but callers that need more
+ * than the message (e.g. the invoice approve/pay routes' `suggested_cents`,
+ * see src/lib/api/response.ts's `apiError` `extra` param) can read `.extra`.
+ */
+export class AdminApiError extends Error {
+  extra: Record<string, unknown>
+  constructor(message: string, extra: Record<string, unknown> = {}) {
+    super(message)
+    this.name = 'AdminApiError'
+    this.extra = extra
+  }
+}
+
+/**
  * Mutation counterpart to adminFetcher (useAdminFetch.ts): POST/PUT/DELETE to
  * an admin API route, throwing on HTTP or `{ ok: false }` failures so callers
  * only handle the happy path. Returns the unwrapped `data` payload.
@@ -19,7 +35,10 @@ export async function adminMutate<T = unknown>(
   })
   const json = await res.json().catch(() => null)
   if (!json) throw new Error(`HTTP ${res.status}`)
-  if (!json.ok) throw new Error(json.error ?? 'Request failed')
+  if (!json.ok) {
+    const { ok: _ok, error, data: _data, ...extra } = json
+    throw new AdminApiError(error ?? 'Request failed', extra)
+  }
   return json.data as T
 }
 

@@ -15,7 +15,8 @@
     "report:conversions": "tsx scripts/conversion-report.ts",
     "reconcile:stripe": "tsx scripts/reconcile-stripe-bookings.ts",
     "check:rebooked": "tsx scripts/check-rebooked-bookings.ts",
-    "finance:seed-loans": "tsx scripts/finance/seed-loans.ts"
+    "finance:seed-loans": "tsx scripts/finance/seed-loans.ts",
+    "finance:backfill-expenses": "tsx scripts/finance/backfill-expenses.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",

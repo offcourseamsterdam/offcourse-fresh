@@ -185,7 +185,10 @@ export interface InboxGhostProposal {
 export interface InboxFinanceInvoice {
   id: string
   status: string
+  /** Server-generated bucket key — opaque, never shown. Open the PDF via GET /api/admin/finance/attachments/invoice/[id]. */
   file_path: string
+  /** The sender's own filename, neutralised for display (see invoices/process.ts displayFilename). */
+  original_filename: string | null
   extracted: ExtractedInvoiceFields | null
   matched_shift_id: string | null
   matched_booking_id: string | null
@@ -195,7 +198,8 @@ export interface InboxFinanceInvoice {
   decision_note: string | null
   obligation_id: string | null
   created_at: string
-  supplier: { id: string; name: string; iban: string | null } | null
+  /** has_iban, never the raw IBAN — the card only needs to know whether "Goedkeuren & betalen" is possible. */
+  supplier: { id: string; name: string; has_iban: boolean } | null
 }
 
 export interface InboxConversationDetail {

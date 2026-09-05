@@ -20,9 +20,13 @@ const ITEMS: SubnavItem[] = [
   { href: '/admin/finance/loans', label: 'Leningen' },
   { href: '/admin/finance/transactions', label: 'Transacties' },
   { href: '/admin/finance', label: 'Kasboek' },
-  // The Finance Inbox deliberately has no page of its own — §6a routes invoice
-  // review through the existing operations inbox, filtered to "Facturen".
-  { href: '/admin/inbox', label: 'Facturen' },
+  // Its own inbox, separate from operations (Beer, 2026-09-04: "as if the
+  // CFO has its own environment"). Same three-pane UI as /admin/inbox,
+  // scoped to source_category='finance' — supersedes the §6a decision to
+  // filter invoices inside the operations inbox instead.
+  { href: '/admin/finance/inbox', label: 'Facturen' },
+  // Expense Records (plan 2026-09-05): every payment + its document + VAT + SnelStart hand-off.
+  { href: '/admin/finance/expenses', label: 'Uitgaven' },
   { href: '/admin/finance/investments', label: 'Investeringen' },
 ]
 

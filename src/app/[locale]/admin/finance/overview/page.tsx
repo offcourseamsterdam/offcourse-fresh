@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { AlertTriangle, Landmark, Loader2, Pencil, Plus, RefreshCw, Settings2, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronRight, Landmark, Loader2, Pencil, Plus, RefreshCw, Settings2, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
@@ -17,6 +17,7 @@ import {
   type Horizon,
   type ObligationOccurrence,
 } from '@/lib/finance/cockpit/types'
+import { groupObligations, type ObligationCategory } from '@/lib/finance/cockpit/categories'
 import { FinanceSubnav } from '@/components/admin/finance/cockpit/FinanceSubnav'
 import { StatCard } from '@/components/admin/finance/cockpit/StatCard'
 import { StatusPill } from '@/components/admin/finance/cockpit/StatusPill'
@@ -89,7 +90,19 @@ export default function FinanceOverviewPage() {
   const [obligationsManagerOpen, setObligationsManagerOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [cashOpen, setCashOpen] = useState(false)
-  const [showAllObligations, setShowAllObligations] = useState(false)
+  // Collapsed groups in the "Komende verplichtingen" card — everything starts
+  // expanded (nothing hidden that wasn't before), click a group's header to
+  // fold it away. Per-category, not per-row: a category with 20 rows is one
+  // click, not 20.
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<ObligationCategory>>(new Set())
+  function toggleCategory(cat: ObligationCategory) {
+    setCollapsedCategories(prev => {
+      const next = new Set(prev)
+      if (next.has(cat)) next.delete(cat)
+      else next.add(cat)
+      return next
+    })
+  }
 
   const refreshAll = useCallback(() => {
     refresh()
@@ -199,7 +212,7 @@ export default function FinanceOverviewPage() {
   const spaceTone = data.financialSpaceCents < 0 ? 'red' : 'default'
   const obligationsTotal = data.obligations.reduce((s, o) => s + o.amountCents, 0)
   const overdueCount = data.obligations.filter(o => o.overdue).length
-  const visibleObligations = showAllObligations ? data.obligations : data.obligations.slice(0, 8)
+  const obligationGroups = groupObligations(data.obligations)
   const topGoals = data.goals.slice(0, 3)
   const salary = data.ownerSalary
   // No dedicated card any more (moved into Instellingen) — fold the coverage
@@ -266,7 +279,7 @@ export default function FinanceOverviewPage() {
             <Landmark className={`w-3.5 h-3.5 ${revolutConnected ? 'text-emerald-600' : ''}`} />
             <span className="hidden sm:inline">Revolut</span>
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
+          <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)} aria-label="Instellingen">
             <Settings2 className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Instellingen</span>
           </Button>
@@ -372,58 +385,99 @@ export default function FinanceOverviewPage() {
               <Plus className="w-3.5 h-3.5" /> Beheren
             </Button>
           </div>
+          {/* Salaris eigenaar — display-only, sourced from the settings buffer, never a
+              finance_obligations row: it's already reserved for in the allocation bar
+              above, so showing it as a real obligation here would count it twice. */}
+          {salary.monthlyCents > 0 && (
+            <div className="rounded-lg border border-dashed border-zinc-200 px-3 py-2 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-zinc-900">Salaris eigenaar</p>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  {salary.monthsCovered} van {salary.targetMonths} maanden gedekt · {eur(salary.monthlyCents)}/maand
+                </p>
+              </div>
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 shrink-0 whitespace-nowrap">
+                buffer, geen verplichting
+              </span>
+            </div>
+          )}
+
           {data.obligations.length === 0 ? (
             <p className="text-sm text-zinc-500">Niets gepland in deze horizon.</p>
           ) : (
-            <ul className="divide-y divide-zinc-100 -mx-1">
-              {visibleObligations.map(o => {
-                const boat = boatName(boats, o.boatId)
-                const paymentPending = o.source === 'obligation' && !openObligations?.some(r => r.id === o.sourceId)
+            <div className="divide-y divide-zinc-100 -mx-1">
+              {obligationGroups.map(group => {
+                const collapsed = collapsedCategories.has(group.category)
                 return (
-                  <li key={o.key} className="px-1 py-2.5 flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-zinc-900 truncate">{o.title}</p>
-                      <p className="text-xs text-zinc-500 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                        <span>{OBLIGATION_KIND_LABELS[o.kind]}</span>
-                        <span>·</span>
-                        <span className={o.overdue ? 'text-red-600 font-medium' : ''}>{dateNL(o.dueDate)}</span>
-                        {boat && <><span>·</span><span>{boat}</span></>}
-                        {o.overdue && (
-                          <span className="inline-flex items-center rounded-full bg-red-100 text-red-700 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">over tijd</span>
+                  <div key={group.category} className="px-1">
+                    <button
+                      type="button"
+                      onClick={() => toggleCategory(group.category)}
+                      aria-expanded={!collapsed}
+                      className="w-full flex items-center justify-between gap-2 py-2.5 min-h-[44px] sm:min-h-0 text-left"
+                    >
+                      <span className="flex items-center gap-1.5 min-w-0 text-sm font-medium text-zinc-900">
+                        <ChevronRight className={`w-3.5 h-3.5 text-zinc-400 shrink-0 transition-transform ${collapsed ? '' : 'rotate-90'}`} />
+                        <span className="truncate">{group.label}</span>
+                        <span className="text-xs font-normal text-zinc-400 shrink-0">({group.items.length})</span>
+                        {group.overdueCount > 0 && (
+                          <span className="inline-flex items-center rounded-full bg-red-100 text-red-700 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide shrink-0">
+                            {group.overdueCount} over tijd
+                          </span>
                         )}
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1 shrink-0">
-                      <span className="text-sm font-semibold tabular-nums text-zinc-900">{eur(o.amountCents)}</span>
-                      <div className="flex items-center gap-0.5">
-                        <button type="button" onClick={() => markPaid(o)} className="text-[11px] font-medium text-emerald-700 hover:bg-emerald-50 rounded-md px-1.5 py-1">
-                          Betaald
-                        </button>
-                        {o.source === 'obligation' ? (
-                          <>
-                            <button type="button" onClick={() => editObligation(o)} disabled={paymentPending} aria-label="Bewerken" className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 disabled:opacity-30">
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <button type="button" onClick={() => cancelObligation(o)} aria-label="Annuleren" className="p-1.5 rounded-md text-zinc-400 hover:text-red-600 hover:bg-red-50">
-                              <XCircle className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        ) : (
-                          <Link href={`/${locale}/admin/finance/loans`} className="text-[11px] text-zinc-400 hover:text-zinc-700 px-1.5 py-1">
-                            lening
-                          </Link>
-                        )}
-                      </div>
-                    </div>
-                  </li>
+                      </span>
+                      <span className="text-sm font-semibold tabular-nums text-zinc-900 shrink-0">{eur(group.totalCents)}</span>
+                    </button>
+                    {!collapsed && (
+                      <ul className="divide-y divide-zinc-50 pb-1">
+                        {group.items.map(o => {
+                          const boat = boatName(boats, o.boatId)
+                          const paymentPending = o.source === 'obligation' && !openObligations?.some(r => r.id === o.sourceId)
+                          return (
+                            <li key={o.key} className="pl-5 pr-1 py-2.5 flex items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium text-zinc-900 truncate">{o.title}</p>
+                                <p className="text-xs text-zinc-500 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                  <span>{OBLIGATION_KIND_LABELS[o.kind]}</span>
+                                  <span>·</span>
+                                  <span className={o.overdue ? 'text-red-600 font-medium' : ''}>{dateNL(o.dueDate)}</span>
+                                  {boat && <><span>·</span><span>{boat}</span></>}
+                                  {o.overdue && (
+                                    <span className="inline-flex items-center rounded-full bg-red-100 text-red-700 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">over tijd</span>
+                                  )}
+                                </p>
+                              </div>
+                              <div className="flex flex-col items-end gap-1 shrink-0">
+                                <span className="text-sm font-semibold tabular-nums text-zinc-900">{eur(o.amountCents)}</span>
+                                <div className="flex items-center gap-0.5">
+                                  <button type="button" onClick={() => markPaid(o)} className="text-[11px] font-medium text-emerald-700 hover:bg-emerald-50 rounded-md px-1.5 py-1">
+                                    Betaald
+                                  </button>
+                                  {o.source === 'obligation' ? (
+                                    <>
+                                      <button type="button" onClick={() => editObligation(o)} disabled={paymentPending} aria-label="Bewerken" className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 disabled:opacity-30">
+                                        <Pencil className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button type="button" onClick={() => cancelObligation(o)} aria-label="Annuleren" className="p-1.5 rounded-md text-zinc-400 hover:text-red-600 hover:bg-red-50">
+                                        <XCircle className="w-3.5 h-3.5" />
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <Link href={`/${locale}/admin/finance/loans`} className="text-[11px] text-zinc-400 hover:text-zinc-700 px-1.5 py-1">
+                                      lening
+                                    </Link>
+                                  )}
+                                </div>
+                              </div>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )}
+                  </div>
                 )
               })}
-            </ul>
-          )}
-          {data.obligations.length > 8 && (
-            <button type="button" onClick={() => setShowAllObligations(s => !s)} className="text-xs font-medium text-indigo-600 hover:text-indigo-800 self-start">
-              {showAllObligations ? 'Toon minder' : `Toon alle ${data.obligations.length}`}
-            </button>
+            </div>
           )}
         </section>
 
@@ -481,19 +535,37 @@ export default function FinanceOverviewPage() {
         )}
       </section>
 
-      {/* Attention */}
+      {/* Attention — buildInsights(), not just the status pill's own reasons: this is
+          the one place sync failures, a bank reconciliation gap, unreviewed
+          transactions and missing skipper invoices actually reach the screen. */}
       <section className={`${cardClass} p-4 sm:p-5 space-y-2`}>
         <h2 className="text-base font-semibold text-zinc-900">Wat vraagt aandacht?</h2>
-        {data.status.reasons.length === 0 ? (
+        {!data.insights || data.insights.length === 0 ? (
           <p className="text-sm text-zinc-500">Niets — alles ziet er goed uit.</p>
         ) : (
           <ul className="space-y-1.5">
-            {data.status.reasons.map((r, i) => (
-              <li key={i} className="flex items-start gap-2 text-sm text-zinc-700">
-                <AlertTriangle className={`w-4 h-4 shrink-0 mt-0.5 ${data.status.level === 'tight' ? 'text-red-500' : 'text-amber-500'}`} />
-                <span>{r}</span>
-              </li>
-            ))}
+            {data.insights.map(insight => {
+              const Icon = insight.level === 'info' ? CheckCircle2 : AlertTriangle
+              const tone = insight.level === 'critical' ? 'text-red-600' : insight.level === 'warning' ? 'text-amber-500' : 'text-emerald-600'
+              const body = (
+                <span className="flex items-start gap-2 text-sm text-zinc-700">
+                  <Icon className={`w-4 h-4 shrink-0 mt-0.5 ${tone}`} />
+                  <span>
+                    {insight.message}
+                    {insight.actionLabel && <span className="ml-1.5 font-medium text-indigo-600">{insight.actionLabel} →</span>}
+                  </span>
+                </span>
+              )
+              return (
+                <li key={insight.key}>
+                  {insight.href ? (
+                    <Link href={`/${locale}/admin${insight.href}`} className="block hover:bg-zinc-50 -mx-1 px-1 py-0.5 rounded-md">
+                      {body}
+                    </Link>
+                  ) : body}
+                </li>
+              )
+            })}
           </ul>
         )}
       </section>

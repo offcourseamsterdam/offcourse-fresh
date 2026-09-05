@@ -53,3 +53,5 @@ One file per track or major feature. Written before every PR and kept up to date
 | Captain scheduling, time tracking & payroll | [captain-scheduling.md](captain-scheduling.md) | — | done |
 | Post-cruise review & recommendations SMS (Twilio) | [review-sms-twilio.md](review-sms-twilio.md) | — | done |
 | City tax (Amsterdam day-trip tourist tax) reporting | [city-tax.md](city-tax.md) | — | done (v1, known gaps) |
+| Financial management module (cash cockpit) | [financial-management-module.md](financial-management-module.md) | — | done (Phases 0–5) |
+| Finance Inbox v2 — Expense Records, Revolut, e-mail matching & SnelStart | [finance-inbox-expense-records.md](finance-inbox-expense-records.md) | — | done (Phases 0–5) |

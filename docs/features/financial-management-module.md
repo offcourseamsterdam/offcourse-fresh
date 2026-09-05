@@ -1,6 +1,8 @@
 # Financial Management Module (cash cockpit)
 
-**Status:** in progress — Phases 0, 1 and 2 built (2026-09-04). Plan: `docs/plans/2026-09-04-financial-management-module.md`.
+**Status:** Phases 0–5 built (2026-09-04), Phase 6 ("nice-to-have": the AI-assistant `ask` endpoint,
+direct `PAY`-scope payments, a per-boat cost view) intentionally not started. Plan:
+`docs/plans/2026-09-04-financial-management-module.md`.
 
 ## What was built
 
@@ -17,6 +19,24 @@ invoices), an operating buffer, an owner-salary buffer and planned goals. What i
   loans seeded, obligations, goals, the admin API and the dashboard/goals/loans pages.
 - **Phase 2** connects Revolut Business: certificate + OAuth consent, encrypted token store, a
   15-minute sync of balance and transactions, a signed webhook receiver, and a transactions list.
+  Live in production since 2026-09-04.
+- **Phase 3** classifies every bank transaction (structural rules → user rules → Claude Sonnet),
+  links it to a boat/goal/obligation/loan payment, and applies the salary/goal side-effects only
+  once a transaction is `completed`.
+- **Phase 4** is the Finance Inbox: `GMAIL_FINANCE_ADDRESS` mail with a PDF gets Gemini-extracted,
+  matched against shifts, checked (skipper/booking/date/hours/rate/amount/duplicate/IBAN), and
+  approved/paid as a Revolut payment draft. It has its own desk at `/admin/finance/inbox` — a
+  2026-09-04 change from the original §6a plan, which had reused the operations inbox.
+- **Phase 5** is the monthly allocation cron, `buildInsights()` ("Wat vraagt aandacht?"), the
+  investments page with before/after scenarios, and derived-obligation proposals (city tax,
+  standing charges, skipper hours, BTW) that Beer confirms into real obligation rows.
+- **2026-09-04 hardening pass** (same day, after a cross-model review): retry-safe invoice
+  approve/pay (one obligation per invoice, one Revolut draft per invoice, even across a failed and
+  retried request), a hard ceiling plus IBAN mod-97 check before any payment draft is created,
+  server-generated attachment storage keys (never the sender's filename), a bank-reconciliation
+  check (`reconciliation.ts`) that finally feeds `buildInsights()`'s `reconciliationGapCents`, and
+  obligations grouped into categories (Rente + aflossing, BTW, Toeristenbelasting, Schippersuren,
+  Facturen, Operationele vaste kosten) with Salaris eigenaar shown as a display-only buffer row.
 
 ## Key files
 
@@ -29,7 +49,14 @@ invoices), an operating buffer, an owner-salary buffer and planned goals. What i
 | `src/lib/finance/cockpit/loans/schedule.ts` | Loan schedule engine (1 Apr / 1 Oct cadence, pro-rata first period, linear/annuity/interest-only, tranches). Tested against the Investment Tracker export. |
 | `src/lib/finance/cockpit/loans/materialize.ts` | Writes a schedule into `finance_loan_payments`; paid rows are never touched. |
 | `src/lib/finance/cockpit/goals.ts` | Goal progress and behind-schedule maths. |
-| `src/lib/finance/cockpit/load-cockpit.ts` | The only DB reader for the dashboard. Cash = latest Revolut snapshot when connected, else the manual balance. `loadCockpitInputs()` is reused by what-if screens. |
+| `src/lib/finance/cockpit/load-cockpit.ts` | The only DB reader for the dashboard. Cash = latest Revolut snapshot when connected, else the manual balance. `loadCockpitInputs()` is reused by what-if screens. `loadInsights()` gathers everything `buildInsights()` needs (sync status, reconciliation gap, unreviewed transactions, missing invoices) and attaches it as `CockpitResult.insights`; a failure here degrades to an empty list rather than breaking the page. |
+| `src/lib/finance/cockpit/insights.ts` | Pure: `buildInsights()` → the "Wat vraagt aandacht?" list, one sentence per actionable thing. |
+| `src/lib/finance/cockpit/reconciliation.ts` | Pure: compares the freshly-fetched balance against the most recent completed transaction's own `balance_after_cents` — the check behind the reconciliation-gap insight. |
+| `src/lib/finance/cockpit/categories.ts` | Pure: groups `ObligationOccurrence[]` into the categories the "Komende verplichtingen" card renders, keyed off `kind` and (for tax) `sourceKey`. |
+| `src/lib/finance/invoices/decide.ts` | Shared spine of invoice approve/pay: `resolvePayableAmount()` (never trusts an unchecked extracted amount), `ensureInvoiceObligation()` (exactly one obligation per invoice, retry-safe), `recordInvoiceDecision()` (decision written once), `supersedeCrewAccrual()` (an approved skipper invoice reduces/cancels that month's crew accrual). |
+| `src/lib/finance/iban.ts` | Pure: IBAN mod-97 checksum, run before a supplier IBAN can become a Revolut counterparty. |
+| `src/lib/finance/invoices/notify.ts` | Slack DM (`postSlackOps`) the moment an invoice lands, deep-linked to `/admin/finance/inbox`. |
+| `src/app/[locale]/admin/inbox/InboxShell.tsx` | The three-pane inbox UI, shared by `/admin/inbox` (operations) and `/admin/finance/inbox` (Facturen) via a `scope` prop; `applyInboxScope()` in the conversations API route is what actually keeps the two lists disjoint. |
 | `src/lib/finance/cockpit/events.ts`, `schemas.ts`, `rows.ts` | Audit log helper, zod request schemas, DB→engine mappers. |
 | `src/app/api/admin/finance/cockpit/**` | Admin API: `overview`, `settings`, `obligations`, `loans` (+ `impact`), `goals`, `transactions`, `revolut/*`. All start with `requireAdmin()`. |
 | `src/lib/revolut/auth.ts` | JWT client assertion (`iss` = redirect-URI domain), code exchange, refresh, consent URL, sandbox/production bases. |

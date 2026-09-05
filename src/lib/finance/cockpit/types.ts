@@ -1,4 +1,5 @@
 import type { ISODate } from './dates'
+import type { Insight } from './insights'
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 
@@ -48,6 +49,8 @@ export interface ObligationRow {
   recurrenceUntil: ISODate | null
   status: 'open' | 'paid' | 'cancelled'
   boatId?: string | null
+  /** 'vat:2026-08', 'skipper-hours:2026-08:<staffId>', … for a derived row; null for one Beer typed by hand. Used by categories.ts to tell BTW apart from toeristenbelasting. */
+  sourceKey?: string | null
 }
 
 /** A row from finance_loan_payments joined with its loan name. */
@@ -74,6 +77,8 @@ export interface ObligationOccurrence {
   /** Due before today and still open. */
   overdue: boolean
   boatId?: string | null
+  /** Carried through from ObligationRow.sourceKey; null for a loan payment (kind is enough to categorise those) or a manually entered obligation. */
+  sourceKey?: string | null
 }
 
 // ── Goals ────────────────────────────────────────────────────────────────────
@@ -194,4 +199,13 @@ export interface CockpitResult {
   goals: GoalProgress[]
   status: { level: StatusLevel; label: string; reasons: string[] }
   why: WhyLine[]
+  /**
+   * "Wat vraagt aandacht?" (insights.ts's buildInsights). Optional and never
+   * set by computeCockpit() itself — the pure engine has no idea about sync
+   * status, unreviewed transactions or missing invoices. load-cockpit.ts's
+   * loadCockpit() attaches it as a post-processing step for the dashboard;
+   * every other caller of computeCockpit() (loan-impact modal, investment
+   * scenario) leaves it unset, which is fine since those never render it.
+   */
+  insights?: Insight[]
 }

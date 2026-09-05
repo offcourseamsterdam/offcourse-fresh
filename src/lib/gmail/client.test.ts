@@ -140,6 +140,7 @@ describe('getMessage', () => {
       threadId: 't1',
       from: { email: 'jane@example.com', name: 'Jane Doe' },
       to: [],
+      cc: [],
       subject: 'Booking question',
       messageIdHeader: '<abc123@mail.gmail.com>',
       bodyText: 'Hi, can we book Saturday?',

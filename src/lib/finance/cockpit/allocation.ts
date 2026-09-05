@@ -29,6 +29,15 @@ export interface AllocationSettings {
   ownerSalaryCoverageCents: number
   /** Only the relative order of 'owner_salary' vs 'goals' matters here; the other buckets are computed requirements, not buffers anyone tops up. */
   priority?: BucketKey[]
+  /**
+   * Beer, 2026-09-05: "er moet wel altijd 25% budget overblijven om in
+   * marketing te investeren" — 0..100, clamped. The plan never touches this
+   * slice of availableForGrowthCents; it's the untouched remainder,
+   * available to spend on marketing (or anything else) by hand. Optional and
+   * defaults to 0 (no reserve) so every existing caller/test that doesn't
+   * pass it keeps its prior behaviour unchanged.
+   */
+  marketingReservePct?: number
 }
 
 export type AllocationTargetKind = 'owner_salary' | 'goal'
@@ -57,10 +66,12 @@ export interface AllocationSkip {
 }
 
 export interface AllocationPlan {
-  /** The money this plan is allowed to touch: everything above the safety margin. */
+  /** The full growth pot: everything above the safety margin, before the marketing reserve is set aside. */
   availableCents: number
+  /** The slice of availableCents the marketing reserve holds back — never allocated, always left as free cash. */
+  reservedCents: number
   allocatedCents: number
-  /** availableCents − allocatedCents. */
+  /** availableCents − allocatedCents (so it includes the untouched reserve, same meaning as before this field existed). */
   remainingCents: number
   deltas: AllocationDelta[]
   skipped: AllocationSkip[]
@@ -94,7 +105,15 @@ export function planMonthlyAllocation(
   settings: AllocationSettings,
 ): AllocationPlan {
   const availableCents = Math.max(0, cockpit.availableForGrowthCents)
-  let pot = availableCents
+  const reservePct = Math.max(0, Math.min(100, settings.marketingReservePct ?? 0))
+  const reservedCents = Math.round(availableCents * (reservePct / 100))
+  // Salary top-up and goal funding both draw from what's left AFTER the
+  // reserve is set aside — the reserve shrinks the whole pot up front, so
+  // whichever bucket the priority order would have funded first still does,
+  // just out of a smaller pot. If the pot doesn't stretch to a goal's step
+  // this month, that goal is simply skipped ('no_room') — no partial dip
+  // into the reserve to make it fit.
+  let pot = availableCents - reservedCents
   const deltas: AllocationDelta[] = []
   const skipped: AllocationSkip[] = []
 
@@ -170,7 +189,7 @@ export function planMonthlyAllocation(
   }
 
   const allocatedCents = deltas.reduce((s, d) => s + d.deltaCents, 0)
-  return { availableCents, allocatedCents, remainingCents: availableCents - allocatedCents, deltas, skipped }
+  return { availableCents, reservedCents, allocatedCents, remainingCents: availableCents - allocatedCents, deltas, skipped }
 }
 
 /** Default priority puts owner_salary before goals; an explicit list can flip it. */
@@ -198,6 +217,7 @@ export function formatAllocationSummary(plan: AllocationPlan, opts: { dryRun?: b
     ...(lines.length ? lines : ['• niets toegewezen']),
     ...(heldLines.length ? ['', '_Overgeslagen:_', ...heldLines] : []),
     '',
+    ...(plan.reservedCents > 0 ? [`_Marketingreserve (niet toegewezen): €${eur(plan.reservedCents)}._`] : []),
     `_Rest boven de veiligheidsmarge: €${eur(plan.remainingCents)}._`,
   ].join('\n')
 }

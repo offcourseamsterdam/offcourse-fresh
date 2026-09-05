@@ -67,10 +67,20 @@ describe('/api/admin/finance/cockpit/settings', () => {
     expect((await put({ safety_margin_cents: -1 })).status).toBe(400)
     expect((await put({ planning_horizon: '6m' })).status).toBe(400)
     expect((await put({ allocation_priority: ['goals', 'goals', 'goals', 'goals'] })).status).toBe(400)
+    expect((await put({ marketing_reserve_pct: -1 })).status).toBe(400)
+    expect((await put({ marketing_reserve_pct: 101 })).status).toBe(400)
+    expect((await put({ marketing_reserve_pct: 25.5 })).status).toBe(400)
     const empty = await put({})
     expect(empty.status).toBe(400)
     expect((await empty.json()).error).toContain('No settings fields')
     expect(h.createAdminClient).not.toHaveBeenCalled()
+  })
+
+  it('PUT accepts marketing_reserve_pct at its 0 and 100 boundaries', async () => {
+    const mock = db()
+    h.createAdminClient.mockReturnValue(mock.client)
+    expect((await put({ marketing_reserve_pct: 0 })).status).toBe(200)
+    expect((await put({ marketing_reserve_pct: 100 })).status).toBe(200)
   })
 
   it('PUT updates, stamps updated_at and logs a settings_updated event with the coverage delta', async () => {

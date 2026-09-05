@@ -84,6 +84,7 @@ export async function GET(request: NextRequest) {
       ownerSalaryMonths: settings.owner_salary_months,
       ownerSalaryCoverageCents: settings.owner_salary_coverage_cents,
       priority: Array.isArray(settings.allocation_priority) ? (settings.allocation_priority as BucketKey[]) : undefined,
+      marketingReservePct: settings.marketing_reserve_pct,
     })
 
     if (dryRun) {
@@ -100,7 +101,7 @@ export async function GET(request: NextRequest) {
       event_type: 'allocation_applied',
       actor: 'cron',
       entity_type: 'settings',
-      entity_id: 'default',
+      entity_id: null, // finance_events.entity_id is uuid; the settings row's text id lives in payload, same as settings/route.ts
       delta_cents: plan.allocatedCents,
       payload: {
         month: today.slice(0, 7),
@@ -154,7 +155,7 @@ export async function GET(request: NextRequest) {
           event_type: 'owner_salary_coverage_changed',
           actor: 'cron',
           entity_type: 'settings',
-          entity_id: 'default',
+          entity_id: null, // finance_events.entity_id is uuid; the settings row's text id lives in payload, same as settings/route.ts
           delta_cents: delta.deltaCents,
           payload: { before: delta.fromCents, after: delta.toCents, reason: 'monthly_allocation', month: today.slice(0, 7) },
         })
@@ -170,7 +171,7 @@ export async function GET(request: NextRequest) {
         event_type: 'allocation_conflicted',
         actor: 'cron',
         entity_type: 'settings',
-        entity_id: 'default',
+        entity_id: null, // finance_events.entity_id is uuid; the settings row's text id lives in payload, same as settings/route.ts
         delta_cents: appliedCents,
         payload: { month: today.slice(0, 7), plannedCents: plan.allocatedCents, appliedCents, conflicts },
       })

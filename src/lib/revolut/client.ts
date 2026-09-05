@@ -108,6 +108,37 @@ export interface RevolutWebhook {
   signing_secret?: string
 }
 
+/**
+ * An expense as the Revolut Business app knows it: the card transaction plus
+ * whatever the cardholder added afterwards (receipt photo, VAT rate, category).
+ * Verified 2026-09-05 against developer.revolut.com/docs/business/get-expenses.
+ * Not every expense has a `transaction_id` (mileage claims, some fees), and the
+ * whole endpoint is unavailable in Sandbox.
+ */
+export interface RevolutExpenseSplit {
+  amount: { amount: number; currency: string }
+  category?: { id: string; name?: string; code?: string }
+  /** The VAT rate the user picked — a percentage, never an amount. */
+  tax_rate?: { id: string; name?: string; percentage?: number }
+}
+
+export interface RevolutExpense {
+  id: string
+  state: 'missing_info' | 'approved' | 'rejected' | 'submitted' | string
+  transaction_type: string
+  description?: string
+  submitted_at?: string
+  completed_at?: string
+  payer?: string
+  merchant?: string
+  transaction_id?: string
+  expense_date: string
+  labels?: Record<string, string[]>
+  splits: RevolutExpenseSplit[]
+  receipt_ids: string[]
+  spent_amount: { amount: number; currency: string }
+}
+
 export type TokenProvider = () => Promise<string>
 
 export class RevolutApiError extends Error {
@@ -213,7 +244,70 @@ export class RevolutClient {
     return this.request('POST', `/webhooks/${encodeURIComponent(id)}/rotate-signing-secret`, expirationPeriod ? { expiration_period: expirationPeriod } : {}, false, 'v2')
   }
 
+  // ── Expenses & receipts (production only — the endpoint does not exist in Sandbox) ──
+  getExpenses(params: { from?: string; to?: string; count?: number; state?: string; transaction_type?: string } = {}): Promise<RevolutExpense[]> {
+    const q = new URLSearchParams()
+    if (params.from) q.set('from', params.from)
+    if (params.to) q.set('to', params.to)
+    if (params.count) q.set('count', String(params.count))
+    if (params.state) q.set('state', params.state)
+    if (params.transaction_type) q.set('transaction_type', params.transaction_type)
+    const qs = q.toString()
+    return this.request('GET', `/expenses${qs ? `?${qs}` : ''}`)
+  }
+
+  /**
+   * Every expense with expense_date ≥ `from`. Revolut returns newest first and
+   * pages by asking for `to` = the last item's expense_date, so this walks
+   * backwards until a page comes back short or empty. `maxPages` is the
+   * runaway guard; 500 per page is Revolut's own ceiling.
+   */
+  async listExpensesSince(from: string, opts: { pageSize?: number; maxPages?: number } = {}): Promise<RevolutExpense[]> {
+    const pageSize = Math.min(500, opts.pageSize ?? 500)
+    const maxPages = opts.maxPages ?? 20
+    const out: RevolutExpense[] = []
+    const seen = new Set<string>()
+    let to: string | undefined
+    for (let page = 0; page < maxPages; page++) {
+      const batch = await this.getExpenses({ from, to, count: pageSize })
+      let added = 0
+      for (const e of batch) {
+        if (seen.has(e.id)) continue
+        seen.add(e.id)
+        out.push(e)
+        added++
+      }
+      if (batch.length < pageSize || added === 0) break
+      to = batch[batch.length - 1].expense_date
+    }
+    return out
+  }
+
+  /** The receipt bytes (PDF or image — the caller sniffs which). application/octet-stream. */
+  getExpenseReceipt(expenseId: string, receiptId: string): Promise<Buffer> {
+    return this.requestBinary(`/expenses/${encodeURIComponent(expenseId)}/receipts/${encodeURIComponent(receiptId)}/content`)
+  }
+
   // ── Transport ──────────────────────────────────────────────────────────────
+  private async requestBinary(path: string, retried = false): Promise<Buffer> {
+    const token = await this.opts.getAccessToken()
+    const f = this.opts.fetchImpl ?? fetch
+    const res = await f(`${this.base}${path}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/octet-stream' },
+      cache: 'no-store',
+    })
+    if (res.status === 401 && !retried && this.opts.onUnauthorized) {
+      await this.opts.onUnauthorized()
+      return this.requestBinary(path, true)
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new RevolutApiError(res.status, `Revolut GET ${path} failed (${res.status}): ${redact(text)}`, text)
+    }
+    return Buffer.from(await res.arrayBuffer())
+  }
+
   private async request<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown, retried = false, version: 'v1' | 'v2' = 'v1'): Promise<T> {
     const token = await this.opts.getAccessToken()
     const f = this.opts.fetchImpl ?? fetch

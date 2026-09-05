@@ -87,6 +87,7 @@ function occ(row: ObligationRow, dueDate: ISODate, key: string, overdue: boolean
     sourceId: row.id,
     overdue,
     boatId: row.boatId ?? null,
+    sourceKey: row.sourceKey ?? null,
   }
 }
 

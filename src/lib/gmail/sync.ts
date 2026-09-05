@@ -408,12 +408,16 @@ export async function syncGmailInbox(queryOverride?: string): Promise<GmailSyncR
   // Inbox alias is actually configured — a no-op extra query is still a
   // query, and this feature is off by default until Beer sets the env var.
   const financeAddress = process.env.GMAIL_FINANCE_ADDRESS || null
-  const [knownStaff, knownSuppliers] = financeAddress
+  const [knownStaff, knownSuppliers, ownerProfiles] = financeAddress
     ? await Promise.all([
         supabase.from('staff').select('id, email').then(r => r.data ?? []),
         supabase.from('finance_suppliers').select('id, email').then(r => r.data ?? []),
+        // Beer/Jannah: an owner's own row in `staff` (they are also skippers) must never
+        // route their mail into the payable pipeline — see detect.ts's ownerEmails.
+        supabase.from('user_profiles').select('email').eq('role', 'admin').then(r => r.data ?? []),
       ])
-    : [[], []]
+    : [[], [], []]
+  const ownerEmails = ownerProfiles.map(p => p.email).filter((e): e is string => !!e)
 
   let imported = 0
   let skipped = 0
@@ -463,11 +467,14 @@ export async function syncGmailInbox(queryOverride?: string): Promise<GmailSyncR
     try {
       ota = detectOtaEmail({ fromEmail: message.from.email, subject: message.subject, bodyText: message.bodyText })
       finance = detectFinanceInvoice({
-        toAddresses: (message.to ?? []).map(t => t.email),
+        // To AND Cc: Gmail's `to:` search already matched a Cc'd alias, so the
+        // parse must too or a Cc'd invoice falls into the customer pipeline.
+        toAddresses: [...(message.to ?? []), ...(message.cc ?? [])].map(t => t.email),
         fromEmail: message.from.email,
         financeAddress,
         knownStaff,
         knownSuppliers,
+        ownerEmails,
       })
       const contactId = await findOrCreateContactByField(supabase, 'email', message.from.email, message.from.name)
       const conv = await findOrCreateConversation(supabase, contactId, message.threadId, message.subject, ota, finance?.category ?? null)
@@ -526,7 +533,7 @@ export async function syncGmailInbox(queryOverride?: string): Promise<GmailSyncR
         // invoice email at the finance alias gets its PDF(s) filed and
         // matched instead. See finance/inbox/ingest.ts; this is the only
         // branch that ever fetches an attachment, gated exactly per §6a.
-        ghostContext = await ingestFinanceMessage(supabase, message, inserted?.id ?? null, finance)
+        ghostContext = await ingestFinanceMessage(supabase, message, inserted?.id ?? null, finance, conversationId)
       } else {
         const cateringContext = await handlePendingCateringReply(supabase, message)
         ghostContext = cateringContext

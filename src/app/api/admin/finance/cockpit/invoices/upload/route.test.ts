@@ -12,7 +12,11 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/auth/require-admin', () => ({ requireAdmin: h.requireAdmin }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: h.createAdminClient }))
 vi.mock('@/lib/contacts/find-or-create', () => ({ findOrCreateContactByField: h.findOrCreateContactByField }))
-vi.mock('@/lib/finance/invoices/process', () => ({ processInvoiceFile: h.processInvoiceFile, loadSupplierById: h.loadSupplierById }))
+vi.mock('@/lib/finance/invoices/process', async importOriginal => ({
+  ...(await importOriginal<typeof import('@/lib/finance/invoices/process')>()), // keep the real isPdfBuffer
+  processInvoiceFile: h.processInvoiceFile,
+  loadSupplierById: h.loadSupplierById,
+}))
 
 import { POST } from './route'
 
@@ -30,7 +34,9 @@ function db(opts: { existingConversation?: Record<string, unknown> | null } = {}
   })
 }
 
-function pdfFile(name = 'factuur.pdf', bytes = 'x'.repeat(100), type = 'application/pdf'): File {
+const PDF_BYTES = '%PDF-1.4\n' + 'x'.repeat(100)
+
+function pdfFile(name = 'factuur.pdf', bytes = PDF_BYTES, type = 'application/pdf'): File {
   return new File([bytes], name, { type })
 }
 
@@ -69,8 +75,15 @@ describe('POST /api/admin/finance/cockpit/invoices/upload', () => {
 
   it('accepts a .pdf-named file even with a generic/missing mime type', async () => {
     h.createAdminClient.mockReturnValue(db().client)
-    const res = await POST(reqWith(pdfFile('factuur.pdf', 'x', '')))
+    const res = await POST(reqWith(pdfFile('factuur.pdf', PDF_BYTES, '')))
     expect(res.status).toBe(201)
+  })
+
+  it('rejects a .pdf-named, pdf-typed file whose bytes are not a PDF', async () => {
+    const res = await POST(reqWith(pdfFile('factuur.pdf', '<html>nope</html>')))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toContain('not a PDF')
+    expect(h.processInvoiceFile).not.toHaveBeenCalled()
   })
 
   it('rejects an empty file', async () => {
@@ -117,8 +130,10 @@ describe('POST /api/admin/finance/cockpit/invoices/upload', () => {
     expect(call.source).toBe('upload')
     expect(call.sourceMessageId).toBe('msg-1')
     expect(call.supplier).toBeNull()
-    expect(call.storagePath).toContain('upload/')
-    expect(call.storagePath).toContain('factuur.pdf')
+    // The route hands over a PREFIX; the key under it is generated inside processInvoiceFile.
+    expect(call.storagePrefix).toBe('upload')
+    expect(call.conversationId).toBe('conv-new')
+    expect(call.filename).toBe('factuur.pdf')
   })
 
   it('a second upload reuses the existing manual-upload conversation — no new contact/conversation created', async () => {

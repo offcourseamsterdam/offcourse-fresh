@@ -32,6 +32,13 @@ function db(txRows = TX_ROWS, obligationTitles: string[] = [], insertError: { co
         if (insertError) return { data: null, error: insertError }
         return { data: { id: 'ob-rec-1', ...(op(q, 'insert')!.args[0] as object) } }
       }
+      // Two different non-insert reads share this table: GET's bare
+      // `select('title')` (existing obligation titles, for detectRecurring's
+      // exclusion list) has no `.eq()` at all; upsertDerivedObligation's
+      // pre-check `select(...).eq('source_key', ...).maybeSingle()` does —
+      // distinguish them or the pre-check would misread the titles list as
+      // "a settled row already exists" and skip every confirm.
+      if (has(q, 'eq')) return { data: null }
       return { data: obligationTitles.map(title => ({ title })) }
     }
     if (q.table === 'finance_events') return { data: null }

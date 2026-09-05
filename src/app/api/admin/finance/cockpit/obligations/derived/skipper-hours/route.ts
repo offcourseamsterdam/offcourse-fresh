@@ -3,10 +3,9 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { addMonths, todayISO } from '@/lib/finance/cockpit/dates'
-import { logFinanceEvent } from '@/lib/finance/cockpit/events'
 import { accrueSkipperHours } from '@/lib/finance/cockpit/derived/skipper-hours'
 import { monthsQuerySchema, parseQuery, skipperHoursConfirmSchema, parseBody } from '@/lib/finance/cockpit/schemas'
-import { loadSkipperAccrualInputs } from './shared'
+import { loadSkipperAccrualInputs, upsertSkipperAccrualObligation } from './shared'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,6 +15,14 @@ const DEFAULT_MONTHS = 2
  * GET /api/admin/finance/cockpit/obligations/derived/skipper-hours?months= (default 2)
  * What is owed to skippers from our own scheduling data — a sailed shift is a
  * debt the moment it ends, whether or not an invoice has arrived yet.
+ *
+ * Returns every month in the window, open and closed alike — closed months
+ * aren't filtered out here even though cron/finance-sync-skipper-accrual
+ * (since 2026-09-05) already syncs them into real obligations automatically
+ * every night. Beer's manual "Bevestigen" (POST below) stays live over this
+ * same list on purpose: it's the fast path for "I just fixed a missing
+ * hourly rate, sync this month now" instead of waiting for tonight's cron —
+ * hiding a closed month here would take that away.
  */
 export async function GET(request: NextRequest) {
   const denied = await requireAdmin()
@@ -39,8 +46,13 @@ export async function GET(request: NextRequest) {
 /**
  * POST /api/admin/finance/cockpit/obligations/derived/skipper-hours
  * {selections: Array<{month, staffId}>}
- * Confirms specific month+staff accruals into finance_obligations (kind: 'crew').
- * Idempotent via source_key ('skipper-hours:2026-08:<staffId>').
+ *
+ * Manually force a month+staff accrual into finance_obligations right now,
+ * instead of waiting for the nightly auto-sync — useful right after fixing a
+ * missing hourly rate, or to pull a still-open month in early. Closed months
+ * no longer need this (2026-09-05: the cron does it automatically), but the
+ * button stays: it's the same idempotent upsert either way (see shared.ts),
+ * so clicking it is never wrong, just sometimes unnecessary.
  */
 export async function POST(request: NextRequest) {
   const denied = await requireAdmin()
@@ -57,6 +69,7 @@ export async function POST(request: NextRequest) {
     const result = accrueSkipperHours(shifts, timeEntries, bonuses, staff, { today: todayISO() })
 
     const created: Array<{ key: string; id: string }> = []
+    const updated: Array<{ key: string; id: string }> = []
     const skipped: Array<{ key: string; reason: string }> = []
 
     for (const selection of parsed.data.selections) {
@@ -66,45 +79,14 @@ export async function POST(request: NextRequest) {
         skipped.push({ key: sourceKey, reason: 'Geen opgebouwde uren gevonden voor deze maand/schipper' })
         continue
       }
-      if (accrual.unpricedHours > 0) {
-        skipped.push({ key: sourceKey, reason: `${accrual.unpricedHours} uur zonder uurtarief — stel eerst een uurtarief in` })
-        continue
-      }
 
-      const { data, error } = await supabase
-        .from('finance_obligations')
-        .insert({
-          title: `${accrual.staffName} — uren ${selection.month}`,
-          kind: 'crew',
-          amount_cents: accrual.amountCents,
-          due_date: accrual.dueDate,
-          source_key: sourceKey,
-          notes: `Automatisch berekend uit shifts en geklokte uren (${accrual.hours} uur).`,
-          status: 'open',
-        })
-        .select('id')
-        .single()
-
-      if (error) {
-        if (error.code === '23505') {
-          skipped.push({ key: sourceKey, reason: 'already existed' })
-          continue
-        }
-        return apiError(error.message, 500)
-      }
-
-      created.push({ key: sourceKey, id: data!.id })
-      await logFinanceEvent(supabase, {
-        event_type: 'obligation_created',
-        actor: 'user',
-        entity_type: 'obligation',
-        entity_id: data!.id,
-        delta_cents: accrual.amountCents,
-        payload: { title: `${accrual.staffName} — uren ${selection.month}`, kind: 'crew', due_date: accrual.dueDate, source_key: sourceKey },
-      })
+      const r = await upsertSkipperAccrualObligation(supabase, accrual, 'user')
+      if (r.status === 'created') created.push({ key: r.sourceKey, id: r.id! })
+      else if (r.status === 'updated') updated.push({ key: r.sourceKey, id: r.id! })
+      else skipped.push({ key: r.sourceKey, reason: r.reason! })
     }
 
-    return apiOk({ created, skipped })
+    return apiOk({ created, updated, skipped })
   } catch (err) {
     console.error('[finance/cockpit/obligations/derived/skipper-hours POST]', err)
     return apiError(err instanceof Error ? err.message : 'Could not confirm skipper-hours obligations', 500)

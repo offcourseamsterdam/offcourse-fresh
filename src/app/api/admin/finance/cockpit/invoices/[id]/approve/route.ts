@@ -5,26 +5,30 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { logFinanceEvent } from '@/lib/finance/cockpit/events'
 import { isUuid, invoiceApproveSchema, parseBody } from '@/lib/finance/cockpit/schemas'
 import { addDays, todayISO } from '@/lib/finance/cockpit/dates'
-import type { ExtractedInvoiceFields } from '@/lib/finance/invoices/match'
+import type { ExtractedInvoiceFields, InvoiceCheck } from '@/lib/finance/invoices/match'
+import { ensureInvoiceObligation, recordInvoiceDecision, resolvePayableAmount, supersedeCrewAccrual } from '@/lib/finance/invoices/decide'
 
 export const dynamic = 'force-dynamic'
 
 const DEFAULT_DUE_DAYS = 14
 
 /**
- * POST /api/admin/finance/cockpit/invoices/[id]/approve {note?}
+ * POST /api/admin/finance/cockpit/invoices/[id]/approve {note?, amount_cents?}
  *
  * §6: "Goedkeuren → approved + finance_obligations row (kind='invoice')".
  * Records decision='approved' when every check passed, 'approved_override'
  * when Beer is overriding a needs_review invoice — the checks themselves are
  * never edited (see match.ts's own doc comment), only the human's decision
- * on top of them. Requires an extracted amount: with nothing to pay, there's
- * nothing to create an obligation for — reject or fix the PDF instead.
+ * on top of them.
  *
- * Deliberately doesn't create a Revolut payment draft yet ("Goedkeuren &
- * betalen" in the plan) — that's the next piece; this just gets the invoice
- * into the obligations list so it's not lost, the same way a manually
- * entered obligation would be.
+ * The amount that becomes the obligation is decided by resolvePayableAmount
+ * (invoices/decide.ts): the extracted number only when the `amount` check
+ * passed, otherwise hours × rate, otherwise a number Beer typed in
+ * `amount_cents`. Never Gemini's reading when the pipeline just said it was
+ * wrong. Order of writes is obligation → decision → supersede, each step
+ * idempotent, so a retry after a failure can't double-count (see decide.ts).
+ *
+ * Deliberately doesn't create a Revolut payment draft — that's pay/route.ts.
  */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const denied = await requireAdmin()
@@ -47,56 +51,53 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (invoice.decision) return apiError(`Invoice already ${invoice.decision === 'rejected' ? 'rejected' : 'approved'}`, 400)
 
     const extracted = invoice.extracted as unknown as ExtractedInvoiceFields | null
-    const amountCents = extracted?.amountCents ?? invoice.expected_amount_cents
-    if (!amountCents || amountCents <= 0) {
-      return apiError('No amount on this invoice to approve — fix the extraction or reject it instead', 400)
-    }
+    const amount = resolvePayableAmount(
+      { extracted, expected_amount_cents: invoice.expected_amount_cents, checks: (invoice.checks as unknown as InvoiceCheck[]) ?? [] },
+      parsed.data.amount_cents,
+    )
+    if (!amount.ok) return apiError(amount.error, 400, { suggested_cents: amount.suggestedCents })
 
     const dueDate = extracted?.invoiceDate ? addDays(extracted.invoiceDate, DEFAULT_DUE_DAYS) : addDays(todayISO(), DEFAULT_DUE_DAYS)
     const decision = invoice.status === 'ready' ? 'approved' : 'approved_override'
     const supplierName = invoice.supplier?.name ?? extracted?.supplierName ?? 'onbekende leverancier'
     const title = `Factuur ${supplierName}${extracted?.invoiceNumber ? ` #${extracted.invoiceNumber}` : ''}`
 
-    const { data: obligation, error: obligationErr } = await supabase
-      .from('finance_obligations')
-      .insert({
-        title,
-        kind: 'invoice',
-        amount_cents: amountCents,
-        due_date: dueDate,
-        boat_id: invoice.supplier?.default_boat_id ?? null,
-        invoice_id: invoice.id,
-        status: 'open',
-      })
-      .select('id')
-      .single()
-    if (obligationErr || !obligation) return apiError(obligationErr?.message ?? 'Could not create obligation', 500)
+    const obligation = await ensureInvoiceObligation(supabase, {
+      invoiceId: invoice.id,
+      title,
+      amountCents: amount.amountCents,
+      dueDate,
+      boatId: invoice.supplier?.default_boat_id ?? null,
+    })
 
-    const { data: updated, error: updateErr } = await supabase
-      .from('finance_invoices')
-      .update({
-        status: 'approved',
-        decision,
-        decided_by: 'admin',
-        decided_at: new Date().toISOString(),
-        decision_note: parsed.data.note ?? null,
-        obligation_id: obligation.id,
-      })
-      .eq('id', id)
-      .select('*')
-      .single()
-    if (updateErr || !updated) return apiError(updateErr?.message ?? 'Could not update invoice', 500)
+    const updated = await recordInvoiceDecision(supabase, id, {
+      status: 'approved',
+      decision,
+      decision_note: parsed.data.note ?? null,
+      obligation_id: obligation.id,
+    })
+    if (!updated) return apiError('Invoice was already decided by another request', 409)
+
+    const superseded = await supersedeCrewAccrual(supabase, { invoiceId: id, matchedShiftId: invoice.matched_shift_id, amountCents: amount.amountCents })
 
     await logFinanceEvent(supabase, {
       event_type: 'invoice_approved',
       actor: 'user',
       entity_type: 'invoice',
       entity_id: id,
-      delta_cents: amountCents,
-      payload: { title, decision, obligation_id: obligation.id, due_date: dueDate },
+      delta_cents: amount.amountCents,
+      payload: {
+        title,
+        decision,
+        obligation_id: obligation.id,
+        obligation_reused: obligation.reused,
+        due_date: dueDate,
+        amount_source: amount.source,
+        superseded_crew_obligation_id: superseded?.obligationId ?? null,
+      },
     })
 
-    return apiOk(updated)
+    return apiOk({ ...updated, amount_source: amount.source, superseded })
   } catch (err) {
     console.error('[finance/cockpit/invoices/[id]/approve]', err)
     return apiError(err instanceof Error ? err.message : 'Could not approve invoice', 500)

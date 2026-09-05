@@ -6,10 +6,18 @@ const h = vi.hoisted(() => ({
   getAttachmentData: vi.fn(),
   uploadFinanceAttachment: vi.fn(),
   extractInvoiceFields: vi.fn(),
+  notifyInvoiceArrived: vi.fn().mockResolvedValue(undefined),
+  ingestFinanceEmailDocuments: vi.fn(),
+  matchNewDocuments: vi.fn().mockResolvedValue(undefined),
 }))
 vi.mock('@/lib/gmail/client', () => ({ getAttachmentData: h.getAttachmentData }))
 vi.mock('@/lib/finance/attachment-storage', () => ({ uploadFinanceAttachment: h.uploadFinanceAttachment }))
 vi.mock('@/lib/finance/invoices/extract', () => ({ extractInvoiceFields: h.extractInvoiceFields }))
+// The Slack nudge (invoices/notify.ts) is a side effect of a successful ingest — never a real DM from a test run.
+vi.mock('@/lib/finance/invoices/notify', () => ({ notifyInvoiceArrived: h.notifyInvoiceArrived }))
+// Non-staff mail is the Expense Record pipeline's business (plan 2026-09-05 §2.3); here we only assert the hand-off.
+vi.mock('@/lib/finance/expenses/ingest-email', () => ({ ingestFinanceEmailDocuments: h.ingestFinanceEmailDocuments }))
+vi.mock('@/lib/finance/expenses/match-orchestrator', () => ({ matchNewDocuments: h.matchNewDocuments }))
 
 const state = vi.hoisted(() => ({
   staff: [] as Record<string, unknown>[],
@@ -83,6 +91,8 @@ const { ingestFinanceMessage } = await import('./ingest')
 const { createAdminClient } = await import('@/lib/supabase/admin')
 
 const supabase = createAdminClient()
+// Every call belongs to a conversation (the Slack deep link target); the tests don't care which.
+const ingest = (msg: GmailMessage, rowId: string | null, det: FinanceInvoiceDetection) => ingestFinanceMessage(supabase, msg, rowId, det, 'conv-1')
 
 function gmailMessage(overrides: Partial<GmailMessage> = {}): GmailMessage {
   return {
@@ -90,6 +100,7 @@ function gmailMessage(overrides: Partial<GmailMessage> = {}): GmailMessage {
     threadId: 'thread-1',
     from: { email: 'mare@offcourseamsterdam.com', name: 'Mare' },
     to: [{ email: 'facturen@offcourseamsterdam.com', name: 'Facturen' }],
+    cc: [],
     subject: 'Factuur augustus',
     messageIdHeader: null,
     bodyText: 'zie bijlage',
@@ -102,6 +113,10 @@ function gmailMessage(overrides: Partial<GmailMessage> = {}): GmailMessage {
 function detection(overrides: Partial<FinanceInvoiceDetection> = {}): FinanceInvoiceDetection {
   return { category: 'finance', senderKind: 'unknown', staffId: null, supplierId: null, trusted: false, ...overrides }
 }
+
+// Beer, 2026-09-05: an owner (Beer/Jannah, user_profiles role=admin) forwarding a receipt is an
+// expense document, not "invoicing himself" — even though the same person also has a `staff` row.
+const OWNER = { senderKind: 'owner' as const, staffId: 'staff-1', trusted: true }
 
 const FULL_MATCH_EXTRACTED = {
   invoiceNumber: 'INV-1',
@@ -126,7 +141,11 @@ beforeEach(() => {
   h.getAttachmentData.mockResolvedValue(Buffer.from('%PDF-1.4 fake'))
   h.uploadFinanceAttachment.mockResolvedValue({ ok: true })
   h.extractInvoiceFields.mockResolvedValue({ fields: FULL_MATCH_EXTRACTED, confidence: {} })
+  h.ingestFinanceEmailDocuments.mockResolvedValue({ documentIds: ['doc-1'], kind: 'invoice_attached', summary: 'Factuur van Jachthaven Westerdok · 1 document vastgelegd' })
 })
+
+// Every non-staff test below uses this: a skipper is a payable, everyone else is an expense document.
+const STAFF = { senderKind: 'staff' as const, staffId: 'staff-1' }
 
 describe('ingestFinanceMessage', () => {
   it('known staff, first invoice ever — auto-creates their supplier row, needs_review only on the missing iban', async () => {
@@ -134,7 +153,7 @@ describe('ingestFinanceMessage', () => {
     state.shifts.push({ id: 'shift-1', booking_id: 'booking-uuid-1', date: '2026-08-30', start_at: '2026-08-30T14:00:00Z', end_at: '2026-08-30T18:00:00Z', staff_id: 'staff-1', status: 'confirmed' })
     state.bookings.push({ id: 'booking-uuid-1', booking_id: 'OC-2026-00001' })
 
-    const result = await ingestFinanceMessage(supabase, gmailMessage(), 'msgrow-1', detection({ senderKind: 'staff', staffId: 'staff-1', trusted: true }))
+    const result = await ingest(gmailMessage(), 'msgrow-1', detection({ senderKind: 'staff', staffId: 'staff-1', trusted: true }))
 
     expect(state.financeSuppliers).toHaveLength(1)
     expect(state.financeSuppliers[0]).toMatchObject({ name: 'Mare', staff_id: 'staff-1' })
@@ -156,61 +175,70 @@ describe('ingestFinanceMessage', () => {
     state.staff.push({ id: 'staff-1', name: 'Mare', hourly_rate_cents: 3750 })
     state.financeSuppliers.push({ id: 'sup-existing', name: 'Mare', staff_id: 'staff-1', iban: 'NL01TEST0123456789' })
 
-    await ingestFinanceMessage(supabase, gmailMessage(), 'msgrow-1', detection({ senderKind: 'staff', staffId: 'staff-1', trusted: true }))
+    await ingest(gmailMessage(), 'msgrow-1', detection({ senderKind: 'staff', staffId: 'staff-1', trusted: true }))
 
     expect(state.financeSuppliers).toHaveLength(1)
     expect(state.financeInvoices[0].supplier_id).toBe('sup-existing')
   })
 
-  it('known supplier already on file with iban set — full end-to-end match, status ready', async () => {
-    state.staff.push({ id: 'staff-1', name: 'Mare', hourly_rate_cents: 3750 })
-    state.financeSuppliers.push({ id: 'sup-1', name: 'Mare', staff_id: 'staff-1', iban: 'NL01TEST0123456789' })
-    state.shifts.push({ id: 'shift-1', booking_id: 'booking-uuid-1', date: '2026-08-30', start_at: '2026-08-30T14:00:00Z', end_at: '2026-08-30T18:00:00Z', staff_id: 'staff-1', status: 'confirmed' })
-    state.bookings.push({ id: 'booking-uuid-1', booking_id: 'OC-2026-00001' })
+  it('an owner (Beer/Jannah) forwarding mail is never a payable, even though they also have a staff row — routed to the Expense Record pipeline', async () => {
+    state.staff.push({ id: 'staff-1', name: 'Beer', hourly_rate_cents: 3750 })
 
-    const result = await ingestFinanceMessage(supabase, gmailMessage(), 'msgrow-1', detection({ senderKind: 'supplier', supplierId: 'sup-1', trusted: true }))
+    const result = await ingest(gmailMessage({ from: { email: 'info@offcourseamsterdam.com', name: 'Beer' } }), 'msgrow-1', detection(OWNER))
 
-    expect(state.financeInvoices[0].status).toBe('ready')
-    expect(result).toBe('factuur.pdf: klaar om te betalen')
+    expect(h.ingestFinanceEmailDocuments).toHaveBeenCalledTimes(1)
+    expect(state.financeInvoices).toHaveLength(0)
+    expect(state.financeSuppliers).toHaveLength(0)
+    expect(h.extractInvoiceFields).not.toHaveBeenCalled()
+    expect(result).toBe('Factuur van Jachthaven Westerdok · 1 document vastgelegd')
   })
 
-  it('known non-skipper supplier (no staff_id) — never attempts shift matching', async () => {
+  it('a known NON-staff supplier (marina, webshop) is not a payable — routed to the Expense Record pipeline, no finance_invoices row', async () => {
     state.financeSuppliers.push({ id: 'sup-marina', name: 'Jachthaven Westerdok', staff_id: null, iban: 'NL01TEST0123456789' })
-    h.extractInvoiceFields.mockResolvedValue({ fields: { ...FULL_MATCH_EXTRACTED, hours: null, rateCents: null }, confidence: {} })
 
-    await ingestFinanceMessage(supabase, gmailMessage(), 'msgrow-1', detection({ senderKind: 'supplier', supplierId: 'sup-marina', trusted: true }))
+    const result = await ingest(gmailMessage({ from: { email: 'info@westerdok.nl', name: 'Jachthaven' } }), 'msgrow-1', detection({ senderKind: 'supplier', supplierId: 'sup-marina', trusted: true }))
 
-    const invoice = state.financeInvoices[0]
-    expect(invoice.matched_shift_id).toBeNull()
-    const checks = invoice.checks as { key: string; ok: boolean; detail: string }[]
-    expect(checks.find(c => c.key === 'skipper')?.detail).toContain('Jachthaven Westerdok')
+    expect(h.ingestFinanceEmailDocuments).toHaveBeenCalledTimes(1)
+    expect(h.ingestFinanceEmailDocuments.mock.calls[0][2]).toBe('msgrow-1')
+    expect(h.matchNewDocuments).toHaveBeenCalledWith(expect.anything(), ['doc-1'])
+    expect(state.financeInvoices).toHaveLength(0)
+    expect(h.extractInvoiceFields).not.toHaveBeenCalled()
+    expect(result).toBe('Factuur van Jachthaven Westerdok · 1 document vastgelegd')
   })
 
-  it('unknown sender with a PDF attached — invoice created with no supplier, needs_review', async () => {
-    const result = await ingestFinanceMessage(supabase, gmailMessage(), 'msgrow-1', detection())
+  it('an unknown sender with a PDF is an expense document, never an unpaid invoice waiting for approval', async () => {
+    await ingest(gmailMessage({ from: { email: 'noreply@bol.com', name: 'bol.com' } }), 'msgrow-1', detection())
 
-    expect(state.financeInvoices).toHaveLength(1)
-    expect(state.financeInvoices[0].supplier_id).toBeNull()
-    expect(state.financeInvoices[0].status).toBe('needs_review')
-    expect(result).toBe('factuur.pdf: nog te controleren')
+    expect(h.ingestFinanceEmailDocuments).toHaveBeenCalledTimes(1)
+    expect(state.financeInvoices).toHaveLength(0)
+    expect(h.notifyInvoiceArrived).not.toHaveBeenCalled()
+  })
+
+  it('an unknown sender without attachments still goes through the expense pipeline (it may be an order confirmation)', async () => {
+    h.ingestFinanceEmailDocuments.mockResolvedValue({ documentIds: [], kind: 'other', summary: 'Geen financiële inhoud herkend.' })
+    const result = await ingest(gmailMessage({ attachments: [] }), 'msgrow-1', detection({ trusted: false }))
+
+    expect(h.ingestFinanceEmailDocuments).toHaveBeenCalledTimes(1)
+    expect(h.matchNewDocuments).not.toHaveBeenCalled()
+    expect(result).toBe('Geen financiële inhoud herkend.')
+  })
+
+  it('a matcher failure never wedges the poll — the documents are filed, the summary still returns', async () => {
+    h.matchNewDocuments.mockRejectedValueOnce(new Error('db down'))
+    const result = await ingest(gmailMessage(), 'msgrow-1', detection())
+    expect(result).toContain('1 document vastgelegd')
   })
 
   it('a PDF attached but no messages-row id (should be unreachable in practice) — skips rather than inserting with a null attachment', async () => {
-    const result = await ingestFinanceMessage(supabase, gmailMessage(), null, detection({ trusted: true }))
+    const result = await ingest(gmailMessage(), null, detection({ ...STAFF, trusted: true }))
 
     expect(result).toContain('geen bericht-id')
     expect(state.financeInvoices).toHaveLength(0)
-  })
-
-  it('unknown sender, no PDF attachment — flags for manual review, creates no invoice', async () => {
-    const result = await ingestFinanceMessage(supabase, gmailMessage({ attachments: [] }), null, detection({ trusted: false }))
-
-    expect(result).toContain('Onbekende afzender')
-    expect(state.financeInvoices).toHaveLength(0)
+    expect(h.ingestFinanceEmailDocuments).not.toHaveBeenCalled()
   })
 
   it('trusted sender, no PDF attachment — silent no-op', async () => {
-    const result = await ingestFinanceMessage(supabase, gmailMessage({ attachments: [] }), null, detection({ senderKind: 'staff', staffId: 'staff-1', trusted: true }))
+    const result = await ingest(gmailMessage({ attachments: [] }), 'msgrow-1', detection({ senderKind: 'staff', staffId: 'staff-1', trusted: true }))
 
     expect(result).toBeNull()
     expect(state.financeInvoices).toHaveLength(0)
@@ -220,7 +248,7 @@ describe('ingestFinanceMessage', () => {
   it('extraction fails — invoice row still exists, downgraded to needs_review with a note, never throws', async () => {
     h.extractInvoiceFields.mockRejectedValue(new Error('Gemini 503'))
 
-    const result = await ingestFinanceMessage(supabase, gmailMessage(), 'msgrow-1', detection({ trusted: false }))
+    const result = await ingest(gmailMessage(), 'msgrow-1', detection(STAFF))
 
     expect(state.financeInvoices).toHaveLength(1)
     expect(state.financeInvoices[0].status).toBe('needs_review')
@@ -231,15 +259,14 @@ describe('ingestFinanceMessage', () => {
   it('attachment download fails — no invoice row left behind, never throws', async () => {
     h.getAttachmentData.mockRejectedValue(new Error('Gmail API 500'))
 
-    const result = await ingestFinanceMessage(supabase, gmailMessage(), 'msgrow-1', detection({ trusted: false }))
+    const result = await ingest(gmailMessage(), 'msgrow-1', detection(STAFF))
 
     expect(state.financeInvoices).toHaveLength(0)
     expect(result).toContain('opslaan mislukt')
   })
 
   it('two PDF attachments on one message — both processed independently', async () => {
-    const result = await ingestFinanceMessage(
-      supabase,
+    const result = await ingest(
       gmailMessage({
         attachments: [
           { filename: 'a.pdf', mimeType: 'application/pdf', attachmentId: 'att-a', size: 1 },
@@ -247,10 +274,69 @@ describe('ingestFinanceMessage', () => {
         ],
       }),
       'msgrow-1',
-      detection({ trusted: false }),
+      detection(STAFF),
     )
 
     expect(state.financeInvoices).toHaveLength(2)
     expect(result).toBe('a.pdf: nog te controleren · b.pdf: nog te controleren')
+  })
+
+  it('the storage key is server-generated under the message prefix — never the sender\'s filename', async () => {
+    await ingest(gmailMessage({ attachments: [{ filename: '../../etc/passwd.pdf', mimeType: 'application/pdf', attachmentId: 'att-1', size: 1 }] }), 'msgrow-1', detection(STAFF))
+
+    const [, storagePath] = h.uploadFinanceAttachment.mock.calls[0]
+    expect(storagePath).toMatch(/^email\/gmail-msg-1\/[0-9a-f-]{36}\.pdf$/)
+    expect(storagePath).not.toContain('passwd')
+    expect(state.financeInvoices[0].file_path).toBe(storagePath)
+    // The display name survives, neutralised, in its own column.
+    expect(state.financeInvoices[0].original_filename).toBe('.._.._etc_passwd.pdf')
+  })
+
+  it('two attachments with the same filename get two different keys', async () => {
+    await ingest(
+      gmailMessage({
+        attachments: [
+          { filename: 'factuur.pdf', mimeType: 'application/pdf', attachmentId: 'att-a', size: 1 },
+          { filename: 'factuur.pdf', mimeType: 'application/pdf', attachmentId: 'att-b', size: 1 },
+        ],
+      }),
+      'msgrow-1',
+      detection(STAFF),
+    )
+    const keys = h.uploadFinanceAttachment.mock.calls.map(c => c[1])
+    expect(new Set(keys).size).toBe(2)
+    expect(state.financeInvoices).toHaveLength(2)
+  })
+
+  it('an oversized attachment is skipped before download, the rest of the message still processes', async () => {
+    const result = await ingest(
+      gmailMessage({
+        attachments: [
+          { filename: 'huge.pdf', mimeType: 'application/pdf', attachmentId: 'att-huge', size: 16 * 1024 * 1024 },
+          { filename: 'ok.pdf', mimeType: 'application/pdf', attachmentId: 'att-ok', size: 1 },
+        ],
+      }),
+      'msgrow-1',
+      detection(STAFF),
+    )
+    expect(h.getAttachmentData).toHaveBeenCalledTimes(1)
+    expect(h.getAttachmentData).toHaveBeenCalledWith('gmail-msg-1', 'att-ok')
+    expect(state.financeInvoices).toHaveLength(1)
+    expect(result).toContain('huge.pdf: te groot')
+    expect(result).toContain('ok.pdf: nog te controleren')
+  })
+
+  it('bytes that are not a PDF (despite the mime type) are refused before anything is stored', async () => {
+    h.getAttachmentData.mockResolvedValue(Buffer.from('<html>not a pdf</html>'))
+    const result = await ingest(gmailMessage(), 'msgrow-1', detection(STAFF))
+    expect(h.uploadFinanceAttachment).not.toHaveBeenCalled()
+    expect(state.financeInvoices).toHaveLength(0)
+    expect(result).toContain('geen geldige PDF')
+  })
+
+  it('a processed invoice triggers exactly one Slack nudge, deep-linked to its conversation', async () => {
+    await ingest(gmailMessage(), 'msgrow-1', detection({ senderKind: 'staff', staffId: 'staff-1', trusted: true }))
+    expect(h.notifyInvoiceArrived).toHaveBeenCalledTimes(1)
+    expect(h.notifyInvoiceArrived).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conv-1', filename: 'factuur.pdf', status: 'needs_review' }))
   })
 })

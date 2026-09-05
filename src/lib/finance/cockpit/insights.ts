@@ -37,6 +37,10 @@ export interface InsightInput {
   now?: ISODate
   /** Completed cruises older than this many days with no skipper invoice (Phase 4). */
   missingInvoiceCount?: number
+  /** Expense Records (plan 2026-09-05) flagged needs_review: VAT conflict, near-tie match, duplicate suspicion. */
+  expenseReviewCount?: number
+  /** Expense Records waiting on one click: partially matched. */
+  expensePartialCount?: number
 }
 
 const SYNC_STALE_HOURS = 6
@@ -178,6 +182,26 @@ export function buildInsights(input: InsightInput): Insight[] {
     })
   }
 
+  if ((input.expenseReviewCount ?? 0) > 0) {
+    const n = input.expenseReviewCount as number
+    out.push({
+      key: 'expenses-need-review',
+      level: 'warning',
+      message: `${n} uitgave${n === 1 ? '' : 'n'} ${n === 1 ? 'heeft' : 'hebben'} controle nodig (BTW-conflict of twijfel over de koppeling)`,
+      href: '/finance/expenses',
+      actionLabel: 'Bekijk uitgaven',
+    })
+  }
+  if ((input.expensePartialCount ?? 0) > 0) {
+    const n = input.expensePartialCount as number
+    out.push({
+      key: 'expenses-partial',
+      level: 'info',
+      message: `${n} uitgave${n === 1 ? '' : 'n'} ${n === 1 ? 'wacht' : 'wachten'} op één klik om de koppeling te bevestigen`,
+      href: '/finance/expenses',
+      actionLabel: 'Bevestigen',
+    })
+  }
   if ((input.missingInvoiceCount ?? 0) > 0) {
     const n = input.missingInvoiceCount as number
     out.push({
@@ -186,8 +210,10 @@ export function buildInsights(input: InsightInput): Insight[] {
       message: n === 1
         ? 'Van één gevaren tocht is nog geen schippersfactuur binnen.'
         : `Van ${n} gevaren tochten is nog geen schippersfactuur binnen.`,
-      // §6a: invoice review lives in the operations inbox, not a finance sub-page.
-      href: '/inbox',
+      // Its own desk since 2026-09-05 (InboxShell's scope split) — never
+      // '/inbox': a finance-category thread is now hard-excluded from the
+      // operations inbox, so that link would always be a dead end.
+      href: '/finance/inbox',
     })
   }
 

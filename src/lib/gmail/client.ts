@@ -63,6 +63,8 @@ export interface GmailMessage {
    * arrived on — see `finance/inbox/detect.ts`, the first consumer.
    */
   to: GmailSender[]
+  /** Cc recipients, parsed the same way. A skipper who Cc's the finance alias must still be routed to it — Gmail's `to:` search operator matches Cc, so the message is fetched either way; only the header parse decided routing. */
+  cc: GmailSender[]
   subject: string
   /** The RFC 2822 `Message-ID` header — needed for In-Reply-To/References on a reply, distinct from Gmail's own `id`. */
   messageIdHeader: string | null
@@ -214,6 +216,7 @@ export async function getMessage(id: string): Promise<GmailMessage> {
     threadId: json.threadId,
     from: extractSenderEmail(header('From')),
     to: extractRecipients(header('To')),
+    cc: extractRecipients(header('Cc')),
     subject: header('Subject'),
     messageIdHeader: header('Message-ID') || null,
     bodyText,
@@ -239,6 +242,12 @@ async function getMessageIdHeader(id: string): Promise<string | null> {
   return headers.find(h => h.name.toLowerCase() === 'message-id')?.value ?? null
 }
 
+export interface OutboundAttachment {
+  filename: string
+  mimeType: string
+  content: Buffer
+}
+
 interface ComposeAndSendParams {
   to: string
   subject: string
@@ -246,6 +255,73 @@ interface ComposeAndSendParams {
   threadId?: string | null
   /** Gmail's own id (not the RFC header) of the message being replied to, if any. */
   inReplyToMessageId?: string | null
+  /** Files to attach — the mail becomes multipart/mixed. Used to forward invoices to the bookkeeping mailbox. */
+  attachments?: OutboundAttachment[]
+}
+
+/** RFC 2231-free, conservative filename for a Content-Disposition header: ASCII only, no quotes/CR/LF. */
+function safeAttachmentFilename(name: string): string {
+  // Quotes, backslashes and control characters are dropped (they'd end or escape the header value); other non-ASCII becomes '_'.
+  const cleaned = name.replace(/["\\\x00-\x1f\x7f]/g, '').replace(/[^\x20-\x7E]/g, '_').trim()
+  return cleaned || 'attachment'
+}
+
+export interface MimeMessageInput {
+  from: string
+  to: string
+  subject: string
+  body: string
+  inReplyTo?: string | null
+  attachments?: OutboundAttachment[]
+  /** Injected for deterministic tests; production uses a random boundary. */
+  boundary?: string
+}
+
+/**
+ * Builds the raw RFC 822 message Gmail's send endpoint wants. Plain text when
+ * there is nothing to attach (byte-identical to what we always sent);
+ * multipart/mixed with base64 parts when there is. Pure so the tests can read it.
+ */
+export function buildMimeMessage(input: MimeMessageInput): string {
+  const headers = [
+    `To: ${input.to}`,
+    `From: ${input.from}`,
+    `Subject: ${encodeRfc2047(input.subject)}`,
+    ...(input.inReplyTo ? [`In-Reply-To: ${input.inReplyTo}`, `References: ${input.inReplyTo}`] : []),
+  ]
+  const attachments = input.attachments ?? []
+  if (attachments.length === 0) {
+    return [...headers, 'Content-Type: text/plain; charset="UTF-8"', '', input.body].join('\r\n')
+  }
+  const boundary = input.boundary ?? `oc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`
+  const parts: string[] = [
+    ...headers,
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    // The body is UTF-8 (accents, €); declaring 7bit would let a strict receiver mangle it.
+    'Content-Transfer-Encoding: 8bit',
+    '',
+    input.body,
+  ]
+  for (const a of attachments) {
+    const filename = safeAttachmentFilename(a.filename)
+    // A header value is never a place for caller-supplied bytes: anything that isn't a plain type/subtype is octet-stream.
+    const mimeType = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i.test(a.mimeType) ? a.mimeType : 'application/octet-stream'
+    parts.push(
+      `--${boundary}`,
+      `Content-Type: ${mimeType}; name="${filename}"`,
+      'Content-Transfer-Encoding: base64',
+      `Content-Disposition: attachment; filename="${filename}"`,
+      '',
+      // 76-char lines per RFC 2045.
+      a.content.toString('base64').replace(/(.{76})/g, '$1\r\n'),
+    )
+  }
+  parts.push(`--${boundary}--`, '')
+  return parts.join('\r\n')
 }
 
 /**
@@ -278,17 +354,10 @@ async function composeAndSend(params: ComposeAndSendParams): Promise<{ id: strin
   // no in-reply-to) keeps its subject as given.
   const isReply = !!(params.threadId || inReplyToHeader)
   const subjectLine = !isReply || /^re:/i.test(params.subject) ? params.subject : `Re: ${params.subject}`
-  const encodedSubject = encodeRfc2047(subjectLine)
-  const lines = [
-    `To: ${params.to}`,
-    `From: ${from}`,
-    `Subject: ${encodedSubject}`,
-    ...(inReplyToHeader ? [`In-Reply-To: ${inReplyToHeader}`, `References: ${inReplyToHeader}`] : []),
-    'Content-Type: text/plain; charset="UTF-8"',
-    '',
-    params.body,
-  ]
-  const raw = Buffer.from(lines.join('\r\n'), 'utf-8').toString('base64url')
+  const raw = Buffer.from(
+    buildMimeMessage({ from, to: params.to, subject: subjectLine, body: params.body, inReplyTo: inReplyToHeader, attachments: params.attachments }),
+    'utf-8',
+  ).toString('base64url')
 
   const json = await gmailFetch<{ id: string; threadId: string }>('/messages/send', {
     method: 'POST',
@@ -326,6 +395,7 @@ export async function sendNewEmail(params: {
   subject: string
   body: string
   threadId?: string | null
+  attachments?: OutboundAttachment[]
 }): Promise<{ id: string; threadId: string }> {
   return composeAndSend(params)
 }

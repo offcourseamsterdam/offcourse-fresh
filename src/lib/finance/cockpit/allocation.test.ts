@@ -212,6 +212,56 @@ describe('planMonthlyAllocation — per-target caps', () => {
   })
 })
 
+describe('planMonthlyAllocation — marketing reserve', () => {
+  it('a 25% reserve shrinks the pot before anything is funded, and reports the held-back amount', () => {
+    const goals = [goal({ monthlyFundingCents: 1_000_000 })] // wants more than the whole pot
+    const c = cockpitFor({ cashCents: 1_000_000, goals })
+    expect(c.availableForGrowthCents).toBe(1_000_000)
+
+    const plan = planMonthlyAllocation(c, goals, settings({ marketingReservePct: 25 }))
+    expect(plan.availableCents).toBe(1_000_000) // unchanged — the full growth pot, for display
+    expect(plan.reservedCents).toBe(250_000)
+    expect(plan.allocatedCents).toBe(750_000) // the goal took everything OUTSIDE the reserve
+    expect(plan.remainingCents).toBe(250_000) // exactly the untouched reserve
+  })
+
+  it('0% (or unset) reserves nothing — identical to the pre-reserve behaviour', () => {
+    const goals = [goal({ monthlyFundingCents: 1_000_000 })]
+    const c = cockpitFor({ cashCents: 1_000_000, goals })
+    const withZero = planMonthlyAllocation(c, goals, settings({ marketingReservePct: 0 }))
+    const unset = planMonthlyAllocation(c, goals, settings())
+    expect(withZero).toEqual(unset)
+    expect(withZero.reservedCents).toBe(0)
+    expect(withZero.allocatedCents).toBe(1_000_000)
+  })
+
+  it('100% reserves the entire pot — nothing is ever allocated', () => {
+    const goals = [goal({ monthlyFundingCents: 100_000 })]
+    const c = cockpitFor({ cashCents: 1_000_000, goals })
+    const plan = planMonthlyAllocation(c, goals, settings({ marketingReservePct: 100, ownerSalaryMonthlyCents: 100_000 }))
+    expect(plan.reservedCents).toBe(1_000_000)
+    expect(plan.allocatedCents).toBe(0)
+    expect(plan.skipped.every(s => s.reason === 'no_room')).toBe(true)
+  })
+
+  it('a value outside 0..100 is clamped rather than trusted', () => {
+    const c = cockpitFor({ cashCents: 1_000_000 })
+    expect(planMonthlyAllocation(c, [], settings({ marketingReservePct: -10 })).reservedCents).toBe(0)
+    expect(planMonthlyAllocation(c, [], settings({ marketingReservePct: 250 })).reservedCents).toBe(1_000_000)
+  })
+
+  it('the reserve never gets dipped into to top up a goal that almost fits', () => {
+    // €1.000 pot, 25% reserve → €750 available. A goal wanting exactly €800
+    // must NOT be topped up using reserve money — it's capped at €750.
+    const goals = [goal({ monthlyFundingCents: 80_000 })]
+    const c = cockpitFor({ cashCents: 100_000, goals })
+    const plan = planMonthlyAllocation(c, goals, settings({ marketingReservePct: 25 }))
+    expect(plan.deltas[0].deltaCents).toBe(75_000)
+    expect(plan.deltas[0].cappedBy).toBe('available')
+    expect(plan.remainingCents).toBe(25_000)
+  })
+})
+
 describe('formatAllocationSummary', () => {
   it('lists each top-up and what was held back', () => {
     const goals = [goal({ monthlyFundingCents: 100_000 }), goal({ id: 'g2', name: 'Steiger', priority: 2, monthlyFundingCents: 0 })]
@@ -235,5 +285,16 @@ describe('formatAllocationSummary', () => {
     const goals = [goal({ targetCents: 100_000, fundedCents: 100_000 })]
     const plan = planMonthlyAllocation(cockpitFor({ cashCents: 500_000, goals }), goals, settings())
     expect(formatAllocationSummary(plan)).toBe('')
+  })
+
+  it('mentions the marketing reserve only when it actually held something back', () => {
+    const goals = [goal({ monthlyFundingCents: 100_000 })]
+    const c = cockpitFor({ cashCents: 300_000, goals })
+
+    const withReserve = formatAllocationSummary(planMonthlyAllocation(c, goals, settings({ marketingReservePct: 25 })))
+    expect(withReserve).toContain('Marketingreserve')
+
+    const withoutReserve = formatAllocationSummary(planMonthlyAllocation(c, goals, settings()))
+    expect(withoutReserve).not.toContain('Marketingreserve')
   })
 })

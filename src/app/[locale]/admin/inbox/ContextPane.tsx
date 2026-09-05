@@ -1,11 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { CalendarDays, CalendarPlus, Check, CheckCircle2, Download, Ghost, Globe, Languages, Loader2, Mail, Phone, Plus, Receipt, Sparkles, Wrench, XCircle } from 'lucide-react'
-import { adminMutate } from '@/hooks/useAdminSave'
+import { CalendarDays, CalendarPlus, Check, CheckCircle2, Download, Ghost, Globe, Landmark, Languages, Loader2, Mail, Phone, Plus, Receipt, Sparkles, Wrench, XCircle } from 'lucide-react'
+import { adminMutate, AdminApiError } from '@/hooks/useAdminSave'
 import { replySimilarity } from '@/lib/ghost/similarity'
 import { fmtAdminDate, fmtAdminTime } from '@/lib/admin/format'
+import { eurCents, dateNL, eurosToCents, centsToEuros } from '@/components/admin/finance/cockpit/money'
 import { OTA_PLATFORM_NAME } from '@/lib/ota/detect'
 import { pickCheapestPrivateOption } from '@/lib/ota/availability-shape'
 import { draftNeedsEnglish } from '@/lib/i18n/needs-translation'
@@ -814,23 +815,42 @@ const CHECK_LABEL: Record<string, string> = {
 }
 
 /** Same busy/error/run shape as useProposalAction, parameterized by action name instead of a fixed agent_proposals URL — an invoice isn't a Ghost proposal. */
+/**
+ * `amountNeeded` tracks approve/pay's specific "can't trust this number"
+ * failure (src/lib/finance/invoices/decide.ts's resolvePayableAmount) — the
+ * ONLY case that response carries a `suggested_cents` field alongside its
+ * error, which is how this is told apart from an ordinary failure (already
+ * decided, no IBAN, Revolut not connected, ...). Those stay plain `error`
+ * messages; this one gets its own small form instead of a dead end.
+ */
+interface AmountNeeded {
+  action: 'approve' | 'pay'
+  suggestedCents: number | null
+}
+
 function useInvoiceAction(invoiceId: string, onChanged: () => void) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [amountNeeded, setAmountNeeded] = useState<AmountNeeded | null>(null)
+
   async function run(action: 'approve' | 'reject' | 'pay', body: Record<string, unknown>, fallbackError: string, onError?: () => void) {
     setBusy(true)
     setError(null)
     try {
       await adminMutate(`/api/admin/finance/cockpit/invoices/${invoiceId}/${action}`, 'POST', body)
+      setAmountNeeded(null)
       onChanged()
     } catch (err) {
+      if (err instanceof AdminApiError && 'suggested_cents' in err.extra && (action === 'approve' || action === 'pay')) {
+        setAmountNeeded({ action, suggestedCents: (err.extra.suggested_cents as number | null) ?? null })
+      }
       setError(err instanceof Error ? err.message : fallbackError)
       onError?.()
     } finally {
       setBusy(false)
     }
   }
-  return { busy, error, run }
+  return { busy, error, amountNeeded, clearAmountNeeded: () => setAmountNeeded(null), run }
 }
 
 /**
@@ -844,12 +864,18 @@ function useInvoiceAction(invoiceId: string, onChanged: () => void) {
  * supplier IBAN is on file to pay.
  */
 function FinanceInvoiceReview({ invoice, onChanged }: { invoice: InboxFinanceInvoice; onChanged: () => void }) {
-  const { busy, error, run } = useInvoiceAction(invoice.id, onChanged)
+  const { busy, error, amountNeeded, clearAmountNeeded, run } = useInvoiceAction(invoice.id, onChanged)
   const [rejecting, setRejecting] = useState(false)
   const [paying, setPaying] = useState(false)
+  const [overriding, setOverriding] = useState(false)
   const [note, setNote] = useState('')
+  const [amountInput, setAmountInput] = useState('')
+  useEffect(() => {
+    if (amountNeeded) setAmountInput(centsToEuros(amountNeeded.suggestedCents))
+  }, [amountNeeded])
+  const typedAmountCents = eurosToCents(amountInput)
   const ext = invoice.extracted
-  const filename = invoice.file_path.split('/').pop() ?? invoice.file_path
+  const filename = invoice.original_filename ?? invoice.file_path.split('/').pop() ?? invoice.file_path
   const allOk = invoice.checks.length > 0 && invoice.checks.every(c => c.ok)
   const decided = !!invoice.decision
 
@@ -857,12 +883,19 @@ function FinanceInvoiceReview({ invoice, onChanged }: { invoice: InboxFinanceInv
     <div className="rounded-lg bg-white border border-amber-100 px-3 py-2 text-xs text-zinc-700 space-y-2">
       <div className="flex items-start justify-between gap-2">
         <span className="font-semibold text-zinc-900 truncate">{invoice.supplier?.name ?? ext?.supplierName ?? 'Onbekende afzender'}</span>
-        {ext?.amountCents != null && <span className="font-semibold text-zinc-900 shrink-0">€{(ext.amountCents / 100).toFixed(2)}</span>}
+        {ext?.amountCents != null && <span className="font-semibold text-zinc-900 shrink-0">{eurCents(ext.amountCents)}</span>}
       </div>
       <p className="text-[11px] text-zinc-400 truncate">
-        {filename}
+        <a
+          href={`/api/admin/finance/attachments/invoice/${invoice.id}`}
+          target="_blank"
+          rel="noreferrer"
+          className="underline hover:text-zinc-600"
+        >
+          {filename}
+        </a>
         {ext?.invoiceNumber ? ` · #${ext.invoiceNumber}` : ''}
-        {ext?.tourDate ? ` · ${ext.tourDate}` : ''}
+        {ext?.tourDate ? ` · ${dateNL(ext.tourDate)}` : ''}
       </p>
 
       {invoice.checks.length === 0 ? (
@@ -902,6 +935,47 @@ function FinanceInvoiceReview({ invoice, onChanged }: { invoice: InboxFinanceInv
                 : 'Goedgekeurd'}
           {invoice.decision_note ? ` — ${invoice.decision_note}` : ''}
         </p>
+      ) : amountNeeded ? (
+        <div className="space-y-1.5">
+          <p className="text-[11px] text-zinc-500">
+            {amountNeeded.suggestedCents != null
+              ? 'Het bedrag op de factuur kon niet worden gecontroleerd — bevestig het bedrag om door te gaan.'
+              : 'Er staat geen bedrag op deze factuur — vul het bedrag in om door te gaan.'}
+          </p>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-zinc-500">€</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={amountInput}
+              onChange={ev => setAmountInput(ev.target.value)}
+              placeholder="0,00"
+              className="w-24 rounded-lg border border-zinc-200 px-2 py-1.5 text-xs"
+              autoFocus
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => run(amountNeeded.action, { amount_cents: typedAmountCents }, `Kon factuur niet ${amountNeeded.action === 'pay' ? 'betalen' : 'goedkeuren'}`)}
+              disabled={busy || !typedAmountCents || typedAmountCents <= 0}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+              Bevestig bedrag &amp; {amountNeeded.action === 'pay' ? 'betaal' : 'keur goed'}
+            </button>
+            <button
+              onClick={() => {
+                clearAmountNeeded()
+                setPaying(false)
+                setOverriding(false)
+              }}
+              disabled={busy}
+              className="text-xs text-zinc-500 hover:text-zinc-700"
+            >
+              Annuleren
+            </button>
+          </div>
+        </div>
       ) : rejecting ? (
         <div className="space-y-1.5">
           <textarea
@@ -932,17 +1006,40 @@ function FinanceInvoiceReview({ invoice, onChanged }: { invoice: InboxFinanceInv
           message={
             <>
               Dit maakt een <span className="font-semibold">betaalopdracht klaar in Revolut</span> voor{' '}
-              <span className="font-semibold">€{ext?.amountCents != null ? (ext.amountCents / 100).toFixed(2) : '?'}</span> aan{' '}
+              <span className="font-semibold">{eurCents(ext?.amountCents ?? null)}</span> aan{' '}
               {invoice.supplier?.name ?? ext?.supplierName}. Er wordt nog niets overgemaakt — jij keurt hem daarna goed in de
               Revolut app. Doorgaan?
             </>
           }
           confirmLabel="Ja, klaarzetten"
         />
+      ) : overriding ? (
+        <ConfirmCreate
+          onYes={() => run('approve', {}, 'Kon factuur niet goedkeuren', () => setOverriding(false))}
+          onCancel={() => setOverriding(false)}
+          busy={busy}
+          message={
+            <>
+              Deze factuur heeft <span className="font-semibold">niet alle controles doorstaan</span>
+              {invoice.checks.some(c => !c.ok) && (
+                <>
+                  {' '}(
+                  {invoice.checks
+                    .filter(c => !c.ok)
+                    .map(c => CHECK_LABEL[c.key] ?? c.key)
+                    .join(', ')}
+                  )
+                </>
+              )}
+              . Toch goedkeuren?
+            </>
+          }
+          confirmLabel="Ja, toch goedkeuren"
+        />
       ) : (
         <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => run('approve', {}, 'Kon factuur niet goedkeuren')}
+            onClick={() => (allOk ? run('approve', {}, 'Kon factuur niet goedkeuren') : setOverriding(true))}
             disabled={busy}
             className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50 ${
               allOk ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-600 hover:bg-amber-700'
@@ -951,13 +1048,13 @@ function FinanceInvoiceReview({ invoice, onChanged }: { invoice: InboxFinanceInv
             {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
             {allOk ? 'Goedkeuren' : 'Toch goedkeuren'}
           </button>
-          {invoice.supplier?.iban && (
+          {invoice.supplier?.has_iban && (
             <button
               onClick={() => setPaying(true)}
               disabled={busy}
               className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50"
             >
-              <CalendarPlus className="w-3.5 h-3.5" /> Goedkeuren &amp; betalen
+              <Landmark className="w-3.5 h-3.5" /> Goedkeuren &amp; betalen
             </button>
           )}
           <button onClick={() => setRejecting(true)} disabled={busy} className="text-xs text-zinc-500 hover:text-zinc-700 underline">

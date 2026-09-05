@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { NextRequest, NextResponse } from 'next/server'
 import { createSupabaseChainMock, has, op, opArg, queriesFor, type RecordedQuery } from '@/test/supabase-chain-mock'
 import type { CockpitInputs } from '@/lib/finance/cockpit/types'
@@ -87,8 +87,15 @@ function findEvent(queries: RecordedQuery[], type: string): Record<string, unkno
 describe('GET /api/cron/finance-monthly-allocation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // The route derives the month from the real clock (todayISO()). Pin it, or
+    // every '2026-09' assertion below silently expires on the 1st of October.
+    vi.useFakeTimers({ now: new Date('2026-09-04T10:00:00Z'), toFake: ['Date'] })
     h.requireCronSecret.mockReturnValue(null)
     h.loadCockpitInputs.mockResolvedValue({ inputs: inputs(), settings: settingsRow() })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('passes the requireCronSecret denial through', async () => {
@@ -139,7 +146,8 @@ describe('GET /api/cron/finance-monthly-allocation', () => {
     await GET(req())
 
     const claim = findEvent(mock.queries, 'allocation_applied')
-    expect(claim).toMatchObject({ actor: 'cron', entity_type: 'settings', delta_cents: 300_000 })
+    // entity_id is a uuid column — the settings row's text id must never be written there.
+    expect(claim).toMatchObject({ actor: 'cron', entity_type: 'settings', entity_id: null, delta_cents: 300_000 })
     expect(claim?.payload).toMatchObject({ month: '2026-09', availableCents: 1_500_000, plannedCents: 300_000 })
 
     // Claim first, money second.
@@ -202,6 +210,23 @@ describe('GET /api/cron/finance-monthly-allocation', () => {
     const settingsUpdate = queriesFor(mock.queries, 'finance_settings', 'update')[0]
     expect(op(settingsUpdate, 'update')?.args[0]).toEqual({ owner_salary_coverage_cents: 900_000 })
     expect(findEvent(mock.queries, 'owner_salary_coverage_changed')).toMatchObject({ entity_type: 'settings', delta_cents: 800_000 })
+  })
+
+  it('reserves the configured percentage for marketing before funding the goal, and reports it in the claim payload', async () => {
+    const goal = { ...GOAL_ROW, target_cents: 2_000_000, monthly_funding_cents: 2_000_000 } // wants the whole pot, both this month and in total
+    h.loadCockpitInputs.mockResolvedValue({
+      inputs: inputs({ cash: { clearedCents: 2_000_000, pendingOutCents: 0, pendingInCents: 0, source: 'manual', asOf: null } }),
+      settings: settingsRow({ marketing_reserve_pct: 25 }),
+    })
+    const mock = db({ goals: [goal] })
+    h.createAdminClient.mockReturnValue(mock.client)
+
+    const res = await GET(req())
+    const body = await res.json()
+    expect(body.allocatedCents).toBe(1_125_000) // 75% of the €15.000 growth pot
+
+    const claim = findEvent(mock.queries, 'allocation_applied')
+    expect((claim?.payload as Record<string, unknown>).plannedCents).toBe(1_125_000)
   })
 
   it('writes the month marker even when nothing was allocated, so a retry stays a no-op', async () => {

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { adminMutate, useAdminSave } from './useAdminSave'
+import { adminMutate, AdminApiError, useAdminSave } from './useAdminSave'
 
 function mockFetchOnce(status: number, json: unknown) {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
@@ -42,6 +42,21 @@ describe('adminMutate', () => {
   it('throws the API error message on ok:false', async () => {
     mockFetchOnce(422, { ok: false, error: 'Name is taken' })
     await expect(adminMutate('/api/admin/x', 'POST', {})).rejects.toThrow('Name is taken')
+  })
+
+  it('carries sibling response fields (e.g. suggested_cents) on .extra, without ok/error/data', async () => {
+    mockFetchOnce(400, { ok: false, error: 'No amount to approve', suggested_cents: 8999 })
+    const err = await adminMutate('/api/admin/x', 'POST', {}).catch(e => e)
+    expect(err).toBeInstanceOf(AdminApiError)
+    expect(err).toBeInstanceOf(Error)
+    expect((err as AdminApiError).message).toBe('No amount to approve')
+    expect((err as AdminApiError).extra).toEqual({ suggested_cents: 8999 })
+  })
+
+  it('a plain failure with no extra fields carries an empty .extra, not undefined', async () => {
+    mockFetchOnce(400, { ok: false, error: 'Already decided' })
+    const err = await adminMutate('/api/admin/x', 'POST', {}).catch(e => e)
+    expect((err as AdminApiError).extra).toEqual({})
   })
 
   it('throws HTTP status when the response is not JSON', async () => {

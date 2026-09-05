@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type ComponentType } from 'react'
 import { preload } from 'swr'
-import { CheckCircle2, Clock, Download, Globe, Mail, MailOpen, MessageSquare, Phone, Receipt, XCircle } from 'lucide-react'
+import { CheckCircle2, Clock, Download, Globe, Mail, MailOpen, MessageSquare, Phone, XCircle } from 'lucide-react'
 import { timeAgoShort } from '@/lib/utils'
 import { fmtAdminDate, fmtAdminTime } from '@/lib/admin/format'
 import { formatWindowRemaining } from '@/lib/whatsapp/window'
@@ -39,16 +39,19 @@ const WORKFLOW_ICON: Record<WorkflowStatus, typeof Mail> = { open: MailOpen, pen
 
 /**
  * Which bucket a conversation belongs to for the source-filter pill. OTA
- * (Withlocals/GetMyBoat notifications) and finance (skipper/supplier
- * invoices at GMAIL_FINANCE_ADDRESS) are checked first since both are
- * carried on the email channel but are never a real customer conversation —
- * see ota/detect.ts and finance/inbox/detect.ts. Every real channel gets its
- * own bucket (webchat = "Chat") so Beer can see volume per channel at a
- * glance, including phone calls.
+ * (Withlocals/GetMyBoat notifications) is checked first since it's carried
+ * on the email channel but is never a real customer conversation — see
+ * ota/detect.ts. Every real channel gets its own bucket (webchat = "Chat")
+ * so Beer can see volume per channel at a glance, including phone calls.
+ *
+ * No 'finance' bucket here: a finance-category conversation never reaches
+ * this list at all — /admin/inbox and /admin/finance/inbox are now two
+ * separate desks, each backed by its own scoped query (see
+ * api/admin/inbox/conversations/route.ts's applyInboxScope).
  */
-const SOURCE_FILTERS = ['chat', 'email', 'whatsapp', 'voice', 'ota', 'finance'] as const
+const SOURCE_FILTERS = ['chat', 'email', 'whatsapp', 'voice', 'ota'] as const
 type SourceFilter = (typeof SOURCE_FILTERS)[number]
-const SOURCE_LABELS: Record<SourceFilter, string> = { chat: 'Chat', email: 'Email', whatsapp: 'WhatsApp', voice: 'Voice', ota: 'OTA', finance: 'Facturen' }
+const SOURCE_LABELS: Record<SourceFilter, string> = { chat: 'Chat', email: 'Email', whatsapp: 'WhatsApp', voice: 'Voice', ota: 'OTA' }
 // Globe (not Hourglass) here — Hourglass is reserved for a row's "waiting" status; this icon means "this category is OTA platforms", not any status.
 const SOURCE_ICON: Record<SourceFilter, ComponentType<{ className?: string }>> = {
   chat: MessageSquare,
@@ -56,10 +59,8 @@ const SOURCE_ICON: Record<SourceFilter, ComponentType<{ className?: string }>> =
   whatsapp: WhatsAppIcon,
   voice: Phone,
   ota: Globe,
-  finance: Receipt,
 }
 function sourceOf(c: InboxListItem): SourceFilter {
-  if (c.source_category === 'finance') return 'finance'
   if (c.ota_source) return 'ota'
   if (c.channel === 'email' || c.channel === 'whatsapp' || c.channel === 'voice') return c.channel
   return 'chat'
@@ -166,7 +167,6 @@ export function ConversationList({ conversations, selectedId, statusFilter, onSe
     whatsapp: true,
     voice: true,
     ota: true,
-    finance: true,
   })
   // One pass over `conversations` for both derived values instead of two
   // (`reduce` + `filter`), and computed once per render via useMemo instead
@@ -174,7 +174,7 @@ export function ConversationList({ conversations, selectedId, statusFilter, onSe
   // tick the WhatsApp countdown badges, which shouldn't force a full
   // recount/refilter of a list that hasn't actually changed.
   const { sourceCounts, visibleConversations } = useMemo(() => {
-    const counts: Record<SourceFilter, number> = { chat: 0, email: 0, whatsapp: 0, voice: 0, ota: 0, finance: 0 }
+    const counts: Record<SourceFilter, number> = { chat: 0, email: 0, whatsapp: 0, voice: 0, ota: 0 }
     const visible: typeof conversations = []
     for (const c of conversations) {
       const source = sourceOf(c)

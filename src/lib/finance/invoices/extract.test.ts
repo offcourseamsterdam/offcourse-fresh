@@ -1,6 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
 import { extractInvoiceFields, parseExtractionResponse } from './extract'
 
+// recordAiUsage() builds a real Supabase client and issues real HTTP inserts;
+// unmocked, every test below made a network call against the placeholder URL.
+vi.mock('@/lib/ai/usage', () => ({ recordAiUsage: vi.fn().mockResolvedValue(undefined) }))
+
 function mockGemini(response: string) {
   return {
     getGenerativeModel: vi.fn(() => ({
@@ -143,9 +147,17 @@ describe('extractInvoiceFields', () => {
   })
 
   it('retries once on a transient 503, then succeeds', async () => {
-    const gemini = mockGeminiSequence([new Error('503 Service Unavailable'), FULL_RESPONSE])
-    const result = await extractInvoiceFields('base64pdf', { gemini, maxRetries: 2 })
-    expect(result.fields.invoiceNumber).toBe('INV-042')
+    // The retry sleeps 4s for real; advance a fake clock instead of eating 80% of the 5s test timeout.
+    vi.useFakeTimers()
+    try {
+      const gemini = mockGeminiSequence([new Error('503 Service Unavailable'), FULL_RESPONSE])
+      const pending = extractInvoiceFields('base64pdf', { gemini, maxRetries: 2 })
+      await vi.advanceTimersByTimeAsync(4000)
+      const result = await pending
+      expect(result.fields.invoiceNumber).toBe('INV-042')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('throws immediately on a non-503 error, no retry', async () => {

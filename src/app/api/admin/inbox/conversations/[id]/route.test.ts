@@ -32,15 +32,28 @@ const CONVERSATION = {
   contact: null,
 }
 
-const MESSAGE_ROWS = [{ id: 'msg-1' }, { id: 'msg-2' }]
-
-const FINANCE_INVOICE_ROW = {
+// The DB row loadFinanceInvoices() reads — includes the `message` join column
+// and the raw `iban`, both stripped out before the API response.
+const FINANCE_INVOICE_DB_ROW = {
   id: 'inv-1',
   status: 'ready',
-  file_path: 'email/gmail-1/factuur.pdf',
+  file_path: 'email/gmail-1/uuid.pdf',
+  original_filename: 'factuur.pdf',
   extracted: { invoiceNumber: 'INV-1' },
   checks: [{ key: 'iban', ok: true, detail: 'IBAN komt overeen' }],
   supplier: { id: 'sup-1', name: 'Mare', iban: 'NL01TEST0123456789' },
+  message: { conversation_id: ID },
+}
+
+// What the API response should actually contain — has_iban, never the IBAN, and no `message` echo.
+const FINANCE_INVOICE_ROW = {
+  id: 'inv-1',
+  status: 'ready',
+  file_path: 'email/gmail-1/uuid.pdf',
+  original_filename: 'factuur.pdf',
+  extracted: { invoiceNumber: 'INV-1' },
+  checks: [{ key: 'iban', ok: true, detail: 'IBAN komt overeen' }],
+  supplier: { id: 'sup-1', name: 'Mare', has_iban: true },
 }
 
 function db(conversation: Record<string, unknown> | null, financeInvoiceRows: Record<string, unknown>[] = []) {
@@ -49,12 +62,7 @@ function db(conversation: Record<string, unknown> | null, financeInvoiceRows: Re
       if (has(q, 'update')) return { data: null }
       return { data: conversation }
     }
-    if (q.table === 'messages') {
-      const selectArg = op(q, 'select')?.args[0] as string | undefined
-      // loadFinanceInvoices selects just 'id'; the main thread-messages query selects a much longer column list.
-      if (selectArg === 'id') return { data: MESSAGE_ROWS }
-      return { data: [] }
-    }
+    if (q.table === 'messages') return { data: [] }
     if (q.table === 'agent_proposals') return { data: [] }
     if (q.table === 'finance_invoices') return { data: financeInvoiceRows }
     return { data: null }
@@ -81,7 +89,7 @@ describe('GET /api/admin/inbox/conversations/[id]', () => {
   })
 
   it('a normal (non-finance) conversation gets an empty financeInvoices list, never queries finance_invoices', async () => {
-    const mock = db({ ...CONVERSATION, source_category: null }, [FINANCE_INVOICE_ROW])
+    const mock = db({ ...CONVERSATION, source_category: null }, [FINANCE_INVOICE_DB_ROW])
     h.createAdminClient.mockReturnValue(mock.client)
     const res = await GET(req(), params)
     const { data } = await res.json()
@@ -89,28 +97,35 @@ describe('GET /api/admin/inbox/conversations/[id]', () => {
     expect(mock.queries.some(q => q.table === 'finance_invoices')).toBe(false)
   })
 
-  it('a source_category=finance conversation loads its finance_invoices, scoped to this thread\'s message ids', async () => {
-    const mock = db({ ...CONVERSATION, source_category: 'finance' }, [FINANCE_INVOICE_ROW])
+  it('a source_category=finance conversation loads its finance_invoices, filtered through the message join — never a preliminary unbounded message-id fetch', async () => {
+    const mock = db({ ...CONVERSATION, source_category: 'finance' }, [FINANCE_INVOICE_DB_ROW])
     h.createAdminClient.mockReturnValue(mock.client)
     const res = await GET(req(), params)
     const { data } = await res.json()
     expect(data.financeInvoices).toEqual([FINANCE_INVOICE_ROW])
 
     const invoiceQuery = mock.queries.find(q => q.table === 'finance_invoices')!
-    expect(op(invoiceQuery, 'in')?.args).toEqual(['source_message_id', ['msg-1', 'msg-2']])
+    expect(op(invoiceQuery, 'eq')?.args).toEqual(['message.conversation_id', ID])
+    expect(op(invoiceQuery, 'limit')?.args).toEqual([10])
+    // Exactly one `messages` query — the thread's own message list. No second,
+    // preliminary `select('id')` against `messages` just to build an id list
+    // for finance_invoices (that was the unbounded-growth shape being fixed).
+    expect(mock.queries.filter(q => q.table === 'messages')).toHaveLength(1)
   })
 
-  it('a finance conversation with no messages yet skips the finance_invoices query entirely', async () => {
-    const mock = createSupabaseChainMock((q: RecordedQuery) => {
-      if (q.table === 'conversations') return { data: { ...CONVERSATION, source_category: 'finance' } }
-      if (q.table === 'messages') return { data: [] }
-      if (q.table === 'agent_proposals') return { data: [] }
-      return { data: null }
-    })
+  it('never leaks the raw IBAN into the response, even though the DB row carries one', async () => {
+    const mock = db({ ...CONVERSATION, source_category: 'finance' }, [FINANCE_INVOICE_DB_ROW])
+    h.createAdminClient.mockReturnValue(mock.client)
+    const res = await GET(req(), params)
+    const { data } = await res.json()
+    expect(JSON.stringify(data.financeInvoices)).not.toContain('NL01TEST')
+  })
+
+  it('a finance conversation with no matching invoices yet gets an empty list', async () => {
+    const mock = db({ ...CONVERSATION, source_category: 'finance' }, [])
     h.createAdminClient.mockReturnValue(mock.client)
     const res = await GET(req(), params)
     const { data } = await res.json()
     expect(data.financeInvoices).toEqual([])
-    expect(mock.queries.some(q => q.table === 'finance_invoices')).toBe(false)
   })
 })

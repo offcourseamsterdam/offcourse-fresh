@@ -3,9 +3,10 @@ import { apiError, apiOk } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { amsterdamToday } from '@/lib/utils'
+import { applyInboxScope, type InboxScope } from '@/lib/inbox/scope'
 
 /**
- * GET /api/admin/inbox/conversations?status=open|pending|resolved|all
+ * GET /api/admin/inbox/conversations?status=open|pending|resolved|all&scope=operations|finance
  * The left pane: every conversation with its contact and latest message
  * (snippet), newest activity first.
  */
@@ -14,6 +15,7 @@ export async function GET(req: NextRequest) {
   if (denied) return denied
   try {
     const status = req.nextUrl.searchParams.get('status') ?? 'all'
+    const scope: InboxScope = req.nextUrl.searchParams.get('scope') === 'finance' ? 'finance' : 'operations'
     const supabase = createAdminClient()
 
     let query = supabase
@@ -39,6 +41,7 @@ export async function GET(req: NextRequest) {
       .limit(1, { referencedTable: 'last_outbound' })
       .limit(100)
 
+    query = applyInboxScope(query, scope)
     if (status !== 'all') query = query.eq('status', status)
 
     const { data, error } = await query

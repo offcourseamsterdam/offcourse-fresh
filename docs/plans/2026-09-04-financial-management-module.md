@@ -1,7 +1,7 @@
 # Financial Management Module — Implementation Plan
 
 **Date:** 2026-09-04
-**Status:** PLAN — not started
+**Status:** BUILT — Phases 0–5 implemented 2026-09-04/05 (see docs/features/financial-management-module.md)
 **Owner:** Beer
 **Source PRD:** the "PRD — Financial Management Module" text (2026-09-04), the two UI mockups, and the loan export `loancashflowexport.md` (Investment Tracker, pulled 2026-09-04).
 

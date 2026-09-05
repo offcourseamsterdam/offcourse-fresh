@@ -1,34 +1,14 @@
 import type { NextRequest } from 'next/server'
-import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Database } from '@/lib/supabase/types'
 import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { todayISO } from '@/lib/finance/cockpit/dates'
-import { logFinanceEvent } from '@/lib/finance/cockpit/events'
-import { accrueCityTax, cityTaxObligations, type CityTaxBooking } from '@/lib/finance/cockpit/derived/city-tax'
+import { accrueCityTax, cityTaxObligations } from '@/lib/finance/cockpit/derived/city-tax'
+import { upsertDerivedObligation } from '@/lib/finance/cockpit/derived/sync'
 import { derivedConfirmKeysSchema, parseBody } from '@/lib/finance/cockpit/schemas'
+import { loadBookingsForYear } from './shared'
 
 export const dynamic = 'force-dynamic'
-
-type Admin = SupabaseClient<Database>
-
-async function loadBookingsForYear(supabase: Admin, year: number): Promise<CityTaxBooking[]> {
-  const { data, error } = await supabase
-    .from('bookings')
-    .select('id, booking_uuid, booking_date, guest_count, status, booking_source')
-    .gte('booking_date', `${year}-01-01`)
-    .lte('booking_date', `${year}-12-31`)
-  if (error) throw new Error(error.message)
-  return (data ?? []).map(r => ({
-    id: r.id,
-    bookingUuid: r.booking_uuid,
-    bookingDate: r.booking_date,
-    guestCount: r.guest_count,
-    status: r.status,
-    bookingSource: r.booking_source,
-  }))
-}
 
 function yearFromKey(key: string): number | null {
   // 'city-tax:2026-Q3' → 2026
@@ -83,6 +63,7 @@ export async function POST(request: NextRequest) {
     }
 
     const created: Array<{ key: string; id: string }> = []
+    const updated: Array<{ key: string; id: string }> = []
     const skipped: Array<{ key: string; reason: string }> = []
 
     for (const key of parsed.data.keys) {
@@ -92,40 +73,17 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      const { data, error } = await supabase
-        .from('finance_obligations')
-        .insert({
-          title: proposal.title,
-          kind: 'tax',
-          amount_cents: proposal.amountCents,
-          due_date: proposal.dueDate,
-          source_key: key,
-          notes: 'Toeristenbelasting, automatisch berekend',
-          status: 'open',
-        })
-        .select('id')
-        .single()
-
-      if (error) {
-        if (error.code === '23505') {
-          skipped.push({ key, reason: 'already existed' })
-          continue
-        }
-        return apiError(error.message, 500)
-      }
-
-      created.push({ key, id: data!.id })
-      await logFinanceEvent(supabase, {
-        event_type: 'obligation_created',
-        actor: 'user',
-        entity_type: 'obligation',
-        entity_id: data!.id,
-        delta_cents: proposal.amountCents,
-        payload: { title: proposal.title, kind: 'tax', due_date: proposal.dueDate, source_key: key },
-      })
+      const r = await upsertDerivedObligation(
+        supabase,
+        { key, title: proposal.title, kind: 'tax', amountCents: proposal.amountCents, dueDate: proposal.dueDate, notes: 'Toeristenbelasting, automatisch berekend' },
+        'user',
+      )
+      if (r.status === 'created') created.push({ key: r.sourceKey, id: r.id! })
+      else if (r.status === 'updated') updated.push({ key: r.sourceKey, id: r.id! })
+      else skipped.push({ key: r.sourceKey, reason: r.reason! })
     }
 
-    return apiOk({ created, skipped })
+    return apiOk({ created, updated, skipped })
   } catch (err) {
     console.error('[finance/cockpit/obligations/derived/city-tax POST]', err)
     return apiError(err instanceof Error ? err.message : 'Could not confirm city tax obligations', 500)

@@ -274,6 +274,7 @@ export type Database = {
           created_at: string
           currency: string
           description: string | null
+          expense_id: string | null
           fee_cents: number
           first_seen_at: string
           goal_id: string | null
@@ -311,6 +312,7 @@ export type Database = {
           created_at: string
           currency?: string
           description?: string | null
+          expense_id?: string | null
           fee_cents?: number
           first_seen_at?: string
           goal_id?: string | null
@@ -348,6 +350,7 @@ export type Database = {
           created_at?: string
           currency?: string
           description?: string | null
+          expense_id?: string | null
           fee_cents?: number
           first_seen_at?: string
           goal_id?: string | null
@@ -375,6 +378,13 @@ export type Database = {
             columns: ["boat_id"]
             isOneToOne: false
             referencedRelation: "boats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bank_transactions_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: false
+            referencedRelation: "finance_expenses"
             referencedColumns: ["id"]
           },
           {
@@ -2286,6 +2296,85 @@ export type Database = {
           },
         ]
       }
+      finance_documents: {
+        Row: {
+          created_at: string
+          duplicate_of: string | null
+          expense_id: string | null
+          extracted: Json | null
+          file_path: string | null
+          id: string
+          kind: string
+          link_fetch_status: string | null
+          link_url: string | null
+          mime_type: string | null
+          original_filename: string | null
+          revolut_expense_id: string | null
+          revolut_receipt_id: string | null
+          sha256: string | null
+          source: string
+          source_message_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          duplicate_of?: string | null
+          expense_id?: string | null
+          extracted?: Json | null
+          file_path?: string | null
+          id?: string
+          kind: string
+          link_fetch_status?: string | null
+          link_url?: string | null
+          mime_type?: string | null
+          original_filename?: string | null
+          revolut_expense_id?: string | null
+          revolut_receipt_id?: string | null
+          sha256?: string | null
+          source: string
+          source_message_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          duplicate_of?: string | null
+          expense_id?: string | null
+          extracted?: Json | null
+          file_path?: string | null
+          id?: string
+          kind?: string
+          link_fetch_status?: string | null
+          link_url?: string | null
+          mime_type?: string | null
+          original_filename?: string | null
+          revolut_expense_id?: string | null
+          revolut_receipt_id?: string | null
+          sha256?: string | null
+          source?: string
+          source_message_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_documents_duplicate_of_fkey"
+            columns: ["duplicate_of"]
+            isOneToOne: false
+            referencedRelation: "finance_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_documents_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: false
+            referencedRelation: "finance_expenses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_documents_source_message_id_fkey"
+            columns: ["source_message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       finance_events: {
         Row: {
           actor: string
@@ -2318,6 +2407,149 @@ export type Database = {
           payload?: Json
         }
         Relationships: []
+      }
+      finance_expenses: {
+        Row: {
+          bank_transaction_id: string | null
+          booked_at: string | null
+          cash_out_cents: number | null
+          created_at: string
+          gross_cents: number | null
+          id: string
+          invoice_date: string | null
+          invoice_number: string | null
+          match_confidence: number | null
+          match_signals: Json | null
+          matched_at: string | null
+          needs_review_reason: string | null
+          net_cents: number | null
+          notes: string | null
+          order_number: string | null
+          paid_at: string | null
+          primary_document_id: string | null
+          ref: string
+          reviewed_at: string | null
+          revolut_expense_id: string | null
+          revolut_expense_state: string | null
+          revolut_vat_cents: number | null
+          revolut_vat_rate_pct: number | null
+          snelstart_document_id: string | null
+          snelstart_message_id: string | null
+          snelstart_recipient: string | null
+          snelstart_sent_at: string | null
+          status: string
+          supplier_id: string | null
+          supplier_name: string | null
+          updated_at: string
+          vat_cents: number | null
+          vat_conflict: Json | null
+          vat_rate_pct: number | null
+          vat_source: string | null
+        }
+        Insert: {
+          bank_transaction_id?: string | null
+          booked_at?: string | null
+          cash_out_cents?: number | null
+          created_at?: string
+          gross_cents?: number | null
+          id?: string
+          invoice_date?: string | null
+          invoice_number?: string | null
+          match_confidence?: number | null
+          match_signals?: Json | null
+          matched_at?: string | null
+          needs_review_reason?: string | null
+          net_cents?: number | null
+          notes?: string | null
+          order_number?: string | null
+          paid_at?: string | null
+          primary_document_id?: string | null
+          ref?: string
+          reviewed_at?: string | null
+          revolut_expense_id?: string | null
+          revolut_expense_state?: string | null
+          revolut_vat_cents?: number | null
+          revolut_vat_rate_pct?: number | null
+          snelstart_document_id?: string | null
+          snelstart_message_id?: string | null
+          snelstart_recipient?: string | null
+          snelstart_sent_at?: string | null
+          status?: string
+          supplier_id?: string | null
+          supplier_name?: string | null
+          updated_at?: string
+          vat_cents?: number | null
+          vat_conflict?: Json | null
+          vat_rate_pct?: number | null
+          vat_source?: string | null
+        }
+        Update: {
+          bank_transaction_id?: string | null
+          booked_at?: string | null
+          cash_out_cents?: number | null
+          created_at?: string
+          gross_cents?: number | null
+          id?: string
+          invoice_date?: string | null
+          invoice_number?: string | null
+          match_confidence?: number | null
+          match_signals?: Json | null
+          matched_at?: string | null
+          needs_review_reason?: string | null
+          net_cents?: number | null
+          notes?: string | null
+          order_number?: string | null
+          paid_at?: string | null
+          primary_document_id?: string | null
+          ref?: string
+          reviewed_at?: string | null
+          revolut_expense_id?: string | null
+          revolut_expense_state?: string | null
+          revolut_vat_cents?: number | null
+          revolut_vat_rate_pct?: number | null
+          snelstart_document_id?: string | null
+          snelstart_message_id?: string | null
+          snelstart_recipient?: string | null
+          snelstart_sent_at?: string | null
+          status?: string
+          supplier_id?: string | null
+          supplier_name?: string | null
+          updated_at?: string
+          vat_cents?: number | null
+          vat_conflict?: Json | null
+          vat_rate_pct?: number | null
+          vat_source?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_expenses_bank_transaction_id_fkey"
+            columns: ["bank_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "bank_transactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_expenses_primary_document_fk"
+            columns: ["primary_document_id"]
+            isOneToOne: false
+            referencedRelation: "finance_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_expenses_snelstart_document_fk"
+            columns: ["snelstart_document_id"]
+            isOneToOne: false
+            referencedRelation: "finance_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_expenses_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "finance_suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       finance_goals: {
         Row: {
@@ -2466,6 +2698,7 @@ export type Database = {
           matched_booking_id: string | null
           matched_shift_id: string | null
           obligation_id: string | null
+          original_filename: string | null
           paid_transaction_id: string | null
           revolut_draft_id: string | null
           source: string
@@ -2489,6 +2722,7 @@ export type Database = {
           matched_booking_id?: string | null
           matched_shift_id?: string | null
           obligation_id?: string | null
+          original_filename?: string | null
           paid_transaction_id?: string | null
           revolut_draft_id?: string | null
           source: string
@@ -2512,6 +2746,7 @@ export type Database = {
           matched_booking_id?: string | null
           matched_shift_id?: string | null
           obligation_id?: string | null
+          original_filename?: string | null
           paid_transaction_id?: string | null
           revolut_draft_id?: string | null
           source?: string
@@ -2745,12 +2980,14 @@ export type Database = {
           id: string
           manual_cash_at: string | null
           manual_cash_cents: number | null
+          marketing_reserve_pct: number
           operational_coverage_cents: number
           owner_salary_coverage_cents: number
           owner_salary_monthly_cents: number
           owner_salary_months: number
           planning_horizon: string
           safety_margin_cents: number
+          snelstart_auto_forward: boolean
           updated_at: string
         }
         Insert: {
@@ -2758,12 +2995,14 @@ export type Database = {
           id?: string
           manual_cash_at?: string | null
           manual_cash_cents?: number | null
+          marketing_reserve_pct?: number
           operational_coverage_cents?: number
           owner_salary_coverage_cents?: number
           owner_salary_monthly_cents?: number
           owner_salary_months?: number
           planning_horizon?: string
           safety_margin_cents?: number
+          snelstart_auto_forward?: boolean
           updated_at?: string
         }
         Update: {
@@ -2771,12 +3010,14 @@ export type Database = {
           id?: string
           manual_cash_at?: string | null
           manual_cash_cents?: number | null
+          marketing_reserve_pct?: number
           operational_coverage_cents?: number
           owner_salary_coverage_cents?: number
           owner_salary_monthly_cents?: number
           owner_salary_months?: number
           planning_horizon?: string
           safety_margin_cents?: number
+          snelstart_auto_forward?: boolean
           updated_at?: string
         }
         Relationships: []

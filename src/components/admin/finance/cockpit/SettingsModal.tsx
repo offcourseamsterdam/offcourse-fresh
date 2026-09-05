@@ -32,6 +32,8 @@ export function settingsPayloadFrom(settings: SettingsRow, overrides: Partial<Se
     allocation_priority: Array.isArray(settings.allocation_priority) && settings.allocation_priority.length > 0
       ? settings.allocation_priority
       : DEFAULT_PRIORITY,
+    marketing_reserve_pct: settings.marketing_reserve_pct,
+    snelstart_auto_forward: settings.snelstart_auto_forward,
     ...overrides,
   }
 }
@@ -50,6 +52,8 @@ export function SettingsModal({ open, onClose, onSaved, settings }: SettingsModa
   const [salaryMonths, setSalaryMonths] = useState('3')
   const [salaryCoverage, setSalaryCoverage] = useState('')
   const [priority, setPriority] = useState<BucketKey[]>(DEFAULT_PRIORITY)
+  const [marketingReservePct, setMarketingReservePct] = useState(25)
+  const [autoForward, setAutoForward] = useState(true)
 
   useEffect(() => {
     if (!open || !settings) return
@@ -60,6 +64,8 @@ export function SettingsModal({ open, onClose, onSaved, settings }: SettingsModa
     setSalaryMonths(String(settings.owner_salary_months))
     setSalaryCoverage(centsToEuros(settings.owner_salary_coverage_cents))
     setPriority(settingsPayloadFrom(settings).allocation_priority)
+    setMarketingReservePct(settings.marketing_reserve_pct)
+    setAutoForward(settings.snelstart_auto_forward)
     setError(null)
   }, [open, settings, setError])
 
@@ -92,6 +98,8 @@ export function SettingsModal({ open, onClose, onSaved, settings }: SettingsModa
       owner_salary_months: Number(salaryMonths),
       owner_salary_coverage_cents: coverageCents,
       allocation_priority: priority,
+      marketing_reserve_pct: marketingReservePct,
+      snelstart_auto_forward: autoForward,
     })
 
     run(async () => {
@@ -162,6 +170,40 @@ export function SettingsModal({ open, onClose, onSaved, settings }: SettingsModa
             </li>
           ))}
         </ol>
+      </Field>
+
+      <Field
+        label="Marketingreserve"
+        hint="Dit deel van 'beschikbaar voor groei' wordt nooit toegewezen aan salaris of doelen — blijft vrij besteedbaar aan marketing. 0% = alles kan worden toegewezen."
+      >
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={marketingReservePct}
+            onChange={e => setMarketingReservePct(Number(e.target.value))}
+            className="flex-1 accent-zinc-900"
+            aria-label="Marketingreserve percentage"
+          />
+          <span className="w-12 shrink-0 text-right text-sm font-semibold tabular-nums text-zinc-900">{marketingReservePct}%</span>
+        </div>
+      </Field>
+
+      <Field
+        label="Automatisch naar SnelStart"
+        hint="Elk uur gaat het originele document van een uitgave die 'Klaar voor SnelStart' is naar de boekhoudmailbox — één keer, nooit dubbel. Uit = alleen handmatig 'Doorsturen' vanuit Uitgaven."
+      >
+        <label className="flex items-center gap-3 min-h-[44px] sm:min-h-0 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={autoForward}
+            onChange={e => setAutoForward(e.target.checked)}
+            className="h-4 w-4 rounded border-zinc-300 accent-zinc-900"
+          />
+          <span className="text-sm text-zinc-700">{autoForward ? 'Aan — klaarstaande documenten worden elk uur doorgestuurd' : 'Uit — alleen handmatig doorsturen'}</span>
+        </label>
       </Field>
     </AdminFormModal>
   )

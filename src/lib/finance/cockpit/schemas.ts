@@ -44,13 +44,16 @@ export const settingsUpdateSchema = z
       .length(4, 'allocation_priority must list all four buckets')
       .refine(arr => new Set(arr).size === 4, 'allocation_priority must list each bucket exactly once')
       .optional(),
+    marketing_reserve_pct: z.number().int().min(0).max(100).optional(),
+    snelstart_auto_forward: z.boolean().optional(),
   })
   .refine(obj => Object.keys(obj).length > 0, 'No settings fields to update')
 
 export type SettingsUpdate = z.infer<typeof settingsUpdateSchema>
 export const SETTINGS_KEYS = [
   'planning_horizon', 'safety_margin_cents', 'operational_coverage_cents', 'owner_salary_monthly_cents',
-  'owner_salary_months', 'owner_salary_coverage_cents', 'manual_cash_cents', 'allocation_priority',
+  'owner_salary_months', 'owner_salary_coverage_cents', 'manual_cash_cents', 'allocation_priority', 'marketing_reserve_pct',
+  'snelstart_auto_forward',
 ] as const
 
 // ── Obligations ──────────────────────────────────────────────────────────────
@@ -84,14 +87,21 @@ export const markPaidSchema = z.object({
 
 // ── Finance Inbox invoices (§6) ────────────────────────────────────────────────
 
+// amount_cents: the number Beer typed when the pipeline couldn't vouch for the
+// PDF's own amount (see invoices/decide.ts resolvePayableAmount). Range is
+// re-checked there against MAX_INVOICE_AMOUNT_CENTS; this only fixes the shape.
+const typedAmountCents = z.number().int().positive().optional()
+
 export const invoiceApproveSchema = z.object({
   note: z.string().trim().max(2000).optional(),
+  amount_cents: typedAmountCents,
 })
 export const invoiceRejectSchema = z.object({
   note: z.string().trim().max(2000).optional(),
 })
 export const invoicePaySchema = z.object({
   note: z.string().trim().max(2000).optional(),
+  amount_cents: typedAmountCents,
 })
 
 // ── Loans ────────────────────────────────────────────────────────────────────

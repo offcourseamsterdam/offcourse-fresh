@@ -114,21 +114,29 @@ async function loadContactBookings(
  * conversation (see the caller), so this stays a no-op for every other thread.
  */
 async function loadFinanceInvoices(supabase: ReturnType<typeof createAdminClient>, conversationId: string) {
-  const { data: msgs } = await supabase.from('messages').select('id').eq('conversation_id', conversationId)
-  const messageIds = (msgs ?? []).map(m => m.id)
-  if (!messageIds.length) return []
-
+  // One query, filtered through the messages join, bounded to 10 — not "load
+  // every message id in the thread, then .in() on them". On the 5-second
+  // thread poll that list only ever grew (a manual-upload thread accumulates
+  // every upload ever made), which is the unbounded-fetch-on-a-poll shape
+  // behind the June 2026 egress incident.
   const { data } = await supabase
     .from('finance_invoices')
     .select(
-      `id, status, file_path, extracted, matched_shift_id, matched_booking_id, expected_amount_cents, checks,
+      `id, status, file_path, original_filename, extracted, matched_shift_id, matched_booking_id, expected_amount_cents, checks,
        decision, decision_note, obligation_id, created_at,
-       supplier:finance_suppliers(id, name, iban)`,
+       supplier:finance_suppliers(id, name, iban),
+       message:messages!inner(conversation_id)`,
     )
-    .in('source_message_id', messageIds)
+    .eq('message.conversation_id', conversationId)
     .order('created_at', { ascending: false })
     .limit(10)
-  return data ?? []
+
+  // The browser gets has_iban, never the IBAN: the card only needs to know
+  // whether "Goedkeuren & betalen" is possible.
+  return (data ?? []).map(({ supplier, message: _message, ...invoice }) => ({
+    ...invoice,
+    supplier: supplier ? { id: supplier.id, name: supplier.name, has_iban: !!supplier.iban } : null,
+  }))
 }
 
 /** The narrowed columns we pull per proposal — never the whole payload/outcome. */

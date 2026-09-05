@@ -3,7 +3,7 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { findOrCreateContactByField } from '@/lib/contacts/find-or-create'
-import { processInvoiceFile, loadSupplierById } from '@/lib/finance/invoices/process'
+import { processInvoiceFile, loadSupplierById, isPdfBuffer } from '@/lib/finance/invoices/process'
 import { isUuid } from '@/lib/finance/cockpit/schemas'
 
 export const dynamic = 'force-dynamic'
@@ -72,6 +72,11 @@ export async function POST(request: NextRequest) {
     const supplierId = typeof supplierIdRaw === 'string' && supplierIdRaw ? supplierIdRaw : null
     if (supplierId && !isUuid(supplierId)) return apiError('Invalid supplier_id', 400)
 
+    // The bytes, not the name or the Content-Type, decide whether this is a PDF.
+    // Checked before any row is written so a bad file leaves nothing behind.
+    const buffer = Buffer.from(await file.arrayBuffer())
+    if (!isPdfBuffer(buffer)) return apiError('That file is not a PDF', 400)
+
     const supabase = createAdminClient()
     const supplier = supplierId ? await loadSupplierById(supabase, supplierId) : null
 
@@ -93,16 +98,15 @@ export async function POST(request: NextRequest) {
       .update({ last_message_at: new Date().toISOString(), unread_count: conv.unreadCount + 1, status: 'open' })
       .eq('id', conv.id)
 
-    const buffer = Buffer.from(await file.arrayBuffer())
-    const storagePath = `upload/${Date.now()}-${file.name}`
     const { invoiceId, summary } = await processInvoiceFile(supabase, {
       buffer,
       filename: file.name,
       mimeType: 'application/pdf',
-      storagePath,
+      storagePrefix: 'upload',
       supplier,
       source: 'upload',
       sourceMessageId: message.id,
+      conversationId: conv.id,
     })
 
     return apiOk({ invoiceId, conversationId: conv.id, summary }, 201)

@@ -21,6 +21,10 @@ export interface SettingsRow {
   manual_cash_cents: number | null
   manual_cash_at: string | null
   allocation_priority: BucketKey[]
+  /** 0..100. planMonthlyAllocation never allocates this % of the growth pot — always left as free cash for marketing. */
+  marketing_reserve_pct: number
+  /** Hourly cron mails ready_for_snelstart documents to the bookkeeping mailbox. Off = manual "Doorsturen" only. */
+  snelstart_auto_forward: boolean
   updated_at: string
 }
 
@@ -34,6 +38,8 @@ export interface SettingsPayload {
   owner_salary_coverage_cents: number
   manual_cash_cents: number | null
   allocation_priority: BucketKey[]
+  marketing_reserve_pct: number
+  snelstart_auto_forward: boolean
 }
 
 export type ObligationStatus = 'open' | 'paid' | 'cancelled'

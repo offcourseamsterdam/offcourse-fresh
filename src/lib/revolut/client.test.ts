@@ -108,3 +108,49 @@ describe('helpers', () => {
     expect(ownLeg(t, 'missing')?.leg_id).toBe('1')
   })
 })
+
+describe('RevolutClient expenses & receipts', () => {
+  const expense = (id: string, date: string, extra: Record<string, unknown> = {}) => ({
+    id, state: 'approved', transaction_type: 'card_payment', expense_date: date, splits: [], receipt_ids: [], spent_amount: { amount: 1, currency: 'EUR' }, ...extra,
+  })
+
+  it('getExpenses builds the query string Revolut documents', async () => {
+    const f = vi.fn().mockResolvedValue(json([]))
+    await client(f).getExpenses({ from: '2026-08-01T00:00:00Z', count: 100, state: 'approved' })
+    expect(f.mock.calls[0][0]).toBe('https://sandbox-b2b.revolut.com/api/1.0/expenses?from=2026-08-01T00%3A00%3A00Z&count=100&state=approved')
+  })
+
+  it('listExpensesSince pages backwards by the last expense_date and dedupes the boundary item', async () => {
+    const page1 = [expense('e3', '2026-09-03T10:00:00Z'), expense('e2', '2026-09-02T10:00:00Z')]
+    const page2 = [expense('e2', '2026-09-02T10:00:00Z'), expense('e1', '2026-09-01T10:00:00Z')]
+    const f = vi.fn().mockResolvedValueOnce(json(page1)).mockResolvedValueOnce(json(page2)).mockResolvedValueOnce(json([]))
+    const all = await client(f).listExpensesSince('2026-08-01T00:00:00Z', { pageSize: 2 })
+    expect(all.map(e => e.id)).toEqual(['e3', 'e2', 'e1'])
+    // second call carried the boundary as `to`
+    expect(f.mock.calls[1][0]).toContain('to=2026-09-02T10%3A00%3A00Z')
+    expect(f).toHaveBeenCalledTimes(3)
+  })
+
+  it('listExpensesSince stops on a short page without an extra request', async () => {
+    const f = vi.fn().mockResolvedValueOnce(json([expense('e1', '2026-09-01T10:00:00Z')]))
+    const all = await client(f).listExpensesSince('2026-08-01T00:00:00Z', { pageSize: 500 })
+    expect(all).toHaveLength(1)
+    expect(f).toHaveBeenCalledTimes(1)
+  })
+
+  it('getExpenseReceipt returns the raw bytes and asks for octet-stream', async () => {
+    const bytes = Buffer.from('%PDF-1.4 receipt')
+    const f = vi.fn().mockResolvedValue({ ok: true, status: 200, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) } as unknown as Response)
+    const out = await client(f).getExpenseReceipt('exp-1', 'rcpt 1')
+    expect(out.toString('latin1')).toBe('%PDF-1.4 receipt')
+    const [url, init] = f.mock.calls[0]
+    expect(url).toBe('https://sandbox-b2b.revolut.com/api/1.0/expenses/exp-1/receipts/rcpt%201/content')
+    expect(init.headers.Accept).toBe('application/octet-stream')
+    expect(init.cache).toBe('no-store')
+  })
+
+  it('getExpenseReceipt surfaces a 404 as RevolutApiError', async () => {
+    const f = vi.fn().mockResolvedValue({ ok: false, status: 404, text: async () => 'not found' } as Response)
+    await expect(client(f).getExpenseReceipt('exp-1', 'r1')).rejects.toBeInstanceOf(RevolutApiError)
+  })
+})

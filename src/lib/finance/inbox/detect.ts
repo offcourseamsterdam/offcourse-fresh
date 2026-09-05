@@ -15,12 +15,16 @@
  * Pure: no I/O. The caller supplies the already-loaded staff/supplier lists.
  */
 
-export type FinanceSenderKind = 'staff' | 'supplier' | 'unknown'
+export type FinanceSenderKind = 'staff' | 'supplier' | 'owner' | 'unknown'
 
 export interface FinanceInvoiceDetection {
   category: 'finance'
   senderKind: FinanceSenderKind
-  /** Set when senderKind is 'staff' or 'supplier' — who this is, for auto-matching later. */
+  /**
+   * Set when senderKind is 'staff' (for the payable pipeline's auto-matching), or when it's
+   * 'owner' and the owner also happens to have a staff row (they are skippers too) — in that
+   * case it's informational only, since 'owner' never reaches the payable pipeline.
+   */
   staffId: string | null
   supplierId: string | null
   /** False for an unknown sender: the thread still gets the finance category (so it's visible in
@@ -35,6 +39,14 @@ export interface DetectFinanceInvoiceInput {
   financeAddress: string | null | undefined
   knownStaff: Array<{ id: string; email: string | null }>
   knownSuppliers: Array<{ id: string; email: string | null }>
+  /**
+   * user_profiles with role='admin' (Beer, Jannah) — Beer, 2026-09-05: an
+   * owner forwarding a receipt to the finance alias is not "invoicing
+   * himself"; it's an expense document like any other non-staff mail. Checked
+   * before the generic staff match so an owner's own row in `staff` (they are
+   * also a skipper) never routes into the payable pipeline.
+   */
+  ownerEmails: string[]
 }
 
 function norm(email: string): string {
@@ -54,9 +66,16 @@ export function detectFinanceInvoice(input: DetectFinanceInvoiceInput): FinanceI
   if (!addressedToFinance) return null
 
   const from = norm(input.fromEmail)
+  const owners = new Set(input.ownerEmails.map(norm))
   const staff = input.knownStaff.find(s => s.email && norm(s.email) === from)
   if (staff) {
+    if (owners.has(from)) {
+      return { category: 'finance', senderKind: 'owner', staffId: staff.id, supplierId: null, trusted: true }
+    }
     return { category: 'finance', senderKind: 'staff', staffId: staff.id, supplierId: null, trusted: true }
+  }
+  if (owners.has(from)) {
+    return { category: 'finance', senderKind: 'owner', staffId: null, supplierId: null, trusted: true }
   }
   const supplier = input.knownSuppliers.find(s => s.email && norm(s.email) === from)
   if (supplier) {
