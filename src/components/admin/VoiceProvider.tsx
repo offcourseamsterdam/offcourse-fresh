@@ -113,6 +113,12 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         })
 
         device.on('error', twilioError => {
+          if (cancelled || device.state === 'destroyed') return
+          // 31005 on unmount or transient socket renegotiation is handled by Twilio's internal reconnection
+          if (twilioError.code === 31005) {
+            console.warn('[VoiceProvider] Twilio Device connection event (reconnecting):', twilioError.message)
+            return
+          }
           console.error('[VoiceProvider] Twilio Device error:', twilioError.message)
         })
 
@@ -129,16 +135,24 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
           }
         })
 
-        await device.register()
+        if (!cancelled) {
+          await device.register()
+        }
       } catch (err) {
-        console.error('[VoiceProvider] Could not start the softphone:', err)
+        if (!cancelled) {
+          console.error('[VoiceProvider] Could not start the softphone:', err)
+        }
       }
     }
 
     setup()
     return () => {
       cancelled = true
-      deviceRef.current?.destroy()
+      if (deviceRef.current) {
+        deviceRef.current.removeAllListeners()
+        deviceRef.current.destroy()
+        deviceRef.current = null
+      }
     }
   }, [])
 
