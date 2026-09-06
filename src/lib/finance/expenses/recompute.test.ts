@@ -5,7 +5,7 @@ function expense(over: Partial<ExpenseRow> = {}): ExpenseRow {
   return {
     id: 'exp-1', ref: 'FIN-000001', status: 'waiting_for_invoice', supplier_id: null, supplier_name: 'Bol.com',
     bank_transaction_id: 'bt-1', cash_out_cents: 12100, paid_at: '2026-09-05T12:00:00Z',
-    revolut_expense_id: null, revolut_expense_state: null, revolut_vat_rate_pct: null, revolut_vat_cents: null,
+    revolut_expense_id: null, revolut_expense_state: null, revolut_vat_rate_pct: null, revolut_vat_cents: null, revolut_draft_id: null,
     primary_document_id: null, order_number: null, invoice_number: null, invoice_date: null,
     gross_cents: null, net_cents: null, vat_cents: null, vat_rate_pct: null, vat_source: null, vat_conflict: null,
     match_confidence: null, match_signals: null, matched_at: null,

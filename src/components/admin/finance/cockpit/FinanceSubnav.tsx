@@ -2,12 +2,14 @@
 
 import Link from 'next/link'
 import { useParams, usePathname } from 'next/navigation'
+import { useAdminFetch } from '@/hooks/useAdminFetch'
 
 interface SubnavItem {
   href: string
   label: string
   /** Greyed-out placeholder for a later phase. */
   soon?: boolean
+  badge?: 'finance-inbox-open-count'
 }
 
 /**
@@ -24,7 +26,7 @@ const ITEMS: SubnavItem[] = [
   // CFO has its own environment"). Same three-pane UI as /admin/inbox,
   // scoped to source_category='finance' — supersedes the §6a decision to
   // filter invoices inside the operations inbox instead.
-  { href: '/admin/finance/inbox', label: 'Facturen' },
+  { href: '/admin/finance/inbox', label: 'Facturen', badge: 'finance-inbox-open-count' },
   // Expense Records (plan 2026-09-05): every payment + its document + VAT + SnelStart hand-off.
   { href: '/admin/finance/expenses', label: 'Uitgaven' },
   { href: '/admin/finance/investments', label: 'Investeringen' },
@@ -40,6 +42,11 @@ export function FinanceSubnav() {
   const locale = (params?.locale as string | undefined) ?? 'en'
   const pathname = usePathname() ?? ''
 
+  const { data: financeInboxOpen } = useAdminFetch<{ count: number }>('/api/admin/inbox/open-count?scope=finance', {
+    refreshInterval: 30_000,
+  })
+  const financeOpenCount = financeInboxOpen?.count ?? 0
+
   // Strip the locale prefix so '/nl/admin/finance/goals' matches '/admin/finance/goals'.
   const current = pathname.replace(/^\/[a-z]{2}(?=\/)/, '')
 
@@ -51,6 +58,8 @@ export function FinanceSubnav() {
           const active = item.href === '/admin/finance'
             ? current === item.href
             : current === item.href || current.startsWith(`${item.href}/`)
+
+          const badgeCount = item.badge === 'finance-inbox-open-count' ? financeOpenCount : 0
 
           if (item.soon) {
             return (
@@ -71,13 +80,18 @@ export function FinanceSubnav() {
               <Link
                 href={`/${locale}${item.href}`}
                 aria-current={active ? 'page' : undefined}
-                className={`inline-flex items-center min-h-[44px] sm:min-h-0 px-3.5 py-2 rounded-full border text-sm font-medium whitespace-nowrap transition-colors ${
+                className={`inline-flex items-center gap-1.5 min-h-[44px] sm:min-h-0 px-3.5 py-2 rounded-full border text-sm font-medium whitespace-nowrap transition-colors ${
                   active
                     ? 'bg-zinc-900 border-zinc-900 text-white shadow-sm'
                     : 'bg-white border-zinc-200 text-zinc-600 hover:border-zinc-300 hover:text-zinc-900'
                 }`}
               >
-                {item.label}
+                <span>{item.label}</span>
+                {badgeCount > 0 && (
+                  <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold flex items-center justify-center leading-none">
+                    {badgeCount > 99 ? '99+' : badgeCount}
+                  </span>
+                )}
               </Link>
             </li>
           )

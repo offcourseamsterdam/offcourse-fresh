@@ -1,11 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createSupabaseChainMock, has, op, opArg, queriesFor, type RecordedQuery } from '@/test/supabase-chain-mock'
 
-const h = vi.hoisted(() => ({ recomputeExpense: vi.fn().mockResolvedValue({ status: 'matched' }) }))
+const h = vi.hoisted(() => ({
+  recomputeExpense: vi.fn().mockResolvedValue({ status: 'matched' }),
+  loadConnection: vi.fn().mockResolvedValue({ account_id: 'acc-1' }),
+  isConnected: vi.fn().mockReturnValue(true),
+  createRevolutClient: vi.fn(),
+  createCounterparty: vi.fn().mockResolvedValue({ id: 'cp-1' }),
+  createPaymentDraft: vi.fn().mockResolvedValue({ id: 'draft-1' }),
+  logFinanceEvent: vi.fn().mockResolvedValue(undefined),
+}))
 vi.mock('./recompute', async importOriginal => ({ ...(await importOriginal<typeof import('./recompute')>()), recomputeExpense: h.recomputeExpense }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }))
+vi.mock('@/lib/finance/cockpit/events', () => ({ logFinanceEvent: h.logFinanceEvent }))
+vi.mock('@/lib/revolut/token-store', () => ({ loadConnection: h.loadConnection, isConnected: h.isConnected, createRevolutClient: h.createRevolutClient }))
 
-import { ExpenseActionError, clearReview, confirmMatch, ignoreExpense, linkDocument, listExpenses, listOrphanDocuments, loadExpenseDetail, markBooked, setManualVat, unignoreExpense, unlinkDocument } from './actions'
+import { ExpenseActionError, clearReview, confirmMatch, createSupplierAndLink, draftExpensePayment, ignoreExpense, linkDocument, linkSupplier, listExpenses, listOrphanDocuments, loadExpenseDetail, markBooked, setManualVat, unignoreExpense, unlinkDocument } from './actions'
 
 const EXP = (over: Record<string, unknown> = {}) => ({
   id: 'exp-1', status: 'partially_matched', bank_transaction_id: 'tx-1', cash_out_cents: 12100, gross_cents: 12100, match_confidence: 0.7, matched_at: '2026-09-08T09:00:00Z',
@@ -13,7 +23,9 @@ const EXP = (over: Record<string, unknown> = {}) => ({
 })
 const DOC = (over: Record<string, unknown> = {}) => ({ id: 'doc-1', expense_id: null, duplicate_of: null, kind: 'invoice_pdf', link_fetch_status: null, file_path: 'email/g/x.pdf', source: 'email', extracted: { vatCents: 2100, grossCents: 12100, matchReview: { expenseIds: ['a', 'b'], flaggedAt: 'x' } }, created_at: '2026-09-08T09:00:00Z', ...over })
 
-function db(opts: { expense?: Record<string, unknown> | null; doc?: Record<string, unknown> | null; docs?: Record<string, unknown>[]; docCount?: number; list?: Record<string, unknown>[] } = {}) {
+const SUPPLIER = { id: 'sup-1', name: 'Jachthaven Westerdok', iban: 'NL91ABNA0417164300', revolut_counterparty_id: null }
+
+function db(opts: { expense?: Record<string, unknown> | null; doc?: Record<string, unknown> | null; docs?: Record<string, unknown>[]; docCount?: number; list?: Record<string, unknown>[]; supplier?: Record<string, unknown> | null; supplierInsertError?: { message: string } } = {}) {
   return createSupabaseChainMock((q: RecordedQuery) => {
     if (q.table === 'finance_expenses') {
       if (has(q, 'update')) return { data: null }
@@ -26,11 +38,25 @@ function db(opts: { expense?: Record<string, unknown> | null; doc?: Record<strin
       if (op(q, 'eq')?.args[0] === 'id') return { data: opts.doc === undefined ? DOC() : opts.doc }
       return { data: opts.docs ?? [DOC({ expense_id: 'exp-1' })] }
     }
+    if (q.table === 'finance_suppliers') {
+      if (has(q, 'insert')) return opts.supplierInsertError ? { data: null, error: opts.supplierInsertError } : { data: { id: 'sup-new', name: 'Nieuwe Leverancier' } }
+      if (has(q, 'update')) return { data: null }
+      // A select-by-id after the insert above must see the row that was just created, not the default fixture.
+      if (op(q, 'eq')?.args[0] === 'id' && op(q, 'eq')!.args[1] === 'sup-new') return { data: { id: 'sup-new', name: 'Nieuwe Leverancier', iban: 'NL91ABNA0417164300', revolut_counterparty_id: null } }
+      return { data: opts.supplier === undefined ? SUPPLIER : opts.supplier }
+    }
     return { data: null }
   })
 }
 
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+  h.loadConnection.mockResolvedValue({ account_id: 'acc-1' })
+  h.isConnected.mockReturnValue(true)
+  h.createRevolutClient.mockResolvedValue({ createCounterparty: h.createCounterparty, createPaymentDraft: h.createPaymentDraft })
+  h.createCounterparty.mockResolvedValue({ id: 'cp-1' })
+  h.createPaymentDraft.mockResolvedValue({ id: 'draft-1' })
+})
 
 describe('linkDocument', () => {
   it('attaches the document, sets confidence 1 (a human beats a score), clears review, recomputes', async () => {
@@ -152,5 +178,74 @@ describe('listExpenses / loadExpenseDetail', () => {
     expect(op(q, 'is')!.args).toEqual(['expense_id', null])
     expect(op(q, 'neq')!.args).toEqual(['kind', 'other_email'])
     expect(op(q, 'limit')!.args[0]).toBe(500)
+  })
+})
+
+describe('linkSupplier / createSupplierAndLink', () => {
+  it('links an existing supplier and takes its confirmed name over whatever was guessed', async () => {
+    const mock = db()
+    await linkSupplier(mock.client as never, 'exp-1', 'sup-1')
+    expect(opArg(mock.queries, 'finance_expenses', 'update')).toMatchObject({ supplier_id: 'sup-1', supplier_name: 'Jachthaven Westerdok' })
+    expect(h.recomputeExpense).toHaveBeenCalledWith(expect.anything(), 'exp-1')
+  })
+
+  it('404s on an unknown supplier id, an ignored/booked record is still frozen', async () => {
+    await expect(linkSupplier(db({ supplier: null }).client as never, 'exp-1', 'nope')).rejects.toMatchObject({ status: 404 })
+    await expect(linkSupplier(db({ expense: EXP({ booked_at: '2026-09-10T00:00:00Z' }) }).client as never, 'exp-1', 'sup-1')).rejects.toMatchObject({ status: 409 })
+  })
+
+  it('creates a new supplier with a validated, normalised IBAN and links it in one step', async () => {
+    const mock = db()
+    await createSupplierAndLink(mock.client as never, 'exp-1', { name: 'Nieuwe Leverancier', iban: 'nl91 abna 0417 1643 00' })
+    expect(opArg(mock.queries, 'finance_suppliers', 'insert')).toEqual({ name: 'Nieuwe Leverancier', iban: 'NL91ABNA0417164300' })
+    expect(opArg(mock.queries, 'finance_expenses', 'update')).toMatchObject({ supplier_id: 'sup-new' })
+    expect(h.logFinanceEvent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ event_type: 'supplier_created' }))
+  })
+
+  it('refuses a bad IBAN before ever touching finance_suppliers', async () => {
+    const mock = db()
+    await expect(createSupplierAndLink(mock.client as never, 'exp-1', { name: 'X', iban: 'NL91ABNA0417164301' })).rejects.toThrow(/klopt niet/)
+    expect(queriesFor(mock.queries, 'finance_suppliers', 'insert')).toHaveLength(0)
+  })
+})
+
+describe('draftExpensePayment', () => {
+  it('the happy path: no draft yet, valid supplier IBAN → counterparty + draft created, pinned, event logged', async () => {
+    const mock = db({ expense: EXP({ status: 'waiting_for_payment', bank_transaction_id: null, supplier_id: 'sup-1', revolut_draft_id: null, ref: 'FIN-000042' }) })
+    await draftExpensePayment(mock.client as never, 'exp-1')
+    expect(h.createCounterparty).toHaveBeenCalledWith({ company_name: 'Jachthaven Westerdok', bank_country: 'NL', currency: 'EUR', iban: 'NL91ABNA0417164300' })
+    expect(h.createPaymentDraft).toHaveBeenCalledTimes(1)
+    const payment = h.createPaymentDraft.mock.calls[0][0].payments[0]
+    expect(payment).toMatchObject({ account_id: 'acc-1', receiver: { counterparty_id: 'cp-1' }, amount: 121, currency: 'EUR' })
+    expect(opArg(mock.queries, 'finance_expenses', 'update')).toMatchObject({ revolut_draft_id: 'draft-1' })
+    expect(h.logFinanceEvent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ event_type: 'expense_payment_drafted', delta_cents: 12100 }))
+    expect(h.recomputeExpense).toHaveBeenCalledWith(expect.anything(), 'exp-1')
+  })
+
+  it('a second click is idempotent: the pinned draft is reused, Revolut is never called again', async () => {
+    const mock = db({ expense: EXP({ status: 'waiting_for_payment', bank_transaction_id: null, supplier_id: 'sup-1', revolut_draft_id: 'draft-existing' }) })
+    await draftExpensePayment(mock.client as never, 'exp-1')
+    expect(h.createPaymentDraft).not.toHaveBeenCalled()
+    expect(queriesFor(mock.queries, 'finance_expenses', 'update')).toHaveLength(0)
+    expect(h.recomputeExpense).toHaveBeenCalledWith(expect.anything(), 'exp-1')
+  })
+
+  it('never once a bank transaction already exists — that money already left, a second draft would risk double-paying', async () => {
+    const mock = db({ expense: EXP({ status: 'matched', bank_transaction_id: 'tx-1' }) })
+    await expect(draftExpensePayment(mock.client as never, 'exp-1')).rejects.toMatchObject({ status: 409 })
+    expect(h.createPaymentDraft).not.toHaveBeenCalled()
+  })
+
+  it('refuses outside waiting_for_payment, with no amount, with no linked supplier, and with an invalid/missing IBAN', async () => {
+    await expect(draftExpensePayment(db({ expense: EXP({ status: 'ready_for_snelstart', bank_transaction_id: null }) }).client as never, 'exp-1')).rejects.toMatchObject({ status: 409 })
+    await expect(draftExpensePayment(db({ expense: EXP({ status: 'waiting_for_payment', bank_transaction_id: null, gross_cents: null }) }).client as never, 'exp-1')).rejects.toMatchObject({ status: 409 })
+    await expect(draftExpensePayment(db({ expense: EXP({ status: 'waiting_for_payment', bank_transaction_id: null, supplier_id: null }) }).client as never, 'exp-1')).rejects.toThrow(/leverancier/)
+    await expect(draftExpensePayment(db({ expense: EXP({ status: 'waiting_for_payment', bank_transaction_id: null, supplier_id: 'sup-1' }), supplier: { ...SUPPLIER, iban: null } }).client as never, 'exp-1')).rejects.toThrow(/IBAN/)
+  })
+
+  it('refuses when Revolut is not connected or has no account selected, before creating anything', async () => {
+    h.isConnected.mockReturnValue(false)
+    await expect(draftExpensePayment(db({ expense: EXP({ status: 'waiting_for_payment', bank_transaction_id: null, supplier_id: 'sup-1' }) }).client as never, 'exp-1')).rejects.toThrow(/niet gekoppeld/)
+    expect(h.createCounterparty).not.toHaveBeenCalled()
   })
 })

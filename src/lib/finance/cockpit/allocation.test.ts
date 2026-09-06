@@ -297,4 +297,23 @@ describe('formatAllocationSummary', () => {
     const withoutReserve = formatAllocationSummary(planMonthlyAllocation(c, goals, settings()))
     expect(withoutReserve).not.toContain('Marketingreserve')
   })
+
+  it('allocates to monthly_refill up to targetCents regardless of monthlyFundingCents', () => {
+    // Operations Fund with target €2.000, currently €600 funded → wants €1.400
+    const refillGoal = goal({
+      id: 'refill-ops',
+      name: 'Operations Fund',
+      goalType: 'monthly_refill',
+      targetCents: 200_000,
+      fundedCents: 60_000,
+      monthlyFundingCents: 0,
+    })
+    const c = cockpitFor({ cashCents: 500_000, goals: [refillGoal] })
+    const plan = planMonthlyAllocation(c, [refillGoal], settings())
+    expect(plan.deltas).toHaveLength(1)
+    expect(plan.deltas[0].deltaCents).toBe(140_000)
+    expect(plan.deltas[0].toCents).toBe(200_000)
+    expect(plan.deltas[0].cappedBy).toBe('target')
+  })
 })
+

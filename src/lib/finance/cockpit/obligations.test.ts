@@ -29,12 +29,13 @@ const pay = (o: Partial<LoanPaymentRow>): LoanPaymentRow => ({
 })
 
 describe('horizonEnd', () => {
-  it('30 days / 3 months / 12 months from today', () => {
-    expect(horizonEnd(TODAY, '30d')).toBe('2026-10-04')
-    expect(horizonEnd(TODAY, '3m')).toBe('2026-12-04')
-    expect(horizonEnd(TODAY, '12m')).toBe('2027-09-04')
+  it('1 month / 3 months / 12 months from today', () => {
+    expect(horizonEnd(TODAY, '30d')).toBe('2026-10-31')
+    expect(horizonEnd(TODAY, '1m')).toBe('2026-10-31')
+    expect(horizonEnd(TODAY, '3m')).toBe('2026-12-31')
+    expect(horizonEnd(TODAY, '12m')).toBe('2027-09-30')
   })
-  it('clamps month-end (Jan 31 + 1 month → Feb 28)', () => {
+  it('clamps month-end (Jan 31 + 3 months → Apr 30)', () => {
     expect(horizonEnd('2027-01-31', '3m')).toBe('2027-04-30')
   })
 })

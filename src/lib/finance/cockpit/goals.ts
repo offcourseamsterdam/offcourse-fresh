@@ -17,6 +17,7 @@ import type { GoalProgress, GoalRow } from './types'
 const AVG_MONTH_DAYS = 30.4375
 
 export function goalProgress(goal: GoalRow, today: ISODate): GoalProgress {
+  const goalType = goal.goalType ?? 'target'
   const funded = Math.min(goal.fundedCents, goal.targetCents)
   const remaining = Math.max(0, goal.targetCents - funded)
   const progressPct = goal.targetCents > 0 ? Math.round((funded / goal.targetCents) * 100) : 0
@@ -26,7 +27,10 @@ export function goalProgress(goal: GoalRow, today: ISODate): GoalProgress {
 
   let plannedByNow = 0
   if (goal.status === 'active') {
-    if (goal.monthlyFundingCents > 0) {
+    if (goalType === 'monthly_refill') {
+      // A monthly refill fund aims to be full (at target) every month
+      plannedByNow = goal.targetCents
+    } else if (goal.monthlyFundingCents > 0) {
       plannedByNow = Math.min(goal.targetCents, Math.round(Math.floor(monthsElapsed) * goal.monthlyFundingCents))
     } else if (goal.deadline) {
       const totalDays = daysBetween(goal.createdAt, goal.deadline)
@@ -41,6 +45,7 @@ export function goalProgress(goal: GoalRow, today: ISODate): GoalProgress {
   return {
     id: goal.id,
     name: goal.name,
+    goalType,
     targetCents: goal.targetCents,
     fundedCents: funded,
     remainingCents: remaining,

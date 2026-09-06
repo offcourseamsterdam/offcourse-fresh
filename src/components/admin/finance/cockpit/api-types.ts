@@ -53,6 +53,9 @@ export interface ObligationApiRow {
   recurrence_months: number | null
   recurrence_until: string | null
   boat_id: string | null
+  supplier_id: string | null
+  /** Set once a Revolut payment draft exists for this occurrence — see draft-payment/route.ts. */
+  revolut_draft_id: string | null
   status: ObligationStatus
   paid_at: string | null
   notes: string | null
@@ -66,6 +69,7 @@ export interface ObligationPayload {
   recurrence_months?: number | null
   recurrence_until?: string | null
   boat_id?: string | null
+  supplier_id?: string | null
   notes?: string | null
 }
 
@@ -147,6 +151,7 @@ export interface LoanImpactResult {
 
 export type GoalStatus = 'active' | 'completed' | 'paused'
 export type GoalFlexibility = 'fixed' | 'flexible'
+export type GoalType = 'target' | 'sinking_fund' | 'monthly_refill'
 
 export const GOAL_STATUS_LABELS: Record<GoalStatus, string> = {
   active: 'Actief',
@@ -159,9 +164,16 @@ export const GOAL_FLEXIBILITY_LABELS: Record<GoalFlexibility, string> = {
   flexible: 'Flexibel',
 }
 
+export const GOAL_TYPE_LABELS: Record<GoalType, string> = {
+  target: 'Aankoopdoel',
+  sinking_fund: 'Onderhoudsbuffer',
+  monthly_refill: 'Aanvulfonds',
+}
+
 export interface GoalApiRow {
   id: string
   name: string
+  goal_type?: GoalType
   description: string | null
   target_cents: number
   funded_cents: number
@@ -178,6 +190,7 @@ export interface GoalApiRow {
 
 export interface GoalPayload {
   name: string
+  goal_type?: GoalType
   description?: string | null
   target_cents: number
   funded_cents?: number

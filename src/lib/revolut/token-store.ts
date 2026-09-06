@@ -120,14 +120,12 @@ export async function getAccessToken(supabase: Admin, opts: { force?: boolean; n
   }
 
   // Try to take the lock. Only one caller wins; the rest wait for its result.
+  // We use an RPC because PostgREST generates invalid SQL on UPDATE with .or() filters.
   const lockUntil = new Date(now.getTime() + LOCK_MS).toISOString()
-  const { data: locked } = await supabase
-    .from('revolut_connection')
-    .update({ refresh_lock_until: lockUntil })
-    .eq('id', 'default')
-    .or(`refresh_lock_until.is.null,refresh_lock_until.lt.${now.toISOString()}`)
-    .select('id')
-  const won = (locked?.length ?? 0) > 0
+  const { data: won } = await supabase.rpc('acquire_revolut_refresh_lock', {
+    p_lock_until: lockUntil,
+    p_now: now.toISOString(),
+  })
 
   if (!won) {
     for (let i = 0; i < 10; i++) {

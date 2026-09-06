@@ -24,5 +24,8 @@ export const expenseActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('vat'), vatCents: z.number().int().min(0), ratePct: z.number().min(0).max(100).nullable().optional() }),
   z.object({ action: z.literal('booked') }),
   z.object({ action: z.literal('forward') }),
+  z.object({ action: z.literal('link_supplier'), supplierId: z.string().uuid() }),
+  z.object({ action: z.literal('create_supplier'), name: z.string().trim().min(1).max(200), iban: z.string().trim().min(1).max(34) }),
+  z.object({ action: z.literal('draft_payment') }),
 ])
 export type ExpenseAction = z.infer<typeof expenseActionSchema>

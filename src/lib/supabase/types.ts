@@ -2429,6 +2429,7 @@ export type Database = {
           primary_document_id: string | null
           ref: string
           reviewed_at: string | null
+          revolut_draft_id: string | null
           revolut_expense_id: string | null
           revolut_expense_state: string | null
           revolut_vat_cents: number | null
@@ -2466,6 +2467,7 @@ export type Database = {
           primary_document_id?: string | null
           ref?: string
           reviewed_at?: string | null
+          revolut_draft_id?: string | null
           revolut_expense_id?: string | null
           revolut_expense_state?: string | null
           revolut_vat_cents?: number | null
@@ -2503,6 +2505,7 @@ export type Database = {
           primary_document_id?: string | null
           ref?: string
           reviewed_at?: string | null
+          revolut_draft_id?: string | null
           revolut_expense_id?: string | null
           revolut_expense_state?: string | null
           revolut_vat_cents?: number | null
@@ -2914,8 +2917,10 @@ export type Database = {
           paid_transaction_id: string | null
           recurrence_months: number | null
           recurrence_until: string | null
+          revolut_draft_id: string | null
           source_key: string | null
           status: string
+          supplier_id: string | null
           title: string
           updated_at: string
         }
@@ -2933,8 +2938,10 @@ export type Database = {
           paid_transaction_id?: string | null
           recurrence_months?: number | null
           recurrence_until?: string | null
+          revolut_draft_id?: string | null
           source_key?: string | null
           status?: string
+          supplier_id?: string | null
           title: string
           updated_at?: string
         }
@@ -2952,8 +2959,10 @@ export type Database = {
           paid_transaction_id?: string | null
           recurrence_months?: number | null
           recurrence_until?: string | null
+          revolut_draft_id?: string | null
           source_key?: string | null
           status?: string
+          supplier_id?: string | null
           title?: string
           updated_at?: string
         }
@@ -2970,6 +2979,13 @@ export type Database = {
             columns: ["loan_id"]
             isOneToOne: false
             referencedRelation: "finance_loans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_obligations_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "finance_suppliers"
             referencedColumns: ["id"]
           },
         ]
@@ -5903,12 +5919,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      acquire_revolut_refresh_lock: {
+        Args: { p_lock_until: string; p_now: string }
+        Returns: boolean
+      }
       ai_spend_summary: { Args: never; Returns: Json }
       ai_usage_total_cents: { Args: never; Returns: number }
       allocate_invoice_number: {
         Args: { p_stripe_pi_id: string }
         Returns: string
       }
+      finance_expense_next_ref: { Args: never; Returns: string }
       get_translatable_columns: { Args: never; Returns: Json }
       ghost_stats: { Args: never; Returns: Json }
       set_section_text_color: {

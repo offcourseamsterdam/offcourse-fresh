@@ -17,15 +17,16 @@
 
 import type { ObligationOccurrence } from './types'
 
-export type ObligationCategory = 'debt' | 'vat' | 'city_tax' | 'crew' | 'invoice' | 'operational' | 'other'
+export type ObligationCategory = 'debt' | 'vat' | 'city_tax' | 'crew' | 'commission' | 'invoice' | 'operational' | 'other'
 
-export const CATEGORY_ORDER: ObligationCategory[] = ['debt', 'vat', 'city_tax', 'crew', 'invoice', 'operational', 'other']
+export const CATEGORY_ORDER: ObligationCategory[] = ['debt', 'vat', 'city_tax', 'crew', 'commission', 'invoice', 'operational', 'other']
 
 export const CATEGORY_LABELS: Record<ObligationCategory, string> = {
   debt: 'Rente + aflossing',
   vat: 'BTW',
   city_tax: 'Toeristenbelasting',
   crew: 'Schippersuren',
+  commission: 'Partnercommissies',
   invoice: 'Facturen',
   operational: 'Operationele vaste kosten',
   other: 'Meer…',
@@ -45,6 +46,7 @@ function taxCategory(sourceKey: string): ObligationCategory {
 }
 
 export function categoryOf(o: ObligationOccurrence): ObligationCategory {
+  if (o.sourceKey?.startsWith('partner-commission:')) return 'commission'
   switch (o.kind) {
     case 'loan': return 'debt'
     case 'crew': return 'crew'
@@ -88,3 +90,34 @@ export function groupObligations(occurrences: ObligationOccurrence[]): Obligatio
     }
   })
 }
+
+export interface PayeeSubgroup {
+  payee: string
+  items: ObligationOccurrence[]
+  totalCents: number
+  overdueCount: number
+}
+
+/**
+ * Groups an array of occurrences by payee / supplier name.
+ * Used inside "Meer…" (other) so recurring subscriptions and standing charges
+ * from the same counterparty (e.g. Supabase, Simyo) sit together in a tidy sub-drawer.
+ */
+export function groupPayees(items: ObligationOccurrence[]): PayeeSubgroup[] {
+  const map = new Map<string, ObligationOccurrence[]>()
+  for (const item of items) {
+    const payee = item.title.trim() || 'Overig'
+    const list = map.get(payee)
+    if (list) list.push(item)
+    else map.set(payee, [item])
+  }
+  return Array.from(map.entries())
+    .map(([payee, payeeItems]) => ({
+      payee,
+      items: payeeItems,
+      totalCents: payeeItems.reduce((s, i) => s + i.amountCents, 0),
+      overdueCount: payeeItems.filter(i => i.overdue).length,
+    }))
+    .sort((a, b) => b.totalCents - a.totalCents || a.payee.localeCompare(b.payee))
+}
+

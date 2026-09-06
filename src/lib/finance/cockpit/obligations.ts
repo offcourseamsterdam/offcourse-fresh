@@ -10,14 +10,15 @@
  * expected in `rows` (the loan payments table is the single source for loans).
  */
 
-import { addDays, addMonths, type ISODate } from './dates'
+import { addDays, addMonths, endOfMonth, type ISODate } from './dates'
 import type { Horizon, LoanPaymentRow, ObligationOccurrence, ObligationRow } from './types'
 
 export function horizonEnd(today: ISODate, horizon: Horizon): ISODate {
   switch (horizon) {
-    case '30d': return addDays(today, 30)
-    case '3m': return addMonths(today, 3)
-    case '12m': return addMonths(today, 12)
+    case '30d':
+    case '1m': return endOfMonth(today, 1)
+    case '3m': return endOfMonth(today, 3)
+    case '12m': return endOfMonth(today, 12)
   }
 }
 

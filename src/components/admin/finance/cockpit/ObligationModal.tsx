@@ -1,14 +1,17 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Loader2, Send } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { AdminFormModal } from '@/components/admin/ui/AdminFormModal'
-import { TextField, SelectField, TextAreaField } from '@/components/admin/ui/fields'
-import { useAdminSave, adminMutate } from '@/hooks/useAdminSave'
+import { TextField, SelectField, TextAreaField, Field } from '@/components/admin/ui/fields'
+import { useAdminSave, adminMutate, AdminApiError } from '@/hooks/useAdminSave'
 import { OBLIGATION_KIND_LABELS, type ObligationKind } from '@/lib/finance/cockpit/types'
 import { COCKPIT_API, type ObligationApiRow, type ObligationPayload } from './api-types'
 import { MoneyField } from './MoneyField'
 import { eurosToCents, centsToEuros } from './money'
 import { useBoats } from './useBoats'
+import { SupplierPicker } from './SupplierPicker'
 
 interface ObligationModalProps {
   open: boolean
@@ -41,6 +44,10 @@ export function ObligationModal({ open, onClose, onSaved, editing }: ObligationM
   const [recurrenceUntil, setRecurrenceUntil] = useState('')
   const [boatId, setBoatId] = useState('')
   const [notes, setNotes] = useState('')
+  const [supplierId, setSupplierId] = useState<string | null>(null)
+  const [draftId, setDraftId] = useState<string | null>(null)
+  const [drafting, setDrafting] = useState(false)
+  const [draftError, setDraftError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -53,8 +60,26 @@ export function ObligationModal({ open, onClose, onSaved, editing }: ObligationM
     setRecurrenceUntil(editing?.recurrence_until ?? '')
     setBoatId(editing?.boat_id ?? '')
     setNotes(editing?.notes ?? '')
+    setSupplierId(editing?.supplier_id ?? null)
+    setDraftId(editing?.revolut_draft_id ?? null)
+    setDraftError(null)
     setError(null)
   }, [open, editing, setError])
+
+  async function handleDraftPayment() {
+    if (!editing) return
+    setDrafting(true)
+    setDraftError(null)
+    try {
+      const result = await adminMutate<{ id: string; revolut_draft_id: string }>(`${COCKPIT_API}/obligations/${editing.id}/draft-payment`, 'POST', {})
+      setDraftId(result.revolut_draft_id)
+      onSaved()
+    } catch (err) {
+      setDraftError(err instanceof AdminApiError ? err.message : 'Kon de betaling niet klaarzetten.')
+    } finally {
+      setDrafting(false)
+    }
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -71,6 +96,7 @@ export function ObligationModal({ open, onClose, onSaved, editing }: ObligationM
       recurrence_months: recurrence ? Number(recurrence) : null,
       recurrence_until: recurrence && recurrenceUntil ? recurrenceUntil : null,
       boat_id: boatId || null,
+      supplier_id: supplierId,
       notes: notes.trim() || null,
     }
 
@@ -129,6 +155,34 @@ export function ObligationModal({ open, onClose, onSaved, editing }: ObligationM
           <option value="">Gedeeld</option>
           {boats.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
         </SelectField>
+      )}
+
+      <Field label="Leverancier" hint="Nodig om een conceptbetaling in Revolut klaar te zetten.">
+        <SupplierPicker value={supplierId} onChange={setSupplierId} />
+      </Field>
+
+      {editing && editing.status === 'open' && (
+        <div className="rounded-lg border border-zinc-200 p-3 space-y-2">
+          <p className="text-xs font-medium text-zinc-600">Betaling</p>
+          {draftId ? (
+            <p className="text-xs text-emerald-700">Concept al klaargezet in Revolut — open de app om te bevestigen.</p>
+          ) : (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleDraftPayment}
+                disabled={drafting || !supplierId}
+                className="min-h-[44px] sm:min-h-0"
+              >
+                {drafting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} Concept-betaling klaarzetten
+              </Button>
+              {!supplierId && <p className="text-[10px] text-zinc-400">Koppel eerst een leverancier met IBAN.</p>}
+              {draftError && <p className="text-xs text-red-600">{draftError}</p>}
+            </>
+          )}
+        </div>
       )}
 
       <TextAreaField label="Notities" rows={2} value={notes} onChange={e => setNotes(e.target.value)} />

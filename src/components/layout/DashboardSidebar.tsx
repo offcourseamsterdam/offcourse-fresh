@@ -45,7 +45,7 @@ export interface NavItem {
   href: string
   label: string
   icon: string
-  badge?: 'pending-catering-count' | 'inbox-open-count'
+  badge?: 'pending-catering-count' | 'inbox-open-count' | 'finance-inbox-open-count'
   comingSoon?: boolean
 }
 
@@ -131,6 +131,10 @@ export default function DashboardSidebar({
     refreshInterval: 30_000,
   })
   const inboxOpenCount = inboxOpen?.count ?? 0
+  const { data: financeInboxOpen } = useAdminFetch<{ count: number }>('/api/admin/inbox/open-count?scope=finance', {
+    refreshInterval: 30_000,
+  })
+  const financeInboxOpenCount = financeInboxOpen?.count ?? 0
 
   useEffect(() => {
     // localStorage isn't available during SSR — this must run post-mount to avoid
@@ -265,7 +269,9 @@ export default function DashboardSidebar({
                           ? pendingCateringCount
                           : item.badge === 'inbox-open-count'
                             ? inboxOpenCount
-                            : 0
+                            : item.badge === 'finance-inbox-open-count'
+                              ? financeInboxOpenCount
+                              : 0
                       return (
                         <li key={item.href}>
                           <Link

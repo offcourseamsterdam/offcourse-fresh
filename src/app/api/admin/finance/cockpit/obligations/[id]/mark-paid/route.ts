@@ -36,8 +36,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // next occurrence would fall after recurrence_until.
     const nextDue = before.recurrence_months ? addMonths(before.due_date, before.recurrence_months) : null
     const rollsForward = nextDue !== null && (!before.recurrence_until || nextDue <= before.recurrence_until)
+    // A recurring row rolling to its next occurrence needs its own draft — the one just paid
+    // must never be reused (or reported as "already drafted") for the NEXT due date.
     const patch = rollsForward
-      ? { due_date: nextDue as string, paid_at: paidAt, paid_transaction_id: parsed.data.paid_transaction_id ?? null, updated_at: new Date().toISOString() }
+      ? { due_date: nextDue as string, paid_at: paidAt, paid_transaction_id: parsed.data.paid_transaction_id ?? null, revolut_draft_id: null, updated_at: new Date().toISOString() }
       : { status: 'paid' as const, paid_at: paidAt, paid_transaction_id: parsed.data.paid_transaction_id ?? null, updated_at: new Date().toISOString() }
 
     const { data: after, error } = await supabase

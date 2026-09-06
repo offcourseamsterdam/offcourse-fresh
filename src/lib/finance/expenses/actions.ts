@@ -9,6 +9,9 @@
  */
 import type { createAdminClient } from '@/lib/supabase/admin'
 import type { Json } from '@/lib/supabase/types'
+import { logFinanceEvent } from '@/lib/finance/cockpit/events'
+import { createRevolutClient, loadConnection, isConnected } from '@/lib/revolut/token-store'
+import { DRAFT_REFUSAL_TEXT, createSinglePaymentDraft, ensureRevolutCounterparty, validateSupplierForDraft } from '@/lib/revolut/draft-payment'
 import { computeExpenseState, recomputeExpense, type DocumentRow, type ExpenseRow, type ExpenseState } from './recompute'
 import { OPEN_STATUSES } from './status'
 import { impliedRatePct } from './vat'
@@ -140,6 +143,84 @@ export async function setManualVat(supabase: Admin, expenseId: string, input: Ma
     .update({ vat_cents: input.vatCents, vat_rate_pct: ratePct, vat_source: 'manual', vat_conflict: null, reviewed_at: new Date().toISOString() })
     .eq('id', expenseId)
   if (error) throw new Error(error.message)
+  return recomputeExpense(supabase, expenseId)
+}
+
+/**
+ * Beer picks an existing payee for this Expense Record — this is what unlocks `draft_payment`.
+ * The supplier's own name wins over whatever the document/AI guessed, once confirmed by hand.
+ */
+export async function linkSupplier(supabase: Admin, expenseId: string, supplierId: string): Promise<ExpenseState | null> {
+  const expense = await loadExpense(supabase, expenseId)
+  assertEditable(expense)
+  const { data: supplier, error: supErr } = await supabase.from('finance_suppliers').select('id, name').eq('id', supplierId).maybeSingle()
+  if (supErr) throw new Error(supErr.message)
+  if (!supplier) throw new ExpenseActionError('Leverancier niet gevonden.', 404)
+  const { error } = await supabase.from('finance_expenses').update({ supplier_id: supplier.id, supplier_name: supplier.name, updated_at: new Date().toISOString() }).eq('id', expenseId)
+  if (error) throw new Error(error.message)
+  return recomputeExpense(supabase, expenseId)
+}
+
+export interface CreateSupplierInput {
+  name: string
+  iban: string
+}
+
+/** A brand-new payee, created and linked in one step — the IBAN is validated before the row ever exists. */
+export async function createSupplierAndLink(supabase: Admin, expenseId: string, input: CreateSupplierInput): Promise<ExpenseState | null> {
+  await loadExpense(supabase, expenseId) // 404s before touching finance_suppliers
+  const check = validateSupplierForDraft({ id: '', name: input.name, iban: input.iban, revolut_counterparty_id: null })
+  if (!check.ok) throw new ExpenseActionError(DRAFT_REFUSAL_TEXT[check.reason], 400)
+  const { data: supplier, error } = await supabase.from('finance_suppliers').insert({ name: input.name, iban: check.iban }).select('id, name').single()
+  if (error || !supplier) throw new Error(error?.message ?? 'Could not create supplier')
+  await logFinanceEvent(supabase, { event_type: 'supplier_created', actor: 'user', entity_type: 'supplier', entity_id: supplier.id, payload: { name: supplier.name, via: 'expense', expense_id: expenseId } })
+  return linkSupplier(supabase, expenseId, supplier.id)
+}
+
+/**
+ * Drafts a Revolut payment for this Expense Record's linked supplier. Only meaningful while the
+ * record is `waiting_for_payment`: a bank transaction already present means the money already
+ * left the account, and a second draft would risk paying it twice. Idempotent — a second click
+ * reuses the pinned draft id instead of creating a duplicate.
+ */
+export async function draftExpensePayment(supabase: Admin, expenseId: string): Promise<ExpenseState | null> {
+  const expense = await loadExpense(supabase, expenseId)
+  assertEditable(expense)
+  if (expense.bank_transaction_id) throw new ExpenseActionError('Er is al een betaling voor deze uitgave — een nieuw concept zou dubbel betalen.', 409)
+  if (expense.status !== 'waiting_for_payment') throw new ExpenseActionError('Alleen te gebruiken als er een factuur is maar nog geen betaling.', 409)
+  if (expense.gross_cents == null) throw new ExpenseActionError('Nog geen bedrag bekend om te betalen.', 409)
+
+  if (!expense.revolut_draft_id) {
+    let supplier: { id: string; name: string; iban: string | null; revolut_counterparty_id: string | null } | null = null
+    if (expense.supplier_id) {
+      const { data, error } = await supabase.from('finance_suppliers').select('id, name, iban, revolut_counterparty_id').eq('id', expense.supplier_id).maybeSingle()
+      if (error) throw new Error(error.message)
+      supplier = data
+    }
+    const validated = validateSupplierForDraft(supplier)
+    if (!validated.ok) throw new ExpenseActionError(DRAFT_REFUSAL_TEXT[validated.reason], 409)
+
+    const connectionRow = await loadConnection(supabase)
+    if (!isConnected(connectionRow)) throw new ExpenseActionError('Revolut is niet gekoppeld.', 400)
+    if (!connectionRow.account_id) throw new ExpenseActionError('Geen Revolut-rekening geselecteerd om van te betalen.', 400)
+
+    const client = await createRevolutClient(supabase)
+    const counterpartyId = await ensureRevolutCounterparty(supabase, client, supplier!, validated.iban)
+    const title = `${expense.ref} ${supplier!.name}${expense.invoice_number ? ` #${expense.invoice_number}` : ''}`
+    const draftId = await createSinglePaymentDraft(client, { accountId: connectionRow.account_id, counterpartyId, amountCents: expense.gross_cents, title, reference: title })
+
+    const { error: pinErr } = await supabase.from('finance_expenses').update({ revolut_draft_id: draftId, updated_at: new Date().toISOString() }).eq('id', expenseId)
+    if (pinErr) throw new Error(`Payment draft ${draftId} created but could not be recorded: ${pinErr.message}`)
+
+    await logFinanceEvent(supabase, {
+      event_type: 'expense_payment_drafted',
+      actor: 'user',
+      entity_type: 'expense',
+      entity_id: expenseId,
+      delta_cents: expense.gross_cents,
+      payload: { ref: expense.ref, supplier_id: supplier!.id, revolut_draft_id: draftId },
+    })
+  }
   return recomputeExpense(supabase, expenseId)
 }
 

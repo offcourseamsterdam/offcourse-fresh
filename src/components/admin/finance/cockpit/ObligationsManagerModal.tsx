@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { AlertTriangle, Loader2, Pencil, Plus, X, XCircle } from 'lucide-react'
+import { AlertTriangle, Loader2, Pencil, Plus, RefreshCw, X, XCircle } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { SelectField } from '@/components/admin/ui/fields'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
@@ -10,6 +11,7 @@ import { OBLIGATION_KIND_LABELS, type ObligationKind } from '@/lib/finance/cockp
 import type { RecurringProposal, RecurrenceInterval } from '@/lib/finance/cockpit/derived/recurring'
 import type { CityTaxAccrual } from '@/lib/finance/cockpit/derived/city-tax'
 import type { VatObligationProposal } from '@/lib/finance/cockpit/derived/vat'
+import type { PartnerCommissionProposal } from '@/lib/finance/cockpit/derived/partner-commissions'
 import type { SkipperAccrualResult, SkipperMonthAccrual } from '@/lib/finance/cockpit/derived/skipper-hours'
 import type { CateringPeriodEstimate } from '@/lib/finance/cockpit/derived/catering-cost'
 import { COCKPIT_API, type ObligationApiRow } from './api-types'
@@ -27,7 +29,7 @@ interface ObligationsManagerModalProps {
   onChanged: () => void
 }
 
-type TabKey = 'overview' | 'add' | 'recurring' | 'city-tax' | 'vat' | 'skipper' | 'catering'
+type TabKey = 'overview' | 'add' | 'recurring' | 'city-tax' | 'vat' | 'commissions' | 'skipper' | 'catering'
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'overview', label: 'Overzicht' },
@@ -35,6 +37,7 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'recurring', label: 'Terugkerende lasten' },
   { key: 'city-tax', label: 'Toeristenbelasting' },
   { key: 'vat', label: 'BTW' },
+  { key: 'commissions', label: 'Commissies' },
   { key: 'skipper', label: 'Schippersuren' },
   { key: 'catering', label: 'Cateringinkoop' },
 ]
@@ -509,6 +512,83 @@ function VatTab({ onChanged }: { onChanged: () => void }) {
   )
 }
 
+// ── Partnercommissies ───────────────────────────────────────────────────────
+
+interface CommissionsResponse {
+  proposals: PartnerCommissionProposal[]
+}
+
+function CommissionsTab({ onChanged }: { onChanged: () => void }) {
+  const { data, isLoading, error, refresh } = useAdminFetch<CommissionsResponse>(`${DERIVED_API}/partner-commissions`)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const { saving, error: saveError, run } = useAdminSave()
+
+  const proposals = data?.proposals ?? []
+
+  function toggle(key: string) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  function confirm() {
+    if (selected.size === 0) return
+    run(async () => {
+      await adminMutate(`${DERIVED_API}/partner-commissions`, 'POST', { keys: [...selected] })
+      setSelected(new Set())
+      refresh()
+      onChanged()
+    })
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-zinc-500">
+        Op basis van affiliate boekingen via partners. Resellers (waarbij de partner ons betaalt) worden hier niet getoond.
+      </p>
+      <ErrorLine message={saveError} />
+      {isLoading && !data ? (
+        <Loading />
+      ) : error ? (
+        <ErrorLine message={error} />
+      ) : proposals.length === 0 ? (
+        <p className="text-sm text-zinc-500">Geen openstaande partnercommissies.</p>
+      ) : (
+        <>
+          <ul className="space-y-2">
+            {proposals.map(p => (
+              <SelectRow key={p.key} checked={selected.has(p.key)} onToggle={() => toggle(p.key)}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-zinc-900 flex items-center gap-2">
+                      {p.partnerName} · {p.quarter}
+                      {p.isProvisional && <ProvisionalBadge />}
+                    </p>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      {p.bookingCount} boeking(en) · vervaldatum {dateNL(p.dueDate)}
+                    </p>
+                  </div>
+                  <span className="text-sm font-semibold tabular-nums text-zinc-900 shrink-0">{eur(p.amountCents)}</span>
+                </div>
+              </SelectRow>
+            ))}
+          </ul>
+          <SelectionBar
+            count={selected.size}
+            onSelectAll={() => setSelected(new Set(proposals.map(p => p.key)))}
+            onClear={() => setSelected(new Set())}
+            onConfirm={confirm}
+            saving={saving}
+          />
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── Schippersuren ────────────────────────────────────────────────────────────
 
 interface SkipperResponse {
@@ -749,6 +829,7 @@ function CateringTab() {
 export function ObligationsManagerModal({ open, onClose, onChanged }: ObligationsManagerModalProps) {
   const [tab, setTab] = useState<TabKey>('overview')
   const [obligationModal, setObligationModal] = useState<{ open: boolean; editing: ObligationApiRow | null }>({ open: false, editing: null })
+  const [syncingAll, setSyncingAll] = useState(false)
 
   if (!open) return null
 
@@ -757,6 +838,25 @@ export function ObligationsManagerModal({ open, onClose, onChanged }: Obligation
   }
   function openEdit(row: ObligationApiRow) {
     setObligationModal({ open: true, editing: row })
+  }
+
+  async function handleSyncAll() {
+    setSyncingAll(true)
+    try {
+      const res = await adminMutate<{ ok: boolean; created: number; updated: number; checked: number }>(
+        `${COCKPIT_API}/obligations/sync`,
+        'POST',
+        {},
+      )
+      toast.success('Afgeleide verplichtingen gesynchroniseerd', {
+        description: `${res.created} nieuw, ${res.updated} bijgewerkt (${res.checked} gecontroleerd)`,
+      })
+      onChanged()
+    } catch (err) {
+      toast.error('Synchronisatie mislukt', { description: err instanceof Error ? err.message : undefined })
+    } finally {
+      setSyncingAll(false)
+    }
   }
 
   return (
@@ -769,13 +869,25 @@ export function ObligationsManagerModal({ open, onClose, onChanged }: Obligation
             <h2 className="text-sm font-semibold text-zinc-900">Verplichtingen beheren</h2>
             <p className="text-xs text-zinc-500 mt-0.5">Handmatig toevoegen, of herkende lasten uit je gegevens bevestigen.</p>
           </div>
-          <button
-            onClick={onClose}
-            aria-label="Sluiten"
-            className="text-zinc-400 hover:text-zinc-600 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 -m-2 sm:m-0 flex items-center justify-center"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleSyncAll}
+              disabled={syncingAll}
+              title="Synchroniseer BTW, toeristenbelasting, vaste lasten en partnercommissies"
+            >
+              {syncingAll ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">Nu synchroniseren</span>
+            </Button>
+            <button
+              onClick={onClose}
+              aria-label="Sluiten"
+              className="text-zinc-400 hover:text-zinc-600 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 -m-2 sm:m-0 flex items-center justify-center"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         <div className="px-3 sm:px-5 pt-3 border-b border-zinc-100 shrink-0">
@@ -802,6 +914,7 @@ export function ObligationsManagerModal({ open, onClose, onChanged }: Obligation
           {tab === 'recurring' && <RecurringTab onChanged={onChanged} />}
           {tab === 'city-tax' && <CityTaxTab onChanged={onChanged} />}
           {tab === 'vat' && <VatTab onChanged={onChanged} />}
+          {tab === 'commissions' && <CommissionsTab onChanged={onChanged} />}
           {tab === 'skipper' && <SkipperTab onChanged={onChanged} />}
           {tab === 'catering' && <CateringTab />}
         </div>

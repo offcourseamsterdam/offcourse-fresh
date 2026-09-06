@@ -42,6 +42,18 @@ export function addMonths(d: ISODate, months: number): ISODate {
   return toISODate(new Date(Date.UTC(y, m, Math.min(day, lastDay))))
 }
 
+/**
+ * Returns the last day of the calendar month after adding `months` to `d`.
+ * e.g. endOfMonth('2026-09-05', 3) → '2026-12-31'
+ */
+export function endOfMonth(d: ISODate, months: number = 0): ISODate {
+  const t = parseISODate(d)
+  const y = t.getUTCFullYear()
+  const m = t.getUTCMonth() + months
+  const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate()
+  return toISODate(new Date(Date.UTC(y, m, lastDay)))
+}
+
 /** Whole calendar days from a to b (b − a). Negative when b is before a. */
 export function daysBetween(a: ISODate, b: ISODate): number {
   return Math.round((parseISODate(b).getTime() - parseISODate(a).getTime()) / MS_PER_DAY)

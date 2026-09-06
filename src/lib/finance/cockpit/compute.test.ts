@@ -196,7 +196,7 @@ describe('computeCockpit — "Waarom?"', () => {
     expect(r.why.at(-1)).toMatchObject({ label: 'Beschikbaar voor groei' })
   })
   it('states the horizon end date', () => {
-    expect(computeCockpit(base()).horizonEnd).toBe('2026-12-04')
-    expect(computeCockpit(base({ horizon: '30d' })).horizonEnd).toBe('2026-10-04')
+    expect(computeCockpit(base()).horizonEnd).toBe('2026-12-31')
+    expect(computeCockpit(base({ horizon: '30d' })).horizonEnd).toBe('2026-10-31')
   })
 })

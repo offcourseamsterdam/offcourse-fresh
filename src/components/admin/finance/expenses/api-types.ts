@@ -36,6 +36,9 @@ export type ExpenseActionBody =
   | { action: 'vat'; vatCents: number; ratePct?: number | null }
   | { action: 'booked' }
   | { action: 'forward' }
+  | { action: 'link_supplier'; supplierId: string }
+  | { action: 'create_supplier'; name: string; iban: string }
+  | { action: 'draft_payment' }
 
 export const DOCUMENT_KIND_LABELS: Record<ExpenseDocumentApiRow['kind'], string> = {
   invoice_pdf: 'Factuur (PDF)',

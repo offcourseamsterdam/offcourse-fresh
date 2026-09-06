@@ -202,10 +202,10 @@ export default function FinancePage() {
     : DEFAULT_CHANNELS
 
   return (
-    <div className="p-8 max-w-none space-y-6">
+    <div className="p-4 sm:p-8 max-w-none space-y-6">
       <FinanceSubnav />
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-900 flex items-center gap-2">
             <Receipt className="w-6 h-6 text-emerald-500" />
@@ -539,7 +539,7 @@ function PartnersTab() {
       )}
 
       {partners.length > 0 && (
-        <div className="rounded-lg border border-zinc-200 overflow-hidden">
+        <div className="rounded-lg border border-zinc-200 overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 border-b border-zinc-200">
               <tr>
@@ -725,7 +725,7 @@ function BtwDashboardTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <p className="text-sm text-zinc-500 max-w-2xl">
           BTW uit alle kasboek-bronnen samen, per kwartaal en per maand — voor de aangifte. Klik een
           rij open voor de uitsplitsing per bron. &quot;Verschuldigd&quot; is BTW die je moet afdragen
@@ -735,7 +735,7 @@ function BtwDashboardTab() {
           <strong className="text-amber-700">nog te bevestigen met de boekhouder</strong>{' '}
           of dat voor Off Course daadwerkelijk aftrekbaar is.
         </p>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
           <YearSwitcher years={years} year={year} onChange={setYear} />
           <Button variant="outline" size="sm" onClick={refresh} disabled={isLoading}>
             {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
@@ -796,13 +796,13 @@ function VatStripeTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <p className="text-sm text-zinc-500 max-w-2xl">
           Alleen boekingen die echt via Stripe zijn betaald (GetYourGuide, Viator, TripAdvisor en
           complimentary boekingen tellen niet mee — die hebben geen Stripe-transactie). Gegroepeerd
           per kwartaal op betaaldatum, niet op de vaardatum.
         </p>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
           <YearSwitcher years={years} year={year} onChange={setYear} />
           <Button variant="outline" size="sm" onClick={refresh} disabled={isLoading}>
             {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
@@ -814,7 +814,7 @@ function VatStripeTab() {
       <AdminErrorBanner error={error} />
 
       {totals && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="rounded-xl border border-zinc-200 bg-white p-5">
             <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Bruto (Stripe)</p>
             <p className="text-2xl font-bold text-zinc-900 mt-1">{fmtAdminAmount(totals.grossCents)}</p>
@@ -926,14 +926,14 @@ function ViatorTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <p className="text-sm text-zinc-500 max-w-2xl">
           Betalingsoverzichten (&quot;Payment Advice&quot;) van Viator, geüpload als .xlsx-bijlage uit de
           maandelijkse mail van finance@viator.com. Gegroepeerd per kwartaal op de datum van de
           uitbetaling. 9% BTW over het netto overgemaakte bedrag (Viator vermeldt geen bruto
           klantprijs, dus dat bedrag is de BTW-basis — bevestigd door jou).
         </p>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-auto">
           <input
             ref={fileInputRef}
             type="file"
@@ -1027,7 +1027,7 @@ function ViatorTab() {
       {batches.length > 0 && (
         <div className="space-y-2">
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Per payment advice — klik voor boekingen</p>
-          <div className="rounded-lg border border-zinc-200 overflow-hidden divide-y divide-zinc-100">
+          <div className="rounded-lg border border-zinc-200 overflow-x-auto divide-y divide-zinc-100">
             {batches.map(b => {
               const expanded = expandedBatchId === b.id
               return (
@@ -1126,14 +1126,14 @@ function GetYourGuideTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <p className="text-sm text-zinc-500 max-w-2xl">
           Betalingsbevestigingen (&quot;Your payment is confirmed&quot;) van GetYourGuide, geüpload als
           .pdf-bijlage. Eén rij per uitbetaling — GetYourGuide splitst hier niet per boeking uit, in
           tegenstelling tot Viator. Gegroepeerd per kwartaal op de uitbetalingsdatum. 9% BTW over het
           netto overgemaakte bedrag (geen bruto klantprijs beschikbaar — bevestigd door jou).
         </p>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-auto">
           <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleFileSelected} />
           <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={busy}>
             {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
@@ -1215,7 +1215,7 @@ function GetYourGuideTab() {
       {payments.length > 0 && (
         <div className="space-y-2">
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Per uitbetaling</p>
-          <div className="rounded-lg border border-zinc-200 overflow-hidden divide-y divide-zinc-100 bg-white">
+          <div className="rounded-lg border border-zinc-200 overflow-x-auto divide-y divide-zinc-100 bg-white">
             {payments.map(p => (
               <div key={p.id} className="flex items-center gap-3 px-4 py-3 text-sm">
                 <span className="font-medium text-zinc-900 w-28 shrink-0">{fmtAdminDate(p.paymentRunDate)}</span>
@@ -1276,14 +1276,14 @@ function BoatLocalTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <p className="text-sm text-zinc-500 max-w-2xl">
           Operator-facturen van BoatLocal (jouw andere project) — een echte betaling aan Off Course
           voor boekingen die via BoatLocal binnenkwamen, geen ander bedrijf. Geüpload als .pdf-bijlage.
           Deze factuur bevat wél een volledige BTW-uitsplitsing (9% over de omzet, 21% over BoatLocal&apos;s
           commissie). Gegroepeerd per kwartaal op de uitbetalingsdatum.
         </p>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-auto">
           <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleFileSelected} />
           <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={busy}>
             {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
@@ -1368,7 +1368,7 @@ function BoatLocalTab() {
       {batches.length > 0 && (
         <div className="space-y-2">
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Per factuur — klik voor boekingen</p>
-          <div className="rounded-lg border border-zinc-200 overflow-hidden divide-y divide-zinc-100">
+          <div className="rounded-lg border border-zinc-200 overflow-x-auto divide-y divide-zinc-100">
             {batches.map(b => {
               const expanded = expandedBatchId === b.id
               return (
@@ -1583,7 +1583,7 @@ function WithlocalsTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <p className="text-sm text-zinc-500 max-w-2xl">
           Omzet via Withlocals (marktplaats). Twee mailtjes samen: het
           &quot;New invoice for booking&quot; PDF-tje (per boeking — tour, omzet, hun
@@ -1595,7 +1595,7 @@ function WithlocalsTab() {
           <strong className="text-amber-700">nog te bevestigen met de boekhouder</strong>{' '}
           of dat laatste bedrag aftrekbaar is als voorbelasting.
         </p>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
           <YearSwitcher years={years} year={year} onChange={setYear} />
           <Button variant="outline" size="sm" onClick={afterSave} disabled={isLoading}>
             {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
@@ -1853,7 +1853,7 @@ function WithlocalsTab() {
       {bookings.length > 0 && (
         <div className="space-y-2">
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Per boeking</p>
-          <div className="rounded-lg border border-zinc-200 overflow-hidden divide-y divide-zinc-100 bg-white">
+          <div className="rounded-lg border border-zinc-200 overflow-x-auto divide-y divide-zinc-100 bg-white">
             {bookings.map(b => (
               <div key={b.id} className="flex items-center gap-3 px-4 py-3 text-sm">
                 <span className="font-medium text-zinc-900 w-28 shrink-0">{fmtAdminDate(b.tripAt ?? b.payoutDate)}</span>
@@ -1928,7 +1928,7 @@ function ClickAndBoatTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <p className="text-sm text-zinc-500 max-w-2xl">
           Omzet via Click &amp; Boat (Frans platform, betaalt per boeking direct
           na de tocht uit — geen maandbatch). Kom binnen via de &quot;Download the
@@ -1941,7 +1941,7 @@ function ClickAndBoatTab() {
           (BTW verlegd, Frans bedrijf) — nog niet los verwerkt, puur
           documentatie.
         </p>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-auto">
           <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleFileSelected} />
           <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={busy}>
             {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
@@ -2026,7 +2026,7 @@ function ClickAndBoatTab() {
       {bookings.length > 0 && (
         <div className="space-y-2">
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Per boeking</p>
-          <div className="rounded-lg border border-zinc-200 overflow-hidden divide-y divide-zinc-100 bg-white">
+          <div className="rounded-lg border border-zinc-200 overflow-x-auto divide-y divide-zinc-100 bg-white">
             {bookings.map(b => (
               <div key={b.id} className="flex items-center gap-3 px-4 py-3 text-sm">
                 <span className="font-medium text-zinc-900 w-28 shrink-0">{fmtAdminDate(b.charterStartDate)}</span>
@@ -2089,7 +2089,7 @@ function GetMyBoatTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <p className="text-sm text-zinc-500 max-w-2xl">
           Omzet via Getmyboat (Amerikaans platform). Komt binnen via de &quot;Getmyboat has sent you
           money&quot;-mail (geen bijlage, tekst in de mail, meerdere boekingen per uitbetaling) —
@@ -2100,7 +2100,7 @@ function GetMyBoatTab() {
           bruto &quot;Base Cost&quot; uit de bevestigingsmail) — bevestigd door jou, zelfde
           uitgangspunt als Click &amp; Boat/GetYourGuide/Viator.
         </p>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
           <YearSwitcher years={years} year={year} onChange={setYear} />
           <Button variant="outline" size="sm" onClick={afterSave} disabled={isLoading}>
             {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
@@ -2169,7 +2169,7 @@ function GetMyBoatTab() {
       {bookings.length > 0 && (
         <div className="space-y-2">
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Per boeking</p>
-          <div className="rounded-lg border border-zinc-200 overflow-hidden divide-y divide-zinc-100 bg-white">
+          <div className="rounded-lg border border-zinc-200 overflow-x-auto divide-y divide-zinc-100 bg-white">
             {bookings.map(b => (
               <div key={b.id} className="flex items-center gap-3 px-4 py-3 text-sm">
                 <span className="font-medium text-zinc-900 w-28 shrink-0">{fmtAdminDate(b.charterDate)}</span>
@@ -2237,7 +2237,7 @@ function BarqoTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <p className="text-sm text-zinc-500 max-w-2xl">
           Omzet via Barqo (barqo.nl, verhuurplatform waar boot Diana op staat). Boekingsaanvragen
           komen binnen op bookings@boatlocal.nl, niet bij Off Course zelf — makkelijk te missen.
@@ -2250,7 +2250,7 @@ function BarqoTab() {
           bij BoatLocal/Withlocals. Zeer laag volume (2 boekingen ooit, beide van vóór onze eigen
           Stripe-koppeling in maart 2026).
         </p>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
           <YearSwitcher years={years} year={year} onChange={setYear} />
           <Button variant="outline" size="sm" onClick={afterSave} disabled={isLoading}>
             {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
@@ -2331,7 +2331,7 @@ function BarqoTab() {
       {bookings.length > 0 && (
         <div className="space-y-2">
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Per boeking</p>
-          <div className="rounded-lg border border-zinc-200 overflow-hidden divide-y divide-zinc-100 bg-white">
+          <div className="rounded-lg border border-zinc-200 overflow-x-auto divide-y divide-zinc-100 bg-white">
             {bookings.map(b => (
               <div key={b.id} className="flex items-center gap-3 px-4 py-3 text-sm">
                 <span className="font-medium text-zinc-900 w-28 shrink-0">{fmtAdminDate(b.tripDate)}</span>
@@ -2505,7 +2505,7 @@ function RevolutTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <p className="text-sm text-zinc-500 max-w-2xl">
           Omzet via Revolut (betaallinkjes, Rederij Zoomers &amp; Schenk EUR Merchant) — losse
           boekingen/drankjes/merch die niet via de site-checkout lopen. Upload de &quot;Merchant
@@ -2518,7 +2518,7 @@ function RevolutTab() {
           uitbetalings-historie in de CSV), niet op de datum dat de klant betaalde — die twee
           liggen vaak dagen tot maanden uit elkaar.
         </p>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-auto">
           <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleFileSelected} />
           <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={busy}>
             {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
@@ -2621,7 +2621,7 @@ function RevolutTab() {
       {unpaidTransactions.length > 0 && (
         <div className="space-y-2">
           <p className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Nog niet uitbetaald</p>
-          <div className="rounded-lg border border-amber-200 overflow-hidden divide-y divide-amber-100 bg-white">
+          <div className="rounded-lg border border-amber-200 overflow-x-auto divide-y divide-amber-100 bg-white">
             {unpaidTransactions.map(t => (
               <RevolutClassifyRow key={t.id} t={t} onClassified={afterClassify} />
             ))}
@@ -2632,7 +2632,7 @@ function RevolutTab() {
       {paidTransactions.length > 0 && (
         <div className="space-y-2">
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Per transactie (uitbetaald)</p>
-          <div className="rounded-lg border border-zinc-200 overflow-hidden divide-y divide-zinc-100 bg-white">
+          <div className="rounded-lg border border-zinc-200 overflow-x-auto divide-y divide-zinc-100 bg-white">
             {paidTransactions.map(t => (
               <RevolutClassifyRow key={t.id} t={t} onClassified={afterClassify} />
             ))}
@@ -2681,14 +2681,14 @@ function CityTaxTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <p className="text-sm text-zinc-500 max-w-2xl">
           Amsterdam toeristenbelasting voor dagtochten: €2,60 per gast, de eerste 250 gasten per
           kalenderjaar zijn vrijgesteld — over de hele vloot samen, niet per boot. Dit bedrag zit
           al in elke boeking verwerkt bij checkout; dit tabblad telt het alleen op voor de
           gemeente-aangifte. Geteld vanaf boekjaar 2026.
         </p>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
           <select
             value={year}
             onChange={e => setYear(Number(e.target.value))}
@@ -2883,14 +2883,14 @@ function ZettleTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <p className="text-sm text-zinc-500 max-w-2xl">
           Verkopen aan boord via de Zettle-pinautomaat (kaart én contant) — drankjes, snacks, extra&apos;s.
           Zettle heeft geen maandmail, dus de cijfers worden per maand van de Verkoopdetails-pagina
           overgenomen. Vul per maand je <strong>zelf getelde contant</strong> in; het verschil met wat
           Zettle rapporteert verschijnt automatisch.
         </p>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
           <YearSwitcher years={years} year={year} onChange={setYear} />
           <Button variant="outline" size="sm" onClick={afterSave} disabled={isLoading}>
             {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
@@ -2974,7 +2974,7 @@ function ZettleTab() {
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
             Per maand — vul je zelf getelde contant in
           </p>
-          <div className="rounded-lg border border-zinc-200 overflow-hidden divide-y divide-zinc-100 bg-white">
+          <div className="rounded-lg border border-zinc-200 overflow-x-auto divide-y divide-zinc-100 bg-white">
             {months.map(m => (
               <ZettleMonthRowItem key={m.id} row={m} onSaved={afterSave} />
             ))}
@@ -3197,12 +3197,12 @@ function FareHarborPayoutTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <p className="text-sm text-zinc-500 max-w-2xl">
           Archief — FareHarbor verwerkte betalingen zelf en betaalde rechtstreeks uit onder de
           bankomschrijving &quot;FHOFFCOURSE&quot; (bevestigd tegen de bank-tussenrekening), tot de
-          overstap naar de eigen Stripe-checkout begin mei 2026. Gesloten periode, hier komt niets
-          meer bij. Upload het &quot;Sales-Payout Reconciliation&quot;-rapport uit FareHarbor
+          overstap naar de eigen Stripe-checkout begin mei 2026 (met één latere nabetaling in september 2026).
+          Upload het &quot;Sales-Payout Reconciliation&quot;-rapport uit FareHarbor
           (Detailed report, gegroepeerd op Payout ID, met &quot;Payout Date&quot; als kolom) — FareHarbor
           berekent de 9%/21% BTW al zelf per regel, hier hoeft niets geschat te worden. Beide
           tarieven zijn verschuldigd (FareHarbor was hier de eigen betaalverwerker, geen
@@ -3213,7 +3213,7 @@ function FareHarborPayoutTab() {
           heeft daarom een apart bevestigd bank-datum veld, per hand geverifieerd tegen de
           bank-tussenrekening — dát is waar dit tabblad en het BTW-dashboard op groeperen.
         </p>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-auto">
           <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleFileSelected} />
           <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploadState.busy}>
             {uploadState.busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
@@ -3311,7 +3311,7 @@ function FareHarborPayoutTab() {
       {unconfirmedPayouts.length > 0 && (
         <div className="space-y-2">
           <p className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Nog te bevestigen (bank-datum)</p>
-          <div className="rounded-lg border border-amber-200 overflow-hidden divide-y divide-amber-100 bg-white">
+          <div className="rounded-lg border border-amber-200 overflow-x-auto divide-y divide-amber-100 bg-white">
             {unconfirmedPayouts.map(p => (
               <FareHarborBankDateRow key={p.id} p={p} onSaved={afterSave} />
             ))}
@@ -3322,7 +3322,7 @@ function FareHarborPayoutTab() {
       {confirmedPayouts.length > 0 && (
         <div className="space-y-2">
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Per payout (bevestigde bank-datum)</p>
-          <div className="rounded-lg border border-zinc-200 overflow-hidden divide-y divide-zinc-100 bg-white">
+          <div className="rounded-lg border border-zinc-200 overflow-x-auto divide-y divide-zinc-100 bg-white">
             {confirmedPayouts.map(p => (
               <FareHarborBankDateRow key={p.id} p={p} onSaved={afterSave} />
             ))}
@@ -3419,8 +3419,8 @@ const KASBOEK_BRONNEN: KasboekBron[] = [
   },
   {
     bron: 'FareHarbor',
-    huidigeSpoor: 'FareHarbor verwerkte zelf betalingen (uitbetaald onder bankomschrijving "FHOFFCOURSE"), tot de overstap naar Stripe-checkout begin mei 2026 — gesloten periode, alle 58 payouts geïmporteerd en tegen de bank-tussenrekening geverifieerd (matcht tot op de cent)',
-    aanpak: 'Live — zie tabblad "FareHarbor" hierboven. Archief: gesloten periode, hier komt niets meer bij',
+    huidigeSpoor: 'FareHarbor verwerkte zelf betalingen (uitbetaald onder bankomschrijving "FHOFFCOURSE"), tot de overstap naar Stripe-checkout begin mei 2026 — 58 historische payouts t/m mei 2026 plus 1 nabetaling in september 2026 geïmporteerd en tegen de bank-tussenrekening geverifieerd (matcht tot op de cent)',
+    aanpak: 'Live — zie tabblad "FareHarbor" hierboven. Archief: 59 payouts gereconcilieerd',
     status: 'live',
   },
   {

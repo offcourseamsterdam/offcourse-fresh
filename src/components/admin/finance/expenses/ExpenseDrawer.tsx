@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Check, ExternalLink, Link2, Loader2, Send, Unlink, X } from 'lucide-react'
+
 import { Button } from '@/components/ui/button'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { adminInputClass } from '@/components/admin/ui/fields'
@@ -11,6 +12,7 @@ import { dateNL, dateTimeNL, eur, eurosToCents } from '@/components/admin/financ
 import { EXPENSE_STATUS_LABELS } from '@/lib/finance/expenses/status'
 import type { VatResolution, VatSource } from '@/lib/finance/expenses/vat'
 import { ExpenseStatusBadge } from './ExpenseStatusBadge'
+import { SupplierPicker } from '@/components/admin/finance/cockpit/SupplierPicker'
 import {
   DOCUMENT_KIND_LABELS,
   EXPENSES_API,
@@ -195,7 +197,28 @@ export function ExpenseDrawer({ expenseId, onClose, onChanged }: Props) {
                     {x.revolut_expense_state && <Row label="Revolut-status">{x.revolut_expense_state}</Row>}
                   </>
                 ) : (
-                  <p className="text-sm text-zinc-500">Nog geen betaling gezien — het document wacht tot de kaartbetaling of overboeking binnenkomt.</p>
+                  <>
+                    <p className="text-sm text-zinc-500 mb-2">Nog geen betaling gezien — het document wacht tot de kaartbetaling of overboeking binnenkomt.</p>
+                    {editable && x.status === 'waiting_for_payment' && (
+                      <div className="space-y-2">
+                        <SupplierPicker value={x.supplier_id} onChange={id => void act({ action: 'link_supplier', supplierId: id })} emptyLabel="Leverancier koppelen" />
+                        {x.revolut_draft_id ? (
+                          <p className="text-xs text-emerald-700">Concept al klaargezet in Revolut — open de app om te bevestigen.</p>
+                        ) : (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void act({ action: 'draft_payment' })}
+                            disabled={busy != null || !x.supplier_id || x.gross_cents == null}
+                            className="min-h-[44px] sm:min-h-0"
+                          >
+                            {busy === 'draft_payment' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} Concept-betaling klaarzetten
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
               </section>
 

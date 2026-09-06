@@ -13,7 +13,7 @@ import { isCategory, isSubcategory } from './classify/taxonomy'
 
 // ── Primitives ───────────────────────────────────────────────────────────────
 
-export const horizonSchema = z.enum(['30d', '3m', '12m'])
+export const horizonSchema = z.enum(['30d', '1m', '3m', '12m'])
 export const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected a date as YYYY-MM-DD')
 const cents = z.number().int('Amounts must be integer cents')
 const nonNegCents = cents.min(0, 'Amount cannot be negative')
@@ -69,6 +69,7 @@ const obligationFields = {
   recurrence_months: z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12)]).nullable().optional(),
   recurrence_until: isoDate.nullable().optional(),
   boat_id: uuid.nullable().optional(),
+  supplier_id: uuid.nullable().optional(),
   notes: z.string().trim().max(2000).nullable().optional(),
 }
 export const obligationCreateSchema = z.object(obligationFields)
@@ -79,6 +80,11 @@ export const obligationUpdateSchema = z
 export type ObligationCreate = z.infer<typeof obligationCreateSchema>
 export type ObligationUpdate = z.infer<typeof obligationUpdateSchema>
 export const OBLIGATION_KEYS = Object.keys(obligationFields)
+
+export const supplierCreateSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(200),
+  iban: z.string().trim().min(1, 'IBAN is required').max(34),
+})
 
 export const markPaidSchema = z.object({
   paid_at: timestamp.optional(),
@@ -160,9 +166,12 @@ export type LoanImpactInput = z.infer<typeof loanImpactSchema>
 
 export const goalStatusFilterSchema = z.enum(['active', 'completed', 'paused', 'all'])
 
+export const goalTypeSchema = z.enum(['target', 'sinking_fund', 'monthly_refill'])
+
 const goalFields = {
   name: z.string().trim().min(1, 'Name is required').max(200),
   description: z.string().trim().max(2000).nullable().optional(),
+  goal_type: goalTypeSchema.optional(),
   target_cents: positiveCents,
   funded_cents: nonNegCents,
   deadline: isoDate.nullable().optional(),
@@ -173,6 +182,7 @@ const goalFields = {
 }
 export const goalCreateSchema = z.object({
   ...goalFields,
+  goal_type: goalTypeSchema.default('target'),
   funded_cents: nonNegCents.default(0),
   priority: z.number().int().min(1).max(5).default(3),
   monthly_funding_cents: nonNegCents.default(0),

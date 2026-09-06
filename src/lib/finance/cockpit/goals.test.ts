@@ -58,4 +58,32 @@ describe('goalProgress', () => {
   it('paused goals are not judged against a plan', () => {
     expect(goalProgress(goal({ status: 'paused', monthlyFundingCents: 100000, fundedCents: 0 }), TODAY).behindCents).toBe(0)
   })
+
+  it('monthly_refill type aims for targetCents as plannedByNow each month', () => {
+    const p = goalProgress(goal({ goalType: 'monthly_refill', targetCents: 200000, fundedCents: 60000 }), TODAY)
+    expect(p.goalType).toBe('monthly_refill')
+    expect(p.targetCents).toBe(200000)
+    expect(p.fundedCents).toBe(60000)
+    expect(p.remainingCents).toBe(140000)
+    expect(p.plannedByNowCents).toBe(200000)
+    expect(p.behindCents).toBe(140000)
+    expect(p.onTrack).toBe(false)
+  })
+
+  it('sinking_fund type works with monthlyFundingCents and accumulates up to targetCents', () => {
+    // 5% of €202.500 = €10.125 cap, €843.75/mo (~84375 cents)
+    const p = goalProgress(
+      goal({
+        goalType: 'sinking_fund',
+        targetCents: 1012500,
+        fundedCents: 1012500,
+        monthlyFundingCents: 84375,
+      }),
+      TODAY,
+    )
+    expect(p.goalType).toBe('sinking_fund')
+    expect(p.progressPct).toBe(100)
+    expect(p.remainingCents).toBe(0)
+    expect(p.onTrack).toBe(true)
+  })
 })

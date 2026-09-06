@@ -153,10 +153,10 @@ export function planMonthlyAllocation(
         skipped.push({ kind: 'goal', goalId: goal.id, label: goal.name, wantedCents: 0, reason: 'complete' })
         continue
       }
-      // No monthly amount = no plan. The cron never invents one; Beer sets it
-      // (or funds the goal by hand) — same "never silently invent" rule the
-      // invoice extractor follows.
-      const monthly = Math.max(0, goal.monthlyFundingCents)
+      // Monthly amount: for monthly_refill, the wanted amount is whatever is needed to refill up to targetCents.
+      // For target / sinking_fund, it is the configured monthlyFundingCents.
+      const isRefill = goal.goalType === 'monthly_refill'
+      const monthly = isRefill ? remainingToTarget : Math.max(0, goal.monthlyFundingCents)
       if (monthly === 0) {
         skipped.push({ kind: 'goal', goalId: goal.id, label: goal.name, wantedCents: 0, reason: 'no_plan' })
         continue

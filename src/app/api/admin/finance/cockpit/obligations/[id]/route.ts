@@ -25,9 +25,15 @@ export async function PUT(request: NextRequest, { params }: Params) {
     if (fetchErr) return apiError(fetchErr.message, 500)
     if (!before) return apiError('Obligation not found', 404)
 
+    // Re-pointing a drafted payment to a different payee must not silently pay the OLD one's
+    // draft on the NEW supplier's behalf — the stale draft id is cleared, never reused, and never
+    // auto-cancelled in Revolut (Beer decides there whether to delete it).
+    const supplierChanging = 'supplier_id' in parsed.data && parsed.data.supplier_id !== before.supplier_id
+    const patch = { ...parsed.data, ...(supplierChanging && before.revolut_draft_id ? { revolut_draft_id: null } : {}), updated_at: new Date().toISOString() }
+
     const { data: after, error } = await supabase
       .from('finance_obligations')
-      .update({ ...parsed.data, updated_at: new Date().toISOString() })
+      .update(patch)
       .eq('id', id)
       .select('*')
       .single()

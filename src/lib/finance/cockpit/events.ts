@@ -11,7 +11,7 @@ import type { Database, Json } from '@/lib/supabase/types'
 type Admin = SupabaseClient<Database>
 
 export type FinanceActor = 'user' | 'cron' | 'ai' | 'webhook' | 'system'
-export type FinanceEntityType = 'settings' | 'obligation' | 'loan' | 'loan_payment' | 'goal' | 'revolut' | 'transaction' | 'classification_rule' | 'invoice' | 'investment'
+export type FinanceEntityType = 'settings' | 'obligation' | 'loan' | 'loan_payment' | 'goal' | 'revolut' | 'transaction' | 'classification_rule' | 'invoice' | 'investment' | 'expense' | 'supplier'
 
 export interface FinanceEventInput {
   event_type: string

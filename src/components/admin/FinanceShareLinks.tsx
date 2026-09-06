@@ -71,7 +71,7 @@ export function FinanceShareLinks() {
       </Button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-96 rounded-lg border border-zinc-200 bg-white shadow-lg z-20 p-4 space-y-3">
+        <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 max-w-[calc(100vw-2rem)] rounded-lg border border-zinc-200 bg-white shadow-lg z-20 p-4 space-y-3">
           <p className="text-xs text-zinc-500">
             Publieke link naar alleen dit Finance-tabblad, geen admin-login nodig.
             Tijdelijk, tot aan de ontvlechting — trek in daarna.

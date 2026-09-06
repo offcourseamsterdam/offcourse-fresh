@@ -6,8 +6,11 @@ import {
   ExpenseActionError,
   clearReview,
   confirmMatch,
+  createSupplierAndLink,
+  draftExpensePayment,
   ignoreExpense,
   linkDocument,
+  linkSupplier,
   loadExpenseDetail,
   markBooked,
   setManualVat,
@@ -57,6 +60,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       case 'clear_review': await clearReview(supabase, id); break
       case 'vat': await setManualVat(supabase, id, { vatCents: body.vatCents, ratePct: body.ratePct ?? null }); break
       case 'booked': await markBooked(supabase, id); break
+      case 'link_supplier': await linkSupplier(supabase, id, body.supplierId); break
+      case 'create_supplier': await createSupplierAndLink(supabase, id, { name: body.name, iban: body.iban }); break
+      case 'draft_payment': await draftExpensePayment(supabase, id); break
       case 'forward': {
         const outcome = await forwardExpenseToSnelstart(supabase, id, { actor: 'manual' })
         if (!outcome.ok) {

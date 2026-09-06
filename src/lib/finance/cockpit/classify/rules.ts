@@ -106,6 +106,8 @@ export interface Classification {
 
 /** Money in from these is booking revenue: our own checkout and the resellers. */
 const REVENUE_SOURCES: Array<{ match: string; label: string }> = [
+  { match: 'fhoffcourse', label: 'FareHarbor' },
+  { match: 'fareharbor', label: 'FareHarbor' },
   { match: 'stripe', label: 'Stripe (eigen checkout)' },
   { match: 'getyourguide', label: 'GetYourGuide' },
   { match: 'viator', label: 'Viator' },
@@ -290,9 +292,9 @@ export function classifyStructural(tx: ClassifiableTransaction, ctx: RuleContext
       const nameMatch = matchesStaffName(text, s.name)
       const aliasMatch = !nameMatch && (s.aliases ?? []).some(a => matchesStaffName(text, a))
       if (!nameMatch && !aliasMatch) continue
-      const isOwner = norm(s.role) === 'owner'
+      const isOwner = norm(s.role) === 'owner' || norm(s.name).includes('beer')
       return isOwner
-        ? rule('owner', 'salary', 0.9, `Betaling aan ${s.name} (eigenaar)`, {})
+        ? rule('owner', 'salary', 0.95, `Betaling aan ${s.name} (eigenaar)`, {})
         : rule('operating', 'crew', 0.9, `Betaling aan ${s.name} (${s.role ?? 'bemanning'})`, {})
     }
   }

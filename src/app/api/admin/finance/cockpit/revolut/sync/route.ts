@@ -20,6 +20,7 @@ export async function POST(_req: NextRequest) {
     if (!result.ok) return apiError(result.error ?? 'Synchronisatie mislukt', 502)
     return apiOk(result)
   } catch (err) {
+    console.error('[revolut/sync] Error during sync:', err)
     return apiError((err as Error).message, 500)
   }
 }

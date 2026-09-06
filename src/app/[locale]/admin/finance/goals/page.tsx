@@ -13,9 +13,11 @@ import {
   COCKPIT_API,
   GOAL_FLEXIBILITY_LABELS,
   GOAL_STATUS_LABELS,
+  GOAL_TYPE_LABELS,
   type FinanceEventRow,
   type GoalApiRow,
   type GoalStatus,
+  type GoalType,
 } from '@/components/admin/finance/cockpit/api-types'
 import { eur, pct, dateNL, dateTimeNL } from '@/components/admin/finance/cockpit/money'
 import { useBoats, boatName } from '@/components/admin/finance/cockpit/useBoats'
@@ -155,16 +157,41 @@ export default function FinanceGoalsPage() {
             const p = g.progress
             const boat = boatName(boats, g.boat_id)
             const showHistory = historyFor === g.id
+
+            // Parse goal_type & clean description if JSON metadata
+            let gType: GoalType = g.goal_type ?? 'target'
+            let gDesc = g.description
+            if (g.description && g.description.startsWith('{"type":')) {
+              try {
+                const parsed = JSON.parse(g.description)
+                if (parsed.type) gType = parsed.type
+                gDesc = parsed.notes || null
+              } catch {
+                // ignore
+              }
+            }
+
+            const TYPE_BADGE_STYLE: Record<GoalType, string> = {
+              target: 'bg-zinc-100 text-zinc-700 border-zinc-200',
+              sinking_fund: 'bg-blue-50 text-blue-700 border-blue-200',
+              monthly_refill: 'bg-purple-50 text-purple-700 border-purple-200',
+            }
+
             return (
               <article key={g.id} className="rounded-2xl border border-zinc-200 bg-white shadow-sm p-4 sm:p-5 flex flex-col gap-3 min-w-0">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                      <span className={`inline-block border text-[10px] font-semibold px-2 py-0.5 rounded-full ${TYPE_BADGE_STYLE[gType]}`}>
+                        {GOAL_TYPE_LABELS[gType]}
+                      </span>
+                      {boat && <span className="text-[10px] text-zinc-500 bg-zinc-50 border border-zinc-200 px-1.5 py-0.5 rounded">{boat}</span>}
+                    </div>
                     <h2 className="text-base font-semibold text-zinc-900 truncate">{g.name}</h2>
                     <p className="text-xs text-zinc-500 mt-0.5 flex flex-wrap gap-x-2">
                       <span>Prioriteit {g.priority}</span>
                       <span>·</span>
                       <span>{GOAL_FLEXIBILITY_LABELS[g.flexibility] ?? g.flexibility}</span>
-                      {boat && <><span>·</span><span>{boat}</span></>}
                     </p>
                   </div>
                   <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLE[g.status] ?? STATUS_STYLE.paused}`}>
@@ -172,27 +199,50 @@ export default function FinanceGoalsPage() {
                   </span>
                 </div>
 
-                {g.description && <p className="text-sm text-zinc-600">{g.description}</p>}
+                {gDesc && <p className="text-sm text-zinc-600">{gDesc}</p>}
 
                 <div>
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="text-xl font-semibold text-zinc-900 tabular-nums">{eur(g.funded_cents)}</span>
-                    <span className="text-xs text-zinc-500 tabular-nums">van {eur(g.target_cents)} · {pct(p.progressPct)}</span>
+                    <span className="text-xs text-zinc-500 tabular-nums">
+                      van {eur(g.target_cents)} {gType === 'monthly_refill' ? '/ mnd' : gType === 'sinking_fund' ? 'plafond' : ''} · {pct(p.progressPct)}
+                    </span>
                   </div>
                   <div className="mt-1.5 h-2.5 rounded-full bg-zinc-100 overflow-hidden">
-                    <div className={`h-full rounded-full transition-[width] ${g.status === 'completed' ? 'bg-emerald-500' : 'bg-violet-500'}`} style={{ width: `${Math.min(100, Math.max(0, p.progressPct))}%` }} />
+                    <div
+                      className={`h-full rounded-full transition-[width] ${
+                        g.status === 'completed'
+                          ? 'bg-emerald-500'
+                          : gType === 'monthly_refill'
+                          ? 'bg-purple-500'
+                          : gType === 'sinking_fund'
+                          ? 'bg-blue-500'
+                          : 'bg-violet-500'
+                      }`}
+                      style={{ width: `${Math.min(100, Math.max(0, p.progressPct))}%` }}
+                    />
                   </div>
                 </div>
 
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                  <dt className="text-zinc-500">Nog nodig</dt>
+                  <dt className="text-zinc-500">{gType === 'monthly_refill' ? 'Aan te vullen' : 'Nog nodig'}</dt>
                   <dd className="text-right tabular-nums text-zinc-900">{eur(p.remainingCents)}</dd>
-                  <dt className="text-zinc-500">Deadline</dt>
+                  <dt className="text-zinc-500">{gType === 'monthly_refill' ? 'Aanvulritme' : 'Deadline'}</dt>
                   <dd className="text-right tabular-nums text-zinc-900">
-                    {g.deadline ? `${dateNL(g.deadline)}${p.monthsLeft != null ? ` (${p.monthsLeft} mnd)` : ''}` : '—'}
+                    {gType === 'monthly_refill'
+                      ? 'Maandelijks (YNAB)'
+                      : g.deadline
+                      ? `${dateNL(g.deadline)}${p.monthsLeft != null ? ` (${p.monthsLeft} mnd)` : ''}`
+                      : '—'}
                   </dd>
                   <dt className="text-zinc-500">Per maand</dt>
-                  <dd className="text-right tabular-nums text-zinc-900">{g.monthly_funding_cents > 0 ? eur(g.monthly_funding_cents) : '—'}</dd>
+                  <dd className="text-right tabular-nums text-zinc-900">
+                    {gType === 'monthly_refill'
+                      ? `${eur(p.remainingCents)} nodig`
+                      : g.monthly_funding_cents > 0
+                      ? eur(g.monthly_funding_cents)
+                      : '—'}
+                  </dd>
                 </dl>
 
                 {g.status === 'active' && p.behindCents > 0 && (

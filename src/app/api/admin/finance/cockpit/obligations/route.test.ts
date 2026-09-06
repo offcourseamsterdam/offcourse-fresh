@@ -27,6 +27,8 @@ const ROW = {
   boat_id: null,
   loan_id: null,
   invoice_id: null,
+  supplier_id: null as string | null,
+  revolut_draft_id: null as string | null,
   status: 'open',
   paid_transaction_id: null as string | null,
   paid_at: null as string | null,
@@ -136,6 +138,24 @@ describe('/api/admin/finance/cockpit/obligations', () => {
       expect(ev.event_type).toBe('obligation_updated')
       expect(ev.payload).toEqual({ changed: ['amount_cents'], before: { amount_cents: 480_000 }, after: { amount_cents: 500_000 } })
     })
+
+    it('re-pointing a drafted payment to a different supplier clears the stale draft id — never reuses one payee\'s draft for another', async () => {
+      const OLD_SUPPLIER = '33333333-3333-4333-8333-333333333333'
+      const NEW_SUPPLIER = '44444444-4444-4444-8444-444444444444'
+      const mock = db({ ...ROW, supplier_id: OLD_SUPPLIER, revolut_draft_id: 'draft-1' })
+      h.createAdminClient.mockReturnValue(mock.client)
+      const res = await PUT(req('PUT', { supplier_id: NEW_SUPPLIER }), params())
+      expect(res.status).toBe(200)
+      expect(opArg(mock.queries, 'finance_obligations', 'update')).toMatchObject({ supplier_id: NEW_SUPPLIER, revolut_draft_id: null })
+    })
+
+    it('leaves the draft id alone when nothing about the supplier changes', async () => {
+      const SUPPLIER = '33333333-3333-4333-8333-333333333333'
+      const mock = db({ ...ROW, supplier_id: SUPPLIER, revolut_draft_id: 'draft-1' })
+      h.createAdminClient.mockReturnValue(mock.client)
+      await PUT(req('PUT', { amount_cents: 500_000 }), params())
+      expect(opArg(mock.queries, 'finance_obligations', 'update')).not.toHaveProperty('revolut_draft_id')
+    })
   })
 
   describe('[id] DELETE', () => {
@@ -181,14 +201,15 @@ describe('/api/admin/finance/cockpit/obligations', () => {
       expect(event(mock.queries)).toMatchObject({ event_type: 'obligation_paid', entity_id: ID, delta_cents: 480_000 })
     })
 
-    it('a recurring obligation rolls forward to its next due date instead of closing', async () => {
-      const mock = db({ ...ROW, due_date: '2026-10-31', recurrence_months: 3, recurrence_until: null })
+    it('a recurring obligation rolls forward to its next due date instead of closing, and its draft id resets — the next occurrence needs its own', async () => {
+      const mock = db({ ...ROW, due_date: '2026-10-31', recurrence_months: 3, recurrence_until: null, revolut_draft_id: 'draft-1' })
       h.createAdminClient.mockReturnValue(mock.client)
       const res = await MARK_PAID(req('POST', {}), params())
       expect(res.status).toBe(200)
       const update = opArg(mock.queries, 'finance_obligations', 'update') as Record<string, unknown>
       expect(update.due_date).toBe('2027-01-31')
       expect(update.status).toBeUndefined()
+      expect(update.revolut_draft_id).toBeNull()
       expect(event(mock.queries)).toMatchObject({ event_type: 'obligation_paid', delta_cents: 480_000 })
       expect((event(mock.queries).payload as Record<string, unknown>).rolled_to).toBe('2027-01-31')
     })

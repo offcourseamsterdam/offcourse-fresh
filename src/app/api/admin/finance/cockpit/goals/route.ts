@@ -43,11 +43,14 @@ export async function POST(request: NextRequest) {
 
   try {
     const supabase = createAdminClient()
+    const goalType = parsed.data.goal_type ?? 'target'
+    const descPayload = JSON.stringify({ type: goalType, notes: parsed.data.description ?? null })
+
     const { data, error } = await supabase
       .from('finance_goals')
       .insert({
         name: parsed.data.name,
-        description: parsed.data.description ?? null,
+        description: descPayload,
         target_cents: parsed.data.target_cents,
         funded_cents: parsed.data.funded_cents,
         deadline: parsed.data.deadline ?? null,

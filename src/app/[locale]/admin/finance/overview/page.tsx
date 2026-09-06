@@ -17,7 +17,7 @@ import {
   type Horizon,
   type ObligationOccurrence,
 } from '@/lib/finance/cockpit/types'
-import { groupObligations, type ObligationCategory } from '@/lib/finance/cockpit/categories'
+import { groupObligations, groupPayees, type ObligationCategory } from '@/lib/finance/cockpit/categories'
 import { FinanceSubnav } from '@/components/admin/finance/cockpit/FinanceSubnav'
 import { StatCard } from '@/components/admin/finance/cockpit/StatCard'
 import { StatusPill } from '@/components/admin/finance/cockpit/StatusPill'
@@ -39,9 +39,37 @@ import {
 } from '@/components/admin/finance/cockpit/api-types'
 import { eur, pct, dateNL, dateTimeNL } from '@/components/admin/finance/cockpit/money'
 import { useBoats, boatName } from '@/components/admin/finance/cockpit/useBoats'
+import { horizonEnd } from '@/lib/finance/cockpit/obligations'
+import { parseISODate, todayISO } from '@/lib/finance/cockpit/dates'
 
-const HORIZONS: Horizon[] = ['30d', '3m', '12m']
-const HORIZON_SHORT: Record<Horizon, string> = { '30d': '30 dagen', '3m': '3 maanden', '12m': '12 maanden' }
+const HORIZONS: Horizon[] = ['1m', '3m', '12m']
+
+interface HorizonPillParts {
+  prefix: string
+  unit: string
+  shortUnit: string
+  suffix?: string
+}
+
+function getHorizonPillParts(h: Horizon, today?: string): HorizonPillParts {
+  const t = today ?? todayISO()
+  const end = horizonEnd(t, h)
+  const d = parseISODate(end)
+  const monthShort = d.toLocaleDateString('nl-NL', { month: 'short' }).replace('.', '')
+  const todayYear = parseISODate(t).getUTCFullYear()
+  const endYear = d.getUTCFullYear()
+  const yearSuffix = endYear !== todayYear ? ` \u2019${String(endYear).slice(2)}` : ''
+
+  switch (h) {
+    case '30d':
+    case '1m':
+      return { prefix: '1', unit: 'maand', shortUnit: 'mnd', suffix: `(t/m ${monthShort})` }
+    case '3m':
+      return { prefix: '3', unit: 'maanden', shortUnit: 'mnd', suffix: `(t/m ${monthShort})` }
+    case '12m':
+      return { prefix: '12', unit: 'maanden', shortUnit: 'mnd', suffix: `(t/m ${monthShort}${yearSuffix})` }
+  }
+}
 
 const cardClass = 'rounded-2xl border border-zinc-200 bg-white shadow-sm'
 
@@ -90,16 +118,24 @@ export default function FinanceOverviewPage() {
   const [obligationsManagerOpen, setObligationsManagerOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [cashOpen, setCashOpen] = useState(false)
-  // Collapsed groups in the "Komende verplichtingen" card — everything starts
-  // expanded (nothing hidden that wasn't before), click a group's header to
-  // fold it away. Per-category, not per-row: a category with 20 rows is one
-  // click, not 20.
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<ObligationCategory>>(new Set())
+  // Drawers in the "Komende verplichtingen" card start collapsed by default.
+  const [openCategories, setOpenCategories] = useState<Set<ObligationCategory>>(new Set())
   function toggleCategory(cat: ObligationCategory) {
-    setCollapsedCategories(prev => {
+    setOpenCategories(prev => {
       const next = new Set(prev)
       if (next.has(cat)) next.delete(cat)
       else next.add(cat)
+      return next
+    })
+  }
+
+  // Payee sub-drawers in "Meer…" (other) also start collapsed by default.
+  const [openPayees, setOpenPayees] = useState<Set<string>>(new Set())
+  function togglePayee(payee: string) {
+    setOpenPayees(prev => {
+      const next = new Set(prev)
+      if (next.has(payee)) next.delete(payee)
+      else next.add(payee)
       return next
     })
   }
@@ -112,16 +148,48 @@ export default function FinanceOverviewPage() {
     refreshRecentTx()
   }, [refresh, refreshSettings, refreshObligations, refreshRevolut, refreshRecentTx])
 
+  const [syncingObligations, setSyncingObligations] = useState(false)
+
+  const handleSyncObligations = useCallback(async () => {
+    setSyncingObligations(true)
+    try {
+      const res = await adminMutate<{ ok: boolean; created: number; updated: number; checked: number }>(
+        `${COCKPIT_API}/obligations/sync`,
+        'POST',
+        {},
+      )
+      toast.success('Verplichtingen gesynchroniseerd', {
+        description: `${res.created} nieuw, ${res.updated} bijgewerkt (${res.checked} gecontroleerd)`,
+      })
+      refreshAll()
+    } catch (err) {
+      toast.error('Synchronisatie mislukt', { description: err instanceof Error ? err.message : undefined })
+    } finally {
+      setSyncingObligations(false)
+    }
+  }, [refreshAll])
+
   /**
-   * "Ververs" = pull from the bank when Revolut is connected, then reload the
-   * numbers. Without a connection it just re-reads what we already have.
+   * "Ververs" = pull from the bank when Revolut is connected, sync derived obligations,
+   * then reload all numbers.
    */
   const refreshFromBank = useCallback(async () => {
-    if (!revolutConnected) { refreshAll(); return }
     setSyncing(true)
     try {
-      const res = await adminMutate<RevolutSyncResponse>(`${REVOLUT_API}/sync`, 'POST', {})
-      toast.success('Bijgewerkt vanuit Revolut', { description: syncSummary(res) })
+      if (revolutConnected) {
+        const res = await adminMutate<RevolutSyncResponse>(`${REVOLUT_API}/sync`, 'POST', {})
+        toast.success('Bijgewerkt vanuit Revolut', { description: syncSummary(res) })
+      }
+      const oblRes = await adminMutate<{ ok: boolean; created: number; updated: number; checked: number }>(
+        `${COCKPIT_API}/obligations/sync`,
+        'POST',
+        {},
+      )
+      if (oblRes.created > 0 || oblRes.updated > 0) {
+        toast.info('Verplichtingen bijgewerkt', {
+          description: `${oblRes.created} nieuw, ${oblRes.updated} bijgewerkt`,
+        })
+      }
     } catch (err) {
       toast.error('Synchronisatie mislukt', { description: err instanceof Error ? err.message : undefined })
     } finally {
@@ -242,17 +310,21 @@ export default function FinanceOverviewPage() {
           <div role="group" aria-label="Planningshorizon" className="inline-flex rounded-full border border-zinc-200 bg-white p-1 shadow-sm">
             {HORIZONS.map(h => {
               const active = h === activeHorizon
+              const parts = getHorizonPillParts(h, data?.today)
               return (
                 <button
                   key={h}
                   type="button"
                   onClick={() => changeHorizon(h)}
                   aria-pressed={active}
-                  className={`min-h-[36px] sm:min-h-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  className={`min-h-[36px] sm:min-h-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
                     active ? 'bg-zinc-900 text-white' : 'text-zinc-600 hover:text-zinc-900'
                   }`}
                 >
-                  {HORIZON_SHORT[h]}
+                  <span>{parts.prefix} </span>
+                  <span className="hidden sm:inline">{parts.unit}</span>
+                  <span className="sm:hidden">{parts.shortUnit}</span>
+                  {parts.suffix && <span> {parts.suffix}</span>}
                 </button>
               )
             })}
@@ -381,43 +453,88 @@ export default function FinanceOverviewPage() {
         <section className={`${cardClass} p-4 sm:p-5 flex flex-col gap-3`}>
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-base font-semibold text-zinc-900">Komende verplichtingen</h2>
-            <Button size="sm" variant="outline" onClick={() => setObligationsManagerOpen(true)}>
-              <Plus className="w-3.5 h-3.5" /> Beheren
-            </Button>
-          </div>
-          {/* Salaris eigenaar — display-only, sourced from the settings buffer, never a
-              finance_obligations row: it's already reserved for in the allocation bar
-              above, so showing it as a real obligation here would count it twice. */}
-          {salary.monthlyCents > 0 && (
-            <div className="rounded-lg border border-dashed border-zinc-200 px-3 py-2 flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-zinc-900">Salaris eigenaar</p>
-                <p className="text-xs text-zinc-500 mt-0.5">
-                  {salary.monthsCovered} van {salary.targetMonths} maanden gedekt · {eur(salary.monthlyCents)}/maand
-                </p>
-              </div>
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 shrink-0 whitespace-nowrap">
-                buffer, geen verplichting
-              </span>
+            <div className="flex items-center gap-1.5">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleSyncObligations}
+                disabled={syncingObligations || syncing}
+                title="Herbereken en synchroniseer afgeleide verplichtingen (BTW, toeristenbelasting, commissies, vaste lasten)"
+              >
+                {syncingObligations ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                <span className="hidden sm:inline">Sync</span>
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setObligationsManagerOpen(true)}>
+                <Plus className="w-3.5 h-3.5" /> Beheren
+              </Button>
             </div>
-          )}
+          </div>
 
           {data.obligations.length === 0 ? (
             <p className="text-sm text-zinc-500">Niets gepland in deze horizon.</p>
           ) : (
             <div className="divide-y divide-zinc-100 -mx-1">
               {obligationGroups.map(group => {
-                const collapsed = collapsedCategories.has(group.category)
+                const isOpen = openCategories.has(group.category)
+
+                const renderItem = (o: ObligationOccurrence, parentPayee?: string) => {
+                  const boat = boatName(boats, o.boatId)
+                  const paymentPending = o.source === 'obligation' && !openObligations?.some(r => r.id === o.sourceId)
+                  const isPayeeChild = Boolean(parentPayee)
+                  const displayTitle = isPayeeChild && o.title.trim().toLowerCase() === parentPayee?.trim().toLowerCase()
+                    ? `Termijn ${dateNL(o.dueDate)}`
+                    : o.title
+
+                  return (
+                    <li key={o.key} className={`${isPayeeChild ? 'pl-6' : 'pl-5'} pr-1 py-2.5 flex items-start justify-between gap-3 text-left`}>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-zinc-900 truncate">{displayTitle}</p>
+                        <p className="text-xs text-zinc-500 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          <span>{OBLIGATION_KIND_LABELS[o.kind]}</span>
+                          <span>·</span>
+                          <span className={o.overdue ? 'text-red-600 font-medium' : ''}>{dateNL(o.dueDate)}</span>
+                          {boat && <><span>·</span><span>{boat}</span></>}
+                          {o.overdue && (
+                            <span className="inline-flex items-center rounded-full bg-red-100 text-red-700 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">over tijd</span>
+                          )}
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <span className="text-sm font-semibold tabular-nums text-zinc-900">{eur(o.amountCents)}</span>
+                        <div className="flex items-center gap-0.5">
+                          <button type="button" onClick={() => markPaid(o)} className="text-[11px] font-medium text-emerald-700 hover:bg-emerald-50 rounded-md px-1.5 py-1">
+                            Betaald
+                          </button>
+                          {o.source === 'obligation' ? (
+                            <>
+                              <button type="button" onClick={() => editObligation(o)} disabled={paymentPending} aria-label="Bewerken" className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 disabled:opacity-30">
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button type="button" onClick={() => cancelObligation(o)} aria-label="Annuleren" className="p-1.5 rounded-md text-zinc-400 hover:text-red-600 hover:bg-red-50">
+                                <XCircle className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          ) : (
+                            <Link href={`/${locale}/admin/finance/loans`} className="text-[11px] text-zinc-400 hover:text-zinc-700 px-1.5 py-1">
+                              lening
+                            </Link>
+                          )}
+                        </div>
+                      </div>
+                    </li>
+                  )
+                }
+
                 return (
                   <div key={group.category} className="px-1">
                     <button
                       type="button"
                       onClick={() => toggleCategory(group.category)}
-                      aria-expanded={!collapsed}
+                      aria-expanded={isOpen}
                       className="w-full flex items-center justify-between gap-2 py-2.5 min-h-[44px] sm:min-h-0 text-left"
                     >
                       <span className="flex items-center gap-1.5 min-w-0 text-sm font-medium text-zinc-900">
-                        <ChevronRight className={`w-3.5 h-3.5 text-zinc-400 shrink-0 transition-transform ${collapsed ? '' : 'rotate-90'}`} />
+                        <ChevronRight className={`w-3.5 h-3.5 text-zinc-400 shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
                         <span className="truncate">{group.label}</span>
                         <span className="text-xs font-normal text-zinc-400 shrink-0">({group.items.length})</span>
                         {group.overdueCount > 0 && (
@@ -428,51 +545,47 @@ export default function FinanceOverviewPage() {
                       </span>
                       <span className="text-sm font-semibold tabular-nums text-zinc-900 shrink-0">{eur(group.totalCents)}</span>
                     </button>
-                    {!collapsed && (
-                      <ul className="divide-y divide-zinc-50 pb-1">
-                        {group.items.map(o => {
-                          const boat = boatName(boats, o.boatId)
-                          const paymentPending = o.source === 'obligation' && !openObligations?.some(r => r.id === o.sourceId)
-                          return (
-                            <li key={o.key} className="pl-5 pr-1 py-2.5 flex items-start justify-between gap-3">
-                              <div className="min-w-0 flex-1">
-                                <p className="text-sm font-medium text-zinc-900 truncate">{o.title}</p>
-                                <p className="text-xs text-zinc-500 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                  <span>{OBLIGATION_KIND_LABELS[o.kind]}</span>
-                                  <span>·</span>
-                                  <span className={o.overdue ? 'text-red-600 font-medium' : ''}>{dateNL(o.dueDate)}</span>
-                                  {boat && <><span>·</span><span>{boat}</span></>}
-                                  {o.overdue && (
-                                    <span className="inline-flex items-center rounded-full bg-red-100 text-red-700 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">over tijd</span>
-                                  )}
-                                </p>
+                    {isOpen && (
+                      group.category === 'other' ? (
+                        <div className="pl-4 pr-1 divide-y divide-zinc-100/70 pb-1">
+                          {groupPayees(group.items).map(payeeGroup => {
+                            const isPayeeOpen = openPayees.has(payeeGroup.payee)
+                            return (
+                              <div key={payeeGroup.payee} className="py-1">
+                                <button
+                                  type="button"
+                                  onClick={() => togglePayee(payeeGroup.payee)}
+                                  aria-expanded={isPayeeOpen}
+                                  className="w-full flex items-center justify-between gap-2 py-2 text-left hover:bg-zinc-50 rounded-md px-1.5 transition-colors"
+                                >
+                                  <span className="flex items-center gap-1.5 min-w-0 text-xs font-medium text-zinc-800">
+                                    <ChevronRight className={`w-3 h-3 text-zinc-400 shrink-0 transition-transform ${isPayeeOpen ? 'rotate-90' : ''}`} />
+                                    <span className="truncate">{payeeGroup.payee}</span>
+                                    <span className="text-[11px] font-normal text-zinc-400 shrink-0">({payeeGroup.items.length})</span>
+                                    {payeeGroup.overdueCount > 0 && (
+                                      <span className="inline-flex items-center rounded-full bg-red-100 text-red-700 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide shrink-0">
+                                        {payeeGroup.overdueCount} over tijd
+                                      </span>
+                                    )}
+                                  </span>
+                                  <span className="text-xs font-semibold tabular-nums text-zinc-800 shrink-0">
+                                    {eur(payeeGroup.totalCents)}
+                                  </span>
+                                </button>
+                                {isPayeeOpen && (
+                                  <ul className="divide-y divide-zinc-50 pl-2 pr-1 py-1">
+                                    {payeeGroup.items.map(o => renderItem(o, payeeGroup.payee))}
+                                  </ul>
+                                )}
                               </div>
-                              <div className="flex flex-col items-end gap-1 shrink-0">
-                                <span className="text-sm font-semibold tabular-nums text-zinc-900">{eur(o.amountCents)}</span>
-                                <div className="flex items-center gap-0.5">
-                                  <button type="button" onClick={() => markPaid(o)} className="text-[11px] font-medium text-emerald-700 hover:bg-emerald-50 rounded-md px-1.5 py-1">
-                                    Betaald
-                                  </button>
-                                  {o.source === 'obligation' ? (
-                                    <>
-                                      <button type="button" onClick={() => editObligation(o)} disabled={paymentPending} aria-label="Bewerken" className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 disabled:opacity-30">
-                                        <Pencil className="w-3.5 h-3.5" />
-                                      </button>
-                                      <button type="button" onClick={() => cancelObligation(o)} aria-label="Annuleren" className="p-1.5 rounded-md text-zinc-400 hover:text-red-600 hover:bg-red-50">
-                                        <XCircle className="w-3.5 h-3.5" />
-                                      </button>
-                                    </>
-                                  ) : (
-                                    <Link href={`/${locale}/admin/finance/loans`} className="text-[11px] text-zinc-400 hover:text-zinc-700 px-1.5 py-1">
-                                      lening
-                                    </Link>
-                                  )}
-                                </div>
-                              </div>
-                            </li>
-                          )
-                        })}
-                      </ul>
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        <ul className="divide-y divide-zinc-50 pb-1">
+                          {group.items.map(o => renderItem(o))}
+                        </ul>
+                      )
                     )}
                   </div>
                 )

@@ -42,6 +42,8 @@ export async function GET(_req: NextRequest) {
       accountName: row.account_name,
       lastSyncAt: row.last_sync_at,
       lastSyncError: row.last_sync_error,
+      refreshLockUntil: row.refresh_lock_until,
+      accessExpiresAt: row.access_token_expires_at,
       webhook: row.webhook_id ? { id: row.webhook_id, url: row.webhook_url } : null,
       latestBalance,
       tokenKeyConfigured: Boolean(process.env.REVOLUT_TOKEN_KEY),

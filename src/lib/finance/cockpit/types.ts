@@ -3,10 +3,11 @@ import type { Insight } from './insights'
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 
-export type Horizon = '30d' | '3m' | '12m'
+export type Horizon = '30d' | '1m' | '3m' | '12m'
 
 export const HORIZON_LABELS: Record<Horizon, string> = {
-  '30d': 'komende 30 dagen',
+  '30d': 'komende maand',
+  '1m': 'komende maand',
   '3m': 'komende 3 maanden',
   '12m': 'komende 12 maanden',
 }
@@ -83,9 +84,18 @@ export interface ObligationOccurrence {
 
 // ── Goals ────────────────────────────────────────────────────────────────────
 
+export type GoalType = 'target' | 'sinking_fund' | 'monthly_refill'
+
+export const GOAL_TYPE_LABELS: Record<GoalType, string> = {
+  target: 'Aankoopdoel',
+  sinking_fund: 'Onderhoudsbuffer',
+  monthly_refill: 'Aanvulfonds',
+}
+
 export interface GoalRow {
   id: string
   name: string
+  goalType?: GoalType
   targetCents: number
   fundedCents: number
   deadline: ISODate | null
@@ -99,6 +109,7 @@ export interface GoalRow {
 export interface GoalProgress {
   id: string
   name: string
+  goalType?: GoalType
   targetCents: number
   fundedCents: number
   remainingCents: number

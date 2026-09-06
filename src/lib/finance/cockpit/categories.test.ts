@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { categoryOf, groupObligations, CATEGORY_ORDER } from './categories'
+import { categoryOf, groupObligations, groupPayees, CATEGORY_ORDER } from './categories'
 import type { ObligationOccurrence } from './types'
 
 function occ(overrides: Partial<ObligationOccurrence> = {}): ObligationOccurrence {
@@ -39,7 +39,11 @@ describe('categoryOf', () => {
     expect(categoryOf(occ({ kind: 'tax', sourceKey: null }))).toBe('other')
   })
 
-  it('contract and other both fall to Meer…', () => {
+  it('a contract row with a partner-commission: source key is Partnercommissies', () => {
+    expect(categoryOf(occ({ kind: 'contract', sourceKey: 'partner-commission:p1:2026-Q3' }))).toBe('commission')
+  })
+
+  it('contract without partner-commission key and other both fall to Meer…', () => {
     expect(categoryOf(occ({ kind: 'contract' }))).toBe('other')
     expect(categoryOf(occ({ kind: 'other' }))).toBe('other')
   })
@@ -74,3 +78,29 @@ describe('groupObligations', () => {
     }
   })
 })
+
+describe('groupPayees', () => {
+  it('groups items by trimmed title, sums amount, counts overdue, and sorts by total descending', () => {
+    const payees = groupPayees([
+      occ({ key: '1', title: 'Supabase', amountCents: 3000, overdue: false }),
+      occ({ key: '2', title: 'Supabase', amountCents: 3500, overdue: true }),
+      occ({ key: '3', title: 'Simyo', amountCents: 4800, overdue: false }),
+    ])
+
+    expect(payees).toHaveLength(2)
+    expect(payees[0].payee).toBe('Supabase')
+    expect(payees[0].totalCents).toBe(6500)
+    expect(payees[0].overdueCount).toBe(1)
+    expect(payees[0].items).toHaveLength(2)
+
+    expect(payees[1].payee).toBe('Simyo')
+    expect(payees[1].totalCents).toBe(4800)
+    expect(payees[1].overdueCount).toBe(0)
+  })
+
+  it('handles empty title by falling back to Overig', () => {
+    const payees = groupPayees([occ({ key: '1', title: '', amountCents: 1000 })])
+    expect(payees[0].payee).toBe('Overig')
+  })
+})
+

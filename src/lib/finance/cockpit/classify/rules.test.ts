@@ -66,11 +66,27 @@ describe('classifyStructural — income', () => {
       ['Payment from Getyourguide Deutsch', 'GetYourGuide'],
       ['Payment from Viator Limited', 'Viator'],
       ['Payment from Boat Local', 'Boat Local'],
+      ['FHOFFCOURSE', 'FareHarbor'],
+      ['Payment from FareHarbor', 'FareHarbor'],
     ] as const) {
       const c = classifyStructural(tx({ amountCents: 250000, description: name }), ctx())
       expect(c).toMatchObject({ category: 'income', subcategory: 'booking', confidence: 1 })
       expect(c?.reason).toContain(label)
     }
+  })
+
+  it('recognises FHOFFCOURSE in reference even when description says Payment from Stripe', () => {
+    const c = classifyStructural(tx({
+      amountCents: 23247,
+      description: 'Payment from Stripe',
+      reference: 'FHOFFCOURSE',
+    }), ctx())
+    expect(c).toMatchObject({
+      category: 'income',
+      subcategory: 'booking',
+      confidence: 1,
+      reason: 'Uitbetaling van FareHarbor',
+    })
   })
 
   it('treats a processor payout as booking revenue with slightly lower confidence', () => {

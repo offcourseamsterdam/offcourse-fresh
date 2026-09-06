@@ -30,9 +30,30 @@ export async function PUT(request: NextRequest, { params }: Params) {
     if (!before) return apiError('Goal not found', 404)
     if (before.status === 'completed') return apiError('A completed goal cannot be edited', 400)
 
+    const updatePayload: Record<string, unknown> = { ...parsed.data, updated_at: new Date().toISOString() }
+
+    // If goal_type or description is provided, encode into description JSON
+    if (parsed.data.goal_type !== undefined || parsed.data.description !== undefined) {
+      let currentType = 'target'
+      let currentNotes = before.description
+      if (before.description && before.description.startsWith('{"type":')) {
+        try {
+          const prev = JSON.parse(before.description)
+          currentType = prev.type || 'target'
+          currentNotes = prev.notes || null
+        } catch {
+          // ignore
+        }
+      }
+      const newType = parsed.data.goal_type ?? currentType
+      const newNotes = parsed.data.description !== undefined ? parsed.data.description : currentNotes
+      updatePayload.description = JSON.stringify({ type: newType, notes: newNotes })
+      delete updatePayload.goal_type
+    }
+
     const { data: after, error } = await supabase
       .from('finance_goals')
-      .update({ ...parsed.data, updated_at: new Date().toISOString() })
+      .update(updatePayload)
       .eq('id', id)
       .select('*')
       .single()

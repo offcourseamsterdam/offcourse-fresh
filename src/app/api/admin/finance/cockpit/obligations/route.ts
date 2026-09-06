@@ -52,6 +52,7 @@ export async function POST(request: NextRequest) {
         recurrence_months: parsed.data.recurrence_months ?? null,
         recurrence_until: parsed.data.recurrence_until ?? null,
         boat_id: parsed.data.boat_id ?? null,
+        supplier_id: parsed.data.supplier_id ?? null,
         notes: parsed.data.notes ?? null,
         status: 'open',
       })

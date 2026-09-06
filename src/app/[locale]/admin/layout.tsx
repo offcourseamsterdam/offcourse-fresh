@@ -56,7 +56,7 @@ const navSections: NavSection[] = [
     items: [
       { href: '/admin/statistics', label: 'Statistics', icon: 'statistics' },
       { href: '/admin/google-ads', label: 'Google Ads', icon: 'campaigns' },
-      { href: '/admin/finance/overview', label: 'Finance', icon: 'finance' },
+      { href: '/admin/finance/overview', label: 'Finance', icon: 'finance', badge: 'finance-inbox-open-count' },
     ],
   },
   {
