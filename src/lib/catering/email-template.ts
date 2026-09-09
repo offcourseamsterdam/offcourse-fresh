@@ -22,12 +22,14 @@ export interface CateringEmailInput {
   timeStr: string | null
   guestCount: number | null
   items: Array<{ name: string; quantity?: number | null; is_per_person_pick?: boolean }>
+  bookingId?: string | null
 }
 
 export function buildCateringEmailText(input: CateringEmailInput): string {
-  const { cruiseName, dateStr, timeStr, guestCount, items } = input
+  const { cruiseName, dateStr, timeStr, guestCount, items, bookingId } = input
   const dateLabel = fmtDate(dateStr)
   const timeLabel = fmtTime(timeStr)
+  const shortId = bookingId ? bookingId.slice(0, 8) : null
 
   const itemLines = items
     .map(item => {
@@ -46,6 +48,7 @@ export function buildCateringEmailText(input: CateringEmailInput): string {
     'Could you please prepare the following order for us:',
     '',
     `Cruise: ${cruiseName}`,
+    ...(shortId ? [`Order ref: #${shortId}`] : []),
     `Date: ${dateLabel}`,
     `Time: ${timeLabel}`,
     `Guests: ${guestCount ?? '—'}`,
@@ -62,8 +65,11 @@ export function buildCateringEmailText(input: CateringEmailInput): string {
   ].join('\n')
 }
 
-export function buildCateringEmailSubject(cruiseName: string, dateStr: string | null, timeStr: string | null): string {
+export function buildCateringEmailSubject(cruiseName: string, dateStr: string | null, timeStr: string | null, bookingId?: string | null): string {
   const dateLabel = fmtDate(dateStr)
   const timeLabel = fmtTime(timeStr)
-  return `Catering order - ${cruiseName} - ${dateLabel} ${timeLabel}`
+  const shortId = bookingId ? bookingId.slice(0, 8) : null
+  const refTag = shortId ? `[#${shortId}] ` : ''
+  return `Catering order ${refTag}- ${cruiseName} - ${dateLabel} ${timeLabel}`
 }
+

@@ -50,10 +50,11 @@ export async function sendCateringOrderEmailForBooking(bookingId: string): Promi
     timeStr: booking.start_time,
     guestCount: booking.guest_count,
     items: cateringItems,
+    bookingId: booking.id,
   })
 
   const recipient = await resolveCateringEmailRecipient(booking.listing_id)
-  const subject = buildCateringEmailSubject(cruiseName, booking.booking_date, booking.start_time)
+  const subject = buildCateringEmailSubject(cruiseName, booking.booking_date, booking.start_time, booking.id)
 
   // Sending via Gmail (unlike the old Resend path) can throw — a missing/expired
   // GMAIL_REFRESH_TOKEN, or a transient Gmail API error — and this function's

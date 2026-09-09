@@ -5,6 +5,8 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { draftShadowReply } from '@/lib/chat/shadow-drafter'
 import { detectCateringConfirmation } from '@/lib/catering/detect-confirmation'
+import { matchCateringReplyToBooking } from '@/lib/catering/match-reply'
+import { postSlackText } from '@/lib/slack/send-notification'
 import { detectOtaEmail, OTA_PLATFORM_NAME, type OtaDetection } from '@/lib/ota/detect'
 import { notifyInboxItem } from '@/lib/slack/notify-inbox'
 import { handleOtaMessage } from '@/lib/ota/handle-message'
@@ -220,15 +222,27 @@ async function findOrCreateConversation(
  * null otherwise, meaning the normal customer-conversation path should
  * proceed unaffected.
  */
-async function handlePendingCateringReply(supabase: SupabaseAdmin, message: GmailMessage): Promise<string | null> {
-  const { data: booking } = await supabase
-    .from('bookings')
-    .select('id, booking_date')
-    .eq('catering_thread_id', message.threadId)
-    .is('catering_confirmed_at', null)
-    .maybeSingle()
+async function handlePendingCateringReply(
+  supabase: SupabaseAdmin,
+  message: GmailMessage,
+  conversationId: string
+): Promise<string | null> {
+  const booking = await matchCateringReplyToBooking(supabase, message)
+  if (!booking || booking.catering_confirmed_at) return null
 
-  if (!booking) return null
+  // Ensure conversation in inbox is connected to this booking
+  await supabase
+    .from('conversations')
+    .update({ booking_id: booking.id })
+    .eq('id', conversationId)
+
+  // Ensure catering_thread_id is saved on the booking if not already set
+  if (message.threadId && booking.catering_thread_id !== message.threadId) {
+    await supabase
+      .from('bookings')
+      .update({ catering_thread_id: message.threadId })
+      .eq('id', booking.id)
+  }
 
   const classification = await detectCateringConfirmation(message.bodyText)
   if (classification === 'confirmed') {
@@ -245,15 +259,25 @@ async function handlePendingCateringReply(supabase: SupabaseAdmin, message: Gmai
       payload: { supplierEmail: message.from.email, bookingDate: booking.booking_date },
       source: 'gmail/sync',
     })
-    return `Catering supplier confirmed the order for the ${booking.booking_date} cruise — marked confirmed automatically.`
-  }
-  // 'needs_reply' or 'unclear' — leave it as a normal, un-drafted conversation
-  // in the inbox. A human sees an email thread with no Ghost draft and can
-  // handle it manually. Intentionally the safe fallback, not a gap to fill.
 
-  return classification === 'needs_reply'
-    ? 'Catering supplier reply needs a human answer — no action taken.'
-    : 'Catering supplier reply — unclear, needs review.'
+    // Auto-resolve conversation so inbox stays clean (Feature 3)
+    await resolveConversation(supabase, conversationId)
+
+    return `Catering supplier confirmed the order for ${booking.customer_name ?? 'guest'} (${booking.booking_date}) — marked confirmed and resolved automatically.`
+  }
+
+  if (classification === 'needs_reply') {
+    try {
+      await postSlackText(
+        `⚠️ *Catering supplier question/issue*\nSupplier (${message.from.name || message.from.email}) replied with a question regarding catering for *${booking.customer_name ?? 'booking'}* (${booking.booking_date}).\nCheck the inbox to reply.`
+      )
+    } catch (err) {
+      console.error('[catering-reply] Slack alert failed:', err)
+    }
+    return 'Catering supplier reply needs a human answer — left open in inbox.'
+  }
+
+  return 'Catering supplier reply — unclear, needs review.'
 }
 
 /**
@@ -535,7 +559,7 @@ export async function syncGmailInbox(queryOverride?: string): Promise<GmailSyncR
         // branch that ever fetches an attachment, gated exactly per §6a.
         ghostContext = await ingestFinanceMessage(supabase, message, inserted?.id ?? null, finance, conversationId)
       } else {
-        const cateringContext = await handlePendingCateringReply(supabase, message)
+        const cateringContext = await handlePendingCateringReply(supabase, message, conversationId)
         ghostContext = cateringContext
         if (!cateringContext) {
           ghostContext = await handleGygReviewNotification(supabase, message, conversationId)

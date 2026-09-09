@@ -41,7 +41,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
         .eq('conversation_id', id)
         .order('created_at', { ascending: true })
         .limit(500),
-      loadContactBookings(supabase, conversation.contact),
+      loadContactBookings(supabase, conversation.contact, conversation.booking_id),
       loadGhostProposals(supabase, id, !!conversation.ota_source),
       conversation.source_category === 'finance' ? loadFinanceInvoices(supabase, id) : Promise.resolve([]),
     ])
@@ -62,39 +62,29 @@ const CONTACT_BOOKING_COLUMNS =
   'id, booking_id, booking_date, start_time, status, guest_count, listing_title, receipt_total_display'
 
 /**
- * The contact's booking history: matched by email OR phone. Two sequential
- * .eq() queries, NOT a hand-built .or() filter string — contact.email/
- * phone_e164 come straight from a Gmail header with no format validation
- * (see gmail/client.ts), so they must go in as parameterized values, never
- * interpolated into PostgREST's filter-string DSL (the same fix as the
- * sibling conversations list route's next_booking lookup, and the
- * fareharbor-webhook .or() fix — a crafted local-part could otherwise break
- * out of the filter expression).
+ * The contact's booking history: matched by email OR phone, or explicitly linked by booking_id.
  */
 async function loadContactBookings(
   supabase: ReturnType<typeof createAdminClient>,
   contact: { email: string | null; phone_e164: string | null } | null,
+  linkedBookingId?: string | null,
 ) {
-  if (!contact?.email && !contact?.phone_e164) return []
+  if (!contact?.email && !contact?.phone_e164 && !linkedBookingId) return []
 
-  // .limit(10) on each side, not just the final .slice(0, 10) below — a
-  // repeat guest or a shared/corporate phone number can carry an unbounded
-  // number of historical booking rows, and fetching all of them on every
-  // 5-second thread poll is the exact shape of the June 2026 egress
-  // incident (an unbounded fetch on a poll). Two independently-sorted
-  // top-10-by-date lists still merge into the correct overall top-10 — the
-  // true global top-K can never need a row ranked below K in either source.
-  const [byEmail, byPhone] = await Promise.all([
-    contact.email
+  const [byEmail, byPhone, byBookingId] = await Promise.all([
+    contact?.email
       ? supabase.from('bookings').select(CONTACT_BOOKING_COLUMNS).eq('customer_email', contact.email).order('booking_date', { ascending: false }).limit(10)
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
-    contact.phone_e164
+    contact?.phone_e164
       ? supabase.from('bookings').select(CONTACT_BOOKING_COLUMNS).eq('customer_phone', contact.phone_e164).order('booking_date', { ascending: false }).limit(10)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    linkedBookingId
+      ? supabase.from('bookings').select(CONTACT_BOOKING_COLUMNS).eq('id', linkedBookingId).limit(1)
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
   ])
 
   const seen = new Set<string>()
-  const merged = [...(byEmail.data ?? []), ...(byPhone.data ?? [])].filter(row => {
+  const merged = [...(byBookingId.data ?? []), ...(byEmail.data ?? []), ...(byPhone.data ?? [])].filter(row => {
     const id = row.id as string
     if (seen.has(id)) return false
     seen.add(id)

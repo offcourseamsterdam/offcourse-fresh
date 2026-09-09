@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useMemo, memo } from 'react'
-import { Pencil, Ban, CalendarDays, UtensilsCrossed, Megaphone, Tag, MapPin, ShieldOff, Building2, CheckCircle2, FileText } from 'lucide-react'
+import { Pencil, Ban, CalendarDays, UtensilsCrossed, Megaphone, Tag, MapPin, ShieldOff, Building2, CheckCircle2, FileText, Users } from 'lucide-react'
 import { EXTRAS_CATEGORIES, OTA_BOOKING_SOURCES } from '@/lib/constants'
-import { fmtAdminAmount } from '@/lib/admin/format'
+import { fmtAdminAmount, fmtGuestCount } from '@/lib/admin/format'
 import { BookingSourceBadge } from '@/components/admin/BookingSourceBadge'
 import { formatTrafficSource } from '@/lib/tracking/traffic-source'
 
@@ -178,8 +178,22 @@ export const BookingDetailRow = memo(function BookingDetailRow({
 
         {/* Guest info */}
         <div className="space-y-1">
-          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Guest</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Guest</p>
+            {guestCount != null && guestCount > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-zinc-100 text-zinc-800 border border-zinc-200">
+                <Users className="w-3.5 h-3.5 text-zinc-500" />
+                {fmtGuestCount(guestCount)}
+              </span>
+            )}
+          </div>
           {customerName && <p className="text-sm font-medium text-zinc-900">{customerName}</p>}
+          {guestCount != null && guestCount > 0 && (
+            <p className="text-xs font-medium text-zinc-600 flex items-center gap-1.5 pt-0.5">
+              <Users className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+              <span>Aantal gasten: <strong className="text-zinc-900">{fmtGuestCount(guestCount)}</strong></span>
+            </p>
+          )}
           {customerEmail && <p className="text-sm text-zinc-500">{customerEmail}</p>}
           {customerPhone && <p className="text-sm text-zinc-500">{customerPhone}</p>}
           {guestNote && (

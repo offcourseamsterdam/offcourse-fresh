@@ -26,6 +26,7 @@ interface CateringBooking {
   extras_selected: AdminExtraLineItem[] | null
   catering_email_sent_at: string | null
   catering_confirmed_at: string | null
+  catering_thread_id: string | null
   cateringItems: AdminExtraLineItem[]
   cateringAmountCents: number
 }
@@ -272,11 +273,29 @@ export default function CateringPage() {
   const [sendErrors, setSendErrors] = useState<Record<string, string>>({})
   const [toast, setToast] = useState<string | null>(null)
   const [confirmingBooking, setConfirmingBooking] = useState<CateringBooking | null>(null)
+  const [confirmingManualId, setConfirmingManualId] = useState<string | null>(null)
 
   const bookings = data?.bookings ?? []
 
   function toggleRow(id: string) {
     setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
+  }
+
+  async function handleManualConfirm(bookingId: string) {
+    setConfirmingManualId(bookingId)
+    try {
+      const res = await fetch(`/api/admin/bookings/${bookingId}/catering-confirm`, { method: 'POST' })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || !json.data?.ok) {
+        throw new Error(json.error ?? 'Failed to confirm catering order')
+      }
+      setToast('Cateringorder gemarkeerd als bevestigd!')
+      refresh()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error confirming order')
+    } finally {
+      setConfirmingManualId(null)
+    }
   }
 
   async function handleSendEmail(bookingId: string) {
@@ -491,6 +510,15 @@ export default function CateringPage() {
                               </p>
                             )
                           )}
+                          {b.catering_thread_id && (
+                            <a
+                              href={`/admin/inbox?thread=${encodeURIComponent(b.catering_thread_id)}`}
+                              className="inline-flex items-center gap-1 text-[11px] text-violet-600 hover:text-violet-800 hover:underline mt-1 font-medium"
+                              onClick={e => e.stopPropagation()}
+                            >
+                              Bekijk mail ↗
+                            </a>
+                          )}
                         </td>
 
                         <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
@@ -501,19 +529,38 @@ export default function CateringPage() {
                               {sendError && (
                                 <p className="text-xs text-red-600 mb-1">{sendError}</p>
                               )}
-                              <Button
-                                variant={isSent ? 'outline' : 'primary'}
-                                size="sm"
-                                onClick={() => setConfirmingBooking(b)}
-                                disabled={isSending}
-                                className="text-xs gap-1"
-                              >
-                                {isSending
-                                  ? <Loader2 className="w-3 h-3 animate-spin" />
-                                  : <Send className="w-3 h-3" />
-                                }
-                                {isSending ? 'Sending…' : isSent ? 'Resend' : 'Send to supplier'}
-                              </Button>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <Button
+                                  variant={isSent ? 'outline' : 'primary'}
+                                  size="sm"
+                                  onClick={() => setConfirmingBooking(b)}
+                                  disabled={isSending}
+                                  className="text-xs gap-1"
+                                >
+                                  {isSending
+                                    ? <Loader2 className="w-3 h-3 animate-spin" />
+                                    : <Send className="w-3 h-3" />
+                                  }
+                                  {isSending ? 'Sending…' : isSent ? 'Resend' : 'Send to supplier'}
+                                </Button>
+                                {isSent && !isConfirmed && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleManualConfirm(b.id)}
+                                    disabled={confirmingManualId === b.id}
+                                    title="Markeer als bevestigd (bijv. na telefonisch akkoord)"
+                                    className="text-xs gap-1 border-violet-200 text-violet-700 hover:bg-violet-50 hover:text-violet-800"
+                                  >
+                                    {confirmingManualId === b.id ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <Check className="w-3 h-3" />
+                                    )}
+                                    Bevestig
+                                  </Button>
+                                )}
+                              </div>
                             </>
                           )}
                         </td>
