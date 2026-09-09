@@ -103,6 +103,10 @@
     {
       "path": "/api/cron/finance-snelstart-forward",
       "schedule": "5 * * * *"
+    },
+    {
+      "path": "/api/cron/availability-sync",
+      "schedule": "0 5,11,17 * * *"
     }
   ]
 }

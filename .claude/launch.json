@@ -18,7 +18,13 @@
     {
       "name": "Next.js Stripe Test Mode",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:local", "--", "-p", "3050"],
+      "runtimeArgs": [
+        "run",
+        "dev:local",
+        "--",
+        "-p",
+        "3050"
+      ],
       "port": 3050,
       "autoPort": false
     },
@@ -28,6 +34,21 @@
       "runtimeArgs": ["--prefix", "/Users/beer/Developer/Exchange-released-version", "run", "dev"],
       "port": 8080,
       "autoPort": true
+    },
+    {
+      "name": "AI Ops worktree dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/beer/Developer/offcourse-ai-ops-sync",
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3002"
+      ],
+      "port": 3002,
+      "autoPort": false
     }
   ]
 }

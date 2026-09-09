@@ -186,7 +186,6 @@ describe('admin route auth contract', () => {
     // 151 = 150 + /api/admin/scheduling/upsell-proposals (2026-08-24: the
     // "upsell review environment" queue of AI-drafted, Slack-DM-sourced
     // upsell_bonus proposals awaiting a human's confirm/reject).
-    // Update this when adding/removing admin routes.
     // 153 = 151 (this branch) + review-sms and sms-ready (merged in from main's
     // post-cruise review SMS feature: manual send + the "ready to send" list
     // on the admin Reviews page).
@@ -195,8 +194,9 @@ describe('admin route auth contract', () => {
     // overview, settings, obligations (+ [id], [id]/mark-paid, [id]/reopen),
     // loans (+ [id], [id]/payments/[paymentId]/mark-paid + /reopen, impact),
     // goals (+ [id], [id]/complete, [id]/events).
+    // 212 = 211 + /api/admin/availability-sync (Manual trigger & health status for FareHarbor AI availability snapshots)
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`211`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`212`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {

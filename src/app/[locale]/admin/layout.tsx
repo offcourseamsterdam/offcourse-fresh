@@ -47,8 +47,9 @@ const navSections: NavSection[] = [
     items: [
       { href: '/admin/campaigns',    label: 'Campaigns',    icon: 'campaigns' },
       { href: '/admin/partners',     label: 'Partners',     icon: 'campaigns' },
-      { href: '/admin/promo-codes',  label: 'Promo Codes',  icon: 'promocodes' },
-      { href: '/admin/blog',         label: 'Blog',         icon: 'blog',      comingSoon: true },
+      { href: '/admin/promo-codes',   label: 'Promo Codes',   icon: 'promocodes' },
+      { href: '/admin/ai-visibility', label: 'AI Visibility', icon: 'sparkles' },
+      { href: '/admin/blog',          label: 'Blog',          icon: 'blog',      comingSoon: true },
     ],
   },
   {

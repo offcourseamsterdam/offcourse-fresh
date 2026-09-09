@@ -1378,6 +1378,47 @@ export type Database = {
           },
         ]
       }
+      cruise_availability_snapshots: {
+        Row: {
+          category: string
+          fareharbor_item_pk: number
+          listing_id: string
+          next_available_slot: string | null
+          raw_availability_window_days: number
+          schedule_summary: Json
+          snapshot_at: string
+          upcoming_days: Json
+        }
+        Insert: {
+          category: string
+          fareharbor_item_pk: number
+          listing_id: string
+          next_available_slot?: string | null
+          raw_availability_window_days?: number
+          schedule_summary?: Json
+          snapshot_at?: string
+          upcoming_days?: Json
+        }
+        Update: {
+          category?: string
+          fareharbor_item_pk?: number
+          listing_id?: string
+          next_available_slot?: string | null
+          raw_availability_window_days?: number
+          schedule_summary?: Json
+          snapshot_at?: string
+          upcoming_days?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cruise_availability_snapshots_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: true
+            referencedRelation: "cruise_listings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cruise_listings: {
         Row: {
           allowed_customer_type_pks: number[] | null

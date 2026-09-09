@@ -17,6 +17,7 @@ import { reportBookingConversion } from '@/lib/google-ads/report-conversion'
 import { reportRefundAdjustment } from '@/lib/google-ads/report-refund'
 import { postSlackText, postSlackOps, postSlackCritical } from '@/lib/slack/send-notification'
 import { notifyBookingsChanged } from '@/lib/realtime/notify-bookings-changed'
+import { syncAllCruisesAvailability } from '@/lib/fareharbor/sync-availability'
 import { resolvePaymentMethodLabel } from '@/lib/stripe/payment-method-label'
 import { resolveStripeFeeCents } from '@/lib/stripe/fee'
 import { stripeWebhookSecret } from '@/lib/stripe/keys'
@@ -448,6 +449,9 @@ export async function POST(request: NextRequest) {
           ),
         )
       }
+      syncAllCruisesAvailability(14).catch(err => {
+        console.error('[stripe-webhook] availability re-sync error (ignored):', err)
+      })
     }
 
     const startTime = formatAmsterdamTime(meta.start_at)

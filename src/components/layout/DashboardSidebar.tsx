@@ -39,6 +39,7 @@ import {
   PanelLeftOpen,
   Menu,
   X,
+  Sparkles,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -88,6 +89,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   notifications: Bell,
   stock: Boxes,
   schedule: Clock,
+  sparkles: Sparkles,
 }
 
 const PREFETCH_URLS: Record<string, string> = {
