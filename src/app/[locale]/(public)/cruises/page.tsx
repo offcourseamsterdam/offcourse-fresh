@@ -3,6 +3,8 @@ import { Link } from '@/i18n/navigation'
 import { getTranslations } from 'next-intl/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
+import { getAllCruiseAvailabilitySnapshots } from '@/lib/fareharbor/get-availability-snapshot'
+import type { CruiseAvailabilitySnapshot } from '@/lib/fareharbor/sync-availability'
 import type { Locale } from '@/lib/i18n/config'
 import type { Database } from '@/lib/supabase/types'
 import { categorizeListings } from '@/lib/utils'
@@ -47,11 +49,43 @@ export default async function CruisesPage({ params }: Props) {
 
   const listings = (data as CruiseListing[] | null) ?? []
   const loc = locale as Locale
+  const snapshotMap = await getAllCruiseAvailabilitySnapshots()
 
   const { private: privateListings, shared: sharedListings } = categorizeListings(listings)
 
+  // Schema.org ItemList for search engine & LLM crawler indexing
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    name: 'Off Course Amsterdam Boat Tours & Canal Cruises',
+    description: 'Private boat tours and shared canal cruises in Amsterdam with open bar, local skippers, and salon boats.',
+    itemListElement: listings.map((listing, index) => {
+      const title = getLocalizedField(listing, 'title', loc)
+      const snap = snapshotMap.get(listing.id)
+      return {
+        '@type': 'ListItem',
+        position: index + 1,
+        item: {
+          '@type': 'TouristTrip',
+          name: title,
+          description: getLocalizedField(listing, 'tagline', loc),
+          url: `https://offcourseamsterdam.com/${loc}/cruises/${listing.slug}`,
+          touristType: listing.category === 'private' ? 'Private Group Charter' : 'Shared Small Group Tour',
+          offers: {
+            '@type': 'Offer',
+            price: listing.starting_price ?? undefined,
+            priceCurrency: 'EUR',
+            availability: snap?.next_available_slot ? 'https://schema.org/InStock' : 'https://schema.org/InStoreOnly',
+          },
+        },
+      }
+    }),
+  }
+
   return (
     <div className="min-h-screen bg-[var(--color-sand)]">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+
       {/* Header */}
       <div className="bg-[var(--color-primary)] text-white py-16 sm:py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
@@ -75,7 +109,12 @@ export default async function CruisesPage({ params }: Props) {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
               {privateListings.map(listing => (
-                <CruiseCard key={listing.id} listing={listing} locale={loc} />
+                <CruiseCard
+                  key={listing.id}
+                  listing={listing}
+                  locale={loc}
+                  snapshot={snapshotMap.get(listing.id)}
+                />
               ))}
             </div>
           </section>
@@ -94,7 +133,12 @@ export default async function CruisesPage({ params }: Props) {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
               {sharedListings.map(listing => (
-                <CruiseCard key={listing.id} listing={listing} locale={loc} />
+                <CruiseCard
+                  key={listing.id}
+                  listing={listing}
+                  locale={loc}
+                  snapshot={snapshotMap.get(listing.id)}
+                />
               ))}
             </div>
           </section>
@@ -115,9 +159,19 @@ export default async function CruisesPage({ params }: Props) {
 
 // ── Card component ────────────────────────────────────────────────────────────
 
-function CruiseCard({ listing, locale }: { listing: CruiseListing; locale: Locale }) {
+function CruiseCard({
+  listing,
+  locale,
+  snapshot,
+}: {
+  listing: CruiseListing
+  locale: Locale
+  snapshot?: CruiseAvailabilitySnapshot
+}) {
   const title = getLocalizedField(listing, 'title', locale)
   const tagline = getLocalizedField(listing, 'tagline', locale)
+  const nextDay = snapshot?.upcoming_days?.[0]
+  const nextSlot = nextDay?.slots?.[0]
 
   return (
     <Link href={`/cruises/${listing.slug}`} className="group block">
@@ -137,10 +191,16 @@ function CruiseCard({ listing, locale }: { listing: CruiseListing; locale: Local
               <span className="text-4xl font-black text-[var(--color-primary)]/20">OC</span>
             </div>
           )}
-          <div className="absolute top-3 left-3">
+          <div className="absolute top-3 left-3 flex items-center gap-1.5">
             <span className="bg-white/90 backdrop-blur-sm text-[var(--color-primary)] text-xs font-semibold px-2.5 py-1 rounded-full capitalize">
               {listing.category}
             </span>
+            {nextSlot && (
+              <span className="bg-emerald-600/90 text-white backdrop-blur-sm text-[11px] font-medium px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                {nextDay.formattedDate.split(' ')[0]} {nextSlot.startTime}
+              </span>
+            )}
           </div>
         </div>
 

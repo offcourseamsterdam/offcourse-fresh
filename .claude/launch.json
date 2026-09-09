@@ -4,22 +4,49 @@
     {
       "name": "Next.js Dev Server",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000,
       "autoPort": true
     },
     {
       "name": "Next.js Dev (webpack)",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:local"],
+      "runtimeArgs": [
+        "run",
+        "dev:local"
+      ],
       "port": 3000,
       "autoPort": true
     },
     {
       "name": "Next.js Stripe Test Mode",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:local", "--", "-p", "3050"],
+      "runtimeArgs": [
+        "run",
+        "dev:local",
+        "--",
+        "-p",
+        "3050"
+      ],
       "port": 3050,
+      "autoPort": false
+    },
+    {
+      "name": "AI Ops worktree dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/beer/Developer/offcourse-ai-ops-sync",
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3002"
+      ],
+      "port": 3002,
       "autoPort": false
     }
   ]

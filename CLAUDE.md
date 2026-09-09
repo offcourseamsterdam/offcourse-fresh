@@ -145,6 +145,14 @@ refunds, chargebacks, admin cancel/rebook, etc.) uses **`postSlackOps()`**.
   because a paid-but-unbooked alert must never be lost. Reserve for money-path
   failures where silence is worse than posting in the wrong place.
 
+The same rule applies to anything posting from **outside** the app. `scripts/slack-post.ts`
+(the CLI used by scheduled/ops reports such as the weekly conversion report) is **DM-only**:
+it posts via `postSlackDM()` and deliberately does not read `SLACK_WEBHOOK_URL`, so it cannot
+reach `#bookings` even on failure. It originally used the webhook and posted a weekly report
+to the shared channel — Beer flagged it on 2026-09-07. If you add another CLI, cron, or MCP
+path that posts to Slack, route it through `postSlackOps()`/`postSlackDM()` too; never reach
+for the raw webhook as a "delivery guarantee".
+
 The DM target is `SLACK_ALERT_DM_CHANNEL`. Set it to Beer's **user** ID
 (`U08PRAX8A07`), not a `D...` DM-channel ID: a `D...` id is specific to one app's
 DM conversation, and the old hardcoded `D08PRAXD13R` fallback belonged to a
@@ -220,6 +228,40 @@ routes rather than fail — it reports zero unguarded handlers because it found 
 which reads as "all clear" when it's actually blind. Whenever you add a new way of exporting a route
 handler, add a matching pattern to `findHandlers()` in the same change, and re-run the contract test
 file alone to confirm it now actually iterates the new routes instead of finding none.
+
+### Vercel's Output File Tracer Drops `try/catch`-Required Native Deps (pdfjs-dist + `@napi-rs/canvas`)
+`pdfjs-dist` (used to parse GetYourGuide/BoatLocal/Withlocals payment PDFs in
+`src/lib/finance/`) tries to self-polyfill `DOMMatrix` via the optional native package
+`@napi-rs/canvas`. That package installs fine locally and on Vercel's build machine
+(`package-lock.json` records every platform variant, including `linux-x64-gnu`) — but
+`pdfjs-dist` requires it through a `try/catch` specifically to make it optional, and that
+same trick that dodges webpack also makes it invisible to Vercel's output-file-tracer
+(`@vercel/nft`), so it's silently **excluded from the deployed function bundle** even
+though it was present at build time. Symptom in production only: `ReferenceError:
+DOMMatrix is not defined`, or the underlying `Cannot find module '@napi-rs/canvas'`
+warning in Vercel's own runtime logs (`vercel logs <domain> --expand` — the CLI output,
+not the browser response, is what shows this).
+
+**A manual `globalThis.DOMMatrix = ...` polyfill imported before pdfjs does NOT fix
+this** — a 2026-09-02 attempt at exactly that (`src/lib/finance/pdfjs-node-polyfill.ts`)
+shipped, passed locally, and was still broken in production two days later, because the
+problem was never a missing global — it's a missing *file* in the deployed bundle, so
+pdfjs's own internal check still runs and still fails. The real fix (2026-09-04) is
+forcing the untraced package into the bundle explicitly, same technique already used for
+`pdfjs-dist`'s worker file:
+```ts
+outputFileTracingIncludes: {
+  '/api/admin/finance/**': [
+    './node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs',
+    './node_modules/@napi-rs/canvas/**',
+    './node_modules/@napi-rs/canvas-linux-x64-gnu/**',
+  ],
+},
+```
+If a similarly "installed but crashes only on Vercel" native/optional dependency shows up
+elsewhere, suspect this same tracing gap before reaching for a runtime polyfill — verify
+by checking `vercel logs` for the specific "Cannot find module" line, not just the
+user-facing error text.
 
 ## gstack
 

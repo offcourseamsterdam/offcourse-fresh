@@ -6,9 +6,11 @@ import { ReviewSlider } from './ReviewSlider'
 import { BoatCard } from './BoatCard'
 import { FoodHostCard } from './FoodHostCard'
 import { TruncatedDescription } from './TruncatedDescription'
+import { UpcomingDeparturesSection } from './UpcomingDeparturesSection'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import type { Locale } from '@/lib/i18n/config'
 import type { CancellationTier } from '@/lib/cancellation/policy'
+import type { CruiseAvailabilitySnapshot } from '@/lib/fareharbor/sync-availability'
 
 type SerializedExtra = { id: string; name: string; description: string | null; image_url: string | null; ingredients: string[] | null; price_display: string; min_people: number | null; default_to_guest_count: boolean }
 
@@ -22,12 +24,18 @@ interface ContentProps {
   serializedReviews: { id: string; reviewer_name: string; review_text: string; rating: number; source: string | null; author_photo_url: string | null; review_image_url: string | null; publish_time: string | null }[]
   totalReviews?: number
   listing: {
+    title?: string | null
+    slug?: string | null
+    category?: string | null
+    starting_price?: number | null
+    price_display?: string | null
     departure_location: string | null
     google_maps_url: string | null
     chef_name?: string | null
     chef_bio?: string | null
     chef_photo_url?: string | null
   }
+  availabilitySnapshot?: CruiseAvailabilitySnapshot | null
   faqs: { question: string; answer: string }[]
   loc: Locale
   faqLabel: string
@@ -54,7 +62,7 @@ const headingClass = (isSpecialEvent: boolean | undefined, extra = '') =>
 export function CruiseContentSections({
   highlights, description, serializedFood, serializedDrinks,
   cancellationTiers, listingBoats, serializedReviews, totalReviews,
-  listing, faqs, loc, faqLabel, isSpecialEvent, mapCoords,
+  listing, availabilitySnapshot, faqs, loc, faqLabel, isSpecialEvent, mapCoords,
 }: ContentProps) {
   return (
     <div className="lg:col-span-2 space-y-10">
@@ -80,6 +88,17 @@ export function CruiseContentSections({
           </ul>
         </section>
       )}
+
+      {/* Upcoming Departures & Live Availability (SSR & LLM readable) */}
+      <UpcomingDeparturesSection
+        snapshot={availabilitySnapshot ?? null}
+        listingTitle={listing.title ?? ''}
+        category={(listing.category as 'private' | 'shared') || 'private'}
+        startingPrice={listing.starting_price ?? null}
+        priceDisplay={listing.price_display ?? null}
+        slug={listing.slug ?? ''}
+        locale={loc}
+      />
 
       {/* Description */}
       {description && (

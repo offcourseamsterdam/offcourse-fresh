@@ -48,7 +48,7 @@ export function initSession() {
   const payload = {
     visitor_id: visitorId,
     session_id: sessionId,
-    entry_page: window.location.pathname,
+    entry_page: (window.location.pathname + (window.location.search || '')).slice(0, 500),
     referrer: document.referrer || undefined,
     page_count: pageViewCount,
     utm_source: attr?.utm_source || utm.utm_source,
@@ -119,7 +119,7 @@ export function initAnonymousSession() {
     body: JSON.stringify({
       visitor_id: anonVisitorId,
       session_id: anonSessionId,
-      entry_page: window.location.pathname,
+      entry_page: (window.location.pathname + (window.location.search || '')).slice(0, 500),
       referrer: document.referrer || undefined,
       page_count: pageViewCount,
       utm_source: utm.utm_source,

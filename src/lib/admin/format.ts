@@ -50,3 +50,10 @@ export function fmtAdminDateCreated(iso: string | null): string {
   const date = new Date(iso).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', timeZone: 'Europe/Amsterdam' })
   return `${date}, ${formatAmsterdamTime(iso)}`
 }
+
+/** Format guest count for display (e.g. "6 gasten", "1 gast"). */
+export function fmtGuestCount(count: number | null | undefined): string | null {
+  if (count == null || count <= 0) return null
+  return `${count} ${count === 1 ? 'gast' : 'gasten'}`
+}
+

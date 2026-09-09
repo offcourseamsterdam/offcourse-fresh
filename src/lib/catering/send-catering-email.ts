@@ -55,10 +55,11 @@ export async function sendCateringOrderEmailForBooking(bookingId: string): Promi
     timeStr: booking.start_time,
     guestCount: booking.guest_count,
     items: cateringItems,
+    bookingId: booking.id,
   })
 
   const recipient = await resolveCateringEmailRecipient(booking.listing_id)
-  const subject = buildCateringEmailSubject(cruiseName, booking.booking_date, booking.start_time)
+  const subject = buildCateringEmailSubject(cruiseName, booking.booking_date, booking.start_time, booking.id)
 
   if (process.env.RESEND_API_KEY) {
     const resend = getResend()

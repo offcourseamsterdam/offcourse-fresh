@@ -9,7 +9,7 @@ import { BookingStatusBadge } from '@/components/admin/BookingStatusBadge'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { useBookingsChangedSignal } from '@/hooks/useBookingsChangedSignal'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
-import { fmtAdminTime } from '@/lib/admin/format'
+import { fmtAdminTime, fmtGuestCount } from '@/lib/admin/format'
 import { getWeekStart, addDays, weekDateStrings, formatWeekRangeLabel, amsDateString } from '@/lib/admin/week'
 import { groupBookingsForPlanning, splitGroupsByBoat, resolveBoatForGroup, boatAccentClasses, type PlanningGroup } from '@/lib/admin/planning-groups'
 import { topPx, blockMinHeightPx, hourMarks, GRID_HEIGHT_PX, RAIL_WIDTH_PX } from '@/lib/admin/planning-time-grid'
@@ -408,6 +408,7 @@ export default function PlanningPage() {
                 </h2>
                 <p className="text-xs text-zinc-400">
                   {selectedBooking.listing_title ?? selectedBooking.tour_item_name} · {timeRangeLabel(selectedBooking.start_time, selectedBooking.end_time)}
+                  {selectedBooking.guest_count ? ` · ${fmtGuestCount(selectedBooking.guest_count)}` : ''}
                 </p>
               </div>
               <button

@@ -11,6 +11,7 @@ import { RainbowCursorTrail } from '@/components/cruise/RainbowCursorTrail'
 import { RastaCursorTrail } from '@/components/cruise/RastaCursorTrail'
 import { CruiseContentSections } from '@/components/cruise/CruiseContentSections'
 import { getListingBySlug, getCruisePageData } from '@/lib/cruise/get-cruise-page-data'
+import { getCruiseAvailabilitySnapshot } from '@/lib/fareharbor/get-availability-snapshot'
 import { AvailabilityFiltersSchema } from '@/lib/fareharbor/filters'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import { TrackPageView } from '@/components/tracking/TrackPageView'
@@ -64,21 +65,78 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
   if (!listing) notFound()
 
   const data = await getCruisePageData(listing, locale as Locale)
+  const availabilitySnapshot = await getCruiseAvailabilitySnapshot(listing.id)
 
   // JSON-LD ImageObject for Google Images / Discover ranking
   const heroImage = buildCruiseHeroImageObject(data.heroAsset, listing.hero_image_url, data.title)
 
-  // JSON-LD structured data
+  // Schedule & concrete departures for Schema.org & LLM crawlers
+  const eventSchedule = availabilitySnapshot?.schedule_summary ? {
+    '@type': 'Schedule',
+    repeatFrequency: 'P1D',
+    startTime: availabilitySnapshot.schedule_summary.typicalStartTime,
+    endTime: availabilitySnapshot.schedule_summary.typicalEndTime,
+    scheduleTimezone: 'Europe/Amsterdam',
+    byDay: (availabilitySnapshot.schedule_summary.operatingDays?.length
+      ? availabilitySnapshot.schedule_summary.operatingDays
+      : [0, 1, 2, 3, 4, 5, 6]
+    ).map(d => ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d]),
+  } : undefined
+
+  const upcomingSubEvents = availabilitySnapshot?.upcoming_days?.flatMap(day =>
+    day.slots.map(slot => ({
+      '@type': 'Event',
+      name: `${data.title} — ${day.formattedDate} ${slot.startTime}`,
+      startDate: slot.startIso,
+      endDate: slot.startIso.replace(slot.startTime, slot.endTime),
+      eventStatus: 'https://schema.org/EventScheduled',
+      eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
+      location: {
+        '@type': 'Place',
+        name: 'Off Course Amsterdam Dock',
+        address: {
+          '@type': 'PostalAddress',
+          streetAddress: 'Singel',
+          addressLocality: 'Amsterdam',
+          addressCountry: 'NL',
+        },
+      },
+      offers: {
+        '@type': 'Offer',
+        url: `https://offcourseamsterdam.com/${locale}${slot.deepLink}`,
+        price: listing.starting_price ?? undefined,
+        priceCurrency: 'EUR',
+        availability: slot.availableCapacity > 0 ? 'https://schema.org/InStock' : 'https://schema.org/SoldOut',
+        validFrom: availabilitySnapshot.snapshot_at,
+      },
+      remainingAttendeeCapacity: slot.availableCapacity,
+    }))
+  ) ?? []
+
+  // JSON-LD structured data: TouristTrip & Product
   const jsonLd = {
     '@context': 'https://schema.org',
-    '@type': 'Product',
+    '@type': ['TouristTrip', 'Product'],
     name: data.title,
     description: data.tagline ?? undefined,
+    touristType: listing.category === 'private' ? 'Private Group Charter' : 'Shared Small Group Tour',
     ...(heroImage ? { image: heroImage } : {}),
+    ...(eventSchedule ? { eventSchedule } : {}),
+    ...(upcomingSubEvents.length > 0 ? { subEvent: upcomingSubEvents } : {}),
     offers: listing.starting_price
-      ? { '@type': 'Offer', priceCurrency: 'EUR', price: listing.starting_price, availability: 'https://schema.org/InStock' }
+      ? {
+          '@type': 'AggregateOffer',
+          priceCurrency: 'EUR',
+          lowPrice: listing.starting_price,
+          offerCount: upcomingSubEvents.length > 0 ? upcomingSubEvents.length : 1,
+          availability: 'https://schema.org/InStock',
+        }
       : undefined,
-    provider: { '@type': 'LocalBusiness', name: 'Off Course Amsterdam' },
+    provider: {
+      '@type': 'LocalBusiness',
+      name: 'Off Course Amsterdam',
+      url: 'https://offcourseamsterdam.com',
+    },
   }
 
   // FAQPage JSON-LD — lets AI answer engines and Google lift these Q&As
@@ -340,6 +398,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
               serializedReviews={data.serializedReviews}
               totalReviews={data.totalReviews}
               listing={listing}
+              availabilitySnapshot={availabilitySnapshot}
               faqs={data.faqs}
               loc={data.loc}
               faqLabel={t('faq')}

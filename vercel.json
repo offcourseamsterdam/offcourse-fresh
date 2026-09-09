@@ -55,6 +55,10 @@
     {
       "path": "/api/cron/post-cruise-sms",
       "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/cron/availability-sync",
+      "schedule": "0 5,11,17 * * *"
     }
   ]
 }

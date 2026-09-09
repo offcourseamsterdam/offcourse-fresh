@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useMemo, memo } from 'react'
-import { Pencil, Ban, CalendarDays, UtensilsCrossed, Megaphone, Tag, Building2, CheckCircle2, FileText } from 'lucide-react'
+import { Pencil, Ban, CalendarDays, UtensilsCrossed, Megaphone, Tag, Building2, CheckCircle2, FileText, Users, Mail, Phone } from 'lucide-react'
 import { EXTRAS_CATEGORIES } from '@/lib/constants'
-import { fmtAdminAmount } from '@/lib/admin/format'
+import { fmtAdminAmount, fmtGuestCount } from '@/lib/admin/format'
 import { BookingSourceBadge } from '@/components/admin/BookingSourceBadge'
 
 import { CancelBookingModal } from '@/components/admin/booking-actions/CancelBookingModal'
@@ -158,8 +158,24 @@ export const BookingDetailRow = memo(function BookingDetailRow({
         <div className="space-y-1">
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Guest</p>
           {customerName && <p className="text-sm font-medium text-zinc-900">{customerName}</p>}
-          {customerEmail && <p className="text-sm text-zinc-500">{customerEmail}</p>}
-          {customerPhone && <p className="text-sm text-zinc-500">{customerPhone}</p>}
+          {guestCount != null && guestCount > 0 && (
+            <p className="text-xs text-zinc-600 flex items-center gap-1.5 pt-0.5">
+              <Users className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+              <span>{guestCount} {guestCount === 1 ? 'guest' : 'guests'}</span>
+            </p>
+          )}
+          {customerEmail && (
+            <p className="text-xs text-zinc-600 flex items-center gap-1.5 pt-0.5">
+              <Mail className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+              <a href={`mailto:${customerEmail}`} className="hover:underline text-zinc-600">{customerEmail}</a>
+            </p>
+          )}
+          {customerPhone && (
+            <p className="text-xs text-zinc-600 flex items-center gap-1.5 pt-0.5">
+              <Phone className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+              <a href={`tel:${customerPhone}`} className="hover:underline text-zinc-600">{customerPhone}</a>
+            </p>
+          )}
           {guestNote && (
             <p className="text-sm text-zinc-400 italic mt-1">&quot;{guestNote}&quot;</p>
           )}

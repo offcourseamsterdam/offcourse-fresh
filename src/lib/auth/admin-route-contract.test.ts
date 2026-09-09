@@ -163,8 +163,9 @@ describe('admin route auth contract', () => {
     // (manual send of post-cruise review & local recommendations SMS via Twilio).
     // 125 = 124 + /api/admin/finance/invoices (Dedicated open/paid B2B invoice dashboard).
     // 126 = 125 + /api/admin/finance/channel-status (Operational badges, all-time revenue sorting, and open invoice count)
+    // 127 = 126 + /api/admin/availability-sync (Manual trigger & health status for FareHarbor AI availability snapshots)
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`126`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`127`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {
