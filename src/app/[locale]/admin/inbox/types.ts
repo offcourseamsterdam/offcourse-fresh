@@ -232,6 +232,10 @@ export interface InboxFinanceDocument {
     status: string
     gross_cents: number | null
     supplier_name: string | null
+    supplier_id: string | null
+    revolut_draft_id: string | null
+    snelstart_sent_at: string | null
+    bank_transaction_id: string | null
   } | null
   boatlocalPayout?: {
     invoice_number: string

@@ -15,7 +15,7 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }))
 vi.mock('@/lib/finance/cockpit/events', () => ({ logFinanceEvent: h.logFinanceEvent }))
 vi.mock('@/lib/revolut/token-store', () => ({ loadConnection: h.loadConnection, isConnected: h.isConnected, createRevolutClient: h.createRevolutClient }))
 
-import { ExpenseActionError, clearReview, confirmMatch, createSupplierAndLink, draftExpensePayment, ignoreExpense, linkDocument, linkSupplier, listExpenses, listOrphanDocuments, loadExpenseDetail, markBooked, setManualVat, unignoreExpense, unlinkDocument } from './actions'
+import { ExpenseActionError, clearReview, confirmMatch, createExpenseFromDocument, createSupplierAndLink, draftExpensePayment, ignoreExpense, linkDocument, linkSupplier, listExpenses, listOrphanDocuments, loadExpenseDetail, markBooked, setManualVat, unignoreExpense, unlinkDocument } from './actions'
 
 const EXP = (over: Record<string, unknown> = {}) => ({
   id: 'exp-1', status: 'partially_matched', bank_transaction_id: 'tx-1', cash_out_cents: 12100, gross_cents: 12100, match_confidence: 0.7, matched_at: '2026-09-08T09:00:00Z',
@@ -81,6 +81,24 @@ describe('linkDocument', () => {
   })
   it('404 when the expense does not exist', async () => {
     const err = await linkDocument(db({ expense: null }).client as never, 'nope', 'doc-1').catch(e => e)
+    expect(err.status).toBe(404)
+  })
+})
+
+describe('createExpenseFromDocument', () => {
+  it('creates an Expense Record seeded from the document extraction, then links the document (manual-match provenance)', async () => {
+    const mock = db({ doc: DOC({ extracted: { supplierName: 'Bram Bots', grossCents: 70793, invoiceNumber: '2026-10', invoiceDate: '2026-08-25' } }) })
+    const { expenseId } = await createExpenseFromDocument(mock.client as never, 'doc-1')
+    expect(expenseId).toBe('exp-1')
+    expect(opArg(mock.queries, 'finance_expenses', 'insert')).toMatchObject({ supplier_name: 'Bram Bots', gross_cents: 70793, invoice_number: '2026-10', invoice_date: '2026-08-25' })
+    // Same manual-match path as a hand-linked document: confidence 1, so it's trusted once paid.
+    expect(opArg(mock.queries, 'finance_expenses', 'update')).toMatchObject({ match_confidence: 1 })
+    expect(h.logFinanceEvent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ event_type: 'expense_created_from_document' }))
+  })
+  it('refuses a document that is already linked, a duplicate, or missing', async () => {
+    await expect(createExpenseFromDocument(db({ doc: DOC({ expense_id: 'exp-other' }) }).client as never, 'doc-1')).rejects.toThrow(/al gekoppeld/)
+    await expect(createExpenseFromDocument(db({ doc: DOC({ duplicate_of: 'doc-0' }) }).client as never, 'doc-1')).rejects.toThrow(/duplicaat/)
+    const err = await createExpenseFromDocument(db({ doc: null }).client as never, 'nope').catch(e => e)
     expect(err.status).toBe(404)
   })
 })

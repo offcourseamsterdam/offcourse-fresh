@@ -167,7 +167,8 @@ describe('forwardReadyExpenses', () => {
     expect(op(listing, 'not')!.args).toEqual(['primary_document_id', 'is', null])
     expect(opArg(mock.queries, 'finance_expenses', 'limit')).toBe(10)
     expect(r).toEqual({ enabled: true, considered: 1, sent: 1, released: [], failed: [] })
-    expect(h.postSlackOps).not.toHaveBeenCalled()
+    // Beer, 2026-09-10: wants to see a paid invoice actually reach the bookkeeper, not just find out on failure.
+    expect(h.postSlackOps).toHaveBeenCalledWith(expect.stringContaining('Naar SnelStart'))
   })
 
   it('a claim from a crashed run (set >15 min ago, nothing sent) is released, recomputed and reported before the batch', async () => {

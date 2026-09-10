@@ -147,6 +147,43 @@ export async function setManualVat(supabase: Admin, expenseId: string, input: Ma
 }
 
 /**
+ * Turns a standalone finance_documents row (an invoice that arrived with no
+ * payment yet — a skipper's monthly hours, a supplier bill) into an Expense
+ * Record, so the existing link_supplier / draft_payment / forward machinery
+ * becomes available on it. Without this, a document filed from the Finance
+ * Inbox but never matched to a bank transaction had no path to being paid —
+ * only the "wait for a bank transaction to show up" side of the pipeline.
+ *
+ * Reuses linkDocument for the actual attach (same manual-match provenance:
+ * confidence 1, so this document is trusted once it's paid and matched).
+ */
+export async function createExpenseFromDocument(supabase: Admin, documentId: string): Promise<{ expenseId: string; state: ExpenseState | null }> {
+  const { data: doc, error: docErr } = await supabase.from('finance_documents').select('id, expense_id, duplicate_of, extracted').eq('id', documentId).maybeSingle()
+  if (docErr) throw new Error(docErr.message)
+  if (!doc) throw new ExpenseActionError('Document niet gevonden.', 404)
+  if (doc.duplicate_of) throw new ExpenseActionError('Dit document is een duplicaat van een ander document.', 409)
+  if (doc.expense_id) throw new ExpenseActionError('Dit document is al gekoppeld aan een uitgave.', 409)
+
+  const ext = (doc.extracted as { supplierName?: string | null; grossCents?: number | null; invoiceNumber?: string | null; invoiceDate?: string | null } | null) ?? {}
+  const { data: expense, error: insErr } = await supabase
+    .from('finance_expenses')
+    .insert({
+      status: 'waiting_for_invoice', // placeholder — recomputeExpense (inside linkDocument) derives the real status
+      supplier_name: ext.supplierName ?? null,
+      gross_cents: ext.grossCents ?? null,
+      invoice_number: ext.invoiceNumber ?? null,
+      invoice_date: ext.invoiceDate ?? null,
+    })
+    .select('id')
+    .single()
+  if (insErr || !expense) throw new Error(insErr?.message ?? 'Could not create expense record')
+
+  await logFinanceEvent(supabase, { event_type: 'expense_created_from_document', actor: 'user', entity_type: 'expense', entity_id: expense.id, payload: { document_id: documentId, via: 'inbox' } })
+  const state = await linkDocument(supabase, expense.id, documentId)
+  return { expenseId: expense.id, state }
+}
+
+/**
  * Beer picks an existing payee for this Expense Record — this is what unlocks `draft_payment`.
  * The supplier's own name wins over whatever the document/AI guessed, once confirmed by hand.
  */

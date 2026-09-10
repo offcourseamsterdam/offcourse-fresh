@@ -170,6 +170,10 @@ export async function forwardExpenseToSnelstart(supabase: Admin, expenseId: stri
   } catch (err) {
     console.error('[finance/expenses/forward] sent but post-send bookkeeping failed:', err instanceof Error ? err.message : err)
   }
+  // Beer, 2026-09-10: wants to actually SEE when a paid invoice reaches the
+  // bookkeeper, not just find out from a failure alert — this is the one
+  // positive signal in an otherwise silent (by design) auto-forward pipeline.
+  await postSlackOps(`📨 Naar SnelStart: *${mail.subject}* → ${mail.to}`).catch(() => undefined)
   return { ok: true, messageId: sent.id, recipient: mail.to }
 }
 

@@ -10,6 +10,7 @@ import { eurCents, dateNL, eurosToCents, centsToEuros } from '@/components/admin
 import { OTA_PLATFORM_NAME } from '@/lib/ota/detect'
 import { pickCheapestPrivateOption } from '@/lib/ota/availability-shape'
 import { draftNeedsEnglish } from '@/lib/i18n/needs-translation'
+import { SupplierPicker } from '@/components/admin/finance/cockpit/SupplierPicker'
 import { hasGhostCoPilotContent, type InboxConversationDetail, type InboxFinanceInvoice, type InboxFinanceDocument, type InboxGhostProposal } from './types'
 
 const SIM_BADGE: Record<string, { text: string; cls: string }> = {
@@ -103,7 +104,7 @@ export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
                 <FinanceInvoiceReview key={invoice.id} invoice={invoice} onChanged={onChanged} />
               ))}
               {financeDocuments.map(doc => (
-                <FinanceDocumentReview key={doc.id} document={doc} />
+                <FinanceDocumentReview key={doc.id} document={doc} onChanged={onChanged} />
               ))}
             </div>
           )}
@@ -1070,15 +1071,56 @@ function FinanceInvoiceReview({ invoice, onChanged }: { invoice: InboxFinanceInv
   )
 }
 
+/** Create/link/draft/forward actions for a Finance Inbox document — mirrors useInvoiceAction above but for the Expense Record pipeline. */
+function useExpenseDocAction(documentId: string, expenseId: string | null, onChanged: () => void) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function createExpense() {
+    setBusy(true)
+    setError(null)
+    try {
+      await adminMutate('/api/admin/finance/expenses/from-document', 'POST', { documentId })
+      onChanged()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Kon uitgave niet aanmaken.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function expenseAction(action: string, body: Record<string, unknown> = {}, fallbackError = 'Actie mislukt.') {
+    if (!expenseId) return
+    setBusy(true)
+    setError(null)
+    try {
+      await adminMutate(`/api/admin/finance/expenses/${expenseId}/actions`, 'POST', { action, ...body })
+      onChanged()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : fallbackError)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return { busy, error, createExpense, expenseAction }
+}
+
 /**
  * One expense document (e.g. payout invoice, receipt, order confirmation)
  * filed from an email in this thread. Shows extracted totals, download link,
- * and match status.
+ * and match status. For a document with no matching bank transaction yet
+ * (a skipper's hours, a supplier bill) — this is where Beer turns it into an
+ * Expense Record, links a payee, and drafts the Revolut payment; once paid
+ * and matched it forwards to SnelStart (offcourse@boekhouding.nl) on its own.
  */
-function FinanceDocumentReview({ document: doc }: { document: InboxFinanceDocument }) {
+function FinanceDocumentReview({ document: doc, onChanged }: { document: InboxFinanceDocument; onChanged: () => void }) {
   const ext = doc.extracted
   const filename = doc.original_filename ?? doc.file_path?.split('/').pop() ?? 'Document'
   const bl = doc.boatlocalPayout
+  const expense = doc.expense ?? null
+  const { busy, error, createExpense, expenseAction } = useExpenseDocAction(doc.id, expense?.id ?? null, onChanged)
+  const [confirmingDraft, setConfirmingDraft] = useState(false)
 
   if (bl) {
     return (
@@ -1195,17 +1237,63 @@ function FinanceDocumentReview({ document: doc }: { document: InboxFinanceDocume
         </div>
       )}
 
-      <div className="pt-1.5 border-t border-amber-50 flex items-center justify-between text-[11px]">
-        <span className="text-zinc-400">Status:</span>
-        {doc.expense ? (
-          <span className="text-emerald-700 font-medium inline-flex items-center gap-1">
-            <Check className="w-3 h-3" /> Gekoppeld aan {doc.expense.ref}
-          </span>
+      <div className="pt-1.5 border-t border-amber-50 space-y-2">
+        {!expense ? (
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-amber-700 font-medium">Nog geen uitgave — wacht op bankbijschrijving</span>
+            <button
+              onClick={createExpense}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 text-white px-2.5 py-1.5 text-[11px] font-semibold hover:bg-indigo-700 disabled:opacity-50 shrink-0"
+            >
+              {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Landmark className="w-3.5 h-3.5" />} Verwerken als uitgave
+            </button>
+          </div>
+        ) : expense.snelstart_sent_at ? (
+          <p className="text-[11px] text-emerald-700 font-medium inline-flex items-center gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5" /> Doorgestuurd naar SnelStart ({fmtAdminDate(expense.snelstart_sent_at)})
+          </p>
+        ) : expense.bank_transaction_id ? (
+          <p className="text-[11px] text-emerald-700 font-medium inline-flex items-center gap-1.5">
+            <Check className="w-3.5 h-3.5" /> Betaald — wordt automatisch naar SnelStart gestuurd zodra de koppeling compleet is
+          </p>
+        ) : !expense.supplier_id ? (
+          <div className="space-y-1">
+            <p className="text-[11px] text-zinc-500">Koppel een leverancier om een betaling klaar te zetten:</p>
+            <SupplierPicker value={expense.supplier_id} onChange={supplierId => expenseAction('link_supplier', { supplierId }, 'Kon leverancier niet koppelen.')} />
+          </div>
+        ) : expense.revolut_draft_id ? (
+          <p className="text-[11px] text-indigo-700 font-medium inline-flex items-center gap-1.5">
+            <Landmark className="w-3.5 h-3.5" /> Betaling klaargezet in Revolut — wacht op jouw goedkeuring in de Revolut app
+          </p>
+        ) : confirmingDraft ? (
+          <ConfirmCreate
+            onYes={() => expenseAction('draft_payment', {}, 'Kon betaling niet klaarzetten').then(() => setConfirmingDraft(false))}
+            onCancel={() => setConfirmingDraft(false)}
+            busy={busy}
+            message={
+              <>
+                Dit maakt een <span className="font-semibold">betaalopdracht klaar in Revolut</span> voor{' '}
+                <span className="font-semibold">{eurCents(expense.gross_cents)}</span> aan{' '}
+                {expense.supplier_name}. Er wordt nog niets overgemaakt — jij keurt hem daarna goed in de Revolut
+                app. Zodra de betaling terugkomt gaat de factuur vanzelf naar SnelStart. Doorgaan?
+              </>
+            }
+            confirmLabel="Ja, klaarzetten"
+          />
         ) : (
-          <span className="text-amber-700 font-medium">
-            Opgeslagen · wacht op banktransactie
-          </span>
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-zinc-500">{expense.ref} · leverancier gekoppeld</span>
+            <button
+              onClick={() => setConfirmingDraft(true)}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 text-white px-2.5 py-1.5 text-[11px] font-semibold hover:bg-indigo-700 disabled:opacity-50 shrink-0"
+            >
+              <Landmark className="w-3.5 h-3.5" /> Betaling klaarzetten in Revolut
+            </button>
+          </div>
         )}
+        {error && <p className="text-[11px] text-red-600">{error}</p>}
       </div>
     </div>
   )

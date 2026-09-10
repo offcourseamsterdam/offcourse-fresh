@@ -87,6 +87,16 @@ function pickBestShift(extracted: ExtractedInvoiceFields, candidates: CandidateS
   )[0]
 }
 
+/** Does the invoice's bank account match what we have on file for this supplier? */
+export function ibanCheck(invoiceIban: string | null | undefined, supplierIban: string | null): InvoiceCheck {
+  if (!invoiceIban) return { key: 'iban', ok: false, detail: 'Geen IBAN op factuur gevonden' }
+  if (!supplierIban) return { key: 'iban', ok: false, detail: 'Geen bekend rekeningnummer om tegen te controleren' }
+  const normalize = (iban: string) => iban.replace(/\s+/g, '').toUpperCase()
+  return normalize(invoiceIban) === normalize(supplierIban)
+    ? { key: 'iban', ok: true, detail: 'IBAN komt overeen' }
+    : { key: 'iban', ok: false, detail: `IBAN op factuur (${invoiceIban}) wijkt af van bekend rekeningnummer` }
+}
+
 export function matchInvoice(input: {
   extracted: ExtractedInvoiceFields
   supplier: SupplierForMatch | null
@@ -194,20 +204,7 @@ export function matchInvoice(input: {
     )
   }
 
-  // iban — does the invoice's bank account match what we have on file for this supplier?
-  if (!extracted.iban) {
-    checks.push({ key: 'iban', ok: false, detail: 'Geen IBAN op factuur gevonden' })
-  } else if (!supplier?.iban) {
-    checks.push({ key: 'iban', ok: false, detail: 'Geen bekend rekeningnummer om tegen te controleren' })
-  } else {
-    const normalize = (iban: string) => iban.replace(/\s+/g, '').toUpperCase()
-    const matches = normalize(extracted.iban) === normalize(supplier.iban)
-    checks.push(
-      matches
-        ? { key: 'iban', ok: true, detail: 'IBAN komt overeen' }
-        : { key: 'iban', ok: false, detail: `IBAN op factuur (${extracted.iban}) wijkt af van bekend rekeningnummer` },
-    )
-  }
+  checks.push(ibanCheck(extracted.iban, supplier?.iban ?? null))
 
   return {
     matchedShiftId: matchedShift?.id ?? null,

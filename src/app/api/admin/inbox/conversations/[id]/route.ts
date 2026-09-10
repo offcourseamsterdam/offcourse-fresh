@@ -139,7 +139,7 @@ async function loadFinanceDocuments(supabase: ReturnType<typeof createAdminClien
     .from('finance_documents')
     .select(
       `id, kind, source, file_path, original_filename, mime_type, extracted, link_url, link_fetch_status, expense_id, created_at,
-       expense:finance_expenses!finance_documents_expense_id_fkey(id, ref, status, gross_cents, supplier_name),
+       expense:finance_expenses!finance_documents_expense_id_fkey(id, ref, status, gross_cents, supplier_name, supplier_id, revolut_draft_id, snelstart_sent_at, bank_transaction_id),
        message:messages!inner(conversation_id)`,
     )
     .eq('message.conversation_id', conversationId)
