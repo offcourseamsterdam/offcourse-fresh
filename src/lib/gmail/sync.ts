@@ -95,7 +95,11 @@ function inboxQuery(): string {
   // query is byte-for-byte what it was before — nothing changes until Beer
   // actually creates the alias and sets the env var.
   const financeClause = process.env.GMAIL_FINANCE_ADDRESS ? ` OR to:${process.env.GMAIL_FINANCE_ADDRESS}` : ''
-  return `(to:${supportAddress}${financeClause} OR ${fromClauses}) -in:spam -in:trash -category:promotions newer_than:1d`
+  // -in:draft: the `from:` clause otherwise matches every Gmail autosave of an
+  // unsent draft (each a new message id), so drafts landed as fake 'out'
+  // messages (9 on one thread, 2026-09-10) and a draft forward to the finance
+  // alias would be filed as an invoice before it was ever sent.
+  return `(to:${supportAddress}${financeClause} OR ${fromClauses}) -in:spam -in:trash -in:draft -category:promotions newer_than:1d`
 }
 
 type SupabaseAdmin = ReturnType<typeof createAdminClient>

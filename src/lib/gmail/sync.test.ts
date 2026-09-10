@@ -244,7 +244,7 @@ describe('syncGmailInbox', () => {
     h.listNewMessages.mockResolvedValue([])
     await syncGmailInbox()
     expect(h.listNewMessages).toHaveBeenCalledWith(
-      '(to:info@offcourseamsterdam.com OR from:info@offcourseamsterdam.com) -in:spam -in:trash -category:promotions newer_than:1d',
+      '(to:info@offcourseamsterdam.com OR from:info@offcourseamsterdam.com) -in:spam -in:trash -in:draft -category:promotions newer_than:1d',
     )
   })
 
@@ -259,7 +259,7 @@ describe('syncGmailInbox', () => {
     h.listNewMessages.mockResolvedValue([])
     await syncGmailInbox()
     expect(h.listNewMessages).toHaveBeenCalledWith(
-      '(to:cruise@offcourseamsterdam.com OR from:cruise@offcourseamsterdam.com OR from:info@offcourseamsterdam.com) -in:spam -in:trash -category:promotions newer_than:1d',
+      '(to:cruise@offcourseamsterdam.com OR from:cruise@offcourseamsterdam.com OR from:info@offcourseamsterdam.com) -in:spam -in:trash -in:draft -category:promotions newer_than:1d',
     )
   })
 
