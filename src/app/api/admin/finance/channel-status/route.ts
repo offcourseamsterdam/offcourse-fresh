@@ -85,7 +85,7 @@ export async function GET(_req: NextRequest) {
     // — needs the REAL period each document covers, not its send date, or
     // it reports a false "ontbreekt" for a month that's actually already
     // fully synced (confirmed 2026-09-10: this exact false negative).
-    const [viatorCoverage, boatlocalCoverage, gygCoverage] = await Promise.all([
+    const [viatorCoverage, boatlocalCoverage, gygCoverage, confirmedZeroRes] = await Promise.all([
       supabase
         .from('viator_payment_lines')
         .select('id', { count: 'exact', head: true })
@@ -104,12 +104,32 @@ export async function GET(_req: NextRequest) {
         .select('id', { count: 'exact', head: true })
         .gte('payment_run_date', new Date(prevDate.getFullYear(), prevDate.getMonth() + 1, 1).toISOString().slice(0, 10))
         .lt('payment_run_date', new Date(prevDate.getFullYear(), prevDate.getMonth() + 2, 1).toISOString().slice(0, 10)),
+      // Portal/dashboard-only sources (Withlocals, Click & Boat, GetMyBoat,
+      // Barqo, Revolut...) never write a row anywhere for a month with
+      // genuinely zero activity, so "no data" always looked identical to
+      // "never checked" — a real month can be fully verified-empty and
+      // still show as "ontbreekt" forever. finance-payout-sync (or Beer,
+      // via this same mechanism) records a `finance_month_confirmed_zero`
+      // event in admin_event_log once a month is actually confirmed empty;
+      // that counts the same as having data for this status check. Confirmed
+      // 2026-09-10 (Beer, re: Withlocals/Click&Boat/GetMyBoat/Barqo/Revolut
+      // all genuinely quiet in August): "you can also say August checkmark."
+      supabase
+        .from('admin_event_log')
+        .select('context')
+        .eq('kind', 'finance_month_confirmed_zero')
+        .eq('context->>month', prevMonthStart),
     ])
     const lagCorrectedCoverage: Record<string, boolean> = {
       viator: (viatorCoverage.count ?? 0) > 0,
       boatlocal: (boatlocalCoverage.count ?? 0) > 0,
       getyourguide: (gygCoverage.count ?? 0) > 0,
     }
+    const confirmedZeroSources = new Set(
+      (confirmedZeroRes.data ?? [])
+        .map(row => (row.context as { source_key?: string } | null)?.source_key)
+        .filter((v): v is string => Boolean(v))
+    )
 
     // Sum revenue per channel across all quarters
     const channelTotals: Record<string, number> = {}
@@ -129,9 +149,10 @@ export async function GET(_req: NextRequest) {
     const channels: ChannelStatusItem[] = Object.entries(CHANNEL_METADATA)
       .map(([srcKey, meta]) => {
         const prevData = prevMonthRow?.bySource?.[srcKey]
-        const hasData = srcKey in lagCorrectedCoverage
+        const hasRealData = srcKey in lagCorrectedCoverage
           ? lagCorrectedCoverage[srcKey]
           : ((prevData?.vat9OwedCents || 0) + (prevData?.vat21OwedCents || 0)) > 0
+        const hasData = hasRealData || confirmedZeroSources.has(srcKey)
         return {
           sourceKey: srcKey,
           key: meta.key,
