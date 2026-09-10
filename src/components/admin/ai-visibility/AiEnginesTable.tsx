@@ -6,13 +6,12 @@ import type { AiReferralRow } from '@/lib/tracking/ai-referrers'
 interface Props {
   engines: AiReferralRow[]
   isLoading: boolean
-  onEnableDemo: () => void
 }
 
-export function AiEnginesTable({ engines, isLoading, onEnableDemo }: Props) {
+export function AiEnginesTable({ engines, isLoading }: Props) {
   return (
     <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden shadow-sm">
-      <div className="p-5 border-b border-zinc-100 flex items-center justify-between">
+      <div className="p-6 border-b border-zinc-100 flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold text-zinc-900 flex items-center gap-2">
             <Bot className="w-4 h-4 text-violet-500" />
@@ -29,16 +28,9 @@ export function AiEnginesTable({ engines, isLoading, onEnableDemo }: Props) {
         )}
       </div>
 
-      {engines.length === 0 && !isLoading && (
-        <div className="p-10 text-center text-zinc-400 text-sm">
-          Geen AI-verkeer geregistreerd in de geselecteerde periode.{' '}
-          <button
-            onClick={onEnableDemo}
-            className="text-violet-600 underline hover:text-violet-700 ml-1 font-medium"
-          >
-            Klik hier om voorbeelddata te bekijken
-          </button>
-          .
+      {engines.length === 0 && isLoading && (
+        <div className="p-10 text-center text-zinc-400 text-sm animate-pulse">
+          Laden...
         </div>
       )}
 
@@ -47,25 +39,26 @@ export function AiEnginesTable({ engines, isLoading, onEnableDemo }: Props) {
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-zinc-100 bg-zinc-50/75 text-zinc-500 font-medium">
-                <th className="py-3 px-4">Zoekmachine / LLM</th>
-                <th className="py-3 px-4 text-right">Totale Bezoeken</th>
-                <th className="py-3 px-4 text-right">Unieke Bezoekers</th>
-                <th className="py-3 px-4 text-right font-semibold text-violet-950">
+                <th className="py-3 px-5">Zoekmachine / LLM</th>
+                <th className="py-3 px-5 text-right">Totale Bezoeken</th>
+                <th className="py-3 px-5 text-right">Unieke Bezoekers</th>
+                <th className="py-3 px-5 text-right font-semibold text-violet-950">
                   Beschikbaarheids-Links (?date=)
                 </th>
-                <th className="py-3 px-4 text-right">Boekingen</th>
-                <th className="py-3 px-4 text-right">Omzet</th>
-                <th className="py-3 px-4 text-right">Conversie</th>
+                <th className="py-3 px-5 text-right">Boekingen</th>
+                <th className="py-3 px-5 text-right">Omzet</th>
+                <th className="py-3 px-5 text-right">Conversie</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {engines.map((e) => {
                 const conv = e.sessions > 0 ? ((e.bookings / e.sessions) * 100).toFixed(1) : '0.0'
                 const availRatio = e.sessions > 0 ? Math.round((e.availabilitySessions / e.sessions) * 100) : 0
+                const isCore = ['chatgpt', 'perplexity', 'gemini', 'claude'].includes(e.key)
 
                 return (
-                  <tr key={e.key} className="hover:bg-zinc-50/80 transition-colors">
-                    <td className="py-3.5 px-4">
+                  <tr key={e.key} className={`hover:bg-zinc-50/80 transition-colors ${e.sessions === 0 && isCore ? 'opacity-50' : ''}`}>
+                    <td className="py-4 px-5">
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-zinc-900 text-sm">{e.label}</span>
                         {e.availabilitySessions > 0 && (
@@ -73,27 +66,32 @@ export function AiEnginesTable({ engines, isLoading, onEnableDemo }: Props) {
                             Actieve slots
                           </span>
                         )}
+                        {e.sessions === 0 && isCore && (
+                          <span className="text-[10px] bg-zinc-100 text-zinc-400 px-1.5 py-0.5 rounded">
+                            Geen verkeer
+                          </span>
+                        )}
                       </div>
                     </td>
-                    <td className="py-3.5 px-4 text-right tabular-nums font-medium text-zinc-800">
+                    <td className="py-4 px-5 text-right tabular-nums font-medium text-zinc-800">
                       {e.sessions}
                     </td>
-                    <td className="py-3.5 px-4 text-right tabular-nums text-zinc-500">
+                    <td className="py-4 px-5 text-right tabular-nums text-zinc-500">
                       {e.visitors}
                     </td>
-                    <td className="py-3.5 px-4 text-right tabular-nums">
+                    <td className="py-4 px-5 text-right tabular-nums">
                       <div className="inline-flex items-center gap-1.5">
                         <span className="font-semibold text-violet-700">{e.availabilitySessions}</span>
                         <span className="text-[11px] text-zinc-400">({availRatio}%)</span>
                       </div>
                     </td>
-                    <td className="py-3.5 px-4 text-right tabular-nums font-medium text-zinc-900">
+                    <td className="py-4 px-5 text-right tabular-nums font-medium text-zinc-900">
                       {e.bookings}
                     </td>
-                    <td className="py-3.5 px-4 text-right tabular-nums font-semibold text-emerald-600">
+                    <td className="py-4 px-5 text-right tabular-nums font-semibold text-emerald-600">
                       €{Math.round(e.revenueEuros)}
                     </td>
-                    <td className="py-3.5 px-4 text-right tabular-nums text-zinc-600">
+                    <td className="py-4 px-5 text-right tabular-nums text-zinc-600">
                       {conv}%
                     </td>
                   </tr>
@@ -104,7 +102,7 @@ export function AiEnginesTable({ engines, isLoading, onEnableDemo }: Props) {
         </div>
       )}
 
-      <div className="p-3.5 bg-zinc-50/50 border-t border-zinc-100 flex items-center justify-between text-[11px] text-zinc-500">
+      <div className="px-6 py-4 bg-zinc-50/50 border-t border-zinc-100 flex items-center justify-between text-[11px] text-zinc-500">
         <span>
           Let op: Google AI Overviews verschijnen als regulier <code className="bg-zinc-100 px-1 py-0.5 rounded">google.com</code> verkeer.
         </span>

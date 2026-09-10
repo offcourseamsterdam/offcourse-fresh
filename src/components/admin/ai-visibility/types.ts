@@ -18,7 +18,6 @@ export interface AiReferralsData {
   totalAvailabilityBookings: number
   totalAvailabilityRevenueEuros: number
   recentAvailabilitySessions?: RecentAvailabilitySession[]
-  demo?: boolean
 }
 
 export interface SnapshotSummary {

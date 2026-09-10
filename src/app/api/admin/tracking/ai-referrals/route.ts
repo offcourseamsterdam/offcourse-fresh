@@ -2,17 +2,21 @@ import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { aggregateAiReferrals, classifyAiReferrer, isAvailabilityDeepLink, type AiReferralRow } from '@/lib/tracking/ai-referrers'
+import {
+  aggregateAiReferrals,
+  classifyAiEngine,
+  isAvailabilityDeepLink,
+  type SessionRecord,
+  type BookingRecord,
+} from '@/lib/tracking/ai-referrers'
 
 /**
  * GET /api/admin/tracking/ai-referrals?from=&to=
- *   → { engines: AiReferralRow[], totalSessions, totalBookings, totalRevenueEuros, totalAvailabilitySessions, totalAvailabilityBookings, totalAvailabilityRevenueEuros, recentAvailabilitySessions }
+ *   → { engines: AiReferralRow[], totalSessions, totalBookings, totalRevenueEuros, ... }
  *
- * "Did an AI assistant cite us?" — the only first-party signal for AI citations.
- * Fetches referrered sessions in range and classifies them (the classifier is the
- * source of truth; volume is small, ~500/month, so no fragile SQL wildcard filter).
- * Bookings attribute the same way the rest of the app does: bookings.session_id.
- * Dev ?demo=1 returns sample data so the UI can be reviewed before real AI traffic.
+ * Fetches sessions that arrived via an AI engine (detected via referrer host OR utm_source),
+ * plus bookings attributed via session_id OR traffic_detail (e.g. 'chatgpt.com').
+ * Core 4 engines (ChatGPT, Perplexity, Gemini, Claude) always appear in the result.
  */
 export async function GET(request: NextRequest) {
   const denied = await requireAdmin()
@@ -22,82 +26,83 @@ export async function GET(request: NextRequest) {
   const to = url.searchParams.get('to') ?? new Date().toISOString()
   const from = url.searchParams.get('from') ?? new Date(Date.now() - 30 * 86_400_000).toISOString()
 
-  if (url.searchParams.get('demo') === '1' && process.env.NODE_ENV !== 'production') {
-    const engines: AiReferralRow[] = [
-      { key: 'chatgpt', label: 'ChatGPT', sessions: 14, visitors: 11, bookings: 1, revenueEuros: 151, availabilitySessions: 8, availabilityBookings: 1, availabilityRevenueEuros: 151 },
-      { key: 'perplexity', label: 'Perplexity', sessions: 6, visitors: 5, bookings: 0, revenueEuros: 0, availabilitySessions: 4, availabilityBookings: 0, availabilityRevenueEuros: 0 },
-      { key: 'gemini', label: 'Gemini', sessions: 3, visitors: 3, bookings: 0, revenueEuros: 0, availabilitySessions: 1, availabilityBookings: 0, availabilityRevenueEuros: 0 },
-    ]
-    const recentAvailabilitySessions = [
-      {
-        id: 'demo-s1',
-        engine: 'ChatGPT',
-        entry_page: '/cruises/amsterdam-boat-tour?date=2026-09-12&time=14:00',
-        started_at: new Date(Date.now() - 3600_000 * 3).toISOString(),
-        booked: true,
-        revenueEuros: 151,
-      },
-      {
-        id: 'demo-s2',
-        engine: 'Perplexity',
-        entry_page: '/cruises/private-boat-tour?date=2026-09-14&time=16:30',
-        started_at: new Date(Date.now() - 3600_000 * 18).toISOString(),
-        booked: false,
-        revenueEuros: 0,
-      },
-      {
-        id: 'demo-s3',
-        engine: 'ChatGPT',
-        entry_page: '/cruises/amsterdam-light-festival-cruise?date=2026-12-05&time=17:00',
-        started_at: new Date(Date.now() - 3600_000 * 42).toISOString(),
-        booked: false,
-        revenueEuros: 0,
-      },
-    ]
-    return apiOk({
-      engines,
-      totalSessions: 23,
-      totalBookings: 1,
-      totalRevenueEuros: 151,
-      totalAvailabilitySessions: 13,
-      totalAvailabilityBookings: 1,
-      totalAvailabilityRevenueEuros: 151,
-      recentAvailabilitySessions,
-      demo: true,
-    })
-  }
-
   try {
     const supabase = createAdminClient()
 
+    // 1. Fetch AI sessions: match by referrer host OR utm_source
+    //    Removing `.not('referrer', 'is', null)` — ChatGPT links often arrive with
+    //    referrer=null but utm_source='chatgpt.com' stored by our tracking code.
+    const aiFilter = [
+      'utm_source.ilike.%chatgpt%',
+      'utm_source.ilike.%perplexity%',
+      'utm_source.ilike.%gemini%',
+      'utm_source.ilike.%claude%',
+      'utm_source.ilike.%copilot%',
+      'utm_source.ilike.%deepseek%',
+      'utm_source.ilike.%grok%',
+      'utm_source.ilike.%mistral%',
+      'utm_source.ilike.%poe%',
+      'utm_source.ilike.%meta.ai%',
+      'referrer.ilike.%chatgpt.com%',
+      'referrer.ilike.%chat.openai.com%',
+      'referrer.ilike.%perplexity.ai%',
+      'referrer.ilike.%gemini.google.com%',
+      'referrer.ilike.%bard.google.com%',
+      'referrer.ilike.%copilot.microsoft.com%',
+      'referrer.ilike.%claude.ai%',
+      'referrer.ilike.%meta.ai%',
+      'referrer.ilike.%deepseek.com%',
+      'referrer.ilike.%grok.com%',
+      'referrer.ilike.%chat.mistral.ai%',
+      'referrer.ilike.%you.com%',
+      'referrer.ilike.%poe.com%',
+    ].join(',')
+
     const { data: sessions, error } = await supabase
       .from('analytics_sessions')
-      .select('id, visitor_id, referrer, entry_page, started_at')
-      .not('referrer', 'is', null)
+      .select('id, visitor_id, referrer, utm_source, entry_page, started_at')
+      .or(aiFilter)
       .gte('started_at', from)
       .lte('started_at', to)
       .order('started_at', { ascending: false })
     if (error) return apiError(error.message)
 
-    const sessionIds = (sessions ?? []).map(s => s.id)
-    let bookings: { session_id: string | null; stripe_amount: number | null }[] = []
-    if (sessionIds.length > 0) {
-      const { data } = await supabase
-        .from('bookings')
-        .select('session_id, stripe_amount')
-        .in('session_id', sessionIds)
-        .eq('status', 'confirmed')
-      bookings = data ?? []
-    }
+    const sessionList: SessionRecord[] = sessions ?? []
+    const sessionIds = sessionList.map(s => s.id)
 
+    // 2. Fetch bookings matching known AI session IDs OR via traffic_detail field
+    const { data: rawBookings } = await supabase
+      .from('bookings')
+      .select('id, session_id, stripe_amount, traffic_detail, traffic_source')
+      .or([
+        sessionIds.length > 0 ? `session_id.in.(${sessionIds.map(id => `"${id}"`).join(',')})` : null,
+        'traffic_detail.ilike.%chatgpt%',
+        'traffic_detail.ilike.%perplexity%',
+        'traffic_detail.ilike.%gemini%',
+        'traffic_detail.ilike.%claude%',
+        'traffic_detail.ilike.%copilot%',
+        'traffic_detail.ilike.%deepseek%',
+        'traffic_detail.ilike.%grok%',
+        'traffic_detail.ilike.%mistral%',
+      ].filter(Boolean).join(','))
+      .in('status', ['confirmed', 'booked'])
+      .gte('created_at', from)
+      .lte('created_at', to)
+
+    const bookings: BookingRecord[] = rawBookings ?? []
+
+    // Map session_id → booking revenue (for recentAvailabilitySessions)
     const bookingsBySession = new Map<string, number>()
     for (const b of bookings) {
       if (b.session_id) {
-        bookingsBySession.set(b.session_id, (bookingsBySession.get(b.session_id) ?? 0) + (b.stripe_amount ?? 0))
+        bookingsBySession.set(
+          b.session_id,
+          (bookingsBySession.get(b.session_id) ?? 0) + (b.stripe_amount ?? 0),
+        )
       }
     }
 
-    const engines = aggregateAiReferrals(sessions ?? [], bookings)
+    const engines = aggregateAiReferrals(sessionList, bookings, { includeCoreEngines: true })
     const totals = engines.reduce(
       (a, e) => ({
         sessions: a.sessions + e.sessions,
@@ -117,7 +122,7 @@ export async function GET(request: NextRequest) {
       },
     )
 
-    // Find recent availability-linked AI sessions
+    // 3. Build recentAvailabilitySessions
     const recentAvailabilitySessions: {
       id: string
       engine: string
@@ -127,16 +132,16 @@ export async function GET(request: NextRequest) {
       revenueEuros: number
     }[] = []
 
-    for (const s of sessions ?? []) {
-      const engine = classifyAiReferrer(s.referrer)
+    for (const s of sessionList) {
+      const engine = classifyAiEngine(s)
       if (!engine) continue
-      if (isAvailabilityDeepLink(s.entry_page)) {
+      if (isAvailabilityDeepLink(s.entry_page) || isAvailabilityDeepLink(s.referrer)) {
         const revCents = bookingsBySession.get(s.id)
         recentAvailabilitySessions.push({
           id: s.id,
           engine: engine.label,
-          entry_page: s.entry_page!,
-          started_at: s.started_at,
+          entry_page: s.entry_page ?? s.referrer ?? '/',
+          started_at: (s as { started_at?: string | null }).started_at ?? null,
           booked: revCents !== undefined,
           revenueEuros: (revCents ?? 0) / 100,
         })

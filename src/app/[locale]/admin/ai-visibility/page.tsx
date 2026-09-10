@@ -9,6 +9,7 @@ import { AiVisibilityHeader } from '@/components/admin/ai-visibility/AiVisibilit
 import { AvailabilitySyncCard } from '@/components/admin/ai-visibility/AvailabilitySyncCard'
 import { AiMetricsCards } from '@/components/admin/ai-visibility/AiMetricsCards'
 import { AiEnginesTable } from '@/components/admin/ai-visibility/AiEnginesTable'
+import { AiTestingLinksCard } from '@/components/admin/ai-visibility/AiTestingLinksCard'
 import { RecentAiRecommendationsFeed } from '@/components/admin/ai-visibility/RecentAiRecommendationsFeed'
 import { GeoReadinessOverview } from '@/components/admin/ai-visibility/GeoReadinessOverview'
 
@@ -16,13 +17,8 @@ export default function AiVisibilityPage() {
   const [period, setPeriod] = useState<PeriodKey>('30d')
   const [dateRange, setDateRange] = useState(getDateRange('30d'))
   const [isSyncing, setIsSyncing] = useState(false)
-  const [demoMode, setDemoMode] = useState(false)
 
-  const aiParams = new URLSearchParams({
-    from: dateRange.from,
-    to: dateRange.to,
-    ...(demoMode ? { demo: '1' } : {}),
-  })
+  const aiParams = new URLSearchParams({ from: dateRange.from, to: dateRange.to })
 
   const {
     data: aiData,
@@ -62,11 +58,8 @@ export default function AiVisibilityPage() {
   }
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 pb-16">
       <AiVisibilityHeader
-        isDemo={Boolean(aiData?.demo)}
-        demoMode={demoMode}
-        onToggleDemo={() => setDemoMode(!demoMode)}
         period={period}
         onPeriodChange={(p, from, to) => {
           setPeriod(p)
@@ -83,8 +76,9 @@ export default function AiVisibilityPage() {
       <AiEnginesTable
         engines={aiData?.engines ?? []}
         isLoading={aiLoading}
-        onEnableDemo={() => setDemoMode(true)}
       />
+
+      <AiTestingLinksCard engines={aiData?.engines ?? []} />
 
       <RecentAiRecommendationsFeed
         recentSessions={aiData?.recentAvailabilitySessions ?? []}
