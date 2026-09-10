@@ -1,5 +1,5 @@
 import { FileText, Link2, Mail, Receipt } from 'lucide-react'
-import { dateNL, eur } from '@/components/admin/finance/cockpit/money'
+import { dateNL, eurCents } from '@/components/admin/finance/cockpit/money'
 import { ExpenseStatusBadge } from './ExpenseStatusBadge'
 import type { ExpenseApiRow } from './api-types'
 
@@ -12,7 +12,7 @@ function DocIcon({ expense }: { expense: ExpenseApiRow }) {
 /** One line in the Uitgaven list: who, when paid, how much, VAT with its provenance, status. */
 export function ExpenseRowItem({ expense, onSelect }: { expense: ExpenseApiRow; onSelect: (e: ExpenseApiRow) => void }) {
   const amount = expense.cash_out_cents ?? expense.gross_cents
-  const vatLabel = expense.vat_cents != null ? `${eur(expense.vat_cents)}${expense.vat_rate_pct != null ? ` · ${Number(expense.vat_rate_pct)}%` : ''}` : '—'
+  const vatLabel = expense.vat_cents != null ? `${eurCents(expense.vat_cents)}${expense.vat_rate_pct != null ? ` · ${Number(expense.vat_rate_pct)}%` : ''}` : '—'
   return (
     <li>
       <button
@@ -32,7 +32,7 @@ export function ExpenseRowItem({ expense, onSelect }: { expense: ExpenseApiRow; 
             {expense.snelstart_sent_at ? <Link2 className="inline w-3 h-3 ml-1 -mt-0.5 text-zinc-400" role="img" aria-label="Naar SnelStart gestuurd" /> : null}
           </span>
         </span>
-        <span className="text-right text-sm font-semibold tabular-nums text-zinc-900 sm:order-none order-1">{amount != null ? eur(amount) : '—'}</span>
+        <span className="text-right text-sm font-semibold tabular-nums text-zinc-900 sm:order-none order-1">{amount != null ? eurCents(amount) : '—'}</span>
         <span className="hidden sm:block text-right text-xs tabular-nums text-zinc-500">BTW {vatLabel}</span>
         <span className="col-span-2 sm:col-span-1 justify-self-start sm:justify-self-end"><ExpenseStatusBadge status={expense.status} /></span>
       </button>

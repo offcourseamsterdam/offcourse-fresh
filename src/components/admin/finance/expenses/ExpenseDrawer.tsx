@@ -1,14 +1,14 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Check, ExternalLink, Link2, Loader2, Send, Unlink, X } from 'lucide-react'
+import { AlertTriangle, Check, ExternalLink, FileText, Link2, Loader2, Send, Unlink, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { adminInputClass } from '@/components/admin/ui/fields'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { adminMutate } from '@/hooks/useAdminSave'
-import { dateNL, dateTimeNL, eur, eurosToCents } from '@/components/admin/finance/cockpit/money'
+import { dateNL, dateTimeNL, eurCents, eurosToCents } from '@/components/admin/finance/cockpit/money'
 import { EXPENSE_STATUS_LABELS } from '@/lib/finance/expenses/status'
 import type { VatResolution, VatSource } from '@/lib/finance/expenses/vat'
 import { ExpenseStatusBadge } from './ExpenseStatusBadge'
@@ -47,6 +47,9 @@ function DocumentCard({ doc, primary, canUnlink, onUnlink }: { doc: ExpenseDocum
   const e = extractedOf(doc)
   const gross = typeof e.grossCents === 'number' ? e.grossCents : null
   const vat = typeof e.vatCents === 'number' ? e.vatCents : null
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const attachmentUrl = `/api/admin/finance/attachments/expense_document/${doc.id}`
+  const isPdf = doc.mime_type === 'application/pdf' || doc.original_filename?.toLowerCase().endsWith('.pdf')
   return (
     <li className={`rounded-xl border p-3 text-sm ${primary ? 'border-zinc-900' : 'border-zinc-200'}`}>
       <div className="flex items-start justify-between gap-2">
@@ -59,7 +62,7 @@ function DocumentCard({ doc, primary, canUnlink, onUnlink }: { doc: ExpenseDocum
           <p className="text-xs text-zinc-500 truncate">{doc.original_filename ?? doc.link_url ?? dateTimeNL(doc.created_at)}</p>
           {Boolean(gross != null || vat != null || e.invoiceNumber || e.orderNumber) && (
             <p className="text-xs text-zinc-500 mt-1">
-              {[e.invoiceNumber ? `nr ${String(e.invoiceNumber)}` : null, e.orderNumber ? `order ${String(e.orderNumber)}` : null, gross != null ? `bruto ${eur(gross)}` : null, vat != null ? `btw ${eur(vat)}` : null].filter(Boolean).join(' · ')}
+              {[e.invoiceNumber ? `nr ${String(e.invoiceNumber)}` : null, e.orderNumber ? `order ${String(e.orderNumber)}` : null, gross != null ? `bruto ${eurCents(gross)}` : null, vat != null ? `btw ${eurCents(vat)}` : null].filter(Boolean).join(' · ')}
             </p>
           )}
           {doc.kind === 'invoice_link' && doc.link_fetch_status !== 'fetched' && (
@@ -67,13 +70,24 @@ function DocumentCard({ doc, primary, canUnlink, onUnlink }: { doc: ExpenseDocum
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          {doc.file_path && isPdf && (
+            <button
+              type="button"
+              onClick={() => setPreviewOpen(v => !v)}
+              className={`inline-flex items-center justify-center w-11 h-11 sm:w-9 sm:h-9 rounded-lg hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-zinc-900 ${previewOpen ? 'text-zinc-900 bg-zinc-100' : 'text-zinc-500'}`}
+              aria-label={previewOpen ? 'PDF verbergen' : 'PDF bekijken'}
+              aria-expanded={previewOpen}
+            >
+              <FileText className="w-4 h-4" />
+            </button>
+          )}
           {doc.file_path && (
             <a
-              href={`/api/admin/finance/attachments/expense_document/${doc.id}`}
+              href={attachmentUrl}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center justify-center w-11 h-11 sm:w-9 sm:h-9 rounded-lg text-zinc-500 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-zinc-900"
-              aria-label="Document openen"
+              aria-label="Document openen in nieuw tabblad"
             >
               <ExternalLink className="w-4 h-4" />
             </a>
@@ -85,6 +99,9 @@ function DocumentCard({ doc, primary, canUnlink, onUnlink }: { doc: ExpenseDocum
           )}
         </div>
       </div>
+      {previewOpen && doc.file_path && isPdf && (
+        <iframe src={attachmentUrl} title={doc.original_filename ?? 'Document'} className="mt-2 w-full h-[70vh] rounded-lg border border-zinc-200" />
+      )}
     </li>
   )
 }
@@ -192,7 +209,7 @@ export function ExpenseDrawer({ expenseId, onClose, onChanged }: Props) {
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1">Betaling</h3>
                 {x.bank_transaction_id ? (
                   <>
-                    <Row label="Afgeschreven">{x.cash_out_cents != null ? eur(x.cash_out_cents) : '—'}</Row>
+                    <Row label="Afgeschreven">{x.cash_out_cents != null ? eurCents(x.cash_out_cents) : '—'}</Row>
                     <Row label="Datum">{dateNL(x.paid_at)}</Row>
                     {x.revolut_expense_state && <Row label="Revolut-status">{x.revolut_expense_state}</Row>}
                   </>
@@ -224,13 +241,13 @@ export function ExpenseDrawer({ expenseId, onClose, onChanged }: Props) {
 
               <section className="rounded-xl border border-zinc-200 p-3">
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1">Factuur / bon</h3>
-                <Row label="Bruto">{x.gross_cents != null ? eur(x.gross_cents) : '—'}</Row>
+                <Row label="Bruto">{x.gross_cents != null ? eurCents(x.gross_cents) : '—'}</Row>
                 <Row label="BTW">
-                  {x.vat_cents != null ? eur(x.vat_cents) : '—'}
+                  {x.vat_cents != null ? eurCents(x.vat_cents) : '—'}
                   {x.vat_rate_pct != null && <span className="text-zinc-500"> · {Number(x.vat_rate_pct)}%</span>}
                   {x.vat_source && <span className="text-zinc-400"> · bron: {VAT_SOURCE_LABELS[x.vat_source as VatSource] ?? x.vat_source}</span>}
                 </Row>
-                <Row label="Netto">{x.net_cents != null ? eur(x.net_cents) : '—'}</Row>
+                <Row label="Netto">{x.net_cents != null ? eurCents(x.net_cents) : '—'}</Row>
                 {x.invoice_number && <Row label="Factuurnummer">{x.invoice_number}</Row>}
                 {x.order_number && <Row label="Ordernummer">{x.order_number}</Row>}
                 {x.invoice_date && <Row label="Factuurdatum">{dateNL(x.invoice_date)}</Row>}
@@ -238,7 +255,7 @@ export function ExpenseDrawer({ expenseId, onClose, onChanged }: Props) {
                   <div className="mt-2 rounded-lg bg-red-50 border border-red-200 p-2 text-xs text-red-800 flex gap-2">
                     <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                     <span>
-                      BTW-bronnen spreken elkaar tegen: {Object.entries(vatConflict).map(([source, cents]) => `${VAT_SOURCE_LABELS[source as VatSource] ?? source} ${eur(cents as number)}`).join(' vs ')}. Vul hieronder het juiste bedrag in.
+                      BTW-bronnen spreken elkaar tegen: {Object.entries(vatConflict).map(([source, cents]) => `${VAT_SOURCE_LABELS[source as VatSource] ?? source} ${eurCents(cents as number)}`).join(' vs ')}. Vul hieronder het juiste bedrag in.
                     </span>
                   </div>
                 )}
@@ -294,7 +311,7 @@ export function ExpenseDrawer({ expenseId, onClose, onChanged }: Props) {
                               <span className="min-w-0">
                                 <span className="block truncate text-zinc-900">{String(e.supplierName ?? d.original_filename ?? DOCUMENT_KIND_LABELS[d.kind])}</span>
                                 <span className="block text-xs text-zinc-500 truncate">
-                                  {DOCUMENT_KIND_LABELS[d.kind]}{typeof e.grossCents === 'number' ? ` · ${eur(e.grossCents)}` : ''}{e.invoiceDate ? ` · ${dateNL(String(e.invoiceDate))}` : ` · ${dateNL(d.created_at)}`}
+                                  {DOCUMENT_KIND_LABELS[d.kind]}{typeof e.grossCents === 'number' ? ` · ${eurCents(e.grossCents)}` : ''}{e.invoiceDate ? ` · ${dateNL(String(e.invoiceDate))}` : ` · ${dateNL(d.created_at)}`}
                                 </span>
                               </span>
                               <Button size="sm" variant="outline" disabled={busy != null} onClick={() => void act({ action: 'link', documentId: d.id })} className="min-h-[44px] sm:min-h-0 shrink-0">
