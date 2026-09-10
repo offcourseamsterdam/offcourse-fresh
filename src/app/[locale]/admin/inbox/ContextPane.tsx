@@ -1078,6 +1078,77 @@ function FinanceInvoiceReview({ invoice, onChanged }: { invoice: InboxFinanceInv
 function FinanceDocumentReview({ document: doc }: { document: InboxFinanceDocument }) {
   const ext = doc.extracted
   const filename = doc.original_filename ?? doc.file_path?.split('/').pop() ?? 'Document'
+  const bl = doc.boatlocalPayout
+
+  if (bl) {
+    return (
+      <div className="rounded-lg bg-white border border-emerald-200 px-3 py-2.5 text-xs text-zinc-700 space-y-2.5 shadow-sm">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <span className="font-semibold text-zinc-900 block text-sm">BoatLocal Operator Payout</span>
+            <span className="text-[10px] text-emerald-700 font-medium uppercase tracking-wider">Partner Uitbetaling</span>
+          </div>
+          {bl.operator_payout_cents != null && (
+            <div className="text-right">
+              <span className="font-bold text-emerald-700 text-base block">
+                +{eurCents(bl.operator_payout_cents)}
+              </span>
+              <span className="text-[10px] text-zinc-400">te ontvangen</span>
+            </div>
+          )}
+        </div>
+
+        {doc.file_path && (
+          <p className="text-[11px] text-zinc-400 truncate">
+            <a
+              href={`/api/admin/finance/attachments/expense_document/${doc.id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="underline hover:text-zinc-600 font-medium text-emerald-900"
+            >
+              {filename}
+            </a>
+            {bl.invoice_number ? ` · #${bl.invoice_number}` : ''}
+            {ext?.invoiceDate ? ` · ${dateNL(ext.invoiceDate)}` : ''}
+          </p>
+        )}
+
+        <div className="space-y-1.5 text-[11px] text-zinc-600 bg-zinc-50 p-2.5 rounded-lg border border-zinc-100">
+          {bl.total_sales_incl_vat_cents != null && (
+            <p className="flex justify-between">
+              <span className="text-zinc-500">Totale verkopen (incl. 9% BTW):</span>
+              <span className="font-medium text-zinc-800">{eurCents(bl.total_sales_incl_vat_cents)}</span>
+            </p>
+          )}
+          {bl.total_withheld_cents != null && (
+            <p className="flex justify-between">
+              <span className="text-zinc-500">Ingehouden commissie (incl. 21% BTW):</span>
+              <span className="font-medium text-rose-700">-{eurCents(bl.total_withheld_cents)}</span>
+            </p>
+          )}
+          {bl.vat_21_cents != null && (
+            <p className="flex justify-between text-[10px] text-zinc-400 pl-2">
+              <span>Waarvan 21% BTW op commissie:</span>
+              <span>{eurCents(bl.vat_21_cents)}</span>
+            </p>
+          )}
+        </div>
+
+        <div className="pt-1.5 border-t border-emerald-100 flex items-center justify-between text-[11px]">
+          <span className="text-zinc-400">Status:</span>
+          {doc.expense ? (
+            <span className="text-emerald-700 font-medium inline-flex items-center gap-1">
+              <Check className="w-3 h-3" /> Gekoppeld aan banktransactie
+            </span>
+          ) : (
+            <span className="text-emerald-800 font-medium">
+              Wacht op bankbijschrijving ({eurCents(bl.operator_payout_cents)})
+            </span>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="rounded-lg bg-white border border-amber-100 px-3 py-2 text-xs text-zinc-700 space-y-2">

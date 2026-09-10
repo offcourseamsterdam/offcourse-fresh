@@ -233,6 +233,14 @@ export interface InboxFinanceDocument {
     gross_cents: number | null
     supplier_name: string | null
   } | null
+  boatlocalPayout?: {
+    invoice_number: string
+    operator_payout_cents: number | null
+    total_sales_incl_vat_cents: number | null
+    total_withheld_cents: number | null
+    vat_21_cents: number | null
+    vat_9_in_payout_cents: number | null
+  } | null
   created_at: string
 }
 

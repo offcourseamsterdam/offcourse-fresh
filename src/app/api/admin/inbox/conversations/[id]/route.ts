@@ -146,7 +146,30 @@ async function loadFinanceDocuments(supabase: ReturnType<typeof createAdminClien
     .order('created_at', { ascending: false })
     .limit(10)
 
-  return (data ?? []).map(({ message: _message, ...doc }) => doc)
+  const docs = (data ?? []).map(({ message: _message, ...doc }) => doc)
+  if (docs.length === 0) return []
+
+  const invNumbers = docs
+    .map(d => (d.extracted as Record<string, unknown> | null)?.invoiceNumber)
+    .filter((n): n is string => typeof n === 'string' && n.length > 0)
+
+  if (invNumbers.length > 0) {
+    const { data: batches } = await supabase
+      .from('boatlocal_payout_batches')
+      .select('invoice_number, operator_payout_cents, total_sales_incl_vat_cents, total_withheld_cents, vat_21_cents, vat_9_in_payout_cents')
+      .in('invoice_number', invNumbers)
+
+    if (batches && batches.length > 0) {
+      const batchMap = new Map(batches.map(b => [b.invoice_number, b]))
+      return docs.map(doc => {
+        const invNum = (doc.extracted as Record<string, unknown> | null)?.invoiceNumber as string | undefined
+        const batch = invNum ? batchMap.get(invNum) : undefined
+        return batch ? { ...doc, boatlocalPayout: batch } : doc
+      })
+    }
+  }
+
+  return docs
 }
 
 /** The narrowed columns we pull per proposal — never the whole payload/outcome. */
