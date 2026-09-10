@@ -27,6 +27,7 @@ interface SendInvoiceBody {
   daysAfterTour?: number
   listingTitle?: string
   baseAmountCents?: number
+  deductPartnerCommission?: boolean
 }
 
 /**
