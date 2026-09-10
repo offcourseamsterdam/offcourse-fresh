@@ -465,7 +465,13 @@ export async function syncGmailInbox(queryOverride?: string): Promise<GmailSyncR
     // A reply sent directly from Gmail (not through our own admin panel) —
     // attach it to its thread and move on. Never a customer message, so
     // never routed through contact-matching, OTA detection, or Ghost.
-    if (ourAddresses.has(stripPlusTag(message.from.email.toLowerCase()))) {
+    // NOTE: An email addressed TO the finance inbox (e.g. an owner forwarding a receipt
+    // or invoice from info@ or an owner address to finance@) is an INBOUND finance document,
+    // NOT an outbound customer reply.
+    const toAndCc = [...(message.to ?? []), ...(message.cc ?? [])].map(t => stripPlusTag(t.email.toLowerCase()))
+    const isToFinance = !!financeAddress && toAndCc.includes(stripPlusTag(financeAddress.toLowerCase()))
+
+    if (!isToFinance && ourAddresses.has(stripPlusTag(message.from.email.toLowerCase()))) {
       try {
         const outcome = await handleOutboundGmailMessage(supabase, message)
         if (outcome === 'inserted') imported++
