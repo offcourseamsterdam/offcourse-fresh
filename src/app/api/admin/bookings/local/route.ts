@@ -40,7 +40,7 @@ export async function GET(request: Request) {
           base_vat_amount_cents, extras_vat_amount_cents, total_vat_amount_cents,
           fareharbor_customer_type_rate_pk, fareharbor_availability_pk, customer_type_name,
           campaign_id, promo_code_id, discount_amount_cents,
-          partner_id,
+          partner_id, commission_amount_cents,
           stripe_invoice_id, stripe_invoice_url, stripe_customer_id,
           business_profile_id, company_name, company_kvk, company_vat,
           company_address, invoice_due_date,

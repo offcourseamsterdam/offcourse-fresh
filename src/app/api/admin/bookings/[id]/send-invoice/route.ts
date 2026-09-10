@@ -127,6 +127,31 @@ export async function POST(
       invoiceNumber = await allocateInvoiceNumber(piRef)
     }
 
+    // 2c. Check if booking has a linked partner with commission to deduct
+    let partnerCommission: {
+      partnerName: string
+      commissionRate: number
+      commissionAmountCents: number
+      baseExVatCents: number
+    } | null = null
+
+    if (body.deductPartnerCommission !== false && booking.partner_id && (booking.commission_amount_cents ?? 0) > 0) {
+      const { data: partner } = await supabase
+        .from('partners')
+        .select('name, commission_rate')
+        .eq('id', booking.partner_id)
+        .maybeSingle()
+
+      const baseCents = body.baseAmountCents != null ? Number(body.baseAmountCents) : (booking.base_amount_cents ?? 0)
+      const baseExVatCents = Math.round(baseCents / 1.09)
+      partnerCommission = {
+        partnerName: partner?.name || 'Partner',
+        commissionRate: Number(partner?.commission_rate ?? 20),
+        commissionAmountCents: Number(booking.commission_amount_cents),
+        baseExVatCents,
+      }
+    }
+
     // 3. Create, finalize and send invoice via Stripe
     const invoiceResult = await createAndSendStripeInvoice({
       customerId: stripeCustomer.id,
@@ -140,6 +165,7 @@ export async function POST(
       extrasSelected: extrasList,
       cityTaxCents,
       discountAmountCents: booking.discount_amount_cents ?? 0,
+      partnerCommission,
       category: booking.category,
       note: booking.guest_note,
       daysAfterTour: body.daysAfterTour ?? 14,

@@ -462,4 +462,27 @@ describe('POST /book — invoice_later (admin picks a partner directly)', () => 
       commission_amount_cents: 0, // full amount invoiced — nothing withheld
     })
   })
+
+  it('calculates commission over net base (ex 9% BTW) when partner has commission_rate', async () => {
+    h.maybeSingle.mockResolvedValue({
+      data: { id: 'partner-ab', name: 'Amsterdam Boats B.V.', commission_rate: 20 },
+    })
+
+    const res = await POST(mockReq({
+      ...WEBSITE_BODY,
+      stripePaymentIntentId: undefined,
+      bookingSource: 'invoice_later',
+      partnerId: 'partner-ab',
+      baseAmountCents: 31000,
+    }))
+
+    expect(res.status).toBe(200)
+    expect(h.insert).toHaveBeenCalledTimes(1)
+    expect(h.insert.mock.calls[0][0]).toMatchObject({
+      partner_id: 'partner-ab',
+      commission_amount_cents: 5688, // 20% over 31000 / 1.09 (28440) = 5688
+      payment_status: 'partner_invoice_pending',
+      booking_source: 'invoice_later',
+    })
+  })
 })

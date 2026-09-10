@@ -43,6 +43,7 @@ interface BookingDetailRowProps {
   promoCode: string | null
   discountAmountCents: number | null
   partnerName: string | null
+  commissionAmountCents?: number | null
   category: string | null
   customerTypeName: string | null
   stripeInvoiceId?: string | null
@@ -84,6 +85,7 @@ export const BookingDetailRow = memo(function BookingDetailRow({
   promoCode,
   discountAmountCents,
   partnerName,
+  commissionAmountCents,
   category,
   customerTypeName,
   stripeInvoiceId,
@@ -199,9 +201,14 @@ export const BookingDetailRow = memo(function BookingDetailRow({
 
           {/* Partner */}
           {partnerName && (
-            <div className="flex items-center gap-1.5 mt-1.5">
+            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
               <span className="text-xs text-zinc-500">Partner:</span>
               <span className="text-xs text-zinc-900 font-medium">{partnerName}</span>
+              {commissionAmountCents != null && commissionAmountCents > 0 && (
+                <span className="text-[11px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                  {fmtAdminAmount(commissionAmountCents)} commissie ex BTW
+                </span>
+              )}
             </div>
           )}
 
@@ -460,6 +467,8 @@ export const BookingDetailRow = memo(function BookingDetailRow({
           initialKvk={companyKvk}
           initialVat={companyVat}
           initialAddress={companyAddress}
+          partnerName={partnerName}
+          commissionAmountCents={commissionAmountCents}
           isOpen={showSendInvoice}
           onClose={() => setShowSendInvoice(false)}
           onSuccess={() => { setShowSendInvoice(false); onRefresh() }}

@@ -49,6 +49,7 @@ export interface AdminBooking {
   promo_code: string | null
   discount_amount_cents: number | null
   partner_name: string | null
+  commission_amount_cents?: number | null
   fareharbor_availability_pk: number | null
   stripe_invoice_id?: string | null
   stripe_invoice_url?: string | null

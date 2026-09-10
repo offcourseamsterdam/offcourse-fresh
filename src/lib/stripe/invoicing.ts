@@ -29,6 +29,12 @@ export interface CreateInvoiceInput {
   extrasSelected?: Array<{ name: string; amount_cents: number }>
   cityTaxCents?: number | null
   discountAmountCents?: number | null
+  partnerCommission?: {
+    partnerName: string
+    commissionRate: number
+    commissionAmountCents: number
+    baseExVatCents: number
+  } | null
   category?: string | null
   note?: string | null
   daysAfterTour?: number // Defaults to 14
@@ -311,8 +317,19 @@ export async function createAndSendStripeInvoice(input: CreateInvoiceInput): Pro
     })
   }
 
-  // Line N+2: Discount (negative amount)
-  if (discountCents > 0) {
+  // Line N+2: Partner Commission or Promotional Discount (negative amount)
+  if (input.partnerCommission && input.partnerCommission.commissionAmountCents > 0) {
+    const grossReductionCents = Math.round(input.partnerCommission.commissionAmountCents * 1.09)
+    const netCommEur = (input.partnerCommission.commissionAmountCents / 100).toFixed(2)
+    const grossCommEur = (grossReductionCents / 100).toFixed(2)
+    await stripe.invoiceItems.create({
+      customer: input.customerId,
+      invoice: invoice.id,
+      amount: -grossReductionCents,
+      currency: 'eur',
+      description: `Partnerkorting ${input.partnerCommission.partnerName} (${input.partnerCommission.commissionRate}%): -€${netCommEur} ex BTW (-€${grossCommEur} incl. 9% BTW)`,
+    })
+  } else if (discountCents > 0) {
     await stripe.invoiceItems.create({
       customer: input.customerId,
       invoice: invoice.id,

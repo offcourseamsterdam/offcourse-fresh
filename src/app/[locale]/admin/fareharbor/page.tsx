@@ -253,13 +253,16 @@ export default function BookingFlowPage() {
       ? (sharedBaseAmountCents ?? 0)
       : (invoiceSuggestionActiveRate ? ratePrice(invoiceSuggestionActiveRate) ?? 0 : 0))
 
+  const invoiceSuggestionExtrasCents = extrasStep?.calculation?.extras_amount_cents ?? 0
+
   const invoiceSuggestionUrl =
     isInvoiceLater && step === 5 && selectedPartnerId && selectedListing && !invoiceAmountInput && invoiceSuggestionBaseCents > 0
-      ? `/api/admin/booking-flow/invoice-suggestion?partnerId=${selectedPartnerId}&listingId=${selectedListing.id}&baseAmountCents=${invoiceSuggestionBaseCents}`
+      ? `/api/admin/booking-flow/invoice-suggestion?partnerId=${selectedPartnerId}&listingId=${selectedListing.id}&baseAmountCents=${invoiceSuggestionBaseCents}&extrasAmountCents=${invoiceSuggestionExtrasCents}&guestCount=${effectiveGuestCount}`
       : null
 
   const { data: invoiceSuggestionData, isLoading: invoiceSuggestionLoading } = useAdminFetch<{
     suggestedInvoiceCents: number
+    suggestedCommissionCents: number
     hasCampaign: boolean
     commissionPercent: number | null
   }>(invoiceSuggestionUrl)
@@ -273,8 +276,10 @@ export default function BookingFlowPage() {
     setInvoiceAmountInput((invoiceSuggestionData.suggestedInvoiceCents / 100).toFixed(2))
     setInvoiceSuggestionNote(
       invoiceSuggestionData.hasCampaign
-        ? `Suggested from an active ${invoiceSuggestionData.commissionPercent}% commission campaign — edit if needed.`
-        : 'No active campaign for this partner + listing — defaulted to the full amount. Edit if needed.'
+        ? `Voorgesteld op basis van actieve ${invoiceSuggestionData.commissionPercent}% commissiecampagne — pas aan indien gewenst.`
+        : invoiceSuggestionData.commissionPercent
+          ? `Berekend op basis van partnercommissie (${invoiceSuggestionData.commissionPercent}% over boothuur excl. 9% BTW). Toeristenbelasting & eventuele drankjes zijn 100% doorberekend.`
+          : 'Geen actieve campagne of partnercommissie — standaard het volledige bedrag. Pas aan indien gewenst.'
     )
   }, [invoiceSuggestionData])
 

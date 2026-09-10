@@ -20,6 +20,8 @@ interface SendInvoiceModalProps {
   initialKvk?: string | null
   initialVat?: string | null
   initialAddress?: string | null
+  partnerName?: string | null
+  commissionAmountCents?: number | null
   isOpen: boolean
   onClose: () => void
   onSuccess: () => void
@@ -40,6 +42,8 @@ export function SendInvoiceModal({
   initialKvk,
   initialVat,
   initialAddress,
+  partnerName,
+  commissionAmountCents,
   isOpen,
   onClose,
   onSuccess,
@@ -79,8 +83,10 @@ export function SendInvoiceModal({
   const dueDateObj = new Date(tourDateObj.getTime() + daysAfterTour * 24 * 60 * 60 * 1000)
   const dueDateStr = dueDateObj.toISOString().slice(0, 10)
 
+  const [deductCommission, setDeductCommission] = useState(Boolean(commissionAmountCents && commissionAmountCents > 0))
+  const grossCommissionReduction = deductCommission && commissionAmountCents ? Math.round(commissionAmountCents * 1.09) : 0
   const currentBaseCents = Math.round(parseFloat(customBaseAmountEur || '0') * 100)
-  const totalCalculated = currentBaseCents + (extrasAmountCents ?? 0) + (cityTaxCents ?? 0)
+  const totalCalculated = currentBaseCents - grossCommissionReduction + (extrasAmountCents ?? 0) + (cityTaxCents ?? 0)
 
   async function handleSendInvoice(e: React.FormEvent) {
     e.preventDefault()
@@ -105,6 +111,7 @@ export function SendInvoiceModal({
           daysAfterTour,
           listingTitle: customListingTitle.trim(),
           baseAmountCents: currentBaseCents,
+          deductPartnerCommission: deductCommission,
         }),
       })
 
@@ -212,6 +219,27 @@ export function SendInvoiceModal({
                   </span>
                 </div>
               </div>
+
+              {/* Partner commission toggle if booking has commission */}
+              {Boolean(commissionAmountCents && commissionAmountCents > 0) && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={deductCommission}
+                      onChange={e => setDeductCommission(e.target.checked)}
+                      className="rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span className="text-xs font-semibold text-emerald-950">
+                      Partnerkorting verrekenen ({partnerName || 'Partner'}): -€{(grossCommissionReduction / 100).toFixed(2)}
+                    </span>
+                  </label>
+                  <p className="text-[11px] text-emerald-800 pl-6">
+                    Berekend over de boothuur excl. 9% BTW (-€{((commissionAmountCents ?? 0) / 100).toFixed(2)} ex BTW).
+                    Drankjes en toeristenbelasting worden 100% doorberekend.
+                  </p>
+                </div>
+              )}
 
               {/* Cruise / Line item details */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 bg-zinc-50 rounded-xl border border-zinc-200/80">

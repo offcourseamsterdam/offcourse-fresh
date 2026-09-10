@@ -614,7 +614,7 @@ export async function POST(request: NextRequest) {
         category: category ? String(category) : null,
         fareharborCustomerTypeRatePk: customerTypeRatePk ? Number(customerTypeRatePk) : null,
         stripePaymentIntentId: isInternal ? null : (stripePaymentIntentId ?? null),
-        baseAmountCents: invoiceBaseCents || null,
+        baseAmountCents: (isInternal || isStripeInvoice || bookingSource === 'invoice_later' || bookingSource === 'partner_invoice') ? null : (invoiceBaseCents || null),
         discountAmountCents: invoiceDiscountCents,
       }),
       ...(shouldAutoSendCateringNow && savedBookingId ? [sendCateringOrderEmailForBooking(savedBookingId)] : []),
@@ -981,18 +981,25 @@ async function resolveInvoiceLaterContext(params: {
   const supabase = createAdminClient()
   const { data: partner } = await supabase
     .from('partners')
-    .select('id, name')
+    .select('id, name, commission_rate')
     .eq('id', params.partnerId)
     .maybeSingle()
   if (!partner) return { ok: false, error: 'Partner not found', status: 404 }
 
-  const invoiceAmountCents = params.invoiceAmountCents ?? params.baseAmountCents
+  let commissionAmountCents = commissionFromInvoiceAmount(params.baseAmountCents, params.invoiceAmountCents ?? params.baseAmountCents)
+  if (partner.commission_rate && Number(partner.commission_rate) > 0) {
+    const rate = Number(partner.commission_rate)
+    const baseExVatCents = Math.round(params.baseAmountCents / 1.09)
+    commissionAmountCents = Math.round(baseExVatCents * rate / 100)
+  }
+
+  const invoiceAmountCents = params.invoiceAmountCents ?? (params.baseAmountCents - Math.round(commissionAmountCents * 1.09))
   return {
     ok: true,
     context: {
       partnerId: params.partnerId,
       partnerName: partner.name ?? 'Partner',
-      commissionAmountCents: commissionFromInvoiceAmount(params.baseAmountCents, invoiceAmountCents),
+      commissionAmountCents,
       invoiceAmountCents,
     },
   }
