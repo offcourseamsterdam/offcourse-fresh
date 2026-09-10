@@ -62,6 +62,14 @@ async function main() {
     const page = await stripe.charges.list({ limit: 100, starting_after: startingAfter })
     for (const ch of page.data) {
       if (ch.status !== 'succeeded') continue
+      // Invoice payments (the Stripe invoicing feature added 2026-09) never
+      // get a `bookings` row on purpose — they're not a canal cruise
+      // checkout. Confirmed 2026-09-10: a real €0.50 invoice test payment
+      // (description "Payment for Invoice", payment_method_types
+      // ["customer_balance"]) triggered a false 🚨🚨 "no booking record"
+      // alert. Booking-flow charges are always card payments through
+      // PaymentIntent metadata; invoice payments are their own thing.
+      if (ch.description === 'Payment for Invoice') continue
       const piId = typeof ch.payment_intent === 'string' ? ch.payment_intent : ch.payment_intent?.id
       if (!piId) continue
       succeeded.set(piId, ch)
