@@ -146,6 +146,10 @@ export async function getAccessToken(supabase: Admin, opts: { force?: boolean; n
       access_token_enc: encryptSecret(tokens.access_token, key),
       access_token_expires_at: expiry(tokens, new Date()),
       refresh_lock_until: null,
+      // A successful refresh means the connection has recovered — clear any error
+      // left over from a prior failed refresh so the dashboard doesn't show a
+      // stale failure once the problem is gone.
+      last_sync_error: null,
       updated_at: new Date().toISOString(),
     }
     if (tokens.refresh_token) patch.refresh_token_enc = encryptSecret(tokens.refresh_token, key)
