@@ -62,10 +62,20 @@ describe('revolutVatFromSplits', () => {
 describe('ensureExpensesForTransactions', () => {
   beforeEach(() => { vi.clearAllMocks(); h.classifyStructural.mockReturnValue(null) })
 
-  function db(rows: Record<string, unknown>[], insertError?: { code: string; message: string }) {
+  function db(
+    rows: Record<string, unknown>[],
+    insertError?: { code: string; message: string },
+    opts: { pending?: { id: string; ref: string }[]; lostRace?: boolean } = {},
+  ) {
     return createSupabaseChainMock((q: RecordedQuery) => {
       if (q.table === 'bank_transactions' && has(q, 'update')) return { data: null }
       if (q.table === 'bank_transactions') return { data: rows }
+      // findPendingDraftExpenseId's lookup: select id, ref where status=waiting_for_payment, revolut_draft_id not null, bank_transaction_id is null.
+      if (q.table === 'finance_expenses' && has(q, 'not')) return { data: opts.pending ?? [] }
+      // The link-back update: .update({bank_transaction_id...}).eq('id', pendingId).is('bank_transaction_id', null).select('id')
+      if (q.table === 'finance_expenses' && has(q, 'update') && op(q, 'eq')?.args[0] === 'id') {
+        return { data: opts.lostRace ? [] : [{ id: op(q, 'eq')!.args[1] }] }
+      }
       if (q.table === 'finance_expenses' && has(q, 'insert')) return insertError ? { data: null, error: insertError } : { data: { id: 'exp-new' } }
       if (q.table === 'finance_expenses') return { data: { id: 'exp-existing' } }
       return { data: null }
@@ -75,7 +85,7 @@ describe('ensureExpensesForTransactions', () => {
   it('creates a waiting_for_invoice record for a completed card payment and links the transaction to it', async () => {
     const mock = db([TX])
     const r = await ensureExpensesForTransactions(mock.client as never, { accountId: 'acct-1', since: '2026-08-01T00:00:00Z' })
-    expect(r).toEqual({ scanned: 1, created: 1, ignored: 0 })
+    expect(r).toEqual({ scanned: 1, created: 1, ignored: 0, linkedToDraft: 0 })
     expect(opArg(mock.queries, 'finance_expenses', 'insert')).toMatchObject({ bank_transaction_id: 'bt-1', cash_out_cents: 12100, status: 'waiting_for_invoice', supplier_name: 'Bol.com' })
     expect(opArg(mock.queries, 'bank_transactions', 'update')).toEqual({ expense_id: 'exp-new' })
   })
@@ -94,7 +104,7 @@ describe('ensureExpensesForTransactions', () => {
     h.classifyStructural.mockReturnValue({ category: 'transfer', subcategory: 'internal', confidence: 1, reason: 'own', source: 'rule' })
     const mock = db([{ ...TX, type: 'transfer', merchant: null, counterparty: { name: 'Off Course Pocket' } }])
     const r = await ensureExpensesForTransactions(mock.client as never, { accountId: 'acct-1', since: '2026-08-01T00:00:00Z' })
-    expect(r).toEqual({ scanned: 1, created: 0, ignored: 1 })
+    expect(r).toEqual({ scanned: 1, created: 0, ignored: 1, linkedToDraft: 0 })
     expect(opArg(mock.queries, 'finance_expenses', 'insert')).toMatchObject({ status: 'ignored' })
   })
 
@@ -103,6 +113,29 @@ describe('ensureExpensesForTransactions', () => {
     const r = await ensureExpensesForTransactions(mock.client as never, { accountId: 'acct-1', since: '2026-08-01T00:00:00Z' })
     expect(r.created).toBe(1)
     expect(opArg(mock.queries, 'bank_transactions', 'update')).toEqual({ expense_id: 'exp-existing' })
+  })
+
+  it('a transaction whose reference names a still-open Revolut-draft Expense Record reconciles with it instead of creating a bare duplicate', async () => {
+    const tx = { ...TX, reference: 'FIN-000003 Bram Bots #2026-10' }
+    const mock = db([tx], undefined, { pending: [{ id: 'exp-fin3', ref: 'FIN-000003' }] })
+    const r = await ensureExpensesForTransactions(mock.client as never, { accountId: 'acct-1', since: '2026-08-01T00:00:00Z' })
+    expect(r).toEqual({ scanned: 1, created: 0, ignored: 0, linkedToDraft: 1 })
+    expect(opArg(mock.queries, 'finance_expenses', 'insert')).toBeUndefined()
+    expect(opArg(mock.queries, 'bank_transactions', 'update')).toEqual({ expense_id: 'exp-fin3' })
+    expect(h.recomputeExpense).toHaveBeenCalledWith(expect.anything(), 'exp-fin3')
+  })
+
+  it('losing the race to link a pending draft (another poll got there first) falls through to the normal create/ignore path, not a skip', async () => {
+    const tx = { ...TX, reference: 'FIN-000003 Bram Bots #2026-10' }
+    const mock = db([tx], undefined, { pending: [{ id: 'exp-fin3', ref: 'FIN-000003' }], lostRace: true })
+    const r = await ensureExpensesForTransactions(mock.client as never, { accountId: 'acct-1', since: '2026-08-01T00:00:00Z' })
+    expect(r).toEqual({ scanned: 1, created: 1, ignored: 0, linkedToDraft: 0 })
+  })
+
+  it('a reference that merely contains no known pending ref creates a normal record, unaffected', async () => {
+    const mock = db([TX], undefined, { pending: [{ id: 'exp-other', ref: 'FIN-000099' }] })
+    const r = await ensureExpensesForTransactions(mock.client as never, { accountId: 'acct-1', since: '2026-08-01T00:00:00Z' })
+    expect(r).toEqual({ scanned: 1, created: 1, ignored: 0, linkedToDraft: 0 })
   })
 })
 

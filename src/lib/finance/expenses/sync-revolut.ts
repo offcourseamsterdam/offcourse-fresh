@@ -56,6 +56,36 @@ export interface EnsureResult {
   scanned: number
   created: number
   ignored: number
+  /** Reconciled with an Expense Record that already existed for this payee before the transaction landed (a Revolut payment draft someone approved) — see findPendingDraftExpenseId. */
+  linkedToDraft: number
+}
+
+/**
+ * A transaction can arrive for an Expense Record that already exists — the
+ * "draft payment from document" flow (Facturen inbox / Expense Records
+ * "Betaling klaarzetten in Revolut") creates the Expense Record FIRST,
+ * pins its Revolut draft id, and only later does the payment actually
+ * execute once Beer approves it in the Revolut app. Every draft is created
+ * with the expense's own `ref` as the payment reference/title (see
+ * draft-payment.ts's createSinglePaymentDraft), which Revolut echoes back
+ * verbatim onto the resulting transaction — so a transaction whose
+ * `reference` contains a still-open expense's `ref` IS that expense's
+ * payment, not a new purchase. Without this check, `decideExpenseForTransaction`
+ * (which only ever sees the transaction, never existing expenses) creates a
+ * second, bare, supplier-less Expense Record for the same real payment —
+ * confirmed live 2026-09-10 (Bram Bots' FIN-000003 got an orphan sibling
+ * FIN-000031 for its own bank transaction before this fix).
+ */
+async function findPendingDraftExpenseId(supabase: Admin, tx: BankTxRow): Promise<string | null> {
+  if (!tx.reference) return null
+  const { data, error } = await supabase
+    .from('finance_expenses')
+    .select('id, ref')
+    .eq('status', 'waiting_for_payment')
+    .not('revolut_draft_id', 'is', null)
+    .is('bank_transaction_id', null)
+  if (error) throw new Error(error.message)
+  return (data ?? []).find(e => tx.reference!.includes(e.ref))?.id ?? null
 }
 
 export async function ensureExpensesForTransactions(
@@ -76,9 +106,29 @@ export async function ensureExpensesForTransactions(
     .limit(opts.limit ?? 500)
   if (error) throw new Error(error.message)
 
-  const result: EnsureResult = { scanned: 0, created: 0, ignored: 0 }
+  const result: EnsureResult = { scanned: 0, created: 0, ignored: 0, linkedToDraft: 0 }
   for (const row of rows ?? []) {
     result.scanned++
+
+    const pendingId = await findPendingDraftExpenseId(supabase, row)
+    if (pendingId) {
+      const { data: linked, error: linkErr } = await supabase
+        .from('finance_expenses')
+        .update({ bank_transaction_id: row.id, paid_at: row.completed_at ?? row.created_at })
+        .eq('id', pendingId)
+        .is('bank_transaction_id', null) // still-open race guard: another poll may have linked it first
+        .select('id')
+      if (linkErr) throw new Error(linkErr.message)
+      if (linked && linked.length > 0) {
+        const { error: txLinkErr } = await supabase.from('bank_transactions').update({ expense_id: pendingId }).eq('id', row.id)
+        if (txLinkErr) throw new Error(txLinkErr.message)
+        await recomputeExpense(supabase, pendingId)
+        result.linkedToDraft++
+        continue
+      }
+      // Lost the race — another poll already linked this expense to a transaction; fall through to the normal decision below so this transaction still gets handled instead of silently skipped.
+    }
+
     const decision = decideExpenseForTransaction(toSource(row), classifyStructural(toClassifiable(row), ruleCtx))
     if (decision.kind === 'skip') continue
 
