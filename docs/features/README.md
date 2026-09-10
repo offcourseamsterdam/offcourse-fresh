@@ -55,3 +55,4 @@ One file per track or major feature. Written before every PR and kept up to date
 | City tax (Amsterdam day-trip tourist tax) reporting | [city-tax.md](city-tax.md) | — | done (v1, known gaps) |
 | Financial management module (cash cockpit) | [financial-management-module.md](financial-management-module.md) | — | done (Phases 0–5) |
 | Finance Inbox v2 — Expense Records, Revolut, e-mail matching & SnelStart | [finance-inbox-expense-records.md](finance-inbox-expense-records.md) | — | done (Phases 0–5) |
+| Filed BTW-aangiftes archive (kasboek: real filed figure closes the computed obligation) | [vat-returns-archive.md](vat-returns-archive.md) | — | done (v1, manual entry) |

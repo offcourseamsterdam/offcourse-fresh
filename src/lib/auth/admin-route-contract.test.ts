@@ -196,7 +196,7 @@ describe('admin route auth contract', () => {
     // goals (+ [id], [id]/complete, [id]/events).
     // 212 = 211 + /api/admin/availability-sync (Manual trigger & health status for FareHarbor AI availability snapshots)
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`213`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`214`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {

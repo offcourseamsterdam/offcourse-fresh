@@ -3166,6 +3166,69 @@ export type Database = {
           },
         ]
       }
+      finance_vat_returns: {
+        Row: {
+          created_at: string
+          file_path: string
+          filed_date: string
+          id: string
+          net_cents: number
+          notes: string | null
+          obligation_id: string | null
+          original_filename: string | null
+          quarter: string
+          source_document_id: string | null
+          vat21_owed_cents: number | null
+          vat9_owed_cents: number | null
+          voorbelasting_cents: number | null
+        }
+        Insert: {
+          created_at?: string
+          file_path: string
+          filed_date: string
+          id?: string
+          net_cents: number
+          notes?: string | null
+          obligation_id?: string | null
+          original_filename?: string | null
+          quarter: string
+          source_document_id?: string | null
+          vat21_owed_cents?: number | null
+          vat9_owed_cents?: number | null
+          voorbelasting_cents?: number | null
+        }
+        Update: {
+          created_at?: string
+          file_path?: string
+          filed_date?: string
+          id?: string
+          net_cents?: number
+          notes?: string | null
+          obligation_id?: string | null
+          original_filename?: string | null
+          quarter?: string
+          source_document_id?: string | null
+          vat21_owed_cents?: number | null
+          vat9_owed_cents?: number | null
+          voorbelasting_cents?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_vat_returns_obligation_id_fkey"
+            columns: ["obligation_id"]
+            isOneToOne: false
+            referencedRelation: "finance_obligations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_vat_returns_source_document_id_fkey"
+            columns: ["source_document_id"]
+            isOneToOne: false
+            referencedRelation: "finance_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       getmyboat_bookings: {
         Row: {
           booking_id: string

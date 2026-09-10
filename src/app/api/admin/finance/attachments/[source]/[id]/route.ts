@@ -16,6 +16,9 @@ const SOURCES = {
   invoice: { table: 'finance_invoices' as const, column: 'file_path' as const, adminOnly: true },
   // Expense Record documents (plan 2026-09-05): supplier invoices, receipt photos, Revolut receipts.
   expense_document: { table: 'finance_documents' as const, column: 'file_path' as const, adminOnly: true },
+  // Filed BTW-aangifte PDFs (§ finance_vat_returns) — the accountant's own document, same
+  // sharing rule as the other payout sources they're allowed to see.
+  vat_return: { table: 'finance_vat_returns' as const, column: 'file_path' as const, adminOnly: false },
 }
 
 type Source = keyof typeof SOURCES

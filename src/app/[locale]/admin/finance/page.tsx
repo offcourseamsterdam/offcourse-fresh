@@ -8,6 +8,7 @@ import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { FinanceShareLinks } from '@/components/admin/FinanceShareLinks'
 import { FinanceSubnav } from '@/components/admin/finance/cockpit/FinanceSubnav'
 import { InvoicesTab } from '@/components/admin/finance/InvoicesTab'
+import { VatReturnsCard } from '@/components/admin/finance/VatReturnsCard'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { useFinanceUpload } from '@/hooks/useFinanceUpload'
 import { fmtAdminAmount, fmtAdminAmountRounded, fmtAdminDate } from '@/lib/admin/format'
@@ -745,6 +746,8 @@ function BtwDashboardTab() {
       </div>
 
       <AdminErrorBanner error={error} />
+
+      <VatReturnsCard quarterOptions={allQuarters.map(q => q.quarter)} />
 
       {isLoading && !data && (
         <div className="flex items-center gap-2 text-sm text-zinc-400 py-8">
