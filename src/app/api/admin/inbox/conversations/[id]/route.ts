@@ -34,7 +34,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     if (error) return apiError(error.message)
     if (!conversation) return apiError('Conversation not found', 404)
 
-    const [{ data: messages, error: msgError }, bookings, ghost, financeInvoices] = await Promise.all([
+    const [{ data: messages, error: msgError }, bookings, ghost, financeInvoices, financeDocuments] = await Promise.all([
       supabase
         .from('messages')
         .select('id, direction, body, body_html, author_name, status, error, created_at, recording_url')
@@ -44,6 +44,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
       loadContactBookings(supabase, conversation.contact, conversation.booking_id),
       loadGhostProposals(supabase, id, !!conversation.ota_source),
       conversation.source_category === 'finance' ? loadFinanceInvoices(supabase, id) : Promise.resolve([]),
+      conversation.source_category === 'finance' ? loadFinanceDocuments(supabase, id) : Promise.resolve([]),
     ])
     if (msgError) return apiError(msgError.message)
 
@@ -52,7 +53,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
       await supabase.from('conversations').update({ unread_count: 0 }).eq('id', id)
     }
 
-    return apiOk({ conversation, messages: messages ?? [], bookings, ghost, financeInvoices })
+    return apiOk({ conversation, messages: messages ?? [], bookings, ghost, financeInvoices, financeDocuments })
   } catch (err) {
     return apiError(err instanceof Error ? err.message : 'Failed to load conversation')
   }
@@ -127,6 +128,25 @@ async function loadFinanceInvoices(supabase: ReturnType<typeof createAdminClient
     ...invoice,
     supplier: supplier ? { id: supplier.id, name: supplier.name, has_iban: !!supplier.iban } : null,
   }))
+}
+
+/**
+ * Every finance_documents row filed from an email in this thread (supplier
+ * invoices, webshop receipts, order confirmations, etc.) — newest first.
+ */
+async function loadFinanceDocuments(supabase: ReturnType<typeof createAdminClient>, conversationId: string) {
+  const { data } = await supabase
+    .from('finance_documents')
+    .select(
+      `id, kind, source, file_path, original_filename, mime_type, extracted, link_url, link_fetch_status, expense_id, created_at,
+       expense:finance_expenses(id, ref, status, gross_cents, supplier_name),
+       message:messages!inner(conversation_id)`,
+    )
+    .eq('message.conversation_id', conversationId)
+    .order('created_at', { ascending: false })
+    .limit(10)
+
+  return (data ?? []).map(({ message: _message, ...doc }) => doc)
 }
 
 /** The narrowed columns we pull per proposal — never the whole payload/outcome. */

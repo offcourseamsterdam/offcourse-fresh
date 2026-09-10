@@ -202,6 +202,40 @@ export interface InboxFinanceInvoice {
   supplier: { id: string; name: string; has_iban: boolean } | null
 }
 
+export interface InboxFinanceDocument {
+  id: string
+  kind: 'invoice_pdf' | 'receipt_image' | 'revolut_receipt' | 'order_confirmation_email' | 'invoice_notification_email' | 'payment_confirmation_email' | 'other_email' | 'invoice_link'
+  source: string
+  file_path: string | null
+  original_filename: string | null
+  mime_type: string | null
+  extracted: {
+    supplierName?: string | null
+    orderNumber?: string | null
+    invoiceNumber?: string | null
+    invoiceDate?: string | null
+    grossCents?: number | null
+    netCents?: number | null
+    vatCents?: number | null
+    vatRatePct?: number | null
+    currency?: string | null
+    iban?: string | null
+    paymentReference?: string | null
+    documentKind?: string | null
+  } | null
+  link_url: string | null
+  link_fetch_status: string | null
+  expense_id: string | null
+  expense?: {
+    id: string
+    ref: string
+    status: string
+    gross_cents: number | null
+    supplier_name: string | null
+  } | null
+  created_at: string
+}
+
 export interface InboxConversationDetail {
   conversation: {
     id: string
@@ -226,6 +260,8 @@ export interface InboxConversationDetail {
   bookings: InboxBooking[]
   /** Only ever populated for a source_category='finance' thread — see loadFinanceInvoices in conversations/[id]/route.ts. */
   financeInvoices: InboxFinanceInvoice[]
+  /** Expense record documents (supplier invoices, webshop receipts, etc.) associated with this thread. */
+  financeDocuments?: InboxFinanceDocument[]
   /** The Ghost's suggestions for this thread + the per-conversation learning trail. */
   ghost: {
     replyDraft: InboxGhostProposal | null

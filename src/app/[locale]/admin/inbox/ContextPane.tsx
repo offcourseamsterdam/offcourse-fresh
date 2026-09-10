@@ -10,7 +10,7 @@ import { eurCents, dateNL, eurosToCents, centsToEuros } from '@/components/admin
 import { OTA_PLATFORM_NAME } from '@/lib/ota/detect'
 import { pickCheapestPrivateOption } from '@/lib/ota/availability-shape'
 import { draftNeedsEnglish } from '@/lib/i18n/needs-translation'
-import { hasGhostCoPilotContent, type InboxConversationDetail, type InboxFinanceInvoice, type InboxGhostProposal } from './types'
+import { hasGhostCoPilotContent, type InboxConversationDetail, type InboxFinanceInvoice, type InboxFinanceDocument, type InboxGhostProposal } from './types'
 
 const SIM_BADGE: Record<string, { text: string; cls: string }> = {
   match: { text: '≈ matched', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
@@ -37,7 +37,7 @@ interface Props {
 
 /** Right pane — who you're talking to: Ghost co-pilot, contact card, bookings, workflow. */
 export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
-  const { conversation, bookings, ghost, financeInvoices } = detail
+  const { conversation, bookings, ghost, financeInvoices, financeDocuments = [] } = detail
   const contact = conversation.contact
   const [saving, setSaving] = useState(false)
   // The booking Ghost found by name/date when the contact's own email doesn't
@@ -93,14 +93,17 @@ export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
       {conversation.source_category === 'finance' && (
         <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
           <p className="text-[10px] font-semibold tracking-widest uppercase text-amber-600 mb-2 inline-flex items-center gap-1.5">
-            <Receipt className="w-3.5 h-3.5" /> Factuur controleren
+            <Receipt className="w-3.5 h-3.5" /> Factuur / Document
           </p>
-          {financeInvoices.length === 0 ? (
-            <p className="text-xs text-zinc-400">Geen PDF-bijlage gevonden in dit bericht.</p>
+          {financeInvoices.length === 0 && financeDocuments.length === 0 ? (
+            <p className="text-xs text-zinc-400">Geen PDF-bijlage of document gevonden in dit bericht.</p>
           ) : (
             <div className="space-y-2.5">
               {financeInvoices.map(invoice => (
                 <FinanceInvoiceReview key={invoice.id} invoice={invoice} onChanged={onChanged} />
+              ))}
+              {financeDocuments.map(doc => (
+                <FinanceDocumentReview key={doc.id} document={doc} />
               ))}
             </div>
           )}
@@ -1066,3 +1069,74 @@ function FinanceInvoiceReview({ invoice, onChanged }: { invoice: InboxFinanceInv
     </div>
   )
 }
+
+/**
+ * One expense document (e.g. payout invoice, receipt, order confirmation)
+ * filed from an email in this thread. Shows extracted totals, download link,
+ * and match status.
+ */
+function FinanceDocumentReview({ document: doc }: { document: InboxFinanceDocument }) {
+  const ext = doc.extracted
+  const filename = doc.original_filename ?? doc.file_path?.split('/').pop() ?? 'Document'
+
+  return (
+    <div className="rounded-lg bg-white border border-amber-100 px-3 py-2 text-xs text-zinc-700 space-y-2">
+      <div className="flex items-start justify-between gap-2">
+        <span className="font-semibold text-zinc-900 truncate">
+          {ext?.supplierName ?? 'Document'}
+        </span>
+        {ext?.grossCents != null && (
+          <span className="font-semibold text-zinc-900 shrink-0">
+            {eurCents(ext.grossCents)}
+          </span>
+        )}
+      </div>
+
+      {doc.file_path && (
+        <p className="text-[11px] text-zinc-400 truncate">
+          <a
+            href={`/api/admin/finance/attachments/expense_document/${doc.id}`}
+            target="_blank"
+            rel="noreferrer"
+            className="underline hover:text-zinc-600 font-medium text-amber-900"
+          >
+            {filename}
+          </a>
+          {ext?.invoiceNumber ? ` · #${ext.invoiceNumber}` : ''}
+          {ext?.invoiceDate ? ` · ${dateNL(ext.invoiceDate)}` : ''}
+        </p>
+      )}
+
+      {(ext?.vatCents != null || ext?.netCents != null) && (
+        <div className="space-y-1 text-[11px] text-zinc-600">
+          {ext?.vatCents != null && (
+            <p className="flex justify-between">
+              <span className="text-zinc-400">BTW ({ext.vatRatePct ?? 21}%):</span>
+              <span>{eurCents(ext.vatCents)}</span>
+            </p>
+          )}
+          {ext?.netCents != null && (
+            <p className="flex justify-between">
+              <span className="text-zinc-400">Netto:</span>
+              <span>{eurCents(ext.netCents)}</span>
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="pt-1.5 border-t border-amber-50 flex items-center justify-between text-[11px]">
+        <span className="text-zinc-400">Status:</span>
+        {doc.expense ? (
+          <span className="text-emerald-700 font-medium inline-flex items-center gap-1">
+            <Check className="w-3 h-3" /> Gekoppeld aan {doc.expense.ref}
+          </span>
+        ) : (
+          <span className="text-amber-700 font-medium">
+            Opgeslagen · wacht op banktransactie
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
