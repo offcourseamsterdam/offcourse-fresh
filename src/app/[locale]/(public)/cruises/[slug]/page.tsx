@@ -96,9 +96,15 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
         name: 'Off Course Amsterdam Dock',
         address: {
           '@type': 'PostalAddress',
-          streetAddress: 'Singel',
+          streetAddress: 'Brouwersgracht 66',
           addressLocality: 'Amsterdam',
+          postalCode: '1015 GH',
           addressCountry: 'NL',
+        },
+        geo: {
+          '@type': 'GeoCoordinates',
+          latitude: '52.3782',
+          longitude: '4.8840',
         },
       },
       offers: {

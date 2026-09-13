@@ -47,6 +47,9 @@ export default async function LocaleLayout({ children, params }: Props) {
           {/* Resource hints for the Supabase Storage CDN — saves ~100ms on first image load. */}
           <link rel="preconnect" href="https://fkylzllxvepmrtqxisrn.supabase.co" />
           <link rel="dns-prefetch" href="https://fkylzllxvepmrtqxisrn.supabase.co" />
+          {/* Machine-readable LLM endpoints for AI crawlers & browser agents */}
+          <link rel="alternate" type="text/markdown" href={`${BASE_URL}/llms.txt`} title="LLM Summary" />
+          <link rel="alternate" type="text/markdown" href={`${BASE_URL}/llms-full.txt`} title="Full LLM Knowledge Base" />
           <TrackingScript />
           {children}
         </SearchProvider>
