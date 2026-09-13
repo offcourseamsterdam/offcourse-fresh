@@ -25,6 +25,8 @@ import { classifyWithAi, type AiCorrectionExample } from './ai'
 import { classifyDeterministic, type ClassifiableTransaction, type Classification, type RuleContext } from './rules'
 import { reverseChanges } from './reverse'
 
+import { loadPayoutCandidatePool } from '../reconcile/channel-matcher'
+
 type Admin = SupabaseClient<Database>
 
 /** Above this the AI answer is stored as fact; below it a human is asked. */
@@ -44,7 +46,7 @@ export interface ClassifyOutcome {
 // ── Context loading ──────────────────────────────────────────────────────────
 
 export async function loadRuleContext(supabase: Admin): Promise<RuleContext & { boats: Array<{ id: string; name: string }>; corrections: AiCorrectionExample[] }> {
-  const [staffRes, paymentsRes, obligationsRes, rulesRes, boatsRes, connRes, correctionsRes] = await Promise.all([
+  const [staffRes, paymentsRes, obligationsRes, rulesRes, boatsRes, connRes, correctionsRes, payoutPool] = await Promise.all([
     supabase.from('staff').select('id, name, role').eq('is_active', true),
     supabase.from('finance_loan_payments').select('id, loan_id, due_date, total_cents, is_paid, finance_loans!inner(name, lender_name, status)').eq('is_paid', false),
     supabase.from('finance_obligations').select('id, title, kind, amount_cents, due_date, status').eq('status', 'open'),
@@ -56,6 +58,7 @@ export async function loadRuleContext(supabase: Admin): Promise<RuleContext & { 
       .eq('classified_by', 'user')
       .order('reviewed_at', { ascending: false })
       .limit(20),
+    loadPayoutCandidatePool(supabase),
   ])
 
   const loanPayments = (paymentsRes.data ?? []).flatMap(r => {
@@ -88,6 +91,7 @@ export async function loadRuleContext(supabase: Admin): Promise<RuleContext & { 
     })),
     ownAccountNames: connRes.data?.account_name ? [connRes.data.account_name] : [],
     boats: boatsRes.data ?? [],
+    payoutPool,
     corrections: (correctionsRes.data ?? []).flatMap(c => {
       if (!c.category) return []
       const merchant = c.merchant as { name?: string } | null
@@ -194,25 +198,50 @@ export async function classifyAndApply(
   })
   await applyChanges(supabase, changes, freshAllocation, row.id)
 
+  const updatePayload: Record<string, unknown> = {
+    category: classification.category,
+    subcategory: classification.subcategory,
+    boat_id: classification.boatId ?? null,
+    goal_id: classification.goalId ?? null,
+    obligation_id: classification.obligationId ?? null,
+    loan_payment_id: classification.loanPaymentId ?? null,
+    classified_by: classification.source,
+    confidence: classification.confidence,
+    classification_reason: classification.reason,
+    needs_review: needsReview,
+    reviewed_at: actor === 'user' ? new Date().toISOString() : row.reviewed_at,
+    allocation_applied: changes.length > 0 ? (changes as never) : null,
+    allocation_applied_at: changes.length > 0 ? new Date().toISOString() : null,
+  }
+
+  if (classification.payoutRecordId) {
+    updatePayload.payout_channel = classification.payoutChannel ?? null
+    updatePayload.payout_record_id = classification.payoutRecordId
+    updatePayload.payout_reference = classification.payoutReference ?? null
+    updatePayload.reconciled_at = new Date().toISOString()
+    if (typeof classification.vatCents === 'number') {
+      updatePayload.vat_cents = classification.vatCents
+    }
+  }
+
   const { error } = await supabase
     .from('bank_transactions')
-    .update({
-      category: classification.category,
-      subcategory: classification.subcategory,
-      boat_id: classification.boatId ?? null,
-      goal_id: classification.goalId ?? null,
-      obligation_id: classification.obligationId ?? null,
-      loan_payment_id: classification.loanPaymentId ?? null,
-      classified_by: classification.source,
-      confidence: classification.confidence,
-      classification_reason: classification.reason,
-      needs_review: needsReview,
-      reviewed_at: actor === 'user' ? new Date().toISOString() : row.reviewed_at,
-      allocation_applied: changes.length > 0 ? (changes as never) : null,
-      allocation_applied_at: changes.length > 0 ? new Date().toISOString() : null,
-    })
+    .update(updatePayload as never)
     .eq('id', row.id)
   if (error) throw new Error(error.message)
+
+  // Two-way link back to payout tables if matched
+  if (classification.payoutRecordId && classification.payoutChannel) {
+    const channel = classification.payoutChannel
+    const recordId = classification.payoutRecordId
+    if (channel === 'viator') {
+      await supabase.from('viator_payment_batches').update({ bank_transaction_id: row.id } as never).eq('id', recordId)
+    } else if (channel === 'getyourguide') {
+      await supabase.from('getyourguide_payments').update({ bank_transaction_id: row.id } as never).eq('id', recordId)
+    } else if (channel === 'boatlocal') {
+      await supabase.from('boatlocal_payout_batches').update({ bank_transaction_id: row.id } as never).eq('id', recordId)
+    }
+  }
 
   if (classification.ruleId) {
     await supabase.rpc('increment_rule_hit' as never, { rule_id: classification.ruleId } as never).then(

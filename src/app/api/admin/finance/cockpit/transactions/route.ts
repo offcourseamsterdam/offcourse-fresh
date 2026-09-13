@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     const supabase = createAdminClient()
     let q = supabase
       .from('bank_transactions')
-      .select('id, revolut_id, type, state, created_at, completed_at, amount_cents, fee_cents, currency, balance_after_cents, reference, description, counterparty, merchant, category, subcategory, boat_id, goal_id, obligation_id, loan_payment_id, invoice_id, classified_by, confidence, classification_reason, needs_review, reviewed_at')
+      .select('id, revolut_id, type, state, created_at, completed_at, amount_cents, fee_cents, currency, balance_after_cents, reference, description, counterparty, merchant, category, subcategory, boat_id, goal_id, obligation_id, loan_payment_id, invoice_id, classified_by, confidence, classification_reason, needs_review, reviewed_at, payout_channel, payout_record_id, payout_reference, reconciled_at, vat_cents')
       .order('created_at', { ascending: false })
       .limit(limit + 1)
 

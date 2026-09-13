@@ -7,8 +7,8 @@ import { syncRevolut } from '@/lib/revolut/sync'
 
 export const dynamic = 'force-dynamic'
 
-/** POST: the "Ververs" button. Pulls balance + transactions now. */
-export async function POST(_req: NextRequest) {
+/** POST: the "Ververs" button. Pulls balance + transactions now. Optional ?from=2026-01-01T00:00:00.000Z */
+export async function POST(req: NextRequest) {
   const denied = await requireAdmin()
   if (denied) return denied
   try {
@@ -16,7 +16,11 @@ export async function POST(_req: NextRequest) {
     const row = await loadConnection(supabase)
     if (!isConnected(row)) return apiError('Revolut is niet gekoppeld', 400)
     const client = await createRevolutClient(supabase)
-    const result = await syncRevolut(supabase, client)
+
+    const fromParam = new URL(req.url).searchParams.get('from')
+    const fromDate = fromParam ? new Date(fromParam) : undefined
+
+    const result = await syncRevolut(supabase, client, { fromDate })
     if (!result.ok) return apiError(result.error ?? 'Synchronisatie mislukt', 502)
     return apiOk(result)
   } catch (err) {

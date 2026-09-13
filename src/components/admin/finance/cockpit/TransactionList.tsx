@@ -29,6 +29,18 @@ function Badge({ state }: { state: string }) {
 
 function ClassificationChip({ tx }: { tx: TransactionApiRow }) {
   const label = classificationLabel(tx)
+
+  if (tx.payout_record_id && tx.payout_channel) {
+    const channelName = tx.payout_channel.charAt(0).toUpperCase() + tx.payout_channel.slice(1)
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap" title={`Afgestemd met ${channelName} payout (${tx.payout_reference ?? ''})`}>
+        <span className="text-emerald-600 font-bold">✓</span>
+        <span>{channelName}</span>
+        {tx.payout_reference && <span className="text-[10px] text-emerald-600 font-mono">({tx.payout_reference})</span>}
+      </span>
+    )
+  }
+
   if (!label) {
     return <span className="inline-flex items-center rounded-full border border-dashed border-zinc-200 px-2 py-0.5 text-[11px] text-zinc-400 whitespace-nowrap">Nog niet geclassificeerd</span>
   }

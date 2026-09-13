@@ -29,6 +29,9 @@ import { SettingsModal, settingsPayloadFrom } from '@/components/admin/finance/c
 import { ManualCashModal } from '@/components/admin/finance/cockpit/ManualCashModal'
 import { RevolutConnectCard, REVOLUT_API, syncSummary } from '@/components/admin/finance/cockpit/RevolutConnectCard'
 import { TransactionList } from '@/components/admin/finance/cockpit/TransactionList'
+import { FinancialPieCharts } from '@/components/admin/finance/cockpit/FinancialPieCharts'
+import { CfoAnalysisCard } from '@/components/admin/finance/cockpit/CfoAnalysisCard'
+import type { CfoAnalysisResult } from '@/lib/finance/cockpit/cfo/types'
 import {
   COCKPIT_API,
   type ObligationApiRow,
@@ -106,6 +109,7 @@ export default function FinanceOverviewPage() {
   const { data: recentTx, refresh: refreshRecentTx } = useAdminFetch<TransactionsResponse>(
     revolutConnected ? `${COCKPIT_API}/transactions?limit=5` : null,
   )
+  const { data: initialCfo, refresh: refreshCfo } = useAdminFetch<CfoAnalysisResult>(`${COCKPIT_API}/cfo-analysis`)
   // The card is always shown while not connected; once connected it only
   // appears when Revolut just sent us back here (?revolut=…) or Beer opened
   // it from the header. Initial value read once — the query is stripped below.
@@ -146,7 +150,8 @@ export default function FinanceOverviewPage() {
     refreshObligations()
     refreshRevolut()
     refreshRecentTx()
-  }, [refresh, refreshSettings, refreshObligations, refreshRevolut, refreshRecentTx])
+    refreshCfo()
+  }, [refresh, refreshSettings, refreshObligations, refreshRevolut, refreshRecentTx, refreshCfo])
 
   const [syncingObligations, setSyncingObligations] = useState(false)
 
@@ -297,7 +302,7 @@ export default function FinanceOverviewPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold text-zinc-900">Financieel overzicht</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-900">Financieel overzicht</h1>
           <p className="text-sm text-zinc-500 mt-1">Wat kan Off Course verantwoord doen met zijn geld?</p>
           <p className="text-xs text-zinc-400 mt-1">
             Laatst bijgewerkt: {cash.asOf
@@ -307,7 +312,7 @@ export default function FinanceOverviewPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div role="group" aria-label="Planningshorizon" className="inline-flex rounded-full border border-zinc-200 bg-white p-1 shadow-sm">
+          <div role="group" aria-label="Planningshorizon" className="inline-flex rounded-full border border-zinc-200 bg-white p-1 shadow-sm overflow-x-auto max-w-full">
             {HORIZONS.map(h => {
               const active = h === activeHorizon
               const parts = getHorizonPillParts(h, data?.today)
@@ -317,8 +322,8 @@ export default function FinanceOverviewPage() {
                   type="button"
                   onClick={() => changeHorizon(h)}
                   aria-pressed={active}
-                  className={`min-h-[36px] sm:min-h-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
-                    active ? 'bg-zinc-900 text-white' : 'text-zinc-600 hover:text-zinc-900'
+                  className={`min-h-[38px] sm:min-h-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors whitespace-nowrap ${
+                    active ? 'bg-zinc-900 text-white shadow-xs' : 'text-zinc-600 hover:text-zinc-900'
                   }`}
                 >
                   <span>{parts.prefix} </span>
@@ -336,6 +341,7 @@ export default function FinanceOverviewPage() {
             disabled={isLoading || syncing}
             aria-label="Ververs"
             title={revolutConnected ? 'Haalt saldo en transacties op bij Revolut' : 'Herlaadt het overzicht'}
+            className="min-h-[38px] sm:min-h-0"
           >
             {isLoading || syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">Ververs</span>
@@ -347,11 +353,18 @@ export default function FinanceOverviewPage() {
             aria-pressed={revolutCardOpen}
             aria-label="Revolut"
             title="Revolut-koppeling"
+            className="min-h-[38px] sm:min-h-0"
           >
             <Landmark className={`w-3.5 h-3.5 ${revolutConnected ? 'text-emerald-600' : ''}`} />
             <span className="hidden sm:inline">Revolut</span>
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)} aria-label="Instellingen">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setSettingsOpen(true)}
+            aria-label="Instellingen"
+            className="min-h-[38px] sm:min-h-0"
+          >
             <Settings2 className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Instellingen</span>
           </Button>
@@ -446,6 +459,12 @@ export default function FinanceOverviewPage() {
           reserveOverrunCents={data.reserveOverrunCents}
         />
       </section>
+
+      {/* Visual Pie Charts: Kostenverdeling, Omzetkanalen, Omzet vs Kosten */}
+      <FinancialPieCharts />
+
+      {/* 1-Click AI Fractional CFO Analysis */}
+      <CfoAnalysisCard initialAnalysis={initialCfo} onRefreshAll={refreshAll} />
 
       {/* Two cards */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

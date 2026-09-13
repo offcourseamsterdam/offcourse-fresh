@@ -302,6 +302,11 @@ export interface TransactionApiRow {
   classification_reason: string | null
   needs_review: boolean
   reviewed_at: string | null
+  payout_channel?: string | null
+  payout_record_id?: string | null
+  payout_reference?: string | null
+  reconciled_at?: string | null
+  vat_cents?: number | null
 }
 
 export interface TransactionsResponse {

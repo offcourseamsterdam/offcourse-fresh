@@ -17,6 +17,7 @@
 
 import { daysBetween, type ISODate } from '../dates'
 import { directionAllows, isCategory, type Category } from './taxonomy'
+import { matchTransactionToPayout, type CandidatePool } from '../reconcile/channel-matcher'
 
 // ── Inputs ───────────────────────────────────────────────────────────────────
 
@@ -84,6 +85,8 @@ export interface RuleContext {
   learnedRules: LearnedRule[]
   /** Names of Revolut accounts we own, so transfers between them are internal. */
   ownAccountNames?: string[]
+  /** Pool of unlinked channel payouts for automatic kasboek reconciliation. */
+  payoutPool?: CandidatePool
 }
 
 export interface Classification {
@@ -98,6 +101,10 @@ export interface Classification {
   source: 'rule' | 'ai' | 'user'
   /** Which learned rule fired, so we can bump its hit count. */
   ruleId?: string | null
+  payoutChannel?: string | null
+  payoutRecordId?: string | null
+  payoutReference?: string | null
+  vatCents?: number | null
 }
 
 // ── Known counterparties ─────────────────────────────────────────────────────
@@ -167,10 +174,12 @@ const EXPENSE_PATTERN_LIST: ExpensePattern[] = [
   { match: 'slack', category: 'operating', subcategory: 'software', label: 'Slack' },
   { match: 'figma', category: 'operating', subcategory: 'software', label: 'Figma' },
   { match: 'apple.com/bill', category: 'operating', subcategory: 'software', label: 'Apple' },
-  // Marketing
+  // Marketing & Affiliates
   { match: 'google ads', category: 'operating', subcategory: 'marketing', label: 'Google Ads' },
   { match: 'meta platforms', category: 'operating', subcategory: 'marketing', label: 'Meta' },
   { match: 'facebook', category: 'operating', subcategory: 'marketing', label: 'Meta' },
+  { match: 'thingstodo', category: 'operating', subcategory: 'commissions', label: 'Things To Do In Amsterdam' },
+  { match: 'things to do', category: 'operating', subcategory: 'commissions', label: 'Things To Do In Amsterdam' },
   // Fuel and charging
   { match: 'shell', category: 'operating', subcategory: 'fuel', label: 'Shell' },
   { match: 'allego', category: 'operating', subcategory: 'fuel', label: 'Allego' },
@@ -301,6 +310,24 @@ export function classifyStructural(tx: ClassifiableTransaction, ctx: RuleContext
 
   // Money in from a channel we already reconcile in the kasboek.
   if (!outgoing) {
+    if (ctx.payoutPool) {
+      const payoutMatch = matchTransactionToPayout(tx, ctx.payoutPool)
+      if (payoutMatch) {
+        return rule('income', 'booking', payoutMatch.confidence, payoutMatch.reason, {
+          payoutChannel: payoutMatch.channel,
+          payoutRecordId: payoutMatch.recordId,
+          payoutReference: payoutMatch.reference,
+          vatCents: payoutMatch.vat9Cents + payoutMatch.vat21Cents,
+        })
+      }
+    }
+    // Specific check: PayPal deposits into Revolut are Zettle onboard card sweeps (drinks & bar)
+    if (containsWord(text, 'paypal') || containsWord(text, 'zettle')) {
+      return rule('income', 'onboard', 0.95, 'Zettle pin-betalingen aan boord (PayPal uitbetaling)', {
+        payoutChannel: 'zettle',
+      })
+    }
+
     const channel = matchesAny(text, REVENUE_SOURCES)
     if (channel) return rule('income', 'booking', 1, `Uitbetaling van ${channel.label}`, {})
     const processor = matchesAny(text, PROCESSORS)

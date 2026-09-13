@@ -114,7 +114,29 @@ export default function FinanceTransactionsPage() {
     }
   }
 
+  const [reconciling, setReconciling] = useState(false)
+  const [reconcileResult, setReconcileResult] = useState<string | null>(null)
+
   const filtersActive = Boolean(state || direction || needsReview || q)
+
+  async function handleReconcile() {
+    setReconciling(true)
+    setReconcileResult(null)
+    try {
+      const res = await fetch(`${COCKPIT_API}/transactions/reconcile-payouts`, { method: 'POST' })
+      const json = await res.json()
+      if (json.ok) {
+        setReconcileResult(`${json.data.reconciled} uitbetalingen automatisch gekoppeld`)
+        mutate()
+      } else {
+        setReconcileResult(`Fout bij koppelen: ${json.error ?? 'Onbekende fout'}`)
+      }
+    } catch {
+      setReconcileResult('Fout bij uitvoeren van afstemming')
+    } finally {
+      setReconciling(false)
+    }
+  }
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl space-y-6">
@@ -130,6 +152,23 @@ export default function FinanceTransactionsPage() {
               {revolut?.lastSyncError && <span className="text-red-600"> · {revolut.lastSyncError}</span>}
             </p>
           )}
+          {reconcileResult && (
+            <p className="text-xs text-emerald-600 font-medium mt-1">
+              ✓ {reconcileResult}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleReconcile}
+            disabled={reconciling}
+            className="text-xs"
+          >
+            {reconciling ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
+            Kanalen afstemmen
+          </Button>
         </div>
       </div>
 

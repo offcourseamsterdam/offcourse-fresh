@@ -195,8 +195,10 @@ describe('admin route auth contract', () => {
     // loans (+ [id], [id]/payments/[paymentId]/mark-paid + /reopen, impact),
     // goals (+ [id], [id]/complete, [id]/events).
     // 212 = 211 + /api/admin/availability-sync (Manual trigger & health status for FareHarbor AI availability snapshots)
+    // 215 = 214 + /api/admin/finance/cockpit/transactions/reconcile-payouts
+    // 216 = 215 + /api/admin/finance/cockpit/cfo-analysis
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`214`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`216`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {

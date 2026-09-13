@@ -285,7 +285,11 @@ export type Database = {
           merchant: Json | null
           needs_review: boolean
           obligation_id: string | null
+          payout_channel: string | null
+          payout_record_id: string | null
+          payout_reference: string | null
           raw: Json
+          reconciled_at: string | null
           reference: string | null
           request_id: string | null
           reviewed_at: string | null
@@ -323,7 +327,11 @@ export type Database = {
           merchant?: Json | null
           needs_review?: boolean
           obligation_id?: string | null
+          payout_channel?: string | null
+          payout_record_id?: string | null
+          payout_reference?: string | null
           raw: Json
+          reconciled_at?: string | null
           reference?: string | null
           request_id?: string | null
           reviewed_at?: string | null
@@ -361,7 +369,11 @@ export type Database = {
           merchant?: Json | null
           needs_review?: boolean
           obligation_id?: string | null
+          payout_channel?: string | null
+          payout_record_id?: string | null
+          payout_reference?: string | null
           raw?: Json
+          reconciled_at?: string | null
           reference?: string | null
           request_id?: string | null
           reviewed_at?: string | null
@@ -451,6 +463,7 @@ export type Database = {
       }
       boatlocal_payout_batches: {
         Row: {
+          bank_transaction_id: string | null
           commission_ex_vat_cents: number | null
           created_at: string
           id: string
@@ -468,6 +481,7 @@ export type Database = {
           vat_9_in_payout_cents: number | null
         }
         Insert: {
+          bank_transaction_id?: string | null
           commission_ex_vat_cents?: number | null
           created_at?: string
           id?: string
@@ -485,6 +499,7 @@ export type Database = {
           vat_9_in_payout_cents?: number | null
         }
         Update: {
+          bank_transaction_id?: string | null
           commission_ex_vat_cents?: number | null
           created_at?: string
           id?: string
@@ -501,7 +516,15 @@ export type Database = {
           vat_21_cents?: number | null
           vat_9_in_payout_cents?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "boatlocal_payout_batches_bank_transaction_id_fkey"
+            columns: ["bank_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "bank_transactions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       boatlocal_payout_lines: {
         Row: {
@@ -3269,6 +3292,7 @@ export type Database = {
         Row: {
           account_number: string | null
           amount_cents: number | null
+          bank_transaction_id: string | null
           created_at: string
           id: string
           invoice_number: string | null
@@ -3280,6 +3304,7 @@ export type Database = {
         Insert: {
           account_number?: string | null
           amount_cents?: number | null
+          bank_transaction_id?: string | null
           created_at?: string
           id?: string
           invoice_number?: string | null
@@ -3291,6 +3316,7 @@ export type Database = {
         Update: {
           account_number?: string | null
           amount_cents?: number | null
+          bank_transaction_id?: string | null
           created_at?: string
           id?: string
           invoice_number?: string | null
@@ -3299,7 +3325,15 @@ export type Database = {
           raw_filename?: string | null
           storage_path?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "getyourguide_payments_bank_transaction_id_fkey"
+            columns: ["bank_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "bank_transactions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ghost_knowledge: {
         Row: {
@@ -5659,6 +5693,7 @@ export type Database = {
       viator_payment_batches: {
         Row: {
           advice_date: string | null
+          bank_transaction_id: string | null
           created_at: string
           document_number: string | null
           id: string
@@ -5668,6 +5703,7 @@ export type Database = {
         }
         Insert: {
           advice_date?: string | null
+          bank_transaction_id?: string | null
           created_at?: string
           document_number?: string | null
           id?: string
@@ -5677,6 +5713,7 @@ export type Database = {
         }
         Update: {
           advice_date?: string | null
+          bank_transaction_id?: string | null
           created_at?: string
           document_number?: string | null
           id?: string
@@ -5684,7 +5721,15 @@ export type Database = {
           storage_path?: string | null
           total_amount_cents?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "viator_payment_batches_bank_transaction_id_fkey"
+            columns: ["bank_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "bank_transactions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       viator_payment_lines: {
         Row: {

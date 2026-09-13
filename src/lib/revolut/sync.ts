@@ -82,7 +82,7 @@ export interface SyncResult {
   error?: string
 }
 
-export async function syncRevolut(supabase: Admin, client: RevolutClient, opts: { now?: Date } = {}): Promise<SyncResult> {
+export async function syncRevolut(supabase: Admin, client: RevolutClient, opts: { now?: Date; fromDate?: Date } = {}): Promise<SyncResult> {
   const now = opts.now ?? new Date()
   const syncedAt = now.toISOString()
   const { data: conn, error: connErr } = await supabase.from('revolut_connection').select('*').eq('id', 'default').maybeSingle()
@@ -104,7 +104,9 @@ export async function syncRevolut(supabase: Admin, client: RevolutClient, opts: 
     })
     if (snapErr) throw new Error(snapErr.message)
 
-    const fromDate = conn.last_sync_at
+    const fromDate = opts.fromDate
+      ? opts.fromDate
+      : conn.last_sync_at
       ? new Date(new Date(conn.last_sync_at).getTime() - LOOKBACK_DAYS * 86_400_000)
       : new Date(now.getTime() - FIRST_SYNC_DAYS * 86_400_000)
     const txs = await client.listTransactionsSince(fromDate.toISOString(), undefined, { account: account.id })

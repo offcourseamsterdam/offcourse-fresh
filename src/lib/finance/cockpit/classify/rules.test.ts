@@ -90,9 +90,15 @@ describe('classifyStructural — income', () => {
   })
 
   it('treats a processor payout as booking revenue with slightly lower confidence', () => {
-    const c = classifyStructural(tx({ amountCents: 91000, description: 'Payment from Paypal Pte. Ltd.' }), ctx())
+    const c = classifyStructural(tx({ amountCents: 91000, description: 'Payment from Mollie B.V.' }), ctx())
     expect(c).toMatchObject({ category: 'income', subcategory: 'booking' })
     expect(c!.confidence).toBeLessThan(1)
+  })
+
+  it('treats PayPal / Zettle sweep as onboard bar income', () => {
+    const c = classifyStructural(tx({ amountCents: 91000, description: 'Payment from Paypal Pte. Ltd.' }), ctx())
+    expect(c).toMatchObject({ category: 'income', subcategory: 'onboard' })
+    expect(c!.confidence).toBeGreaterThanOrEqual(0.9)
   })
 
   it('does not turn an outgoing payment to Stripe into income', () => {

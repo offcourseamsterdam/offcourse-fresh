@@ -175,6 +175,25 @@ export function TransactionReviewModal({ open, transaction, onClose, onSaved }: 
             {transaction.needs_review && ' · controle nodig'}
           </p>
         )}
+        {transaction.payout_record_id && (
+          <div className="mt-2 pt-2 border-t border-zinc-100 flex items-center justify-between text-xs">
+            <span className="inline-flex items-center gap-1.5 text-emerald-700 font-medium">
+              <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
+              Gekoppeld aan {transaction.payout_channel?.toUpperCase() ?? 'KASBOEK'} ({transaction.payout_reference})
+              {transaction.vat_cents != null && transaction.vat_cents > 0 && (
+                <span className="text-zinc-500 font-normal">· btw {eurCents(transaction.vat_cents)}</span>
+              )}
+            </span>
+            <a
+              href={`/admin/finance?channel=${encodeURIComponent(transaction.payout_channel ?? '')}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-indigo-600 hover:text-indigo-800 underline font-medium"
+            >
+              Bekijk in Kasboek &rarr;
+            </a>
+          </div>
+        )}
         {transaction.classification_reason && (
           <p className="text-xs text-zinc-400 italic">&ldquo;{transaction.classification_reason}&rdquo;</p>
         )}

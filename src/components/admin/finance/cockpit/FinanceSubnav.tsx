@@ -18,6 +18,7 @@ interface SubnavItem {
  */
 const ITEMS: SubnavItem[] = [
   { href: '/admin/finance/overview', label: 'Overzicht' },
+  { href: '/admin/finance/scenarios', label: 'Scenario Planner' },
   { href: '/admin/finance/goals', label: 'Doelen' },
   { href: '/admin/finance/loans', label: 'Leningen' },
   { href: '/admin/finance/transactions', label: 'Transacties' },
