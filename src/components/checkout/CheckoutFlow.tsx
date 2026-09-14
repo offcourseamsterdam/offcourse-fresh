@@ -168,6 +168,7 @@ export function CheckoutFlow({
               ),
           promoCodeId: promo?.promoCodeId,
           discountAmountCents: promo?.discountAmountCents,
+          sessionId: getSessionId(),
         }),
       })
       const json = await res.json()

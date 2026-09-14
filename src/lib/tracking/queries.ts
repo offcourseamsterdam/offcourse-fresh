@@ -533,12 +533,12 @@ export async function getConversionByListing(
   // Map slug → listing meta
   const bySlug = new Map(listings.map((l) => [l.slug, l]))
 
-  // Unique visitors per landed-on slug
-  const { data: sessions } = await supabase
-    .from('analytics_sessions')
-    .select('visitor_id, entry_page')
-    .gte('started_at', safeRange.from)
-    .lte('started_at', safeRange.to)
+  // Unique visitors per landed-on slug (paginated — no 1000-row cap)
+  const sessions = await fetchAllSessions<{ visitor_id: string; entry_page: string | null }>(
+    supabase,
+    safeRange,
+    'visitor_id, entry_page',
+  )
 
   const visitorsBySlug = new Map<string, Set<string>>()
   for (const s of sessions ?? []) {
@@ -608,41 +608,62 @@ export async function getEntryFunnel(
   range: DateRange,
 ): Promise<EntryFunnelStage[]> {
   const safeRange = clampRange(range)
-  const { data: sessions } = await supabase
-    .from('analytics_sessions')
-    .select('visitor_id, entry_page, exit_page')
-    .gte('started_at', safeRange.from)
-    .lte('started_at', safeRange.to)
+  const [sessions, bookingsRes] = await Promise.all([
+    fetchAllSessions<{
+      id: string
+      visitor_id: string | null
+      entry_page: string | null
+      exit_page: string | null
+      reached_checkout?: boolean | null
+    }>(supabase, safeRange, 'id, visitor_id, entry_page, exit_page, reached_checkout'),
+    supabase
+      .from('bookings')
+      .select('id, session_id')
+      .eq('status', 'confirmed')
+      .in('booking_source', ['website', 'stripe_recovery'])
+      .gte('created_at', safeRange.from)
+      .lte('created_at', safeRange.to),
+  ])
+
+  const bookings = bookingsRes.data ?? []
+  const bookedSessionIds = new Set(bookings.map((b) => b.session_id).filter((id): id is string => !!id))
+  const bookedCount = bookings.length
 
   const all = new Set<string>()
   const reachedCruise = new Set<string>()
   const reachedCheckout = new Set<string>()
 
   const touchesCruise = (p: string | null) => !!p && (/\/cruises\//.test(p) || /\/book\//.test(p))
-  const touchesCheckout = (p: string | null) => !!p && /\/book\/.+\/checkout/.test(p)
+  const touchesCheckout = (p: string | null) => !!p && (/\/book\/.+\/checkout/.test(p) || /\/checkout/.test(p))
+  const touchesConfirmation = (p: string | null) => !!p && (/\/book\/.+\/confirmation/.test(p) || /\/confirmation/.test(p))
 
-  for (const s of sessions ?? []) {
+  for (const s of sessions) {
     if (!s.visitor_id) continue
     all.add(s.visitor_id)
-    if (touchesCruise(s.entry_page) || touchesCruise(s.exit_page)) reachedCruise.add(s.visitor_id)
-    if (touchesCheckout(s.entry_page) || touchesCheckout(s.exit_page)) reachedCheckout.add(s.visitor_id)
-  }
 
-  // Booked stage from the source-of-truth bookings table (count, not visitors).
-  const { count: bookedCount } = await supabase
-    .from('bookings')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'confirmed')
-    .in('booking_source', ['website', 'stripe_recovery'])
-    .gte('created_at', safeRange.from)
-    .lte('created_at', safeRange.to)
+    const isCheckout =
+      Boolean(s.reached_checkout) ||
+      touchesCheckout(s.entry_page) ||
+      touchesCheckout(s.exit_page) ||
+      touchesConfirmation(s.entry_page) ||
+      touchesConfirmation(s.exit_page) ||
+      bookedSessionIds.has(s.id)
+
+    const isCruise =
+      isCheckout ||
+      touchesCruise(s.entry_page) ||
+      touchesCruise(s.exit_page)
+
+    if (isCruise) reachedCruise.add(s.visitor_id)
+    if (isCheckout) reachedCheckout.add(s.visitor_id)
+  }
 
   const total = all.size
   const stages = [
     { key: 'visitors', label: 'All visitors', visitors: total },
     { key: 'reached_cruise', label: 'Reached a cruise page', visitors: reachedCruise.size },
     { key: 'reached_checkout', label: 'Reached checkout', visitors: reachedCheckout.size },
-    { key: 'booked', label: 'Booked', visitors: bookedCount ?? 0 },
+    { key: 'booked', label: 'Booked', visitors: bookedCount },
   ]
 
   return stages.map((s, i) => ({
@@ -737,26 +758,56 @@ export async function getDeviceMetrics(
   range: DateRange,
 ): Promise<DeviceMetrics[]> {
   const safeRange = clampRange(range)
-  const { data: sessions } = await supabase
-    .from('analytics_sessions')
-    .select('visitor_id, device_type, entry_page, exit_page')
-    .gte('started_at', safeRange.from)
-    .lte('started_at', safeRange.to)
+  const [sessions, bookingsRes] = await Promise.all([
+    fetchAllSessions<{
+      id: string
+      visitor_id: string | null
+      device_type: string | null
+      entry_page: string | null
+      exit_page: string | null
+      reached_checkout?: boolean | null
+    }>(supabase, safeRange, 'id, visitor_id, device_type, entry_page, exit_page, reached_checkout'),
+    supabase
+      .from('bookings')
+      .select('session_id')
+      .eq('status', 'confirmed')
+      .in('booking_source', ['website', 'stripe_recovery'])
+      .gte('created_at', safeRange.from)
+      .lte('created_at', safeRange.to),
+  ])
+
+  const bookings = bookingsRes.data ?? []
+  const bookedSessionIds = new Set(bookings.map((b) => b.session_id).filter((id): id is string => !!id))
 
   const touchesCruise = (p: string | null) => !!p && (/\/cruises\//.test(p) || /\/book\//.test(p))
-  const touchesCheckout = (p: string | null) => !!p && /\/book\/.+\/checkout/.test(p)
+  const touchesCheckout = (p: string | null) => !!p && (/\/book\/.+\/checkout/.test(p) || /\/checkout/.test(p))
+  const touchesConfirmation = (p: string | null) => !!p && (/\/book\/.+\/confirmation/.test(p) || /\/confirmation/.test(p))
 
   // Per device → sets of unique visitors at each stage
   type Stage = { all: Set<string>; cruise: Set<string>; checkout: Set<string> }
   const byDevice = new Map<string, Stage>()
 
-  for (const s of sessions ?? []) {
+  for (const s of sessions) {
     if (!s.visitor_id) continue
     const device = s.device_type ?? 'unknown'
     const stage = byDevice.get(device) ?? { all: new Set(), cruise: new Set(), checkout: new Set() }
     stage.all.add(s.visitor_id)
-    if (touchesCruise(s.entry_page) || touchesCruise(s.exit_page)) stage.cruise.add(s.visitor_id)
-    if (touchesCheckout(s.entry_page) || touchesCheckout(s.exit_page)) stage.checkout.add(s.visitor_id)
+
+    const isCheckout =
+      Boolean(s.reached_checkout) ||
+      touchesCheckout(s.entry_page) ||
+      touchesCheckout(s.exit_page) ||
+      touchesConfirmation(s.entry_page) ||
+      touchesConfirmation(s.exit_page) ||
+      bookedSessionIds.has(s.id)
+
+    const isCruise =
+      isCheckout ||
+      touchesCruise(s.entry_page) ||
+      touchesCruise(s.exit_page)
+
+    if (isCruise) stage.cruise.add(s.visitor_id)
+    if (isCheckout) stage.checkout.add(s.visitor_id)
     byDevice.set(device, stage)
   }
 

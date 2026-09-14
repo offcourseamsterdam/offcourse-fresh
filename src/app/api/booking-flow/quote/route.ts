@@ -36,7 +36,10 @@ export async function POST(request: NextRequest) {
       extraQuantities = {},
       promoCodeId,
       customerTypeRates,
+      sessionId,
     } = body
+
+    const sid = request.cookies.get('oc_sid')?.value ?? (sessionId ? String(sessionId) : null)
 
     if (!listingId || !availPk || !customerTypeRatePk) {
       return apiError('Missing required fields (listingId, availPk, customerTypeRatePk)', 400)
@@ -101,6 +104,14 @@ export async function POST(request: NextRequest) {
     if (insertError || !quoteRow) {
       console.error('[quote] failed to persist quote', insertError)
       return apiError('Could not generate quote — please refresh and try again')
+    }
+
+    // Defensive: ensure the session is marked as having reached checkout
+    if (sid) {
+      void supabase
+        .from('analytics_sessions')
+        .update({ reached_checkout: true, updated_at: new Date().toISOString() })
+        .eq('id', sid)
     }
 
     console.log('[quote] issued', {

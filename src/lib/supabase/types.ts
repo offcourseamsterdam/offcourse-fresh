@@ -174,6 +174,7 @@ export type Database = {
           ip_address: string | null
           is_bounce: boolean | null
           page_count: number | null
+          reached_checkout: boolean
           referrer: string | null
           session_duration: number | null
           started_at: string | null
@@ -201,6 +202,7 @@ export type Database = {
           ip_address?: string | null
           is_bounce?: boolean | null
           page_count?: number | null
+          reached_checkout?: boolean
           referrer?: string | null
           session_duration?: number | null
           started_at?: string | null
@@ -228,6 +230,7 @@ export type Database = {
           ip_address?: string | null
           is_bounce?: boolean | null
           page_count?: number | null
+          reached_checkout?: boolean
           referrer?: string | null
           session_duration?: number | null
           started_at?: string | null
