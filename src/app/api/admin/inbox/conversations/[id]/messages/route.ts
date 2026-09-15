@@ -52,6 +52,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         .select('email')
         .eq('id', conversation.contact_id)
         .maybeSingle()
+      const forwardTo = typeof json?.forwardTo === 'string' && json.forwardTo.trim() ? json.forwardTo.trim() : null
+      const targetEmail = forwardTo ?? contact?.email
       const { data: lastInbound } = await supabase
         .from('messages')
         .select('provider_message_id')
@@ -62,14 +64,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         .limit(1)
         .maybeSingle()
 
-      if (!contact?.email || !conversation.provider_thread_id) {
+      if (!targetEmail || !conversation.provider_thread_id) {
         gmailSendError = 'Missing recipient email or Gmail thread id'
       } else {
         try {
+          const subject = forwardTo
+            ? (conversation.subject?.startsWith('Fwd:') ? conversation.subject : `Fwd: ${conversation.subject ?? ''}`)
+            : (conversation.subject ?? '')
           gmailSend = await sendGmailReply({
             threadId: conversation.provider_thread_id,
-            to: contact.email,
-            subject: conversation.subject ?? '',
+            to: targetEmail,
+            subject,
             body: parsed.message,
             inReplyToMessageId: lastInbound?.provider_message_id ?? null,
           })

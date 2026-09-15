@@ -44,7 +44,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
       loadContactBookings(supabase, conversation.contact, conversation.booking_id),
       loadGhostProposals(supabase, id, !!conversation.ota_source),
       conversation.source_category === 'finance' ? loadFinanceInvoices(supabase, id) : Promise.resolve([]),
-      conversation.source_category === 'finance' ? loadFinanceDocuments(supabase, id) : Promise.resolve([]),
+      conversation.source_category === 'finance' ? loadFinanceDocuments(supabase, id, conversation.contact?.email) : Promise.resolve([]),
     ])
     if (msgError) return apiError(msgError.message)
 
@@ -130,11 +130,17 @@ async function loadFinanceInvoices(supabase: ReturnType<typeof createAdminClient
   }))
 }
 
+import { checkClaimedShiftsAgainstPlanning } from '@/lib/finance/expenses/skipper-shifts'
+
 /**
  * Every finance_documents row filed from an email in this thread (supplier
  * invoices, webshop receipts, order confirmations, etc.) — newest first.
  */
-async function loadFinanceDocuments(supabase: ReturnType<typeof createAdminClient>, conversationId: string) {
+async function loadFinanceDocuments(
+  supabase: ReturnType<typeof createAdminClient>,
+  conversationId: string,
+  contactEmail?: string | null,
+) {
   const { data } = await supabase
     .from('finance_documents')
     .select(
@@ -146,7 +152,7 @@ async function loadFinanceDocuments(supabase: ReturnType<typeof createAdminClien
     .order('created_at', { ascending: false })
     .limit(10)
 
-  const docs = (data ?? []).map(({ message: _message, ...doc }) => doc)
+  let docs = (data ?? []).map(({ message: _message, ...doc }) => doc)
   if (docs.length === 0) return []
 
   const invNumbers = docs
@@ -161,7 +167,7 @@ async function loadFinanceDocuments(supabase: ReturnType<typeof createAdminClien
 
     if (batches && batches.length > 0) {
       const batchMap = new Map(batches.map(b => [b.invoice_number, b]))
-      return docs.map(doc => {
+      docs = docs.map(doc => {
         const invNum = (doc.extracted as Record<string, unknown> | null)?.invoiceNumber as string | undefined
         const batch = invNum ? batchMap.get(invNum) : undefined
         return batch ? { ...doc, boatlocalPayout: batch } : doc
@@ -169,7 +175,34 @@ async function loadFinanceDocuments(supabase: ReturnType<typeof createAdminClien
     }
   }
 
-  return docs
+  // Check claimed shifts against planning for each document with line items
+  const enrichedDocs = await Promise.all(
+    docs.map(async doc => {
+      const ext = doc.extracted as Record<string, unknown> | null
+      const lineItems = ext?.lineItems as Array<{
+        description?: string | null
+        date?: string | null
+        hours?: number | null
+        rateCents?: number | null
+        amountCents?: number | null
+      }> | undefined
+
+      if (Array.isArray(lineItems) && lineItems.length > 0) {
+        const validation = await checkClaimedShiftsAgainstPlanning(supabase, {
+          lineItems,
+          supplierName: (ext?.supplierName as string) ?? null,
+          iban: (ext?.iban as string) ?? null,
+          contactEmail,
+        })
+        if (validation) {
+          return { ...doc, claimedShiftsValidation: validation }
+        }
+      }
+      return doc
+    }),
+  )
+
+  return enrichedDocs
 }
 
 /** The narrowed columns we pull per proposal — never the whole payload/outcome. */

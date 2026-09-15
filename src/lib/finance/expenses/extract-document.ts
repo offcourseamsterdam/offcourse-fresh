@@ -17,6 +17,15 @@ import { GEMINI_MODEL, getGemini } from '@/lib/ai/clients'
 import { recordAiUsage } from '@/lib/ai/usage'
 import { extractJson } from '@/lib/ghost/ops-drafters'
 
+export interface DocumentLineItem {
+  description: string | null
+  /** YYYY-MM-DD */
+  date: string | null
+  hours: number | null
+  rateCents: number | null
+  amountCents: number | null
+}
+
 export interface DocumentFields {
   supplierName: string | null
   orderNumber: string | null
@@ -32,6 +41,8 @@ export interface DocumentFields {
   paymentReference: string | null
   /** 'invoice' | 'receipt' | 'order_confirmation' | 'other' — what the document itself is. */
   documentKind: 'invoice' | 'receipt' | 'order_confirmation' | 'other' | null
+  /** Specific line items on an invoice, especially dates/hours/rates of tours or shifts claimed by a skipper/supplier. */
+  lineItems?: DocumentLineItem[]
 }
 
 export type DocumentConfidence = Partial<Record<keyof DocumentFields, number>>
@@ -75,11 +86,17 @@ Fields:
 - currency: ISO code, e.g. "EUR"
 - iban: the IBAN to pay, letters and digits only, no spaces, only if printed
 - payment_reference: a payment reference / betalingskenmerk / "omschrijving" the payer was asked to use, if printed
+- line_items: if the document contains line items (especially for skippers or freelancers detailing cruises, shifts, dates, hours, or rates), extract each line item as an array of objects:
+  - description: description of the service/item
+  - date: date of the tour/shift as YYYY-MM-DD if mentioned on the line item
+  - hours: number of hours (e.g. 3.5, 4) if mentioned
+  - rate_cents: hourly rate or unit price in EURO CENTS (e.g. €25.00 = 2500)
+  - amount_cents: line item total in EURO CENTS
 
 Also return a confidence score (0 to 1) per field: 1 = clearly and unambiguously printed, lower = unclear, 0 = not found.
 
 Return JSON only, in this exact shape:
-{"document_kind":"invoice","supplier_name":"...","order_number":"...","invoice_number":"...","invoice_date":"YYYY-MM-DD","gross_cents":0,"net_cents":0,"vat_cents":0,"vat_rate_pct":0,"currency":"EUR","iban":"...","payment_reference":"...","confidence":{"document_kind":1,"supplier_name":1,"order_number":1,"invoice_number":1,"invoice_date":1,"gross_cents":1,"net_cents":1,"vat_cents":1,"vat_rate_pct":1,"currency":1,"iban":1,"payment_reference":1}}`
+{"document_kind":"invoice","supplier_name":"...","order_number":"...","invoice_number":"...","invoice_date":"YYYY-MM-DD","gross_cents":0,"net_cents":0,"vat_cents":0,"vat_rate_pct":0,"currency":"EUR","iban":"...","payment_reference":"...","line_items":[{"description":"...","date":"YYYY-MM-DD","hours":4,"rate_cents":2500,"amount_cents":10000}],"confidence":{"document_kind":1,"supplier_name":1,"order_number":1,"invoice_number":1,"invoice_date":1,"gross_cents":1,"net_cents":1,"vat_cents":1,"vat_rate_pct":1,"currency":1,"iban":1,"payment_reference":1}}`
 
 /** Pure: validates + normalises the model's JSON. Null when the shape is unusable. */
 export function parseDocumentExtraction(raw: Record<string, unknown> | null): DocumentExtraction | null {
@@ -114,6 +131,32 @@ export function parseDocumentExtraction(raw: Record<string, unknown> | null): Do
   const kind = typeof kindRaw === 'string' && KINDS.has(kindRaw) ? (kindRaw as DocumentFields['documentKind']) : null
   fields.documentKind = kind
   confidence.documentKind = conf('document_kind', kind !== null)
+
+  // Parse line items if present
+  if (Array.isArray(raw.line_items)) {
+    const items: DocumentLineItem[] = []
+    for (const item of raw.line_items) {
+      if (!item || typeof item !== 'object') continue
+      const desc = typeof item.description === 'string' && item.description.trim() ? item.description.trim() : null
+      const d = typeof item.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.date.trim()) ? item.date.trim() : null
+      const h = typeof item.hours === 'number' && Number.isFinite(item.hours) && item.hours > 0 ? item.hours : null
+      const rate = typeof item.rate_cents === 'number' && Number.isFinite(item.rate_cents) && item.rate_cents >= 0 ? Math.round(item.rate_cents) : null
+      const amt = typeof item.amount_cents === 'number' && Number.isFinite(item.amount_cents) && item.amount_cents >= 0 ? Math.round(item.amount_cents) : null
+
+      if (desc !== null || d !== null || h !== null || rate !== null || amt !== null) {
+        items.push({
+          description: desc,
+          date: d,
+          hours: h,
+          rateCents: rate,
+          amountCents: amt,
+        })
+      }
+    }
+    if (items.length > 0) {
+      fields.lineItems = items
+    }
+  }
 
   // Normalise the IBAN the way the pay path expects it.
   if (typeof fields.iban === 'string') fields.iban = fields.iban.replace(/\s+/g, '').toUpperCase()

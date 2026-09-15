@@ -63,6 +63,22 @@ describe('parseDocumentExtraction', () => {
     expect(r.confidence.invoiceNumber).toBe(0)
   })
 
+  it('parses line items for cruises or shifts when present', () => {
+    const raw = {
+      ...BOL,
+      line_items: [
+        { description: 'Vaartocht 25 aug', date: '2026-08-25', hours: 4.5, rate_cents: 2500, amount_cents: 11250 },
+        { description: 'Vaartocht 5 sep', date: '2026-09-05', hours: 6, rate_cents: 2500, amount_cents: 15000 },
+        { description: null, date: 'invalid-date', hours: -1 },
+      ],
+    }
+    const r = parseDocumentExtraction(raw)!
+    expect(r.fields.lineItems).toEqual([
+      { description: 'Vaartocht 25 aug', date: '2026-08-25', hours: 4.5, rateCents: 2500, amountCents: 11250 },
+      { description: 'Vaartocht 5 sep', date: '2026-09-05', hours: 6, rateCents: 2500, amountCents: 15000 },
+    ])
+  })
+
   it('garbage in → null out', () => {
     expect(parseDocumentExtraction(null)).toBeNull()
   })

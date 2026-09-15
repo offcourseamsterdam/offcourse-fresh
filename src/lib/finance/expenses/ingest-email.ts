@@ -243,7 +243,7 @@ async function storeDocument(supabase: Admin, input: StoreInput): Promise<string
   if (!dup && doc) {
     try {
       const extraction = await extractDocumentFields(input.bytes.toString('base64'), input.mimeType)
-      await supabase.from('finance_documents').update({ extracted: { ...extraction.fields, confidence: extraction.confidence } as Json }).eq('id', doc.id)
+      await supabase.from('finance_documents').update({ extracted: { ...extraction.fields, confidence: extraction.confidence } as unknown as Json }).eq('id', doc.id)
     } catch (err) {
       console.error(`[finance/expenses/ingest-email] extraction failed for ${input.originalFilename}:`, err instanceof Error ? err.message : err)
     }

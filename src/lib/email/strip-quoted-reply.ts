@@ -31,8 +31,10 @@ export function stripQuotedReply(html: string): string {
     doc.querySelectorAll(selector).forEach(el => el.remove())
   })
   removeOutlookQuote(doc)
-  // If stripping left nothing (e.g. an unrecognized quote shape ate the real
-  // content), show the original rather than an empty bubble.
-  const stripped = doc.body.innerHTML.trim()
-  return stripped || html
+  // If stripping left nothing or only whitespace/empty tags (e.g. in a forwarded email
+  // where the entire body is inside .gmail_quote, or an unrecognized quote shape),
+  // show the original rather than an empty bubble.
+  const hasVisibleText = (doc.body.textContent ?? '').trim().length > 0
+  const hasVisibleMedia = doc.body.querySelector('img, video, audio, table, iframe') !== null
+  return hasVisibleText || hasVisibleMedia ? doc.body.innerHTML : html
 }

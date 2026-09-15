@@ -1273,6 +1273,52 @@ function FinanceDocumentReview({
         </div>
       )}
 
+      {/* Geclaimde tochten / uren controle tegen schippersplanning */}
+      {doc.claimedShiftsValidation && doc.claimedShiftsValidation.items.length > 0 && (
+        <div className="rounded-lg bg-zinc-50 border border-zinc-200/80 p-2 space-y-1.5 text-[11px]">
+          <div className="flex items-center justify-between gap-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            <span>Geclaimde tochten</span>
+            {doc.claimedShiftsValidation.staffName && (
+              <span className="text-zinc-400 font-normal lowercase">{doc.claimedShiftsValidation.staffName}</span>
+            )}
+          </div>
+          <div className="space-y-1">
+            {doc.claimedShiftsValidation.items.map((item, idx) => (
+              <div key={idx} className="flex items-start gap-1.5 leading-tight">
+                {item.hasScheduledShift ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                ) : (
+                  <span className="text-amber-600 font-bold shrink-0 select-none text-xs" title="Geen dienst gevonden in planning">
+                    ⚠️ !
+                  </span>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline justify-between gap-1">
+                    <span className={`font-medium ${item.hasScheduledShift ? 'text-zinc-800' : 'text-amber-900 font-semibold'}`}>
+                      {item.date ? dateNL(item.date) : item.description ?? 'Tocht'}
+                    </span>
+                    {item.hours != null && (
+                      <span className="text-zinc-500 font-normal">{item.hours} uur</span>
+                    )}
+                  </div>
+                  {item.hasScheduledShift && item.scheduledDetails && (
+                    <p className="text-[10px] text-emerald-700">{item.scheduledDetails}</p>
+                  )}
+                  {!item.hasScheduledShift && item.warning && (
+                    <p className="text-[10px] text-amber-700 font-medium">{item.warning}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          {!doc.claimedShiftsValidation.allMatched && (
+            <p className="text-[10px] text-amber-800 bg-amber-100/60 rounded px-1.5 py-0.5 font-medium mt-1">
+              Let op: {doc.claimedShiftsValidation.unmatchedCount} geclaimde tocht(en) komen niet overeen met de schippersplanning.
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="pt-2 border-t border-amber-50 space-y-2">
         {expense?.snelstart_sent_at ? (
           <p className="text-[11px] text-emerald-700 font-medium inline-flex items-center gap-1.5">

@@ -285,7 +285,7 @@ async function syncOneRevolutExpense(
     if (!dup && doc) {
       try {
         const extraction = await extractDocumentFields(bytes.toString('base64'), type.mimeType)
-        await supabase.from('finance_documents').update({ extracted: { ...extraction.fields, confidence: extraction.confidence } }).eq('id', doc.id)
+        await supabase.from('finance_documents').update({ extracted: { ...extraction.fields, confidence: extraction.confidence } as unknown as Json }).eq('id', doc.id)
       } catch (err) {
         console.error(`[finance/expenses/sync-revolut] receipt ${receiptId} extraction failed:`, err instanceof Error ? err.message : err)
         result.extractionFailures++

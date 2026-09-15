@@ -135,6 +135,23 @@ describe('POST inbox messages — email channel', () => {
     expect(h.conversationUpdatePayload).toMatchObject({ status: 'pending' })
   })
 
+  it('sends to forwardTo address when provided with Fwd: prefix', async () => {
+    h.sendGmailReply.mockResolvedValue({ id: 'sent-fwd-1' })
+
+    const res = await POST(mockReq({ direction: 'out', body: 'Doorsturen naar partner', forwardTo: 'collega@boatlocal.nl' }), { params: Promise.resolve({ id: 'c1' }) })
+    const json = await res.json()
+
+    expect(h.sendGmailReply).toHaveBeenCalledWith({
+      threadId: 'thread-1',
+      to: 'collega@boatlocal.nl',
+      subject: 'Fwd: Booking question',
+      body: 'Doorsturen naar partner',
+      inReplyToMessageId: 'gmail-in-1',
+    })
+    expect(res.status).toBe(200)
+    expect(json.data.message).toBeDefined()
+  })
+
   it('marks the message failed and returns an error (not a silent 200) when the Gmail send throws', async () => {
     h.sendGmailReply.mockRejectedValue(new Error('Gmail API 500'))
     h.insertedMessage = { id: 'm1', direction: 'out', body: 'x', author_name: 'Beer', status: 'failed', error: 'Gmail API 500', created_at: 'now' }

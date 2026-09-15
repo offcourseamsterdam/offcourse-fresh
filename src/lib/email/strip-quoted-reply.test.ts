@@ -48,4 +48,11 @@ describe('stripQuotedReply', () => {
     const result = stripQuotedReply(html)
     expect(result).toBe(html)
   })
+
+  it('falls back to the original HTML if remaining content outside quote is only whitespace and br tags', () => {
+    const html = '<div dir="ltr"><br><br><div class="gmail_quote">Forwarded content here</div></div>'
+    const result = stripQuotedReply(html)
+    expect(result).toBe(html)
+    expect(result).toContain('Forwarded content here')
+  })
 })

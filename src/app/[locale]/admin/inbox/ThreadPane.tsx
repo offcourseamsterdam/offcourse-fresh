@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, CalendarSearch, CheckCircle2, Clock, Languages, Loader2, PanelRightOpen, Send, StickyNote } from 'lucide-react'
+import { ArrowLeft, CalendarSearch, CheckCircle2, Clock, Forward, Languages, Loader2, PanelRightOpen, Send, StickyNote } from 'lucide-react'
 import { adminMutate } from '@/hooks/useAdminSave'
 import { formatAmsterdamTime } from '@/lib/utils'
 import { formatWindowRemaining } from '@/lib/whatsapp/window'
@@ -37,7 +37,8 @@ interface Translation {
 /** Middle pane — the thread, chronological, plus the Reply/Note composer. */
 export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed, onOpenContext, contextHasAction }: Props) {
   const { conversation, messages } = detail
-  const [mode, setMode] = useState<'out' | 'note'>('out')
+  const [mode, setMode] = useState<'out' | 'note' | 'forward'>('out')
+  const [forwardTo, setForwardTo] = useState('')
   const [draft, setDraft] = useState('')
 
   // A "Use this draft" click in the co-pilot drops its text into the composer.
@@ -101,14 +102,20 @@ export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed,
   async function send(e: React.FormEvent) {
     e.preventDefault()
     if (!draft.trim() || busy) return
+    if (mode === 'forward' && !forwardTo.trim()) {
+      setError('Vul een e-mailadres in om naar door te sturen')
+      return
+    }
     setBusy(true)
     setError(null)
     try {
       await adminMutate(`/api/admin/inbox/conversations/${conversation.id}/messages`, 'POST', {
         body: draft.trim(),
-        direction: mode,
+        direction: mode === 'forward' ? 'out' : mode,
+        ...(mode === 'forward' ? { forwardTo: forwardTo.trim() } : {}),
       })
       setDraft('')
+      if (mode === 'forward') setForwardTo('')
       onSent()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not send')
@@ -210,6 +217,15 @@ export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed,
           >
             Reply
           </button>
+          {isEmailThread && (
+            <button
+              type="button"
+              onClick={() => setMode('forward')}
+              className={`px-2.5 py-1 rounded-full text-xs font-medium inline-flex items-center gap-1 ${mode === 'forward' ? 'bg-blue-600 text-white' : 'text-zinc-500 hover:bg-zinc-100'}`}
+            >
+              <Forward className="w-3 h-3" /> Forward
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setMode('note')}
@@ -226,6 +242,21 @@ export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed,
           </button>
           {error && <span className="text-xs text-red-600 ml-2">{error}</span>}
         </div>
+
+        {mode === 'forward' && (
+          <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1.5 text-xs text-blue-900">
+            <span className="font-semibold shrink-0 text-blue-700">Doorsturen naar:</span>
+            <input
+              type="email"
+              value={forwardTo}
+              onChange={e => setForwardTo(e.target.value)}
+              placeholder="e.g. info@boatlocal.nl of collega@..."
+              className="flex-1 bg-white border border-blue-200 rounded px-2 py-1 text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+          </div>
+        )}
+
         <div className="flex items-end gap-2">
           <textarea
             value={draft}
@@ -236,22 +267,38 @@ export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed,
                 e.currentTarget.form?.requestSubmit()
               }
             }}
-            placeholder={mode === 'out' ? 'Reply to the customer…' : 'Internal note — the customer never sees this'}
+            placeholder={
+              mode === 'forward'
+                ? 'Optioneel bericht bij het doorsturen…'
+                : mode === 'out'
+                  ? 'Reply to the customer…'
+                  : 'Internal note — the customer never sees this'
+            }
             rows={2}
             maxLength={2000}
             className={`flex-1 rounded-lg border px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 ${
               mode === 'note'
                 ? 'border-amber-300 bg-amber-50 focus:ring-amber-300/40'
-                : 'border-zinc-300 focus:ring-zinc-400/30'
+                : mode === 'forward'
+                  ? 'border-blue-300 bg-blue-50/30 focus:ring-blue-400/30'
+                  : 'border-zinc-300 focus:ring-zinc-400/30'
             }`}
           />
           <button
             type="submit"
-            disabled={busy || !draft.trim()}
-            className="w-11 h-11 rounded-lg bg-zinc-900 text-white flex items-center justify-center hover:bg-zinc-700 disabled:opacity-40 shrink-0"
-            aria-label="Send"
+            disabled={busy || (mode !== 'forward' && !draft.trim()) || (mode === 'forward' && !forwardTo.trim())}
+            className={`w-11 h-11 rounded-lg flex items-center justify-center text-white disabled:opacity-40 shrink-0 transition-colors ${
+              mode === 'forward' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-zinc-900 hover:bg-zinc-700'
+            }`}
+            aria-label={mode === 'forward' ? 'Forward' : 'Send'}
           >
-            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            {busy ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : mode === 'forward' ? (
+              <Forward className="w-4 h-4" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
           </button>
         </div>
       </form>

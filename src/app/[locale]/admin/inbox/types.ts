@@ -222,6 +222,29 @@ export interface InboxFinanceDocument {
     iban?: string | null
     paymentReference?: string | null
     documentKind?: string | null
+    lineItems?: Array<{
+      description: string | null
+      date: string | null
+      hours: number | null
+      rateCents: number | null
+      amountCents: number | null
+    }>
+  } | null
+  claimedShiftsValidation?: {
+    staffName: string | null
+    staffId: string | null
+    items: Array<{
+      description: string | null
+      date: string | null
+      hours: number | null
+      rateCents: number | null
+      amountCents: number | null
+      hasScheduledShift: boolean
+      scheduledDetails?: string | null
+      warning?: string | null
+    }>
+    allMatched: boolean
+    unmatchedCount: number
   } | null
   link_url: string | null
   link_fetch_status: string | null
