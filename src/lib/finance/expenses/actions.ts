@@ -164,11 +164,40 @@ export async function createExpenseFromDocument(supabase: Admin, documentId: str
   if (doc.duplicate_of) throw new ExpenseActionError('Dit document is een duplicaat van een ander document.', 409)
   if (doc.expense_id) throw new ExpenseActionError('Dit document is al gekoppeld aan een uitgave.', 409)
 
-  const ext = (doc.extracted as { supplierName?: string | null; grossCents?: number | null; invoiceNumber?: string | null; invoiceDate?: string | null } | null) ?? {}
+  const ext = (doc.extracted as { supplierName?: string | null; grossCents?: number | null; invoiceNumber?: string | null; invoiceDate?: string | null; iban?: string | null } | null) ?? {}
+
+  // Auto-resolve or create a supplier if IBAN/name are known
+  let supplierId: string | null = null
+  if (ext.iban) {
+    const check = validateSupplierForDraft({ id: '', name: ext.supplierName ?? 'Leverancier', iban: ext.iban, revolut_counterparty_id: null })
+    if (check.ok && check.iban) {
+      // Look for existing supplier by IBAN or exact name
+      const { data: existing } = await supabase.from('finance_suppliers').select('id, iban, name').eq('iban', check.iban).maybeSingle()
+      if (existing) {
+        supplierId = existing.id
+      } else if (ext.supplierName) {
+        const { data: byName } = await supabase.from('finance_suppliers').select('id, iban').ilike('name', ext.supplierName).maybeSingle()
+        if (byName) {
+          supplierId = byName.id
+          if (!byName.iban) {
+            await supabase.from('finance_suppliers').update({ iban: check.iban }).eq('id', byName.id)
+          }
+        } else {
+          const { data: created } = await supabase.from('finance_suppliers').insert({ name: ext.supplierName, iban: check.iban }).select('id').single()
+          if (created) supplierId = created.id
+        }
+      }
+    }
+  } else if (ext.supplierName) {
+    const { data: existing } = await supabase.from('finance_suppliers').select('id').ilike('name', ext.supplierName).maybeSingle()
+    if (existing) supplierId = existing.id
+  }
+
   const { data: expense, error: insErr } = await supabase
     .from('finance_expenses')
     .insert({
       status: 'waiting_for_invoice', // placeholder — recomputeExpense (inside linkDocument) derives the real status
+      supplier_id: supplierId,
       supplier_name: ext.supplierName ?? null,
       gross_cents: ext.grossCents ?? null,
       invoice_number: ext.invoiceNumber ?? null,

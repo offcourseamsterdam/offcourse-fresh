@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { CalendarDays, CalendarPlus, Check, CheckCircle2, Download, Ghost, Globe, Landmark, Languages, Loader2, Mail, Phone, Plus, Receipt, Sparkles, Wrench, XCircle } from 'lucide-react'
+import { CalendarDays, CalendarPlus, Check, CheckCircle2, Download, ExternalLink, Ghost, Globe, Landmark, Languages, Loader2, Mail, Phone, Plus, Receipt, Sparkles, Wrench, XCircle } from 'lucide-react'
 import { adminMutate, AdminApiError } from '@/hooks/useAdminSave'
 import { replySimilarity } from '@/lib/ghost/similarity'
 import { fmtAdminDate, fmtAdminTime } from '@/lib/admin/format'
@@ -11,6 +11,7 @@ import { OTA_PLATFORM_NAME } from '@/lib/ota/detect'
 import { pickCheapestPrivateOption } from '@/lib/ota/availability-shape'
 import { draftNeedsEnglish } from '@/lib/i18n/needs-translation'
 import { SupplierPicker } from '@/components/admin/finance/cockpit/SupplierPicker'
+import { ExpenseDrawer } from '@/components/admin/finance/expenses/ExpenseDrawer'
 import { hasGhostCoPilotContent, type InboxConversationDetail, type InboxFinanceInvoice, type InboxFinanceDocument, type InboxGhostProposal } from './types'
 
 const SIM_BADGE: Record<string, { text: string; cls: string }> = {
@@ -41,6 +42,7 @@ export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
   const { conversation, bookings, ghost, financeInvoices, financeDocuments = [] } = detail
   const contact = conversation.contact
   const [saving, setSaving] = useState(false)
+  const [activeExpenseId, setActiveExpenseId] = useState<string | null>(null)
   // The booking Ghost found by name/date when the contact's own email doesn't
   // match what's on file (a typo) — so it's absent from the email-matched
   // `bookings` list above. Don't show it twice if it's already in there.
@@ -104,7 +106,7 @@ export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
                 <FinanceInvoiceReview key={invoice.id} invoice={invoice} onChanged={onChanged} />
               ))}
               {financeDocuments.map(doc => (
-                <FinanceDocumentReview key={doc.id} document={doc} onChanged={onChanged} />
+                <FinanceDocumentReview key={doc.id} document={doc} onChanged={onChanged} onOpenDrawer={setActiveExpenseId} />
               ))}
             </div>
           )}
@@ -136,74 +138,81 @@ export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
         </div>
       </div>
 
-      {/* Contact card */}
-      <div>
-        <p className="text-[10px] font-semibold tracking-widest uppercase text-zinc-400 mb-2">Customer</p>
-        <p className="text-sm font-semibold text-zinc-900">{contact?.name ?? 'Unknown'}</p>
-        <div className="mt-1.5 space-y-1 text-xs text-zinc-500">
-          {contact?.email && (
-            <p className="flex items-center gap-1.5">
-              <Mail className="w-3 h-3" /> {contact.email}
-            </p>
-          )}
-          {contact?.phone_e164 && (
-            <p className="flex items-center gap-1.5">
-              <Phone className="w-3 h-3" /> {contact.phone_e164}
-            </p>
-          )}
-          {contact?.locale && (
-            <p className="flex items-center gap-1.5">
-              <Globe className="w-3 h-3" /> {contact.locale.toUpperCase()}
-            </p>
-          )}
-        </div>
-        {contact?.notes && (
-          <p className="mt-2 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2">
-            {contact.notes}
-          </p>
-        )}
-      </div>
-
-      {/* Bookings — matched by contact email, plus any Ghost found by name/date
-          when the contact's email doesn't match what's on the booking (a typo). */}
-      <div>
-        <p className="text-[10px] font-semibold tracking-widest uppercase text-zinc-400 mb-2">Bookings</p>
-        {bookings.length === 0 && !foundCorrectionBooking && (
-          <p className="text-xs text-zinc-400">No bookings found for this customer.</p>
-        )}
-        <div className="space-y-2">
-          {foundCorrectionBooking && (
-            <div className="rounded-lg border border-violet-200 bg-violet-50/40 px-3 py-2">
-              <p className="text-[9px] font-semibold uppercase tracking-wide text-violet-500 mb-1 inline-flex items-center gap-1">
-                <Ghost className="w-3 h-3" /> Found by Ghost — email on file differs
-              </p>
-              <p className="text-xs font-semibold text-zinc-800 flex items-center gap-1.5">
-                <CalendarDays className="w-3 h-3 text-zinc-400" />
-                {fmtAdminDate(foundCorrectionBooking.booking_date ?? null)}
-                {foundCorrectionBooking.start_time ? ` · ${fmtAdminTime(foundCorrectionBooking.start_time)}` : ''}
-              </p>
-              <p className="text-xs text-zinc-500 mt-0.5 truncate">{foundCorrectionBooking.listing_title ?? 'Cruise'}</p>
-              {foundCorrectionBooking.guest_count && (
-                <p className="text-[11px] text-zinc-400 mt-0.5">{foundCorrectionBooking.guest_count} guests</p>
+      {/* Contact card & Bookings — customer operations only; irrelevant and misleading for supplier/skipper invoices */}
+      {conversation.source_category !== 'finance' && (
+        <>
+          {/* Contact card */}
+          <div>
+            <p className="text-[10px] font-semibold tracking-widest uppercase text-zinc-400 mb-2">Customer</p>
+            <p className="text-sm font-semibold text-zinc-900">{contact?.name ?? 'Unknown'}</p>
+            <div className="mt-1.5 space-y-1 text-xs text-zinc-500">
+              {contact?.email && (
+                <p className="flex items-center gap-1.5">
+                  <Mail className="w-3 h-3" /> {contact.email}
+                </p>
+              )}
+              {contact?.phone_e164 && (
+                <p className="flex items-center gap-1.5">
+                  <Phone className="w-3 h-3" /> {contact.phone_e164}
+                </p>
+              )}
+              {contact?.locale && (
+                <p className="flex items-center gap-1.5">
+                  <Globe className="w-3 h-3" /> {contact.locale.toUpperCase()}
+                </p>
               )}
             </div>
-          )}
-          {bookings.map(b => (
-            <div key={b.id} className="rounded-lg border border-zinc-200 px-3 py-2">
-              <p className="text-xs font-semibold text-zinc-800 flex items-center gap-1.5">
-                <CalendarDays className="w-3 h-3 text-zinc-400" />
-                {b.booking_date ?? '—'}
+            {contact?.notes && (
+              <p className="mt-2 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2">
+                {contact.notes}
               </p>
-              <p className="text-xs text-zinc-500 mt-0.5 truncate">{b.listing_title ?? 'Cruise'}</p>
-              <p className="text-[11px] text-zinc-400 mt-0.5">
-                {b.guest_count ? `${b.guest_count} guests · ` : ''}
-                {b.receipt_total_display ?? ''}
-                {b.status ? ` · ${b.status}` : ''}
-              </p>
+            )}
+          </div>
+
+          {/* Bookings — matched by contact email, plus any Ghost found by name/date
+              when the contact's email doesn't match what's on the booking (a typo). */}
+          <div>
+            <p className="text-[10px] font-semibold tracking-widest uppercase text-zinc-400 mb-2">Bookings</p>
+            {bookings.length === 0 && !foundCorrectionBooking && (
+              <p className="text-xs text-zinc-400">No bookings found for this customer.</p>
+            )}
+            <div className="space-y-2">
+              {foundCorrectionBooking && (
+                <div className="rounded-lg border border-violet-200 bg-violet-50/40 px-3 py-2">
+                  <p className="text-[9px] font-semibold uppercase tracking-wide text-violet-500 mb-1 inline-flex items-center gap-1">
+                    <Ghost className="w-3 h-3" /> Found by Ghost — email on file differs
+                  </p>
+                  <p className="text-xs font-semibold text-zinc-800 flex items-center gap-1.5">
+                    <CalendarDays className="w-3 h-3 text-zinc-400" />
+                    {fmtAdminDate(foundCorrectionBooking.booking_date ?? null)}
+                    {foundCorrectionBooking.start_time ? ` · ${fmtAdminTime(foundCorrectionBooking.start_time)}` : ''}
+                  </p>
+                  <p className="text-xs text-zinc-500 mt-0.5 truncate">{foundCorrectionBooking.listing_title ?? 'Cruise'}</p>
+                  {foundCorrectionBooking.guest_count && (
+                    <p className="text-[11px] text-zinc-400 mt-0.5">{foundCorrectionBooking.guest_count} guests</p>
+                  )}
+                </div>
+              )}
+              {bookings.map(b => (
+                <div key={b.id} className="rounded-lg border border-zinc-200 px-3 py-2">
+                  <p className="text-xs font-semibold text-zinc-800 flex items-center gap-1.5">
+                    <CalendarDays className="w-3 h-3 text-zinc-400" />
+                    {b.booking_date ?? '—'}
+                  </p>
+                  <p className="text-xs text-zinc-500 mt-0.5 truncate">{b.listing_title ?? 'Cruise'}</p>
+                  <p className="text-[11px] text-zinc-400 mt-0.5">
+                    {b.guest_count ? `${b.guest_count} guests · ` : ''}
+                    {b.receipt_total_display ?? ''}
+                    {b.status ? ` · ${b.status}` : ''}
+                  </p>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </div>
+          </div>
+        </>
+      )}
+
+      <ExpenseDrawer expenseId={activeExpenseId} onClose={() => setActiveExpenseId(null)} onChanged={onChanged} />
     </div>
   )
 }
@@ -1073,33 +1082,40 @@ function FinanceInvoiceReview({ invoice, onChanged }: { invoice: InboxFinanceInv
 
 /** Create/link/draft/forward actions for a Finance Inbox document — mirrors useInvoiceAction above but for the Expense Record pipeline. */
 function useExpenseDocAction(documentId: string, expenseId: string | null, onChanged: () => void) {
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  async function createExpense() {
-    setBusy(true)
+  async function createExpense(): Promise<string | null> {
+    setBusy('create')
     setError(null)
     try {
-      await adminMutate('/api/admin/finance/expenses/from-document', 'POST', { documentId })
+      const res = await adminMutate<{ expense?: { id: string } }>('/api/admin/finance/expenses/from-document', 'POST', { documentId })
       onChanged()
+      return res?.expense?.id ?? null
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Kon uitgave niet aanmaken.')
+      return null
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }
 
   async function expenseAction(action: string, body: Record<string, unknown> = {}, fallbackError = 'Actie mislukt.') {
-    if (!expenseId) return
-    setBusy(true)
+    let targetId = expenseId
+    setBusy(action)
     setError(null)
     try {
-      await adminMutate(`/api/admin/finance/expenses/${expenseId}/actions`, 'POST', { action, ...body })
+      if (!targetId) {
+        const res = await adminMutate<{ expense?: { id: string } }>('/api/admin/finance/expenses/from-document', 'POST', { documentId })
+        targetId = res?.expense?.id ?? null
+        if (!targetId) throw new Error('Kon uitgave niet aanmaken.')
+      }
+      await adminMutate(`/api/admin/finance/expenses/${targetId}/actions`, 'POST', { action, ...body })
       onChanged()
     } catch (err) {
       setError(err instanceof Error ? err.message : fallbackError)
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }
 
@@ -1114,7 +1130,15 @@ function useExpenseDocAction(documentId: string, expenseId: string | null, onCha
  * Expense Record, links a payee, and drafts the Revolut payment; once paid
  * and matched it forwards to SnelStart (offcourse@boekhouding.nl) on its own.
  */
-function FinanceDocumentReview({ document: doc, onChanged }: { document: InboxFinanceDocument; onChanged: () => void }) {
+function FinanceDocumentReview({
+  document: doc,
+  onChanged,
+  onOpenDrawer,
+}: {
+  document: InboxFinanceDocument
+  onChanged: () => void
+  onOpenDrawer: (expenseId: string) => void
+}) {
   const ext = doc.extracted
   const filename = doc.original_filename ?? doc.file_path?.split('/').pop() ?? 'Document'
   const bl = doc.boatlocalPayout
@@ -1122,9 +1146,18 @@ function FinanceDocumentReview({ document: doc, onChanged }: { document: InboxFi
   const { busy, error, createExpense, expenseAction } = useExpenseDocAction(doc.id, expense?.id ?? null, onChanged)
   const [confirmingDraft, setConfirmingDraft] = useState(false)
 
+  async function handleOpenDrawer() {
+    if (expense?.id) {
+      onOpenDrawer(expense.id)
+    } else {
+      const id = await createExpense()
+      if (id) onOpenDrawer(id)
+    }
+  }
+
   if (bl) {
     return (
-      <div className="rounded-lg bg-white border border-emerald-200 px-3 py-2.5 text-xs text-zinc-700 space-y-2.5 shadow-sm">
+      <div className="rounded-lg bg-white border border-emerald-200 px-3 py-2.5 text-xs text-zinc-700 space-y-2.5 shadow-xs">
         <div className="flex items-start justify-between gap-2">
           <div>
             <span className="font-semibold text-zinc-900 block text-sm">BoatLocal Operator Payout</span>
@@ -1192,15 +1225,18 @@ function FinanceDocumentReview({ document: doc, onChanged }: { document: InboxFi
     )
   }
 
+  const payeeName = expense?.supplier_name ?? ext?.supplierName ?? 'Leverancier'
+  const grossCents = expense?.gross_cents ?? ext?.grossCents ?? null
+
   return (
-    <div className="rounded-lg bg-white border border-amber-100 px-3 py-2 text-xs text-zinc-700 space-y-2">
+    <div className="rounded-lg bg-white border border-amber-100 px-3 py-2.5 text-xs text-zinc-700 space-y-2 shadow-xs">
       <div className="flex items-start justify-between gap-2">
         <span className="font-semibold text-zinc-900 truncate">
-          {ext?.supplierName ?? 'Document'}
+          {payeeName}
         </span>
-        {ext?.grossCents != null && (
-          <span className="font-semibold text-zinc-900 shrink-0">
-            {eurCents(ext.grossCents)}
+        {grossCents != null && (
+          <span className="font-bold text-zinc-900 shrink-0 text-sm">
+            {eurCents(grossCents)}
           </span>
         )}
       </div>
@@ -1237,63 +1273,78 @@ function FinanceDocumentReview({ document: doc, onChanged }: { document: InboxFi
         </div>
       )}
 
-      <div className="pt-1.5 border-t border-amber-50 space-y-2">
-        {!expense ? (
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="text-amber-700 font-medium">Nog geen uitgave — wacht op bankbijschrijving</span>
-            <button
-              onClick={createExpense}
-              disabled={busy}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 text-white px-2.5 py-1.5 text-[11px] font-semibold hover:bg-indigo-700 disabled:opacity-50 shrink-0"
-            >
-              {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Landmark className="w-3.5 h-3.5" />} Verwerken als uitgave
-            </button>
-          </div>
-        ) : expense.snelstart_sent_at ? (
+      <div className="pt-2 border-t border-amber-50 space-y-2">
+        {expense?.snelstart_sent_at ? (
           <p className="text-[11px] text-emerald-700 font-medium inline-flex items-center gap-1.5">
             <CheckCircle2 className="w-3.5 h-3.5" /> Doorgestuurd naar SnelStart ({fmtAdminDate(expense.snelstart_sent_at)})
           </p>
-        ) : expense.bank_transaction_id ? (
+        ) : expense?.bank_transaction_id ? (
           <p className="text-[11px] text-emerald-700 font-medium inline-flex items-center gap-1.5">
             <Check className="w-3.5 h-3.5" /> Betaald — wordt automatisch naar SnelStart gestuurd zodra de koppeling compleet is
           </p>
-        ) : !expense.supplier_id ? (
-          <div className="space-y-1">
-            <p className="text-[11px] text-zinc-500">Koppel een leverancier om een betaling klaar te zetten:</p>
-            <SupplierPicker value={expense.supplier_id} onChange={supplierId => expenseAction('link_supplier', { supplierId }, 'Kon leverancier niet koppelen.')} />
-          </div>
-        ) : expense.revolut_draft_id ? (
+        ) : expense?.revolut_draft_id ? (
           <p className="text-[11px] text-indigo-700 font-medium inline-flex items-center gap-1.5">
             <Landmark className="w-3.5 h-3.5" /> Betaling klaargezet in Revolut — wacht op jouw goedkeuring in de Revolut app
           </p>
         ) : confirmingDraft ? (
           <ConfirmCreate
-            onYes={() => expenseAction('draft_payment', {}, 'Kon betaling niet klaarzetten').then(() => setConfirmingDraft(false))}
+            onYes={() =>
+              expenseAction('draft_payment', {}, 'Kon betaling niet klaarzetten').then(() =>
+                setConfirmingDraft(false)
+              )
+            }
             onCancel={() => setConfirmingDraft(false)}
-            busy={busy}
+            busy={busy === 'draft_payment' || busy === 'create'}
             message={
               <>
                 Dit maakt een <span className="font-semibold">betaalopdracht klaar in Revolut</span> voor{' '}
-                <span className="font-semibold">{eurCents(expense.gross_cents)}</span> aan{' '}
-                {expense.supplier_name}. Er wordt nog niets overgemaakt — jij keurt hem daarna goed in de Revolut
+                <span className="font-semibold">{eurCents(grossCents)}</span> aan{' '}
+                {payeeName}. Er wordt nog niets overgemaakt — jij keurt hem daarna goed in de Revolut
                 app. Zodra de betaling terugkomt gaat de factuur vanzelf naar SnelStart. Doorgaan?
               </>
             }
-            confirmLabel="Ja, klaarzetten"
+            confirmLabel="Ja, klaarzetten in Revolut"
           />
         ) : (
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="text-zinc-500">{expense.ref} · leverancier gekoppeld</span>
-            <button
-              onClick={() => setConfirmingDraft(true)}
-              disabled={busy}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 text-white px-2.5 py-1.5 text-[11px] font-semibold hover:bg-indigo-700 disabled:opacity-50 shrink-0"
-            >
-              <Landmark className="w-3.5 h-3.5" /> Betaling klaarzetten in Revolut
-            </button>
+          <div className="space-y-2">
+            {expense && !expense.supplier_id && !ext?.iban ? (
+              <div className="space-y-1">
+                <p className="text-[11px] text-zinc-500">Koppel een leverancier om te betalen:</p>
+                <SupplierPicker
+                  value={expense.supplier_id}
+                  onChange={supplierId => expenseAction('link_supplier', { supplierId }, 'Kon leverancier niet koppelen.')}
+                />
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="text-[11px] text-zinc-500 font-medium">
+                  {ext?.iban ? `${ext.iban.slice(0, 4)}...${ext.iban.slice(-4)}` : 'Wacht op betaling'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDraft(true)}
+                  disabled={busy != null || grossCents == null}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 text-white px-2.5 py-1.5 text-[11px] font-semibold hover:bg-indigo-700 disabled:opacity-50 shrink-0 shadow-xs transition-colors"
+                >
+                  {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Landmark className="w-3.5 h-3.5" />} Betaling klaarzetten in Revolut
+                </button>
+              </div>
+            )}
           </div>
         )}
-        {error && <p className="text-[11px] text-red-600">{error}</p>}
+
+        <div className="flex items-center justify-between pt-1 border-t border-zinc-100 text-[11px]">
+          <button
+            type="button"
+            onClick={handleOpenDrawer}
+            disabled={busy != null}
+            className="text-zinc-500 hover:text-zinc-900 inline-flex items-center gap-1 font-medium transition-colors"
+          >
+            {busy === 'create' ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
+            Volledig uitgavenpaneel openen
+          </button>
+          {error && <p className="text-[11px] text-red-600 font-medium">{error}</p>}
+        </div>
       </div>
     </div>
   )

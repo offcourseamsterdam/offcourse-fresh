@@ -101,6 +101,32 @@ describe('createExpenseFromDocument', () => {
     const err = await createExpenseFromDocument(db({ doc: null }).client as never, 'nope').catch(e => e)
     expect(err.status).toBe(404)
   })
+  it('auto-creates and links a supplier when valid IBAN and supplier name are extracted', async () => {
+    const mock = db({
+      supplier: null,
+      doc: DOC({
+        extracted: {
+          supplierName: 'Gijs Bots',
+          iban: 'NL49RABO0191627038',
+          grossCents: 53724,
+          invoiceNumber: '2026-025',
+          invoiceDate: '2026-09-15',
+        },
+      }),
+    })
+    const { expenseId } = await createExpenseFromDocument(mock.client as never, 'doc-1')
+    expect(expenseId).toBe('exp-1')
+    expect(opArg(mock.queries, 'finance_suppliers', 'insert')).toMatchObject({
+      name: 'Gijs Bots',
+      iban: 'NL49RABO0191627038',
+    })
+    expect(opArg(mock.queries, 'finance_expenses', 'insert')).toMatchObject({
+      supplier_id: 'sup-new',
+      supplier_name: 'Gijs Bots',
+      gross_cents: 53724,
+      invoice_number: '2026-025',
+    })
+  })
 })
 
 describe('unlinkDocument', () => {
