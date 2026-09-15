@@ -222,6 +222,8 @@ export interface InboxFinanceDocument {
     iban?: string | null
     paymentReference?: string | null
     documentKind?: string | null
+    /** The mail says this amount is auto-debited (automatische incasso) — never offer to queue a Revolut payment for it. */
+    willBeAutoCollected?: boolean | null
     lineItems?: Array<{
       description: string | null
       date: string | null

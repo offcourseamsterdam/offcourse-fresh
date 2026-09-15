@@ -35,7 +35,12 @@ export function mailDocumentKind(kind: FinanceEmailKind | null): DocumentKind | 
   }
 }
 
-const LINK_SKIP = /unsubscribe|opt-?out|afmelden|uitschrijven|\/track|click\.|utm_|privacy|terms|voorwaarden/i
+// klantenservice/contact/help/support pages are boilerplate footer links present
+// in nearly every transactional mail — never themselves an invoice, unlike a
+// genuinely ambiguous link (e.g. "account/orders", kept for a human to check).
+const LINK_SKIP = /unsubscribe|opt-?out|afmelden|uitschrijven|\/track|click\.|utm_|privacy|terms|voorwaarden|klantenservice|customer-?service|\bcontact\b|\bhelp\b|\bhulp\b|\bfaq\b|\bsupport\b/i
+// A bare domain root ("https://simyo.nl/", no path) — a logo/homepage link, never a document.
+const LINK_IS_ROOT = /^https?:\/\/[^/]+\/?(\?.*)?$/i
 const LINK_HINT = /invoice|factuur|receipt|bon\b|download|\.pdf(\?|$)|document|nota/i
 /** Two link fetches per mail, sequential, ≤10 s each — inside the 2-minute Gmail poll's 60 s budget with room for Claude + Gemini. */
 const MAX_LINKS_TO_FETCH = 2
@@ -51,9 +56,17 @@ const MIN_CONFIDENCE_FOR_LINK_FETCH = 0.7
  * so Beer can still see it on the card.
  */
 export function pickLinksToFetch(links: string[]): { fetch: string[]; keep: string[] } {
-  const usable = links.filter(l => !LINK_SKIP.test(l))
+  // Root/homepage and klantenservice/contact/help links are filtered out here,
+  // before the hint check — they're never a document, unlike a genuinely
+  // ambiguous link (e.g. "account/orders", still kept below for a human to
+  // check). Bug found 2026-09-15: a Simyo mail's logo link and "klantenservice"
+  // link each spawned their own empty "Leverancier" card alongside the real
+  // invoice notification, because neither is tracking/unsubscribe (the only
+  // things filtered before this fix).
+  const usable = links.filter(l => !LINK_SKIP.test(l) && !LINK_IS_ROOT.test(l))
   const hinted = usable.filter(l => LINK_HINT.test(l))
-  return { fetch: hinted.slice(0, MAX_LINKS_TO_FETCH), keep: usable.filter(l => !hinted.slice(0, MAX_LINKS_TO_FETCH).includes(l)) }
+  const fetch = hinted.slice(0, MAX_LINKS_TO_FETCH)
+  return { fetch, keep: usable.filter(l => !fetch.includes(l)) }
 }
 
 export interface IngestEmailResult {
@@ -74,6 +87,7 @@ function classificationToExtracted(c: FinanceEmailClassification): Json {
     currency: c.currency,
     paymentReference: c.paymentReference,
     isPaidConfirmation: c.isPaidConfirmation,
+    willBeAutoCollected: c.willBeAutoCollected,
     confidence: { overall: c.confidence },
     reason: c.reason,
   } as Json

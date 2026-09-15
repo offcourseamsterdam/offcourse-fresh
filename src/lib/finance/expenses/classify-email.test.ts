@@ -38,13 +38,21 @@ describe('buildEmailPrompt', () => {
 })
 
 describe('parseEmailClassification', () => {
-  const GOOD = '{"kind":"invoice_notification","supplier_name":"bol.com","order_number":"12345","invoice_number":"INV-2026-12345","invoice_date":"2026-09-05","gross_cents":12100,"vat_cents":2100,"currency":"eur","payment_reference":null,"is_paid_confirmation":true,"confidence":0.92,"reason":"Factuurmelding met downloadlink."}'
+  const GOOD = '{"kind":"invoice_notification","supplier_name":"bol.com","order_number":"12345","invoice_number":"INV-2026-12345","invoice_date":"2026-09-05","gross_cents":12100,"vat_cents":2100,"currency":"eur","payment_reference":null,"is_paid_confirmation":true,"will_be_auto_collected":false,"confidence":0.92,"reason":"Factuurmelding met downloadlink."}'
 
   it('parses the PRD "your invoice is available" mail', () => {
     expect(parseEmailClassification(GOOD)).toEqual({
       kind: 'invoice_notification', supplierName: 'bol.com', orderNumber: '12345', invoiceNumber: 'INV-2026-12345', invoiceDate: '2026-09-05',
-      grossCents: 12100, vatCents: 2100, currency: 'EUR', paymentReference: null, isPaidConfirmation: true, confidence: 0.92, reason: 'Factuurmelding met downloadlink.',
+      grossCents: 12100, vatCents: 2100, currency: 'EUR', paymentReference: null, isPaidConfirmation: true, willBeAutoCollected: false, confidence: 0.92, reason: 'Factuurmelding met downloadlink.',
     })
+  })
+  // Regression (2026-09-15): a Simyo "your invoice is ready" mail says the amount
+  // is auto-debited next week — the inbox must never suggest queuing a Revolut
+  // payment for it (see FinanceDocumentReview in ContextPane.tsx).
+  it('will_be_auto_collected is only true when literally true', () => {
+    const autoDebit = GOOD.replace('"will_be_auto_collected":false', '"will_be_auto_collected":true')
+    expect(parseEmailClassification(autoDebit)!.willBeAutoCollected).toBe(true)
+    expect(parseEmailClassification(GOOD.replace('"will_be_auto_collected":false', '"will_be_auto_collected":"yes"'))!.willBeAutoCollected).toBe(false)
   })
   it('tolerates prose around the JSON', () => {
     expect(parseEmailClassification(`Hier is het antwoord:\n${GOOD}\nSucces!`)?.kind).toBe('invoice_notification')

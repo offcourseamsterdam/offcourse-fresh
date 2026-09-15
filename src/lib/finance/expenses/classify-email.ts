@@ -32,6 +32,8 @@ export interface FinanceEmailClassification {
   paymentReference: string | null
   /** The mail says the amount has already been paid/charged (card, iDEAL, "betaald"). */
   isPaidConfirmation: boolean
+  /** The mail says the amount will be collected automatically (automatische incasso / direct debit) — no manual Revolut payment should ever be queued for it. */
+  willBeAutoCollected: boolean
   confidence: number
   reason: string
 }
@@ -91,12 +93,13 @@ export function buildEmailPrompt(input: FinanceEmailInput): string {
     body || '(leeg)',
     '',
     'Antwoord met UITSLUITEND JSON, zonder toelichting eromheen:',
-    '{"kind":"order_confirmation|invoice_notification|payment_confirmation|invoice_attached|other","supplier_name":null,"order_number":null,"invoice_number":null,"invoice_date":"YYYY-MM-DD of null","gross_cents":null,"vat_cents":null,"currency":"EUR of null","payment_reference":null,"is_paid_confirmation":false,"confidence":0.0,"reason":"één korte zin in het Nederlands"}',
+    '{"kind":"order_confirmation|invoice_notification|payment_confirmation|invoice_attached|other","supplier_name":null,"order_number":null,"invoice_number":null,"invoice_date":"YYYY-MM-DD of null","gross_cents":null,"vat_cents":null,"currency":"EUR of null","payment_reference":null,"is_paid_confirmation":false,"will_be_auto_collected":false,"confidence":0.0,"reason":"één korte zin in het Nederlands"}',
     '',
     'Regels:',
     '- Bedragen in EUROCENTEN als geheel getal (€121,00 = 12100). Alleen invullen als het bedrag letterlijk in de mail staat — nooit schatten of optellen.',
     '- Een ordernummer of factuurnummer alleen invullen als het letterlijk genoemd wordt.',
     '- is_paid_confirmation is true als de mail zegt dat er al betaald/afgeschreven is (creditcard, iDEAL, "betaald", "payment received"). Een openstaande factuur is false.',
+    '- will_be_auto_collected is true bij automatische incasso — dan hoeft niemand te betalen. Zelf overmaken is false.',
     '- confidence is je eigen zekerheid tussen 0 en 1. Twijfel je over de soort, kies "other" met een lage confidence.',
   ].join('\n')
 }
@@ -134,6 +137,7 @@ export function parseEmailClassification(raw: string): FinanceEmailClassificatio
     currency: str('currency')?.toUpperCase() ?? null,
     paymentReference: str('payment_reference'),
     isPaidConfirmation: parsed.is_paid_confirmation === true,
+    willBeAutoCollected: parsed.will_be_auto_collected === true,
     confidence,
     reason: str('reason') ?? '',
   }

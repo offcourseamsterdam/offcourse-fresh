@@ -1332,6 +1332,13 @@ function FinanceDocumentReview({
           <p className="text-[11px] text-indigo-700 font-medium inline-flex items-center gap-1.5">
             <Landmark className="w-3.5 h-3.5" /> Betaling klaargezet in Revolut — wacht op jouw goedkeuring in de Revolut app
           </p>
+        ) : ext?.willBeAutoCollected ? (
+          // The mail itself says this gets auto-debited (automatische incasso) —
+          // queuing a Revolut payment here would double-pay it. It stays
+          // waiting_for_payment until the real debit transaction is matched.
+          <p className="text-[11px] text-zinc-500 font-medium inline-flex items-center gap-1.5">
+            <Landmark className="w-3.5 h-3.5 text-zinc-400" /> Wordt automatisch geïncasseerd — geen actie nodig
+          </p>
         ) : confirmingDraft ? (
           <ConfirmCreate
             onYes={() =>

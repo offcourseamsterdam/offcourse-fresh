@@ -29,7 +29,7 @@ function message(over: Partial<GmailMessage> = {}): GmailMessage {
 }
 const classification = (over: Record<string, unknown> = {}) => ({
   kind: 'order_confirmation', supplierName: 'bol.com', orderNumber: '12345', invoiceNumber: null, invoiceDate: null, grossCents: 12100, vatCents: null,
-  currency: 'EUR', paymentReference: null, isPaidConfirmation: true, confidence: 0.9, reason: 'Orderbevestiging.', ...over,
+  currency: 'EUR', paymentReference: null, isPaidConfirmation: true, willBeAutoCollected: false, confidence: 0.9, reason: 'Orderbevestiging.', ...over,
 })
 
 function db(opts: { shaDup?: string | null } = {}) {
@@ -61,6 +61,21 @@ describe('pickLinksToFetch / mailDocumentKind', () => {
       'https://bol.com/download/factuur/2',
     ])
     expect(r.fetch).toEqual(['https://bol.com/invoices/INV-1.pdf', 'https://bol.com/download/factuur/2'])
+    expect(r.keep).toEqual(['https://bol.com/account/orders'])
+  })
+  // Regression (2026-09-15): a Simyo mail's bare homepage link and its
+  // "klantenservice" footer link each spawned their own empty finance_documents
+  // row alongside the real invoice notification — neither was tracking or
+  // unsubscribe, the only things filtered before this fix.
+  it('drops a bare homepage link and klantenservice/contact/support links — never a document, unlike an ambiguous account link', () => {
+    const r = pickLinksToFetch([
+      'https://www.simyo.nl/',
+      'https://www.simyo.nl/klantenservice',
+      'https://shop.example.com/customer-service',
+      'https://shop.example.com/contact',
+      'https://bol.com/account/orders',
+    ])
+    expect(r.fetch).toEqual([])
     expect(r.keep).toEqual(['https://bol.com/account/orders'])
   })
   it('maps mail kinds to document kinds; the invoice-attached mail carries no row of its own', () => {
@@ -162,6 +177,30 @@ describe('ingestFinanceEmailDocuments', () => {
     expect(link).toMatchObject({ link_fetch_status: 'blocked' })
     expect(r.summary).toContain('handmatig downloaden')
     expect(h.uploadFinanceAttachment).not.toHaveBeenCalled()
+  })
+
+  // Regression (2026-09-15), the real Simyo mail that triggered the fix: a
+  // confident invoice_notification whose only links are its own homepage logo
+  // and a "klantenservice" link — must file just the mail itself.
+  it('a Simyo-style mail (only a homepage + klantenservice link, no PDF) becomes ONE document, not three', async () => {
+    h.classifyFinanceEmail.mockResolvedValue(classification({
+      kind: 'invoice_notification', supplierName: 'Simyo', grossCents: 1408, confidence: 0.95,
+      willBeAutoCollected: true, reason: 'Melding dat factuur klaarstaat op Mijn Simyo, geen PDF bijgevoegd, bedrag wordt volgende week geïncasseerd',
+    }))
+    const mock = db()
+    const r = await ingestFinanceEmailDocuments(
+      mock.client as never,
+      message({
+        from: { email: 'noreply@simyo.nl', name: 'Simyo' },
+        bodyText: 'Je nieuwe Simyo factuur staat klaar. Log in op Mijn Simyo: https://www.simyo.nl/ Vragen? https://www.simyo.nl/klantenservice',
+      }),
+      'msgrow-1',
+    )
+    expect(h.fetchPublicPdf).not.toHaveBeenCalled()
+    expect(r.documentIds).toHaveLength(1)
+    const inserted = queriesFor(mock.queries, 'finance_documents', 'insert').map(q => op(q, 'insert')!.args[0] as Record<string, unknown>)
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0]).toMatchObject({ kind: 'invoice_notification_email', extracted: expect.objectContaining({ willBeAutoCollected: true }) })
   })
 
   it('links in an order confirmation are never fetched; links are only for invoice notifications without an attachment', async () => {
