@@ -6,13 +6,19 @@ const h = vi.hoisted(() => ({
   requireAdmin: vi.fn().mockResolvedValue(null),
 }))
 
-vi.mock('@/lib/supabase/admin', () => ({
-  createAdminClient: () => ({
-    from: () => ({
-      select: () => ({ eq: () => ({ eq: () => ({ eq: () => ({ maybeSingle: h.maybeSingle }) }) }) }),
+vi.mock('@/lib/supabase/admin', () => {
+  const chain: any = {
+    eq: () => chain,
+    maybeSingle: () => h.maybeSingle(),
+  }
+  return {
+    createAdminClient: () => ({
+      from: () => ({
+        select: () => chain,
+      }),
     }),
-  }),
-}))
+  }
+})
 vi.mock('@/lib/auth/require-admin', () => ({ requireAdmin: h.requireAdmin }))
 
 import { GET } from './route'
@@ -65,6 +71,25 @@ describe('GET /api/admin/booking-flow/invoice-suggestion', () => {
       suggestedCommissionCents: 0,
       hasCampaign: false,
       commissionPercent: null,
+    })
+  })
+
+  it('suggests net-base commission when partner has default commission_rate', async () => {
+    // 1st call for campaigns returns null, 2nd call for partners returns 20%
+    h.maybeSingle
+      .mockResolvedValueOnce({ data: null })
+      .mockResolvedValueOnce({ data: { commission_rate: 20, name: 'Amsterdam Boats' } })
+
+    // 31000 base -> net base 28440 -> 20% commission = 5688 ex-VAT -> gross deduction 6200 -> invoice = 24800
+    const res = await GET(mockReq('partnerId=p1&listingId=l1&baseAmountCents=31000'))
+    const json = await res.json()
+
+    expect(json.data).toEqual({
+      suggestedInvoiceCents: 24800,
+      suggestedCommissionCents: 5688,
+      hasCampaign: false,
+      commissionPercent: 20,
+      baseExVatCents: 28440,
     })
   })
 })

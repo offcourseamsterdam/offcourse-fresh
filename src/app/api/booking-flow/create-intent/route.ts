@@ -3,6 +3,7 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { createPaymentIntent } from '@/lib/booking/create-intent'
 import { deriveTrafficSource, parseFirstTouch } from '@/lib/tracking/traffic-source'
 import { parseAttribution } from '@/lib/tracking/attribution'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
  * POST /api/booking-flow/create-intent
@@ -43,6 +44,8 @@ export async function POST(request: NextRequest) {
       firstTouch: parseFirstTouch(request.cookies.get('oc_src')?.value),
     })
 
+    const effectiveSessionId = request.cookies.get('oc_sid')?.value ?? (sessionId ? String(sessionId) : null)
+
     const result = await createPaymentIntent({
       quoteId: String(quoteId),
       listingTitle: String(listingTitle ?? ''),
@@ -57,10 +60,17 @@ export async function POST(request: NextRequest) {
       trafficDetail: traffic.detail,
       // Cookie session (consented) takes priority; else the client-sent stable
       // anon session id from sessionStorage.
-      sessionId: request.cookies.get('oc_sid')?.value ?? (sessionId ? String(sessionId) : null),
+      sessionId: effectiveSessionId,
       campaignId: attribution?.campaign_id ?? null,
       partnerId: attribution?.partner_id ?? null,
     })
+
+    if (effectiveSessionId) {
+      void createAdminClient()
+        .from('analytics_sessions')
+        .update({ reached_checkout: true, updated_at: new Date().toISOString() })
+        .eq('id', effectiveSessionId)
+    }
 
     return apiOk(result)
   } catch (err) {

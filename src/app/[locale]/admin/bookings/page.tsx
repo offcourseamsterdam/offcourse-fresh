@@ -462,6 +462,7 @@ export default function BookingsPage() {
                             promoCode={b.promo_code}
                             discountAmountCents={b.discount_amount_cents}
                             partnerName={b.partner_name}
+                            commissionAmountCents={b.commission_amount_cents}
                             category={b.category}
                             customerTypeName={b.customer_type_name}
                             noRescheduleAsk={b.no_reschedule_ask ?? false}

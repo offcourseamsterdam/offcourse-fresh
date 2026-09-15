@@ -1768,6 +1768,7 @@ export default function PlanningPage() {
                 promoCode={selectedBooking.promo_code}
                 discountAmountCents={selectedBooking.discount_amount_cents}
                 partnerName={selectedBooking.partner_name}
+                commissionAmountCents={selectedBooking.commission_amount_cents}
                 category={selectedBooking.category}
                 customerTypeName={selectedBooking.customer_type_name}
                 trafficSource={selectedBooking.traffic_source}

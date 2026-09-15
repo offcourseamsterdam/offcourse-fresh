@@ -71,23 +71,30 @@ export function initSession() {
   })
 
   // On page hide, send session close with final page count
-  if (!visibilityListenerAdded) {
-    visibilityListenerAdded = true
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') {
-        const blob = new Blob(
-          [JSON.stringify({
-            session_id: sessionId,
-            visitor_id: visitorId,
-            exit_page: window.location.pathname,
-            page_count: pageViewCount,
-          })],
-          { type: 'application/json' },
-        )
-        navigator.sendBeacon('/api/tracking/session', blob)
-      }
-    })
-  }
+  setupVisibilityListener()
+}
+
+function setupVisibilityListener() {
+  if (visibilityListenerAdded) return
+  visibilityListenerAdded = true
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      const visitorId = getCookie(COOKIE_VISITOR_ID) ?? getOrCreateAnonVisitorId()
+      const sessionId = getSessionId()
+      if (!sessionId) return
+
+      const blob = new Blob(
+        [JSON.stringify({
+          session_id: sessionId,
+          visitor_id: visitorId,
+          exit_page: window.location.pathname,
+          page_count: pageViewCount,
+        })],
+        { type: 'application/json' },
+      )
+      navigator.sendBeacon('/api/tracking/session', blob)
+    }
+  })
 }
 
 /**
@@ -131,6 +138,9 @@ export function initAnonymousSession() {
     }),
     keepalive: true,
   }).catch(() => {})
+
+  // Attach session close beacon on page hide for anonymous visitors too
+  setupVisibilityListener()
 }
 
 /**
@@ -145,8 +155,8 @@ export function trackEvent(
   metadata?: Record<string, unknown>,
   dedupeKey?: string,
 ) {
-  const visitorId = getCookie(COOKIE_VISITOR_ID)
-  const sessionId = getCookie(COOKIE_SESSION_ID)
+  const visitorId = getCookie(COOKIE_VISITOR_ID) ?? getOrCreateAnonVisitorId()
+  const sessionId = getSessionId()
   if (!visitorId || !sessionId) return
 
   // Dedup: skip if this event already fired in this session.

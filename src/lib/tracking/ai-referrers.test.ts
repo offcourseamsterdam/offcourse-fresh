@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   classifyAiReferrer,
+  classifyAiEngine,
   AI_REFERRER_HOSTS,
   AI_ENGINES,
   aggregateAiReferrals,
@@ -113,4 +114,46 @@ describe('aggregateAiReferrals', () => {
     const rows = aggregateAiReferrals(sessions, bookings)
     expect(rows[0].key).toBe('chatgpt') // 3 sessions > perplexity's 1
   })
+
+  it('guarantees core engines when includeCoreEngines is true', () => {
+    const rows = aggregateAiReferrals([], [], { includeCoreEngines: true })
+    expect(rows.map(r => r.key)).toEqual(['chatgpt', 'perplexity', 'gemini', 'claude'])
+    expect(rows[0].testUrl).toBe('https://chatgpt.com/')
+    expect(rows[1].testUrl).toBe('https://www.perplexity.ai/')
+    expect(rows[2].testUrl).toBe('https://gemini.google.com/app')
+    expect(rows[3].testUrl).toBe('https://claude.ai/')
+  })
+
+  it('attributes bookings via traffic_detail even if session_id is detached', () => {
+    const bookingList = [
+      { id: 'b1', session_id: null, stripe_amount: 51300, traffic_detail: 'chatgpt.com', traffic_source: 'referral' },
+      { id: 'b2', session_id: 'unknown_session', stripe_amount: 22560, traffic_detail: 'chatgpt.com', traffic_source: 'referral' },
+    ]
+    const rows = aggregateAiReferrals([], bookingList)
+    const chatgpt = rows.find(r => r.key === 'chatgpt')!
+    expect(chatgpt.bookings).toBe(2)
+    expect(chatgpt.revenueEuros).toBe(738.6)
+  })
 })
+
+describe('classifyAiEngine', () => {
+  it('detects AI engine from utm_source even when referrer is null', () => {
+    const s = { id: 's1', visitor_id: 'v1', referrer: null, utm_source: 'chatgpt.com' }
+    expect(classifyAiReferrer(s.referrer)).toBeNull()
+    expect(classifyAiEngine(s)?.label).toBe('ChatGPT')
+    expect(classifyAiEngine({ utm_source: 'perplexity' })?.label).toBe('Perplexity')
+    expect(classifyAiEngine({ utm_source: 'gemini' })?.label).toBe('Gemini')
+    expect(classifyAiEngine({ utm_source: 'claude' })?.label).toBe('Claude')
+  })
+
+  it('detects AI engine from entry_page query params', () => {
+    expect(classifyAiEngine({ entry_page: '/cruise/hidden-gems?utm_source=chatgpt.com' })?.label).toBe('ChatGPT')
+    expect(classifyAiEngine({ entry_page: '/cruises/salonboat?utm_source=perplexity.ai' })?.label).toBe('Perplexity')
+  })
+
+  it('detects AI engine from traffic_detail on booking records', () => {
+    expect(classifyAiEngine({ traffic_detail: 'chatgpt.com' })?.label).toBe('ChatGPT')
+    expect(classifyAiEngine({ traffic_detail: 'perplexity.ai' })?.label).toBe('Perplexity')
+  })
+})
+

@@ -9,6 +9,13 @@
  * stores commission_amount_cents in the pre-existing shape.
  */
 
+export interface InvoiceSuggestionOptions {
+  partnerCommissionRate?: number | null
+  extrasAmountCents?: number | null
+  cityTaxCents?: number | null
+  commissionOnNetBaseOnly?: boolean
+}
+
 export interface InvoiceSuggestion {
   /** What to invoice the partner — base minus their commission cut. */
   suggestedInvoiceCents: number
@@ -17,6 +24,7 @@ export interface InvoiceSuggestion {
   /** Whether an active campaign supplied the commission %, or this is a full-price fallback. */
   hasCampaign: boolean
   commissionPercent: number | null
+  baseExVatCents?: number
 }
 
 /**
@@ -28,20 +36,49 @@ export interface InvoiceSuggestion {
 export function computeInvoiceSuggestion(
   baseAmountCents: number,
   campaign: { percentage_value: number | null; investment_type: string | null } | null | undefined,
+  options?: InvoiceSuggestionOptions,
 ): InvoiceSuggestion {
+  let commissionPercent: number | null = null
+  let hasCampaign = false
+
   if (campaign?.investment_type === 'percentage' && campaign.percentage_value) {
-    const commissionCents = Math.round(baseAmountCents * campaign.percentage_value / 100)
+    commissionPercent = campaign.percentage_value
+    hasCampaign = true
+  } else if (options?.partnerCommissionRate && options.partnerCommissionRate > 0) {
+    commissionPercent = options.partnerCommissionRate
+    hasCampaign = false
+  }
+
+  const extras = options?.extrasAmountCents ?? 0
+  const cityTax = options?.cityTaxCents ?? 0
+
+  if (commissionPercent && commissionPercent > 0) {
+    if (options?.commissionOnNetBaseOnly) {
+      const baseExVatCents = Math.round(baseAmountCents / 1.09)
+      const commissionExVatCents = Math.round(baseExVatCents * commissionPercent / 100)
+      const commissionGrossCents = Math.round(commissionExVatCents * 1.09)
+      return {
+        suggestedInvoiceCents: (baseAmountCents - commissionGrossCents) + extras + cityTax,
+        suggestedCommissionCents: commissionExVatCents,
+        hasCampaign,
+        commissionPercent,
+        baseExVatCents,
+      }
+    }
+
+    const commissionCents = Math.round(baseAmountCents * commissionPercent / 100)
     return {
-      suggestedInvoiceCents: baseAmountCents - commissionCents,
+      suggestedInvoiceCents: (baseAmountCents - commissionCents) + extras + cityTax,
       suggestedCommissionCents: commissionCents,
-      hasCampaign: true,
-      commissionPercent: campaign.percentage_value,
+      hasCampaign,
+      commissionPercent,
     }
   }
-  // No active revenue-share campaign — default to invoicing the full amount;
+
+  // No active revenue-share campaign or partner rate — default to invoicing the full amount;
   // the admin can still override it in the UI.
   return {
-    suggestedInvoiceCents: baseAmountCents,
+    suggestedInvoiceCents: baseAmountCents + extras + cityTax,
     suggestedCommissionCents: 0,
     hasCampaign: false,
     commissionPercent: null,

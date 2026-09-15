@@ -22,6 +22,9 @@ export async function GET(request: NextRequest) {
   const partnerId = searchParams.get('partnerId')
   const listingId = searchParams.get('listingId')
   const baseAmountCents = Number(searchParams.get('baseAmountCents') ?? 0)
+  const extrasAmountCents = Number(searchParams.get('extrasAmountCents') ?? 0)
+  const guestCount = Number(searchParams.get('guestCount') ?? 0)
+  const cityTaxCents = guestCount > 0 ? guestCount * 260 : Number(searchParams.get('cityTaxCents') ?? 0)
 
   if (!partnerId || !listingId) {
     return apiError('partnerId and listingId are required', 400)
@@ -36,7 +39,26 @@ export async function GET(request: NextRequest) {
     .eq('is_active', true)
     .maybeSingle()
 
-  const suggestion = computeInvoiceSuggestion(baseAmountCents, campaign)
+  let partnerCommissionRate: number | null = null
+  if (!campaign?.percentage_value) {
+    const { data: partner } = await supabase
+      .from('partners')
+      .select('commission_rate, name')
+      .eq('id', partnerId)
+      .maybeSingle()
+    if (partner?.commission_rate != null && Number(partner.commission_rate) > 0) {
+      partnerCommissionRate = Number(partner.commission_rate)
+    }
+  }
+
+  const commissionOnNetBaseOnly = searchParams.get('netBase') === 'true' || (!campaign?.percentage_value && Boolean(partnerCommissionRate))
+
+  const suggestion = computeInvoiceSuggestion(baseAmountCents, campaign, {
+    partnerCommissionRate,
+    extrasAmountCents,
+    cityTaxCents,
+    commissionOnNetBaseOnly,
+  })
 
   return apiOk(suggestion)
 }

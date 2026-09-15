@@ -114,6 +114,9 @@ export async function POST(request: NextRequest) {
     // Get country from Vercel header
     const countryCode = request.headers.get('x-vercel-ip-country') ?? null
 
+    const isCheckoutPath = (p?: string | null) =>
+      !!p && (/\/book\/.+\/checkout/.test(p) || /\/checkout/.test(p))
+
     // Upsert session
     if (exit_page) {
       // Session close — update exit info + compute duration from started_at.
@@ -121,7 +124,7 @@ export async function POST(request: NextRequest) {
       // Fetch the session start so we can record a real duration (seconds).
       const { data: existing } = await supabase
         .from('analytics_sessions')
-        .select('started_at')
+        .select('started_at, reached_checkout')
         .eq('id', session_id as string)
         .maybeSingle()
 
@@ -134,6 +137,8 @@ export async function POST(request: NextRequest) {
         if (diffSec >= 0) durationSeconds = Math.min(diffSec, 7200)
       }
 
+      const isExitCheckout = isCheckoutPath(exit_page as string)
+
       await supabase
         .from('analytics_sessions')
         .update({
@@ -144,20 +149,45 @@ export async function POST(request: NextRequest) {
           // Bounce = single page AND under 10s engagement. A visitor who read one
           // page for 90s isn't a bounce in any useful sense.
           is_bounce: ((page_count as number) ?? 1) <= 1 && (durationSeconds ?? 0) < 10,
+          reached_checkout: isExitCheckout || Boolean(existing?.reached_checkout),
           updated_at: endedAt.toISOString(),
         })
         .eq('id', session_id as string)
     } else {
-      // Session init — upsert (create if new, update page_count if existing)
-      await supabase
+      const isEntryCheckout = isCheckoutPath(entry_page as string)
+
+      // Check if session already exists — preserve entry_page, referrer, started_at
+      const { data: existing } = await supabase
         .from('analytics_sessions')
-        .upsert(
-          {
+        .select('id, entry_page, page_count, reached_checkout')
+        .eq('id', session_id as string)
+        .maybeSingle()
+
+      if (existing) {
+        // Session already exists — advance page_count and update exit_page to latest visited page
+        const currentCount = Math.max((existing.page_count ?? 1) + 1, (page_count as number) ?? 1)
+        await supabase
+          .from('analytics_sessions')
+          .update({
+            exit_page: (entry_page as string) || undefined,
+            page_count: currentCount,
+            is_bounce: false,
+            reached_checkout: isEntryCheckout || Boolean(existing.reached_checkout),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', session_id as string)
+      } else {
+        // Session init — create new session
+        const { error: insertError } = await supabase
+          .from('analytics_sessions')
+          .insert({
             id: session_id as string,
             visitor_id: visitor_id as string,
             entry_page: entry_page as string | undefined,
+            exit_page: entry_page as string | undefined,
             referrer: referrer as string | undefined,
             page_count: (page_count as number) ?? 1,
+            reached_checkout: isEntryCheckout,
             utm_source: sanitized.utm_source,
             utm_medium: sanitized.utm_medium,
             utm_campaign: sanitized.utm_campaign,
@@ -172,11 +202,22 @@ export async function POST(request: NextRequest) {
             country_code: countryCode,
             ip_address: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
             started_at: new Date().toISOString(),
-            is_bounce: true, // Will be set to false if more than 1 page viewed
+            is_bounce: true,
             updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'id' },
-        )
+          })
+
+        if (insertError && insertError.code === '23505') {
+          // Concurrent race — session was inserted simultaneously. Update instead.
+          await supabase
+            .from('analytics_sessions')
+            .update({
+              exit_page: (entry_page as string) || undefined,
+              reached_checkout: isEntryCheckout,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', session_id as string)
+        }
+      }
     }
 
     return NextResponse.json({ ok: true })
