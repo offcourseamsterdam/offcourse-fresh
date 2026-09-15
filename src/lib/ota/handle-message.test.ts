@@ -181,6 +181,54 @@ describe('handleOtaMessage', () => {
     })
   })
 
+  // Regression (2026-09-15): a complimentary admin booking has no Stripe payment,
+  // so it carries no `pi_...` voucher and detect.ts classifies it needs_import —
+  // same shape as a genuine, never-seen boatlocal.nl booking. Before creating a
+  // false import proposal, this must check our own `bookings` table by guest
+  // email + date, same fallback own_channel already uses.
+  it('resolves silently instead of importing when needs_import actually matches an existing booking (e.g. a complimentary admin booking with no Stripe payment)', async () => {
+    const supabase = fakeSupabase({ bookingsMatch: { id: 'booking-comp-1' } })
+    const needsImportButOurs: OtaDetection = {
+      platform: 'boatlocal',
+      kind: 'needs_import',
+      bookingRef: '379598704',
+      guestName: 'Thijs Bakker',
+      guestEmail: 'webikeamsterdam@gmail.com',
+      guestPhone: '06 10071179',
+      endTime: null,
+      stripePaymentIntentId: null,
+      parsed: { date: '16 October 2026', time: '19:00', dateISO: '2026-10-16', guests: 1, experienceName: 'Private Cruise' },
+    }
+
+    const result = await handleOtaMessage(supabase as never, needsImportButOurs, 'conv-7', 'msg-7')
+
+    expect(supabase.conversationUpdates).toEqual([{ status: 'resolved' }])
+    expect(supabase.inserted).toHaveLength(0)
+    expect(result).toContain('already in our database')
+  })
+
+  it('still imports when needs_import genuinely has no matching booking (a real, never-seen external booking)', async () => {
+    const supabase = fakeSupabase({ bookingsMatch: null })
+    const needsImport: OtaDetection = {
+      platform: 'getyourguide',
+      kind: 'needs_import',
+      bookingRef: '369057638',
+      guestName: 'shoshana mccallum',
+      guestEmail: 'customer-xzxhygwncrx37du3@reply.getyourguide.com',
+      guestPhone: '+64 21 248 0388',
+      endTime: '18:30',
+      stripePaymentIntentId: null,
+      parsed: { date: '5 August 2026', time: '17:00', dateISO: '2026-08-05', guests: 2, experienceName: 'Shared Cruise' },
+    }
+
+    const result = await handleOtaMessage(supabase as never, needsImport, 'conv-4', 'msg-4')
+
+    expect(supabase.conversationUpdates).toEqual([{ ota_status: 'needs_import' }])
+    expect(supabase.inserted).toHaveLength(1)
+    expect(supabase.inserted[0].kind).toBe('fh_booking_import_ready')
+    expect(result).toContain('Not yet in our own database')
+  })
+
   it('does nothing for an unrecognized message shape (kind=other)', async () => {
     const supabase = fakeSupabase()
     const other: OtaDetection = { ...NEW_REQUEST, kind: 'other' }
@@ -197,6 +245,11 @@ describe('handleOtaMessage', () => {
       from: (table: string) => {
         if (table === 'agent_proposals') return { insert: () => Promise.resolve({ data: null, error: { message: 'insert failed' } }) }
         if (table === 'conversations') return { update: () => ({ eq: () => Promise.resolve({ data: null, error: null }) }) }
+        // needs_import now checks for an existing match before inserting — no match here.
+        if (table === 'bookings') {
+          const chain = { eq: () => chain, maybeSingle: () => Promise.resolve({ data: null, error: null }) }
+          return { select: () => chain }
+        }
         throw new Error(`unexpected table "${table}"`)
       },
     }

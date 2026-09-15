@@ -229,6 +229,18 @@ function detectGetMyBoat(fromEmail: string, bodyText: string): OtaDetection | nu
  * shape as a GYG/Viator import, once the Voucher doesn't look like one of our
  * own Stripe PaymentIntent ids.
  *
+ * That Voucher check alone is NOT reliable for every one of "our own" bookings
+ * though: the same "Zoomers B.V. API (Boat Local - API)" creator line shows up
+ * for ANY booking made through Off Course's own FareHarbor API key, including
+ * admin-created ones with no Stripe payment at all — complimentary,
+ * invoice_later, stripe_recovery — which have no `pi_...` voucher to find
+ * (bug found 2026-09-15: a complimentary booking was misdetected as
+ * kind='needs_import' and flagged "not yet in our database" even though it
+ * was sitting right there). kind is still set from the Voucher check alone
+ * here, but handleOtaMessage's 'needs_import' branch now ALSO checks our own
+ * `bookings` table by guest email + date before trusting that classification
+ * — see findMatchingBookingRow in handle-message.ts.
+ *
  * "TripAdvisor Experiences/Viator - EUR - API" is Viator — grounded in a real
  * "New Booking for Shared Cruise ... Created by: Viator-API (TripAdvisor
  * Experiences/Viator - EUR - API) ... Booking #372067461" email (2026-08-14).

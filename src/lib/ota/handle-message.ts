@@ -29,6 +29,45 @@ function privateAvailability(
 }
 
 /**
+ * Looks up an existing `bookings` row for a FareHarbor notification — by
+ * Stripe PaymentIntent id when we have one (exact, unique), else by guest
+ * email + booking date (the only other stable pair the notification exposes).
+ *
+ * Needed by BOTH own_channel and needs_import: Off Course's own FareHarbor API
+ * key is registered under the "Boat Local - API" affiliate regardless of how
+ * the booking was made (see detect.ts's platformFromAffiliate), so an
+ * admin-created booking with no Stripe payment at all — complimentary,
+ * invoice_later, stripe_recovery — has no `pi_...` voucher to key off and is
+ * misdetected as kind='needs_import' (a genuine, never-seen boatlocal.nl
+ * booking) purely for lack of a payment. Checking our own database here,
+ * instead of trusting that classification blindly, is what tells "we already
+ * have this" apart from "we really don't."
+ */
+async function findMatchingBookingRow(
+  supabase: SupabaseAdmin,
+  ota: OtaDetection,
+): Promise<{ id: string } | null> {
+  if (ota.stripePaymentIntentId) {
+    const { data } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('stripe_payment_intent_id', ota.stripePaymentIntentId)
+      .maybeSingle()
+    if (data) return data
+  }
+  if (ota.guestEmail && ota.parsed.dateISO) {
+    const { data } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('customer_email', ota.guestEmail)
+      .eq('booking_date', ota.parsed.dateISO)
+      .maybeSingle()
+    return data
+  }
+  return null
+}
+
+/**
  * The proposal is the whole point of handling an OTA message — it's the only
  * thing that puts an actionable card in front of staff. Swallowing an insert
  * error here would leave the conversation's ota_status already flipped with
@@ -118,6 +157,16 @@ export async function handleOtaMessage(
   }
 
   if (ota.kind === 'needs_import') {
+    // Before assuming this is genuinely new, check whether it's actually one of
+    // our own bookings that just has no Stripe payment to key off (see
+    // findMatchingBookingRow's comment) — most relevant for platform='boatlocal',
+    // but harmless to check for every platform.
+    const matched = await findMatchingBookingRow(supabase, ota)
+    if (matched) {
+      await resolveConversation(supabase, conversationId)
+      return `${OTA_PLATFORM_NAME[ota.platform]} booking notification (#${ota.bookingRef ?? 'unknown'}) — already in our database (no Stripe payment to match on, found by guest email + date instead). No action needed.`
+    }
+
     await supabase.from('conversations').update({ ota_status: 'needs_import' }).eq('id', conversationId)
     await insertOtaProposal(supabase, {
       kind: 'fh_booking_import_ready',
@@ -144,27 +193,8 @@ export async function handleOtaMessage(
     // This notification is FareHarbor echoing back a booking OUR OWN website
     // just created (see detect.ts's platformFromAffiliate) — check our own
     // `bookings` table rather than offering an import, since importing would
-    // create a real duplicate of a row that's normally already there. The
-    // Stripe PaymentIntent id (Boat Local's "Voucher" field) is an exact,
-    // unique match; email+date is the fallback when it's missing.
-    let matched: { id: string } | null = null
-    if (ota.stripePaymentIntentId) {
-      const { data } = await supabase
-        .from('bookings')
-        .select('id')
-        .eq('stripe_payment_intent_id', ota.stripePaymentIntentId)
-        .maybeSingle()
-      matched = data
-    }
-    if (!matched && ota.guestEmail && ota.parsed.dateISO) {
-      const { data } = await supabase
-        .from('bookings')
-        .select('id')
-        .eq('customer_email', ota.guestEmail)
-        .eq('booking_date', ota.parsed.dateISO)
-        .maybeSingle()
-      matched = data
-    }
+    // create a real duplicate of a row that's normally already there.
+    const matched = await findMatchingBookingRow(supabase, ota)
 
     if (matched) {
       await resolveConversation(supabase, conversationId)
