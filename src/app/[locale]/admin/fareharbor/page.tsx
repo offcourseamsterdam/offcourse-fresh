@@ -45,16 +45,16 @@ export default function BookingFlowPage() {
   // You then create the booking manually in FareHarbor admin.
   const [overrideMinParty, setOverrideMinParty] = useState(false)
 
-  // "Invoice later" — admin picks an existing partner directly (no code needed,
-  // unlike the public Webikeamsterdam QR checkout). The suggested invoice
-  // amount is fetched from the server (uses an active campaign's commission %
-  // when one exists for this partner+listing) but is always editable.
+  // "Invoice later" — books now and emails a real Stripe Invoice to the business
+  // entered in step 3. Optionally pick a partner: their commission (excl. BTW) is
+  // suggested from an active campaign % or the partner's own rate, is editable,
+  // and is deducted on the invoice.
   const { data: partnersData, isLoading: partnersLoading } = useAdminFetch<{ partners: { id: string; name: string }[] }>(
     bookingSource === 'invoice_later' ? '/api/admin/partners' : null
   )
   const partners = partnersData?.partners ?? []
   const [selectedPartnerId, setSelectedPartnerId] = useState<string>('')
-  const [invoiceAmountInput, setInvoiceAmountInput] = useState('')
+  const [commissionInput, setCommissionInput] = useState('')
   const [invoiceSuggestionNote, setInvoiceSuggestionNote] = useState<string | null>(null)
 
   // Step 1
@@ -90,8 +90,9 @@ export default function BookingFlowPage() {
   const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null)
   const [paymentLinkUrl, setPaymentLinkUrl] = useState<string | null>(null)
   const [stripeInvoiceUrl, setStripeInvoiceUrl] = useState<string | null>(null)
+  const [invoiceWarning, setInvoiceWarning] = useState<string | null>(null)
 
-  // Stripe Invoice (Op Factuur)
+  // Invoice later — who the Stripe invoice is addressed to
   const [businessDetails, setBusinessDetails] = useState<BusinessDetails>({
     companyName: '',
     kvkNumber: '',
@@ -108,7 +109,6 @@ export default function BookingFlowPage() {
   const isInternal = bookingSource !== 'website'
   const isStripeRecovery = bookingSource === 'stripe_recovery'
   const isInvoiceLater = bookingSource === 'invoice_later'
-  const isStripeInvoice = bookingSource === 'stripe_invoice'
 
   // Sync deposit input when source changes
   useEffect(() => {
@@ -121,14 +121,11 @@ export default function BookingFlowPage() {
       setRecoveryAmountInput('')
       setRecoveryStripePiInput('')
     }
-    // Reset invoice-later fields when leaving that source
+    // Reset invoice fields when leaving "Invoice later"
     if (bookingSource !== 'invoice_later') {
       setSelectedPartnerId('')
-      setInvoiceAmountInput('')
+      setCommissionInput('')
       setInvoiceSuggestionNote(null)
-    }
-    // Reset business details when leaving stripe_invoice
-    if (bookingSource !== 'stripe_invoice') {
       setBusinessDetails({
         companyName: '',
         kvkNumber: '',
@@ -241,11 +238,10 @@ export default function BookingFlowPage() {
       }, 0)
     : null
 
-  // Suggested invoice amount — only fetched once a partner + listing are both
-  // known AND the admin hasn't already typed an amount (the `!invoiceAmountInput`
-  // guard below is what makes this "pre-fill only, never overwrite typed input":
-  // once invoiceAmountInput is set, the URL collapses to null and useAdminFetch
-  // stops fetching entirely, so it can never come back and clobber a manual edit).
+  // Suggested partner commission — only fetched once a partner + listing are both
+  // known AND the admin hasn't already typed one (the `!commissionInput` guard
+  // below is what makes this "pre-fill only, never overwrite typed input": once
+  // commissionInput is set, the URL collapses to null and useAdminFetch stops).
   const invoiceSuggestionActiveRate = isSharedListing ? primarySharedRate : selectedRate
   const invoiceSuggestionBaseCents =
     extrasStep?.calculation?.base_amount_cents ??
@@ -256,8 +252,8 @@ export default function BookingFlowPage() {
   const invoiceSuggestionExtrasCents = extrasStep?.calculation?.extras_amount_cents ?? 0
 
   const invoiceSuggestionUrl =
-    isInvoiceLater && step === 5 && selectedPartnerId && selectedListing && !invoiceAmountInput && invoiceSuggestionBaseCents > 0
-      ? `/api/admin/booking-flow/invoice-suggestion?partnerId=${selectedPartnerId}&listingId=${selectedListing.id}&baseAmountCents=${invoiceSuggestionBaseCents}&extrasAmountCents=${invoiceSuggestionExtrasCents}&guestCount=${effectiveGuestCount}`
+    isInvoiceLater && step === 5 && selectedPartnerId && selectedListing && !commissionInput && invoiceSuggestionBaseCents > 0
+      ? `/api/admin/booking-flow/invoice-suggestion?partnerId=${selectedPartnerId}&listingId=${selectedListing.id}&baseAmountCents=${invoiceSuggestionBaseCents}&extrasAmountCents=${invoiceSuggestionExtrasCents}&guestCount=${effectiveGuestCount}&netBase=true`
       : null
 
   const { data: invoiceSuggestionData, isLoading: invoiceSuggestionLoading } = useAdminFetch<{
@@ -273,15 +269,19 @@ export default function BookingFlowPage() {
   // runs the one time fresh data actually arrives.
   useEffect(() => {
     if (!invoiceSuggestionData) return
-    setInvoiceAmountInput((invoiceSuggestionData.suggestedInvoiceCents / 100).toFixed(2))
+    setCommissionInput((invoiceSuggestionData.suggestedCommissionCents / 100).toFixed(2))
     setInvoiceSuggestionNote(
-      invoiceSuggestionData.hasCampaign
-        ? `Voorgesteld op basis van actieve ${invoiceSuggestionData.commissionPercent}% commissiecampagne — pas aan indien gewenst.`
-        : invoiceSuggestionData.commissionPercent
-          ? `Berekend op basis van partnercommissie (${invoiceSuggestionData.commissionPercent}% over boothuur excl. 9% BTW). Toeristenbelasting & eventuele drankjes zijn 100% doorberekend.`
-          : 'Geen actieve campagne of partnercommissie — standaard het volledige bedrag. Pas aan indien gewenst.'
+      invoiceSuggestionData.commissionPercent
+        ? `${invoiceSuggestionData.commissionPercent}% over de boothuur excl. 9% BTW (${invoiceSuggestionData.hasCampaign ? 'actieve campagne' : 'partnertarief'}). Drankjes en toeristenbelasting worden 100% doorberekend.`
+        : 'Geen actieve campagne of partnertarief — geen commissie. Pas aan indien gewenst.'
     )
   }, [invoiceSuggestionData])
+
+  // Preview of the Stripe invoice total — same lines issueStripeInvoiceForBooking creates.
+  const invoiceCityTaxCents = effectiveGuestCount * 260
+  const invoiceCommissionCents = isInvoiceLater && selectedPartnerId ? Math.round((parseFloat(commissionInput) || 0) * 100) : 0
+  const invoicePartnerDeductionCents = Math.round(invoiceCommissionCents * 1.09)
+  const invoiceTotalCents = invoiceSuggestionBaseCents + invoiceSuggestionExtrasCents + invoiceCityTaxCents - invoicePartnerDeductionCents
 
   // ── Step 4 → 5: Extras confirmed ────────────────────────────────────────
 
@@ -376,9 +376,6 @@ export default function BookingFlowPage() {
       : (ratePrice(activeRate) ?? 0)
 
     const recoveryCents = Math.round((parseFloat(recoveryAmountInput) || 0) * 100)
-    const stripeInvoiceCents = calc
-      ? calc.grand_total_cents + (effectiveGuestCount * 260)
-      : baseAmountCents + (effectiveGuestCount * 260)
 
     setBookingLoading(true)
     setBookingError(null)
@@ -406,7 +403,7 @@ export default function BookingFlowPage() {
           date,
           startAt: selectedSlot.start_at,
           endAt: selectedSlot.end_at,
-          amountCents: isStripeRecovery ? recoveryCents : isStripeInvoice ? stripeInvoiceCents : 0,
+          amountCents: isStripeRecovery ? recoveryCents : 0,
           baseAmountCents: calc?.base_amount_cents ?? baseAmountCents,
           extrasSelected: calc?.line_items ?? [],
           extrasAmountCents: calc?.extras_amount_cents ?? 0,
@@ -422,23 +419,22 @@ export default function BookingFlowPage() {
           // Skip FareHarbor booking creation and record revenue locally only.
           // Use when FH rejects due to minimum party size — create in FH admin manually.
           overrideMinParty: isStripeRecovery ? overrideMinParty : false,
-          // Invoice later only — which partner to invoice + the final (possibly
-          // admin-edited) amount. Server derives commission_amount_cents from it.
-          partnerId: isInvoiceLater ? selectedPartnerId : undefined,
-          invoiceAmountCents: isInvoiceLater
-            ? Math.round((parseFloat(invoiceAmountInput) || 0) * 100)
-            : undefined,
-          // Stripe Invoice (Op Factuur) business details
-          businessDetails: isStripeInvoice ? businessDetails : undefined,
+          // Invoice later only — who the Stripe invoice goes to, plus an optional
+          // partner whose commission (excl. BTW) is deducted on it.
+          businessDetails: isInvoiceLater ? businessDetails : undefined,
+          partnerId: isInvoiceLater && selectedPartnerId ? selectedPartnerId : undefined,
+          commissionAmountCents: isInvoiceLater && selectedPartnerId ? invoiceCommissionCents : undefined,
         }),
       })
       const json = await res.json()
       if (json.ok) {
         setBooking(json.booking)
-        if (json.invoice?.hostedInvoiceUrl) {
-          setStripeInvoiceUrl(json.invoice.hostedInvoiceUrl)
-        } else if (json.booking?.stripe_invoice_url) {
-          setStripeInvoiceUrl(json.booking.stripe_invoice_url)
+        // apiOk nests the payload under `data`
+        if (json.data?.invoice?.hostedInvoiceUrl) {
+          setStripeInvoiceUrl(json.data.invoice.hostedInvoiceUrl)
+        }
+        if (json.data?.invoiceError) {
+          setInvoiceWarning(json.data.invoiceError)
         }
       } else {
         setBookingError(json.errors ? json.errors.join(', ') : json.error ?? 'Booking failed')
@@ -557,9 +553,10 @@ export default function BookingFlowPage() {
     setDepositInput('0')
     setOverrideMinParty(false)
     setSelectedPartnerId('')
-    setInvoiceAmountInput('')
+    setCommissionInput('')
     setInvoiceSuggestionNote(null)
     setStripeInvoiceUrl(null)
+    setInvoiceWarning(null)
     setBusinessDetails({
       companyName: '',
       kvkNumber: '',
@@ -718,51 +715,108 @@ export default function BookingFlowPage() {
               </span>
             </div>
 
-            {/* Invoice later — pick partner + confirm amount to invoice */}
+            {/* Invoice later — Stripe invoice to the business, optional partner deduction */}
             {isInvoiceLater && (
               <>
-                <div className="rounded-md bg-indigo-50 border border-indigo-200 px-4 py-3 text-xs text-indigo-900">
-                  No payment is taken now. Pick the partner this booking will be invoiced to —
-                  the suggested amount below comes from an active campaign&apos;s commission %, if
-                  one exists for this partner + listing, or defaults to the full price.
+                <div className="rounded-md bg-emerald-50 border border-emerald-200 px-4 py-3 text-xs text-emerald-900 space-y-1">
+                  <p className="font-semibold text-emerald-950">Boeken &amp; Stripe factuur versturen</p>
+                  <p>
+                    De boeking wordt direct gereserveerd in FareHarbor en de factuur wordt via Stripe gemaild naar{' '}
+                    <strong>{businessDetails.contactEmail || contact.email}</strong>.
+                  </p>
+                  <p className="pt-1 text-emerald-800">📅 Betaaltermijn: <strong>14 dagen na de vaart</strong>.</p>
+                </div>
+
+                <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 text-xs space-y-2">
+                  <div className="flex justify-between gap-3">
+                    <span className="text-zinc-500">Bedrijf:</span>
+                    <span className="font-semibold text-zinc-900 text-right">{businessDetails.companyName}</span>
+                  </div>
+                  {businessDetails.kvkNumber && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-zinc-500">KVK:</span>
+                      <span className="text-zinc-900 font-mono">{businessDetails.kvkNumber}</span>
+                    </div>
+                  )}
+                  {businessDetails.vatNumber && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-zinc-500">BTW:</span>
+                      <span className="text-zinc-900 font-mono">{businessDetails.vatNumber}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between gap-3">
+                    <span className="text-zinc-500">Adres:</span>
+                    <span className="text-zinc-900 text-right">{businessDetails.addressLine1}, {businessDetails.postalCode} {businessDetails.city}</span>
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-zinc-700">Partner</label>
+                  <label className="text-sm font-medium text-zinc-700">
+                    Partner <span className="text-zinc-400">(optional)</span>
+                  </label>
                   <select
                     value={selectedPartnerId}
                     onChange={e => {
                       setSelectedPartnerId(e.target.value)
-                      setInvoiceAmountInput('') // let the suggestion effect re-fill for the new partner
+                      setCommissionInput('') // let the suggestion effect re-fill for the new partner
+                      setInvoiceSuggestionNote(null)
                     }}
                     disabled={partnersLoading}
                     className="block w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:opacity-50"
                   >
-                    <option value="">{partnersLoading ? 'Loading partners…' : 'Select a partner…'}</option>
+                    <option value="">{partnersLoading ? 'Loading partners…' : 'No partner — invoice the full amount'}</option>
                     {partners.map(p => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
                   </select>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-zinc-700">Amount to invoice (€)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={invoiceAmountInput}
-                    onChange={e => setInvoiceAmountInput(e.target.value)}
-                    disabled={!selectedPartnerId}
-                    className="block w-48 rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:opacity-50"
-                    placeholder="0.00"
-                  />
-                  {invoiceSuggestionLoading && (
-                    <p className="text-xs text-zinc-400">Calculating suggested amount…</p>
+                {selectedPartnerId && (
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-zinc-700">Partner commission (€ excl. BTW)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={commissionInput}
+                      onChange={e => setCommissionInput(e.target.value)}
+                      className="block w-48 rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+                      placeholder="0.00"
+                    />
+                    {invoiceSuggestionLoading && (
+                      <p className="text-xs text-zinc-400">Calculating suggested commission…</p>
+                    )}
+                    {!invoiceSuggestionLoading && invoiceSuggestionNote && (
+                      <p className="text-xs text-zinc-400">{invoiceSuggestionNote}</p>
+                    )}
+                  </div>
+                )}
+
+                <div className="rounded-lg border border-zinc-200 bg-white p-4 text-xs space-y-1.5">
+                  <div className="flex justify-between gap-3">
+                    <span className="text-zinc-500">Vaart (incl. 9% BTW)</span>
+                    <span className="text-zinc-900">€{(invoiceSuggestionBaseCents / 100).toFixed(2)}</span>
+                  </div>
+                  {invoiceSuggestionExtrasCents > 0 && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-zinc-500">Extras</span>
+                      <span className="text-zinc-900">€{(invoiceSuggestionExtrasCents / 100).toFixed(2)}</span>
+                    </div>
                   )}
-                  {!invoiceSuggestionLoading && invoiceSuggestionNote && (
-                    <p className="text-xs text-zinc-400">{invoiceSuggestionNote}</p>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-zinc-500">Toeristenbelasting · €2.60 × {effectiveGuestCount}</span>
+                    <span className="text-zinc-900">€{(invoiceCityTaxCents / 100).toFixed(2)}</span>
+                  </div>
+                  {invoicePartnerDeductionCents > 0 && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-zinc-500">Partnerkorting (incl. 9% BTW)</span>
+                      <span className="text-zinc-900">−€{(invoicePartnerDeductionCents / 100).toFixed(2)}</span>
+                    </div>
                   )}
+                  <div className="flex justify-between gap-3 pt-2 border-t border-zinc-200 font-semibold text-sm">
+                    <span className="text-zinc-700">Totaal factuurbedrag</span>
+                    <span className="text-zinc-900">€{(invoiceTotalCents / 100).toFixed(2)}</span>
+                  </div>
                 </div>
               </>
             )}
@@ -825,54 +879,8 @@ export default function BookingFlowPage() {
               </>
             )}
 
-            {/* Stripe Invoicing (Op Factuur) */}
-            {isStripeInvoice && (
-              <>
-                <div className="rounded-md bg-emerald-50 border border-emerald-200 px-4 py-3 text-xs text-emerald-900 space-y-1">
-                  <p className="font-semibold text-emerald-950">
-                    Stripe Factuur & Reservering
-                  </p>
-                  <p>
-                    De boeking wordt direct gereserveerd in FareHarbor en de officiële factuur wordt per e-mail verstuurd naar <strong>{contact.email || businessDetails.contactEmail}</strong> via Stripe.
-                  </p>
-                  <p className="pt-1 text-emerald-800">
-                    📅 Betaaltermijn: <strong>14 dagen na de vaart</strong> (inclusief Virtual IBAN auto-reconciliatie).
-                  </p>
-                </div>
-
-                <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 text-xs space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500">Bedrijf:</span>
-                    <span className="font-semibold text-zinc-900">{businessDetails.companyName}</span>
-                  </div>
-                  {businessDetails.kvkNumber && (
-                    <div className="flex justify-between">
-                      <span className="text-zinc-500">KVK:</span>
-                      <span className="text-zinc-900 font-mono">{businessDetails.kvkNumber}</span>
-                    </div>
-                  )}
-                  {businessDetails.vatNumber && (
-                    <div className="flex justify-between">
-                      <span className="text-zinc-500">BTW:</span>
-                      <span className="text-zinc-900 font-mono">{businessDetails.vatNumber}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500">Adres:</span>
-                    <span className="text-zinc-900">{businessDetails.addressLine1}, {businessDetails.postalCode} {businessDetails.city}</span>
-                  </div>
-                  <div className="flex justify-between pt-2 border-t border-zinc-200 font-medium">
-                    <span className="text-zinc-700">Totaal factuurbedrag:</span>
-                    <span className="text-zinc-900 font-semibold text-sm">
-                      €{(((extrasStep?.calculation?.grand_total_cents ?? (isSharedListing ? (sharedBaseAmountCents ?? 0) : (selectedRate ? ratePrice(selectedRate) ?? 0 : 0))) + (effectiveGuestCount * 260)) / 100).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* Deposit amount field — hidden for complimentary, stripe_recovery, invoice_later, stripe_invoice */}
-            {bookingSource !== 'complimentary' && !isStripeRecovery && !isInvoiceLater && !isStripeInvoice && (
+            {/* Deposit amount field — hidden for complimentary, stripe_recovery, invoice_later */}
+            {bookingSource !== 'complimentary' && !isStripeRecovery && !isInvoiceLater && (
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-zinc-700">
                   Deposit amount (€)
@@ -902,12 +910,12 @@ export default function BookingFlowPage() {
             {extrasStep && extrasStep.calculation.line_items.length > 0 && (
               <div className="rounded-md bg-zinc-50 px-4 py-3 space-y-1">
                 <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-                  {isStripeInvoice ? 'Geselecteerde Extras (op factuur)' : 'Extras (informational — not charged)'}
+                  {isInvoiceLater ? 'Geselecteerde Extras (op factuur)' : 'Extras (informational — not charged)'}
                 </p>
                 {extrasStep.calculation.line_items.map((item, i) => (
                   <div key={i} className="flex justify-between text-sm">
                     <span className="text-zinc-600">{item.name}</span>
-                    <span className={isStripeInvoice ? 'text-zinc-900 font-medium' : 'text-zinc-400 line-through'}>
+                    <span className={isInvoiceLater ? 'text-zinc-900 font-medium' : 'text-zinc-400 line-through'}>
                       €{(item.amount_cents / 100).toFixed(2)}
                     </span>
                   </div>
@@ -927,20 +935,25 @@ export default function BookingFlowPage() {
               onClick={handleInternalConfirm}
               disabled={
                 (isStripeRecovery && !recoveryAmountInput) ||
-                (isInvoiceLater && (!selectedPartnerId || !invoiceAmountInput)) ||
-                (isStripeInvoice && (!businessDetails.companyName || !businessDetails.addressLine1 || !businessDetails.postalCode || !businessDetails.city))
+                (isInvoiceLater && (!businessDetails.companyName || !businessDetails.addressLine1 || !businessDetails.postalCode || !businessDetails.city || !(businessDetails.contactEmail || contact.email)))
               }
               className="flex-1 px-4 py-2 rounded-lg bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {isStripeRecovery
                 ? 'Confirm — already paid'
                 : isInvoiceLater
-                  ? 'Confirm — invoice later'
-                  : isStripeInvoice
-                    ? 'Boeken & Factuur Versturen via Stripe 📄'
-                    : 'Confirm Booking'}
+                  ? 'Boeken & factuur versturen via Stripe'
+                  : 'Confirm Booking'}
             </button>
           </div>
+        </div>
+      )}
+
+      {step === 6 && invoiceWarning && (
+        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-semibold">The booking is made, but the Stripe invoice was NOT sent.</p>
+          <p className="mt-1 text-xs break-words">{invoiceWarning}</p>
+          <p className="mt-1 text-xs">Retry from Bookings → this booking → &ldquo;Factuur sturen via Stripe&rdquo;.</p>
         </div>
       )}
 

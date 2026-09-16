@@ -39,7 +39,7 @@ const CONTENT_FLOOR = FOOTER_Y + 30
 const COL_RATE_END = ML + CW * 0.63
 const COL_NET_END  = ML + CW * 0.76
 const COL_VAT_END  = ML + CW * 0.88
-const COL_TOT_END  = ML + CW          // = PAGE_W - MR
+const COL_TOT_END  = ML + CW - 6      // 6px inner right padding matching left edge
 
 const ROW_H = 17
 
@@ -52,20 +52,31 @@ export interface InvoiceInput {
   invoiceDate: string
   customerName: string
   customerEmail: string
+  companyName?: string | null
+  companyAddress?: string | null
+  companyKvk?: string | null
+  companyVat?: string | null
   listingTitle: string
   /** e.g. "2026-06-30" */
   bookingDate: string
   guestCount: number
   /** Cruise price inclusive of 9% Dutch VAT, BEFORE any discount. */
   baseAmountCents: number
-  /** Individual extras — each shown as a separate line at 21% VAT. */
-  extrasSelected: Array<{ name: string; amount_cents: number }>
+  /** Individual extras — each shown as a separate line at its vatRate (defaults to 21%). */
+  extrasSelected: Array<{ name: string; amount_cents: number; vatRate?: number }>
   /** Amsterdam city tax actually charged (0% VAT). Falls back to guestCount × rate. */
   cityTaxCents?: number | null
   /** Promo/discount applied to the cruise fare, inclusive of its 9% VAT. */
   discountAmountCents?: number | null
+  /** Refund or credit adjustment lines deducted from total. */
+  refundLines?: Array<{ desc: string; amount_cents: number; vatRate?: number }>
   fhBookingUuid?: string | null
   stripePaymentIntentId?: string | null
+  stripeRefundId?: string | null
+  paymentMethod?: string | null
+  paymentStatus?: 'paid' | 'partially_refunded' | 'refunded' | 'pending'
+  /** Optional settlement note displayed in payment section, e.g. details on catering/drinks offset */
+  settlementNote?: string | null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -159,7 +170,7 @@ export function buildInvoiceTotals(input: InvoiceInput): InvoiceTotals {
   }
   for (const e of input.extrasSelected ?? []) {
     if (e && e.amount_cents > 0) {
-      lines.push({ desc: truncate(e.name, 52), amountIncl: e.amount_cents, vatRate: EXTRAS_VAT_RATE })
+      lines.push({ desc: truncate(e.name, 52), amountIncl: e.amount_cents, vatRate: e.vatRate ?? EXTRAS_VAT_RATE })
     }
   }
   if (cityTaxCents > 0) {
@@ -171,6 +182,12 @@ export function buildInvoiceTotals(input: InvoiceInput): InvoiceTotals {
   }
   if (discountCents > 0) {
     lines.push({ desc: 'Discount', amountIncl: -discountCents, vatRate: CRUISE_VAT_RATE })
+  }
+  for (const r of input.refundLines ?? []) {
+    if (r && r.amount_cents !== 0) {
+      const deduction = r.amount_cents > 0 ? -r.amount_cents : r.amount_cents
+      lines.push({ desc: truncate(r.desc, 52), amountIncl: deduction, vatRate: r.vatRate ?? CRUISE_VAT_RATE })
+    }
   }
 
   let totalNet = 0, totalVat = 0, totalIncl = 0
@@ -244,8 +261,25 @@ export async function generateInvoicePdf(input: InvoiceInput): Promise<Uint8Arra
   // ══ BILL TO ═══════════════════════════════════════════════════════════════
 
   la(page, 'BILL TO', ML, y, 7.5, B, C_GRAY); y -= 14
-  la(page, input.customerName,  ML, y, 11, B, C_BLACK); y -= 13
-  la(page, input.customerEmail, ML, y, 9, R, C_GRAY)
+  if (input.companyName) {
+    la(page, truncate(input.companyName, 45), ML, y, 11, B, C_BLACK); y -= 13
+    if (input.customerName && input.customerName !== input.companyName) {
+      la(page, `Attn: ${truncate(input.customerName, 45)}`, ML, y, 9, R, C_GRAY); y -= 12
+    }
+  } else {
+    la(page, truncate(input.customerName, 45), ML, y, 11, B, C_BLACK); y -= 13
+  }
+  la(page, input.customerEmail, ML, y, 9, R, C_GRAY); y -= 12
+  if (input.companyAddress) {
+    la(page, truncate(input.companyAddress, 50), ML, y, 8.5, R, C_GRAY); y -= 12
+  }
+  const taxIdParts = [
+    input.companyKvk ? `KvK: ${input.companyKvk}` : null,
+    input.companyVat ? `BTW: ${input.companyVat}` : null,
+  ].filter(Boolean).join('   ·   ')
+  if (taxIdParts) {
+    la(page, taxIdParts, ML, y, 8.5, R, C_GRAY); y -= 12
+  }
 
   y -= 24
 
@@ -349,8 +383,22 @@ export async function generateInvoicePdf(input: InvoiceInput): Promise<Uint8Arra
   y -= 24
 
   // ══ PAYMENT NOTE ══════════════════════════════════════════════════════════
+  const isRefunded = input.paymentStatus === 'partially_refunded' || input.paymentStatus === 'refunded' || !!input.stripeRefundId
 
-  if (input.stripePaymentIntentId) {
+  if (isRefunded) {
+    ensureSpace(12 + 12 + 12 + (input.settlementNote ? 12 : 0))
+    la(page, 'Payment received & refund processed', ML, y, 9, B, C_INDIGO); y -= 12
+    if (input.settlementNote) {
+      la(page, truncate(input.settlementNote, 115), ML, y, 8, R, C_GRAY); y -= 11
+    }
+    if (input.stripePaymentIntentId) {
+      la(page, `Payment ref: ${input.stripePaymentIntentId}${input.paymentMethod ? ` (${input.paymentMethod})` : ''}`, ML, y, 8, R, C_GRAY); y -= 11
+    }
+    if (input.stripeRefundId) {
+      la(page, `Refund ref: ${input.stripeRefundId}`, ML, y, 8, R, C_GRAY); y -= 11
+    }
+    la(page, 'Balance: EUR 0.00 (Fully settled)', ML, y, 8.5, B, C_INDIGO)
+  } else if (input.stripePaymentIntentId) {
     ensureSpace(12 + 12)
     la(page, 'Payment received. Thank you!', ML, y, 9, B, C_INDIGO); y -= 12
     la(page, `Transaction ref: ${input.stripePaymentIntentId}`, ML, y, 8, R, C_GRAY)

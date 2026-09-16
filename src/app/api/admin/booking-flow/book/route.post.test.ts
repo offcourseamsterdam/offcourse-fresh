@@ -36,6 +36,7 @@ const h = vi.hoisted(() => ({
   // 'promo_codes' lookup for the isAuthorizedByFullPromo check — independent of the
   // generic 'bookings'/other-table mock below. Defaults to "no such code" (not found).
   promoMaybeSingle: vi.fn().mockResolvedValue({ data: null }),
+  issueInvoice: vi.fn(),
 }))
 
 vi.mock('@/lib/fareharbor/client', () => ({
@@ -76,6 +77,7 @@ vi.mock('@/lib/catering/notify', () => ({ notifyCateringOrder: h.notifyCateringO
 vi.mock('@/lib/catering/send-catering-email', () => ({ sendCateringOrderEmailForBooking: h.sendCateringOrderEmailForBooking }))
 vi.mock('@/lib/booking/notify-booking-failure', () => ({ notifyBookingFailure: h.notifyBookingFailure }))
 vi.mock('@/lib/slack/send-notification', () => ({ postSlackText: h.postSlackText, postSlackOps: h.postSlackOps, postSlackCritical: h.postSlackCritical }))
+vi.mock('@/lib/stripe/issue-booking-invoice', () => ({ issueStripeInvoiceForBooking: h.issueInvoice }))
 
 import { POST } from './route'
 
@@ -336,6 +338,20 @@ describe('POST /book — complimentary auth gate (2026-07 anonymous full-discoun
     expect(h.fhCreate).toHaveBeenCalledTimes(1)
   })
 
+  // Regression (2026-09-15): a complimentary booking must never get a VAT invoice
+  // PDF attached to its confirmation email — it's a €0 tour, there's nothing to
+  // invoice, and sending one confused a real guest. baseAmountCents must reach
+  // sendConfirmationEmail as null so it skips invoice generation entirely.
+  it('sends the confirmation email WITHOUT a base amount (no invoice PDF attached)', async () => {
+    h.promoMaybeSingle.mockResolvedValue({ data: FULL_PROMO_ROW })
+
+    await POST(mockReq({ ...WEBSITE_BODY, bookingSource: 'complimentary', promoCodeId: 'promo-full-1', stripePaymentIntentId: undefined }))
+
+    expect(h.sendConfirmationEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ bookingSource: 'complimentary', baseAmountCents: null })
+    )
+  })
+
   it('still requires admin auth when NO promoCodeId is given (admin picks "complimentary" manually)', async () => {
     h.requireAdmin.mockResolvedValue(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
 
@@ -379,45 +395,103 @@ describe('POST /book — complimentary auth gate (2026-07 anonymous full-discoun
   })
 })
 
-describe('POST /book — invoice_later (admin picks a partner directly)', () => {
+describe('POST /book — invoice_later (Stripe invoice to a business, optional partner)', () => {
+  const BILLING = {
+    companyName: 'Acme B.V.', kvkNumber: '12345678', vatNumber: '', contactName: '', contactEmail: 'facturen@acme.nl',
+    contactPhone: '', addressLine1: 'Keizersgracht 1', postalCode: '1015 AA', city: 'Amsterdam', countryCode: 'NL',
+  }
+  const INVOICE_BODY = {
+    ...WEBSITE_BODY,
+    stripePaymentIntentId: undefined, // no Stripe payment — skip the idempotency lookup
+    bookingSource: 'invoice_later',
+    baseAmountCents: 31000,
+    businessDetails: BILLING,
+  }
+  const ISSUED = {
+    ok: true, invoiceId: 'in_1', invoiceNumber: 'OC-2026-00090', hostedInvoiceUrl: 'https://invoice.stripe.com/i/1',
+    pdfUrl: null, dueDate: '2026-07-06', amountDueCents: 32080,
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubEnv('SLACK_WEBHOOK_URL', 'https://hooks.slack.test/x')
+    h.maybeSingle.mockResolvedValue({ data: null })
     h.insert.mockResolvedValue({ error: null, data: { id: 'booking-row-id' } })
     h.fhValidate.mockResolvedValue({ is_bookable: true })
     h.fhCreate.mockResolvedValue({ uuid: 'fh-new' })
     h.requireAdmin.mockResolvedValue(null) // authenticated admin session
+    h.issueInvoice.mockResolvedValue(ISSUED)
   })
 
   it('requires admin auth (no code-based bypass exists for this source)', async () => {
-    await POST(mockReq({
-      ...WEBSITE_BODY,
-      bookingSource: 'invoice_later',
-      partnerId: 'partner-1',
-      invoiceAmountCents: 8500,
-    }))
+    h.requireAdmin.mockResolvedValue(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
+
+    const res = await POST(mockReq(INVOICE_BODY))
 
     expect(h.requireAdmin).toHaveBeenCalledTimes(1)
+    expect(res.status).toBe(401)
+    expect(h.fhCreate).not.toHaveBeenCalled()
   })
 
-  it('400s when partnerId is missing', async () => {
-    const res = await POST(mockReq({ ...WEBSITE_BODY, bookingSource: 'invoice_later', invoiceAmountCents: 8500 }))
+  it('400s on incomplete business details, before booking a boat', async () => {
+    const res = await POST(mockReq({ ...INVOICE_BODY, businessDetails: { ...BILLING, city: '' } }))
     const json = await res.json()
 
     expect(res.status).toBe(400)
-    expect(json.error).toMatch(/partnerId is required/)
+    expect(json.error).toMatch(/business details/)
+    expect(h.fhCreate).not.toHaveBeenCalled()
     expect(h.insert).not.toHaveBeenCalled()
+    expect(h.issueInvoice).not.toHaveBeenCalled()
   })
 
-  it('404s when the partner does not exist', async () => {
-    h.maybeSingle.mockResolvedValue({ data: null })
+  it('bills a business directly: saves the row first, then sends the Stripe invoice for that row', async () => {
+    const res = await POST(mockReq(INVOICE_BODY))
+    const json = await res.json()
 
-    const res = await POST(mockReq({
-      ...WEBSITE_BODY,
-      bookingSource: 'invoice_later',
-      partnerId: 'ghost-partner',
-      invoiceAmountCents: 8500,
+    expect(res.status).toBe(200)
+    expect(h.insert.mock.calls[0][0]).toMatchObject({
+      booking_source: 'invoice_later',
+      payment_status: 'partner_invoice_pending',
+      partner_id: null,
+      commission_amount_cents: null,
+      company_name: 'Acme B.V.',
+      stripe_amount: 0,
+      deposit_amount_cents: null,
+    })
+    expect(h.issueInvoice).toHaveBeenCalledWith('booking-row-id', expect.objectContaining({
+      companyName: 'Acme B.V.',
+      contactEmail: 'facturen@acme.nl',
+      contactName: 'Test Guest', // falls back to the guest contact
     }))
+    expect(h.insert.mock.invocationCallOrder[0]).toBeLessThan(h.issueInvoice.mock.invocationCallOrder[0])
+    expect(json.data.invoice.invoiceId).toBe('in_1')
+    expect(json.data.invoiceError).toBeNull()
+  })
+
+  it('with a partner: commission is the partner rate over the net base (ex 9% BTW)', async () => {
+    h.maybeSingle.mockResolvedValue({ data: { id: 'partner-ab', name: 'Amsterdam Boats B.V.', commission_rate: 20 } })
+
+    const res = await POST(mockReq({ ...INVOICE_BODY, partnerId: 'partner-ab' }))
+
+    expect(res.status).toBe(200)
+    expect(h.insert.mock.calls[0][0]).toMatchObject({
+      partner_id: 'partner-ab',
+      commission_amount_cents: 5688, // 20% over 31000 / 1.09 (28440)
+    })
+  })
+
+  it('with a partner: the admin-confirmed commission wins, capped at the net base', async () => {
+    h.maybeSingle.mockResolvedValue({ data: { id: 'partner-ab', name: 'Amsterdam Boats B.V.', commission_rate: 20 } })
+
+    await POST(mockReq({ ...INVOICE_BODY, partnerId: 'partner-ab', commissionAmountCents: 4000 }))
+    expect(h.insert.mock.calls[0][0]).toMatchObject({ commission_amount_cents: 4000 })
+
+    await POST(mockReq({ ...INVOICE_BODY, partnerId: 'partner-ab', commissionAmountCents: 999999 }))
+    expect(h.insert.mock.calls[1][0]).toMatchObject({ commission_amount_cents: 28440 })
+  })
+
+  it('404s when the chosen partner does not exist', async () => {
+    const res = await POST(mockReq({ ...INVOICE_BODY, partnerId: 'ghost-partner' }))
     const json = await res.json()
 
     expect(res.status).toBe(404)
@@ -425,64 +499,34 @@ describe('POST /book — invoice_later (admin picks a partner directly)', () => 
     expect(h.insert).not.toHaveBeenCalled()
   })
 
-  it('stores partner_id, derives commission from the admin-confirmed invoice amount, and sets payment_status', async () => {
-    h.maybeSingle.mockResolvedValue({ data: { id: 'partner-1', name: 'Webikeamsterdam' } })
+  it('keeps the booking and reports invoiceError when sending the Stripe invoice fails', async () => {
+    h.issueInvoice.mockResolvedValue({ ok: false, status: 500, error: 'Stripe is down' })
 
-    const res = await POST(mockReq({
-      ...WEBSITE_BODY,
-      stripePaymentIntentId: undefined, // invoice_later has no Stripe payment — skip the idempotency lookup
-      bookingSource: 'invoice_later',
-      partnerId: 'partner-1',
-      baseAmountCents: 10000,
-      invoiceAmountCents: 8500, // admin edited down from a 100% suggestion, or a campaign gave 85%
-    }))
+    const res = await POST(mockReq(INVOICE_BODY))
+    const json = await res.json()
 
     expect(res.status).toBe(200)
-    expect(h.insert).toHaveBeenCalledTimes(1)
-    expect(h.insert.mock.calls[0][0]).toMatchObject({
-      partner_id: 'partner-1',
-      commission_amount_cents: 1500, // 10000 - 8500
-      payment_status: 'partner_invoice_pending',
-      booking_source: 'invoice_later',
-    })
+    expect(json.data.invoiceError).toBe('Stripe is down')
+    expect(h.fhCancel).not.toHaveBeenCalled()
+    expect(h.postSlackOps).toHaveBeenCalledWith(expect.stringContaining('NOT sent'))
   })
 
-  it('defaults the invoice amount to the full base amount when not provided', async () => {
-    h.maybeSingle.mockResolvedValue({ data: { id: 'partner-1', name: 'Webikeamsterdam' } })
+  it('keeps the booking when the Stripe call throws', async () => {
+    h.issueInvoice.mockRejectedValue(new Error('network'))
 
-    await POST(mockReq({
-      ...WEBSITE_BODY,
-      stripePaymentIntentId: undefined, // invoice_later has no Stripe payment — skip the idempotency lookup
-      bookingSource: 'invoice_later',
-      partnerId: 'partner-1',
-      baseAmountCents: 10000,
-    }))
-
-    expect(h.insert.mock.calls[0][0]).toMatchObject({
-      commission_amount_cents: 0, // full amount invoiced — nothing withheld
-    })
-  })
-
-  it('calculates commission over net base (ex 9% BTW) when partner has commission_rate', async () => {
-    h.maybeSingle.mockResolvedValue({
-      data: { id: 'partner-ab', name: 'Amsterdam Boats B.V.', commission_rate: 20 },
-    })
-
-    const res = await POST(mockReq({
-      ...WEBSITE_BODY,
-      stripePaymentIntentId: undefined,
-      bookingSource: 'invoice_later',
-      partnerId: 'partner-ab',
-      baseAmountCents: 31000,
-    }))
+    const res = await POST(mockReq(INVOICE_BODY))
+    const json = await res.json()
 
     expect(res.status).toBe(200)
-    expect(h.insert).toHaveBeenCalledTimes(1)
-    expect(h.insert.mock.calls[0][0]).toMatchObject({
-      partner_id: 'partner-ab',
-      commission_amount_cents: 5688, // 20% over 31000 / 1.09 (28440) = 5688
-      payment_status: 'partner_invoice_pending',
-      booking_source: 'invoice_later',
-    })
+    expect(json.data.invoiceError).toBe('network')
+    expect(h.fhCancel).not.toHaveBeenCalled()
+  })
+
+  it('never attaches our VAT invoice PDF to the confirmation email (Stripe sends the invoice)', async () => {
+    await POST(mockReq(INVOICE_BODY))
+
+    expect(h.sendConfirmationEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ bookingSource: 'invoice_later', baseAmountCents: null })
+    )
   })
 })

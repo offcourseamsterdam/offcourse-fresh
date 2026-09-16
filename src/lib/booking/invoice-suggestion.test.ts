@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeInvoiceSuggestion, commissionFromInvoiceAmount } from './invoice-suggestion'
+import { computeInvoiceSuggestion } from './invoice-suggestion'
 
 describe('computeInvoiceSuggestion', () => {
   it('computes base minus commission when an active percentage campaign exists', () => {
@@ -41,16 +41,27 @@ describe('computeInvoiceSuggestion', () => {
   })
 })
 
-describe('commissionFromInvoiceAmount', () => {
-  it('derives the commission as base minus the chosen invoice amount', () => {
-    expect(commissionFromInvoiceAmount(10000, 8500)).toBe(1500)
+// The admin "Invoice later" wizard always asks for netBase, and the Stripe invoice
+// deducts round(commission × 1.09) — these must match the /book route's own math.
+describe('computeInvoiceSuggestion — commission over the net base (excl. 9% BTW)', () => {
+  it('uses the partner rate when there is no campaign', () => {
+    const result = computeInvoiceSuggestion(31000, null, { partnerCommissionRate: 20, commissionOnNetBaseOnly: true })
+    expect(result).toEqual({
+      suggestedInvoiceCents: 24800, // 31000 − round(5688 × 1.09)
+      suggestedCommissionCents: 5688, // 20% of 28440
+      hasCampaign: false,
+      commissionPercent: 20,
+      baseExVatCents: 28440,
+    })
   })
 
-  it('never goes negative when the admin invoices more than the base amount', () => {
-    expect(commissionFromInvoiceAmount(10000, 12000)).toBe(0)
-  })
-
-  it('is zero when invoicing the full amount', () => {
-    expect(commissionFromInvoiceAmount(10000, 10000)).toBe(0)
+  it('prefers an active campaign % over the partner rate', () => {
+    const result = computeInvoiceSuggestion(
+      31000,
+      { percentage_value: 15, investment_type: 'percentage' },
+      { partnerCommissionRate: 20, commissionOnNetBaseOnly: true },
+    )
+    expect(result.hasCampaign).toBe(true)
+    expect(result.suggestedCommissionCents).toBe(4266) // 15% of 28440
   })
 })

@@ -29,7 +29,7 @@ One file per track or major feature. Written before every PR and kept up to date
 | Admin booking quoteId fix + FareHarbor webhook duplicate-row fix | [admin-booking-quoteid-and-webhook-dedup-fix.md](admin-booking-quoteid-and-webhook-dedup-fix.md) | — | done |
 | Catering order auto-send (7-day window) | [catering-auto-send.md](catering-auto-send.md) | — | done |
 | Partner-invoice auth gate fix (Webikeamsterdam checkout regression) | [partner-invoice-auth-gate-fix.md](partner-invoice-auth-gate-fix.md) | — | done |
-| "Invoice later" admin booking (pick a partner directly) | [invoice-later-admin-booking.md](invoice-later-admin-booking.md) | — | done |
+| "Invoice later" — book now, bill with a Stripe Invoice (optional partner deduction) | [invoice-later-admin-booking.md](invoice-later-admin-booking.md) | — | done |
 | Admin bookings search + Planning week view | [admin-bookings-search-and-planning.md](admin-bookings-search-and-planning.md) | — | done |
 | Special-event cruise listings (Pride Amsterdam 2026) | [special-event-listings.md](special-event-listings.md) | — | done |
 | Kasboek payout pipelines (Viator/GetYourGuide/BoatLocal/Withlocals/Click&Boat/GetMyBoat/Barqo/Revolut/Zettle/FareHarbor) + BTW dashboard | [kasboek-payout-pipelines.md](kasboek-payout-pipelines.md) | — | done |

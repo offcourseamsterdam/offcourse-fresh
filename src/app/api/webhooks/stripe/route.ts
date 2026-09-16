@@ -143,6 +143,7 @@ export async function POST(request: NextRequest) {
         startAt: booking.start_time || null,
         endAt: booking.end_time || null,
         guestCount,
+        bookingSource: 'payment_link',
         amountCents: session.amount_total ?? 0,
         extrasSelected: [],
         fhBookingUuid: booking.booking_uuid ?? undefined,
@@ -224,8 +225,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true })
     }
 
-    // Stripe Invoice payments are handled in invoice.paid below.
-    if ((pi as { invoice?: unknown }).invoice || meta.booking_source === 'stripe_invoice') {
+    // Only our own checkout PIs carry booking metadata (avail_pk is set server-side in
+    // create-intent). A paid Stripe Invoice's PI also lands here, with empty metadata
+    // and no `invoice` field on current API versions — invoice.paid below reconciles
+    // it, so it must never be finalized as a website booking or reported to Google Ads.
+    if (!meta.avail_pk) {
       return NextResponse.json({ received: true })
     }
 
@@ -468,6 +472,7 @@ export async function POST(request: NextRequest) {
           ? Number(meta.customer_type_rate_pk)
           : null,
         stripePaymentIntentId: pi.id,
+        bookingSource: 'website',
         baseAmountCents: serverBaseAmount || null,
         discountAmountCents: Number(meta.discount_amount_cents ?? 0),
       }),

@@ -57,11 +57,9 @@ export const BOOKING_SOURCES = [
   // want to record a booking against a partner for later invoicing should use
   // "Invoice later" instead.
   { value: 'partner_invoice', label: 'Partner invoice', adminSelectable: false },
-  // Admin-only: staff picks an existing partner directly, no code needed. The
-  // suggested invoice amount is computed from an active campaign's commission %
-  // when one exists for that partner+listing, editable either way.
-  { value: 'invoice_later', label: 'Invoice later', adminSelectable: true },
-  { value: 'stripe_invoice', label: 'Stripe Invoice (Factuur)', adminSelectable: true },
+  // Admin-only: books now and emails a real Stripe Invoice to a business. An
+  // optional partner's commission is deducted on that invoice.
+  { value: 'invoice_later', label: 'Invoice later (Stripe factuur)', adminSelectable: true },
   { value: 'payment_link', label: 'Betaallink', adminSelectable: true },
   { value: 'stripe_recovery', label: 'Stripe recovery (already paid)', adminSelectable: true },
 ] as const

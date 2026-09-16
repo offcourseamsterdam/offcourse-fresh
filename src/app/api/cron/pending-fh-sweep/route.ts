@@ -193,6 +193,7 @@ export async function GET(request: NextRequest) {
         category: claimed.category ?? null,
         fareharborCustomerTypeRatePk: claimed.fareharbor_customer_type_rate_pk ?? null,
         stripePaymentIntentId: piId,
+        bookingSource: 'website',
         baseAmountCents: claimed.base_amount_cents ?? null,
         discountAmountCents: claimed.discount_amount_cents ?? 0,
       }),

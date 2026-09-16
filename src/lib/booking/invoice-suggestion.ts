@@ -4,9 +4,8 @@
  * Mirrors the existing partner-invoice accounting model (see
  * partner-invoiced-listings.md): `commission_amount_cents` on the bookings table
  * is always the PARTNER's cut (what they keep); what we actually invoice them is
- * base_amount_cents - commission_amount_cents. This helper computes both directions
- * so the admin wizard can show a suggested invoice total while the server still
- * stores commission_amount_cents in the pre-existing shape.
+ * base_amount_cents - commission_amount_cents. The admin wizard pre-fills its
+ * editable commission field from this suggestion.
  */
 
 export interface InvoiceSuggestionOptions {
@@ -83,10 +82,4 @@ export function computeInvoiceSuggestion(
     hasCampaign: false,
     commissionPercent: null,
   }
-}
-
-/** Inverse of the above: given the admin's final (possibly edited) invoice
- *  amount, derive the commission_amount_cents to store on the booking row. */
-export function commissionFromInvoiceAmount(baseAmountCents: number, invoiceAmountCents: number): number {
-  return Math.max(0, baseAmountCents - invoiceAmountCents)
 }

@@ -38,7 +38,7 @@ export function GuestInfoStep({
   onBack,
   onContinue,
 }: GuestInfoStepProps) {
-  const isStripeInvoice = bookingSource === 'stripe_invoice'
+  const needsBillingDetails = bookingSource === 'invoice_later'
 
   function handleBusinessDetailsChange(newDetails: BusinessDetails) {
     if (onBusinessDetailsChange) {
@@ -57,7 +57,7 @@ export function GuestInfoStep({
     !contact.name ||
     !contact.email ||
     !contact.phone ||
-    (isStripeInvoice && (!businessDetails?.companyName || !businessDetails?.addressLine1 || !businessDetails?.postalCode || !businessDetails?.city))
+    (needsBillingDetails && (!businessDetails?.companyName || !businessDetails?.addressLine1 || !businessDetails?.postalCode || !businessDetails?.city))
   return (
     <div className="space-y-4">
       <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-700 transition-colors">
@@ -65,7 +65,7 @@ export function GuestInfoStep({
       </button>
 
       {/* Business Details for Stripe Invoicing */}
-      {isStripeInvoice && businessDetails && (
+      {needsBillingDetails && businessDetails && (
         <BusinessDetailsPanel
           value={businessDetails}
           onChange={handleBusinessDetailsChange}

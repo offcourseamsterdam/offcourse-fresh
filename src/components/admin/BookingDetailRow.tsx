@@ -112,7 +112,7 @@ export const BookingDetailRow = memo(function BookingDetailRow({
   // used for complimentary / partner / GYG bookings.
   const isStripeRecovery = bookingSource === 'stripe_recovery'
   const isPaymentLink = bookingSource === 'payment_link'
-  const isStripeInvoice = bookingSource === 'stripe_invoice' || !!stripeInvoiceId
+  const isStripeInvoice = bookingSource === 'invoice_later' || !!stripeInvoiceId
   const isPaymentPending = status === 'pending_payment' || paymentStatus === 'stripe_invoice_sent'
   const isDepositStyle = isInternal && !isStripeRecovery && !isPaymentLink && !isStripeInvoice
   const extras = (extrasSelected ?? []) as AdminExtraLineItem[]
@@ -401,7 +401,7 @@ export const BookingDetailRow = memo(function BookingDetailRow({
       {/* Action buttons — only for non-cancelled bookings */}
       {!isCancelled && (
         <div className="flex items-center gap-2 pt-3 border-t border-zinc-100 mt-4 flex-wrap">
-          {isStripeInvoice && paymentStatus !== 'paid' && (
+          {!!stripeInvoiceId && paymentStatus !== 'paid' && (
             <button
               onClick={handleMarkInvoicePaid}
               disabled={markingPaid}
@@ -411,7 +411,7 @@ export const BookingDetailRow = memo(function BookingDetailRow({
               {markingPaid ? 'Bezig…' : 'Markeer factuur als betaald'}
             </button>
           )}
-          {!stripeInvoiceId && paymentStatus !== 'paid' && (
+          {bookingSource === 'invoice_later' && !stripeInvoiceId && paymentStatus !== 'paid' && (
             <button
               onClick={() => setShowSendInvoice(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors"

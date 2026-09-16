@@ -7,7 +7,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe } from '@/lib/stripe/server'
 import type { BookingSource } from '@/lib/constants'
 import { requireAdmin } from '@/lib/auth/require-admin'
-import { getOrCreateStripeCustomer, createAndSendStripeInvoice, voidStripeInvoice, type StripeInvoiceResult } from '@/lib/stripe/invoicing'
+import { issueStripeInvoiceForBooking, type InvoiceBillingDetails, type IssueBookingInvoiceResult } from '@/lib/stripe/issue-booking-invoice'
 import { validatePromoCodeById } from '@/lib/promo-codes/validate'
 import { normalizePartnerCode } from '@/lib/partner-codes/generate'
 import { validatePartnerCode, reasonMessage } from '@/lib/partner-codes/validate'
@@ -17,7 +17,6 @@ import { hasFood } from '@/lib/catering/filter'
 import { isWithinCateringAutoSendWindow } from '@/lib/catering/auto-send-cutoff'
 import { sendCateringOrderEmailForBooking } from '@/lib/catering/send-catering-email'
 import { notifyBookingFailure } from '@/lib/booking/notify-booking-failure'
-import { commissionFromInvoiceAmount } from '@/lib/booking/invoice-suggestion'
 import { commissionForCampaign } from '@/lib/booking/commission'
 import { resolveCampaignCommission } from '@/lib/booking/campaign-commission'
 import { parseAttribution } from '@/lib/tracking/attribution'
@@ -96,10 +95,8 @@ export async function POST(request: NextRequest) {
       depositAmountCents,
       partnerCode,
       promoCodeId,
-      // "Invoice later" only — admin picks an existing partner directly and
-      // confirms (or overrides) the suggested amount to invoice them.
+      // "Invoice later" only — optional partner whose commission is deducted on the invoice.
       partnerId: invoicePartnerId,
-      invoiceAmountCents,
       // When a shared booking has multiple ticket types (adult + child), this
       // array carries the per-type breakdown so FH records the correct ticket types.
       customerTypeRates,
@@ -115,14 +112,7 @@ export async function POST(request: NextRequest) {
     const isInternal = bookingSource !== 'website'
     const isPartnerInvoice = bookingSource === 'partner_invoice'
     const isStripeRecovery = bookingSource === 'stripe_recovery'
-    const isStripeInvoice = bookingSource === 'stripe_invoice'
-
-    if (isStripeInvoice) {
-      const bd = body.businessDetails
-      if (!bd?.companyName?.trim() || !bd?.addressLine1?.trim() || !bd?.postalCode?.trim() || !bd?.city?.trim()) {
-        return apiError('Missing required business details: companyName, addressLine1, postalCode, city', 400)
-      }
-    }
+    const isInvoiceLater = bookingSource === 'invoice_later'
 
     // Internal booking sources (partner_invoice, stripe_recovery, withlocals, etc.)
     // bypass Stripe payment verification and create real FareHarbor bookings and
@@ -161,6 +151,13 @@ export async function POST(request: NextRequest) {
       if (denied) return denied
     }
 
+    // Invoice later: the Stripe invoice needs a complete billing address. Checked
+    // before FareHarbor so a half-filled form never books a boat without an invoice.
+    const billing = isInvoiceLater ? (body.businessDetails as InvoiceBillingDetails | undefined) : undefined
+    if (isInvoiceLater && (!billing?.companyName?.trim() || !billing.addressLine1?.trim() || !billing.postalCode?.trim() || !billing.city?.trim())) {
+      return apiError('Missing required business details for the Stripe invoice: companyName, addressLine1, postalCode, city', 400)
+    }
+
     // ── Partner-invoice branch ─────────────────────────────────────────────
     // Skip Stripe. Validate the listing is actually partner-invoice, validate
     // the partner code, and pull the commission % from the campaign linking
@@ -177,12 +174,12 @@ export async function POST(request: NextRequest) {
     const partnerInvoiceContext = partnerInvoiceResult.context
 
     // ── Invoice-later branch ────────────────────────────────────────────────
-    // Admin picked an existing partner directly — no code, no campaign required.
+    // Optional partner picked directly by the admin — no code, no campaign required.
     const invoiceLaterResult = await resolveInvoiceLaterContext({
-      isInvoiceLater: bookingSource === 'invoice_later',
-      partnerId: (invoicePartnerId as string | null) ?? null,
+      isInvoiceLater,
+      partnerId: (invoicePartnerId as string | null) || null,
       baseAmountCents: Number(baseAmountCents ?? 0),
-      invoiceAmountCents: invoiceAmountCents != null ? Number(invoiceAmountCents) : null,
+      commissionAmountCents: body.commissionAmountCents != null ? Number(body.commissionAmountCents) : null,
     })
     if (!invoiceLaterResult.ok) {
       return apiError(invoiceLaterResult.error, invoiceLaterResult.status)
@@ -400,83 +397,8 @@ export async function POST(request: NextRequest) {
     }
     const sessionId = pickBookingSessionId(piSessionId, body.sessionId as string | null)
 
-    let stripeInvoiceResult: StripeInvoiceResult | null = null
-    let stripeCustomerId: string | null = null
-    let businessProfileId: string | null = null
-
-    if (isStripeInvoice && body.businessDetails) {
-      const bd = body.businessDetails
-      const stripeCustomer = await getOrCreateStripeCustomer({
-        name: contact.name,
-        email: contact.email,
-        phone: contact.phone,
-        companyName: bd.companyName,
-        kvkNumber: bd.kvkNumber,
-        vatNumber: bd.vatNumber,
-        address: {
-          line1: bd.addressLine1,
-          postal_code: bd.postalCode,
-          city: bd.city,
-          country: bd.countryCode || 'NL',
-        },
-      })
-      stripeCustomerId = stripeCustomer.id
-
-      try {
-        const invoiceRes = await createAndSendStripeInvoice({
-          customerId: stripeCustomer.id,
-          bookingId: booking?.uuid ?? `inv_${Date.now()}`,
-          fhBookingUuid: booking?.uuid,
-          listingTitle: String(listingTitle ?? ''),
-          bookingDate: String(date ?? ''),
-          startTime: startAt ?? null,
-          guestCount: Number(guestCount),
-          baseAmountCents: Number(baseAmountCents ?? 0),
-          extrasSelected: (extrasSelected ?? []) as Array<{ name: string; amount_cents: number }>,
-          cityTaxCents: Number(guestCount) * CITY_TAX_CENTS_PER_GUEST,
-          discountAmountCents: Number(body.discountAmountCents ?? 0),
-          category: String(category ?? 'private'),
-          daysAfterTour: 14,
-        })
-        stripeInvoiceResult = invoiceRes
-      } catch (invoiceErr) {
-        if (booking?.uuid) {
-          try {
-            await fh.cancelBooking(booking.uuid)
-          } catch (cancelErr) {
-            console.error('[book] Failed to cancel FH booking after invoice failure:', cancelErr)
-          }
-        }
-        throw invoiceErr
-      }
-
-      // Upsert business profile for autocomplete
-      try {
-        const supabase = createAdminClient()
-        const { data: profile } = await supabase
-          .from('business_profiles')
-          .upsert({
-            company_name: bd.companyName.trim(),
-            kvk_number: bd.kvkNumber?.trim() || null,
-            vat_number: bd.vatNumber?.trim() || null,
-            contact_name: contact.name,
-            contact_email: contact.email,
-            contact_phone: contact.phone,
-            address_line1: bd.addressLine1.trim(),
-            postal_code: bd.postalCode.trim(),
-            city: bd.city.trim(),
-            country_code: bd.countryCode || 'NL',
-            stripe_customer_id: stripeCustomer.id,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'company_name' })
-          .select('id')
-          .maybeSingle()
-        if (profile?.id) businessProfileId = profile.id
-      } catch (err) {
-        console.warn('[book] business_profiles upsert failed:', err)
-      }
-    }
-
+    // Company details are stored with the row up front, so a retry from the booking
+    // row ("Factuur sturen via Stripe") is pre-filled if sending the invoice fails.
     const bookingPayload = buildBookingPayload(
       body,
       { uuid: booking?.uuid },
@@ -488,16 +410,11 @@ export async function POST(request: NextRequest) {
         gclid,
         sessionId,
       },
-      isStripeInvoice && body.businessDetails ? {
-        stripeInvoiceId: stripeInvoiceResult?.invoiceId ?? null,
-        stripeInvoiceUrl: stripeInvoiceResult?.hostedInvoiceUrl ?? null,
-        stripeCustomerId,
-        businessProfileId,
-        companyName: body.businessDetails.companyName,
-        companyKvk: body.businessDetails.kvkNumber || null,
-        companyVat: body.businessDetails.vatNumber || null,
-        companyAddress: `${body.businessDetails.addressLine1}, ${body.businessDetails.postalCode} ${body.businessDetails.city}`,
-        invoiceDueDate: stripeInvoiceResult?.dueDate ?? null,
+      billing ? {
+        companyName: billing.companyName.trim(),
+        companyKvk: billing.kvkNumber?.trim() || null,
+        companyVat: billing.vatNumber?.trim() || null,
+        companyAddress: `${billing.addressLine1}, ${billing.postalCode} ${billing.city}`,
       } : undefined,
     )
 
@@ -516,13 +433,6 @@ export async function POST(request: NextRequest) {
             console.error('[book] failed to cancel duplicate FH booking', booking.uuid, err)
           }
         }
-        if (stripeInvoiceResult?.invoiceId) {
-          try {
-            await voidStripeInvoice(stripeInvoiceResult.invoiceId)
-          } catch (err) {
-            console.error('[book] failed to void duplicate Stripe invoice', stripeInvoiceResult.invoiceId, err)
-          }
-        }
         return apiOk({ deduplicated: true })
       }
       // Genuine DB failure: the FareHarbor booking EXISTS but our record didn't
@@ -531,6 +441,39 @@ export async function POST(request: NextRequest) {
       // Still return success to customer — they got what they paid for.
     } else {
       await notifyBookingsChanged()
+    }
+
+    // Invoice later: the row exists now, so send the Stripe invoice through the same
+    // path as the booking row's "Factuur sturen via Stripe" button. If it fails, the
+    // booking stays (FareHarbor + row are real) and that button is the retry.
+    let invoiceResult: Extract<IssueBookingInvoiceResult, { ok: true }> | null = null
+    let invoiceError: string | null = null
+    if (billing) {
+      if (!saveResult.ok) {
+        invoiceError = 'The booking record did not save, so no Stripe invoice was sent.'
+      } else {
+        try {
+          const issued = await issueStripeInvoiceForBooking(saveResult.id, {
+            ...billing,
+            contactName: billing.contactName || contact.name,
+            contactEmail: billing.contactEmail || contact.email,
+            contactPhone: billing.contactPhone || contact.phone,
+          })
+          if (issued.ok) invoiceResult = issued
+          else invoiceError = issued.error
+        } catch (err) {
+          invoiceError = err instanceof Error ? err.message : 'Unknown Stripe error'
+        }
+      }
+      if (invoiceError) {
+        await postSlackOps([
+          '⚠️ *Invoice-later booking created, but the Stripe invoice was NOT sent*',
+          `🏢 ${billing.companyName} · 👤 ${contact.name} (${contact.email})`,
+          `📅 ${date} · 🎫 FH: ${booking?.uuid ?? '—'}`,
+          `Error: ${invoiceError}`,
+          '_Retry from the booking row: "Factuur sturen via Stripe"._',
+        ].join('\n')).catch(err => console.error('[book] Slack invoice-failure alert error:', err))
+      }
     }
 
     // Resolve the selected customer type(s) for the Slack alert — e.g. "Diana - 2 Hours",
@@ -592,11 +535,12 @@ export async function POST(request: NextRequest) {
               commissionPercent: partnerInvoiceContext.commissionPercent,
             }
           : null,
-        invoiceLater: invoiceLaterContext
+        invoiceLater: billing
           ? {
-              partnerName: invoiceLaterContext.partnerName,
-              invoiceAmountCents: invoiceLaterContext.invoiceAmountCents,
-              commissionAmountCents: invoiceLaterContext.commissionAmountCents,
+              companyName: billing.companyName,
+              partnerName: invoiceLaterContext?.partnerName ?? null,
+              invoiceAmountCents: invoiceResult?.amountDueCents ?? null,
+              commissionAmountCents: invoiceLaterContext?.commissionAmountCents ?? 0,
             }
           : null,
       }),
@@ -614,7 +558,8 @@ export async function POST(request: NextRequest) {
         category: category ? String(category) : null,
         fareharborCustomerTypeRatePk: customerTypeRatePk ? Number(customerTypeRatePk) : null,
         stripePaymentIntentId: isInternal ? null : (stripePaymentIntentId ?? null),
-        baseAmountCents: (isInternal || isStripeInvoice || bookingSource === 'invoice_later' || bookingSource === 'partner_invoice') ? null : (invoiceBaseCents || null),
+        bookingSource: bookingSource as BookingSource,
+        baseAmountCents: isInternal ? null : (invoiceBaseCents || null),
         discountAmountCents: invoiceDiscountCents,
       }),
       ...(shouldAutoSendCateringNow && savedBookingId ? [sendCateringOrderEmailForBooking(savedBookingId)] : []),
@@ -631,26 +576,14 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    if (stripeInvoiceResult && body.businessDetails) {
-      const bd = body.businessDetails
-      const totalCents = Number(baseAmountCents ?? 0) + Number(extrasAmountCents ?? 0) + (Number(guestCount) * CITY_TAX_CENTS_PER_GUEST) - Number(body.discountAmountCents ?? 0)
-      postSlackOps([
-        `📄 *Stripe Invoice Created & Sent!*`,
-        `🏢 *${bd.companyName}* · €${(totalCents / 100).toFixed(2)}`,
-        `👤 ${contact.name} (${contact.email})`,
-        `📅 Tour: ${date}  ·  Due: ${stripeInvoiceResult.dueDate} (14 days after tour)`,
-        `🎫 FH: ${booking?.uuid ?? '—'}  ·  Invoice: \`${stripeInvoiceResult.invoiceNumber || stripeInvoiceResult.invoiceId}\``,
-        stripeInvoiceResult.hostedInvoiceUrl ? `🔗 <${stripeInvoiceResult.hostedInvoiceUrl}|View Hosted Invoice>` : '',
-      ].filter(Boolean).join('\n')).catch(err => console.error('[book] Slack invoice notification error:', err))
-    }
-
     return apiOk({
       booking: booking ? {
         ...booking,
-        stripe_invoice_id: stripeInvoiceResult?.invoiceId,
-        stripe_invoice_url: stripeInvoiceResult?.hostedInvoiceUrl,
+        stripe_invoice_id: invoiceResult?.invoiceId,
+        stripe_invoice_url: invoiceResult?.hostedInvoiceUrl,
       } : booking,
-      invoice: stripeInvoiceResult,
+      invoice: invoiceResult,
+      invoiceError,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
@@ -805,7 +738,7 @@ function buildBookingPayload(
       ? (body.recoveryStripePaymentIntentId ? String(body.recoveryStripePaymentIntentId) : null)
       : isInternal ? null : String(body.stripePaymentIntentId ?? ''),
     bookingSource: (body.bookingSource && body.bookingSource !== 'undefined' ? String(body.bookingSource) : 'website') as BookingSource,
-    depositAmountCents: (isInternal && !isStripeRecovery && body.bookingSource !== 'stripe_invoice') ? Number(body.depositAmountCents ?? 0) : null,
+    depositAmountCents: (isInternal && !isStripeRecovery && body.bookingSource !== 'invoice_later') ? Number(body.depositAmountCents ?? 0) : null,
     sessionId: attribution.sessionId,
     cookieCampaignId: attribution.campaignId,
     partnerId: attribution.partnerId,
@@ -948,10 +881,10 @@ async function resolvePartnerInvoiceContext(params: {
 
 /** The resolved "invoice later" context — null when the booking isn't invoice_later. */
 interface InvoiceLaterContext {
-  partnerId: string
-  partnerName: string
+  partnerId: string | null
+  partnerName: string | null
+  /** Partner's cut excl. 9% BTW; the Stripe invoice deducts it as −round(commission × 1.09). */
   commissionAmountCents: number
-  invoiceAmountCents: number
 }
 
 type InvoiceLaterResolution =
@@ -959,11 +892,10 @@ type InvoiceLaterResolution =
   | { ok: false; error: string; status: number }
 
 /**
- * Resolve the "invoice later" context — an admin picking an existing partner
- * directly (no code, unlike the Webikeamsterdam QR flow). No campaign lookup
- * happens here: the admin already saw a suggested amount from
- * /api/admin/booking-flow/invoice-suggestion (or typed their own) before
- * submitting, so `invoiceAmountCents` is authoritative here, not re-derived.
+ * Resolve the "invoice later" context. The Stripe invoice goes to the business in
+ * body.businessDetails; a partner is optional. With a partner, the admin-confirmed
+ * commission wins (the wizard pre-fills it from /api/admin/booking-flow/invoice-suggestion),
+ * otherwise it's the partner's own rate over the cruise price excl. 9% BTW.
  *
  * For non-invoice_later bookings, immediately returns `{ ok: true, context: null }`.
  */
@@ -971,11 +903,11 @@ async function resolveInvoiceLaterContext(params: {
   isInvoiceLater: boolean
   partnerId: string | null
   baseAmountCents: number
-  invoiceAmountCents: number | null
+  commissionAmountCents: number | null
 }): Promise<InvoiceLaterResolution> {
   if (!params.isInvoiceLater) return { ok: true, context: null }
   if (!params.partnerId) {
-    return { ok: false, error: 'partnerId is required for invoice_later bookings', status: 400 }
+    return { ok: true, context: { partnerId: null, partnerName: null, commissionAmountCents: 0 } }
   }
 
   const supabase = createAdminClient()
@@ -986,21 +918,17 @@ async function resolveInvoiceLaterContext(params: {
     .maybeSingle()
   if (!partner) return { ok: false, error: 'Partner not found', status: 404 }
 
-  let commissionAmountCents = commissionFromInvoiceAmount(params.baseAmountCents, params.invoiceAmountCents ?? params.baseAmountCents)
-  if (partner.commission_rate && Number(partner.commission_rate) > 0) {
-    const rate = Number(partner.commission_rate)
-    const baseExVatCents = Math.round(params.baseAmountCents / 1.09)
-    commissionAmountCents = Math.round(baseExVatCents * rate / 100)
-  }
+  const baseExVatCents = Math.round(params.baseAmountCents / 1.09)
+  const commissionAmountCents = params.commissionAmountCents != null
+    ? Math.min(Math.max(0, Math.round(params.commissionAmountCents)), baseExVatCents)
+    : Math.round(baseExVatCents * Number(partner.commission_rate ?? 0) / 100)
 
-  const invoiceAmountCents = params.invoiceAmountCents ?? (params.baseAmountCents - Math.round(commissionAmountCents * 1.09))
   return {
     ok: true,
     context: {
       partnerId: params.partnerId,
       partnerName: partner.name ?? 'Partner',
       commissionAmountCents,
-      invoiceAmountCents,
     },
   }
 }
@@ -1099,7 +1027,7 @@ export async function resolveAttribution(params: {
   // public QR flow or this admin flow, never both). No campaign lookup here —
   // the admin already confirmed the final commission via the invoice-suggestion
   // endpoint (or typed their own), so this is authoritative, not re-derived.
-  if (params.invoiceLaterContext) {
+  if (params.invoiceLaterContext?.partnerId) {
     partnerId = params.invoiceLaterContext.partnerId
     commissionAmountCents = params.invoiceLaterContext.commissionAmountCents
   }
@@ -1136,11 +1064,12 @@ async function saveToSupabase(p: BookingPayload): Promise<{ ok: true; id: string
       fareharbor_customer_type_rate_pk: p.customerTypeRatePk,
       customer_type_name: customerTypeName,
       stripe_payment_intent_id: p.stripePaymentIntentId,
-      // Stripe recovery: use the admin-entered amount (real revenue). Other internal: 0.
-      // Website / stripe_invoice: compute from base + extras + city tax − discount.
+      // Stripe recovery: use the admin-entered amount (real revenue). Other internal: 0
+      // (invoice_later gets the invoice's amount due once the invoice is sent).
+      // Website: compute from base + extras + city tax − discount.
       stripe_amount: isStripeRecovery
         ? p.amountCents
-        : (isInternal && p.bookingSource !== 'stripe_invoice')
+        : isInternal
           ? 0
           : p.baseAmountCents + p.extrasAmountCents + (p.guestCount * CITY_TAX_CENTS_PER_GUEST) - p.discountAmountCents,
       base_amount_cents: p.baseAmountCents,
@@ -1163,20 +1092,17 @@ async function saveToSupabase(p: BookingPayload): Promise<{ ok: true; id: string
       guest_note: p.note || null,
       status: 'confirmed',
       // payment_status:
-      //   - partner_invoice / invoice_later: 'partner_invoice_pending' (awaiting
-      //     partner payout — same real-world state whether the customer typed a
-      //     QR code or an admin picked the partner directly)
-      //   - stripe_invoice: 'stripe_invoice_sent' (awaiting customer payment via Stripe)
+      //   - partner_invoice: 'partner_invoice_pending' (awaiting partner payout)
+      //   - invoice_later:   'partner_invoice_pending' until its Stripe invoice is sent,
+      //     which flips it to 'stripe_invoice_sent' (then 'paid' via invoice.paid)
       //   - stripe_recovery: 'paid' (real money came in, just manually recorded)
       //   - other internal:  'comp' (no money exchanged)
       //   - website:         'paid'
       payment_status: (p.bookingSource === 'partner_invoice' || p.bookingSource === 'invoice_later')
         ? 'partner_invoice_pending'
-        : p.bookingSource === 'stripe_invoice'
-          ? 'stripe_invoice_sent'
-          : isStripeRecovery
-            ? 'paid'
-            : (isInternal ? 'comp' : 'paid'),
+        : isStripeRecovery
+          ? 'paid'
+          : (isInternal ? 'comp' : 'paid'),
       currency: 'eur',
       booking_source: p.bookingSource,
       gclid: p.gclid,
@@ -1340,8 +1266,9 @@ interface SlackPayload {
     commissionPercent: number
   } | null
   invoiceLater?: {
-    partnerName: string
-    invoiceAmountCents: number
+    companyName: string
+    partnerName: string | null
+    invoiceAmountCents: number | null
     commissionAmountCents: number
   } | null
 }
@@ -1362,7 +1289,7 @@ async function sendSlackNotification(p: SlackPayload) {
     isPartnerInvoice
       ? `*New partner-invoice booking!* 🤝 (${pi!.partnerName})`
       : isInvoiceLater
-        ? `*New "invoice later" booking!* 💼 (${il!.partnerName})`
+        ? `*New invoice booking!* 🧾 (${il!.companyName}${il!.partnerName ? ` · via ${il!.partnerName}` : ''})`
         : isInternal
           ? `*New internal booking!* 📋 (${p.bookingSource})`
           : `*New booking confirmed!* 🎉`,
@@ -1375,7 +1302,7 @@ async function sendSlackNotification(p: SlackPayload) {
     isPartnerInvoice
       ? `💰 Ticket: ${fmtAmountEur(pi!.baseAmountCents)} · To invoice: ${fmtAmountEur(invoiceable)} · Partner cut: ${fmtAmountEur(pi!.commissionAmountCents)} (${pi!.commissionPercent}%)`
       : isInvoiceLater
-        ? `💰 To invoice: ${fmtAmountEur(il!.invoiceAmountCents)} · Partner cut: ${fmtAmountEur(il!.commissionAmountCents)}`
+        ? `💰 Stripe invoice: ${il!.invoiceAmountCents != null ? fmtAmountEur(il!.invoiceAmountCents) : 'NOT sent'}${il!.commissionAmountCents > 0 ? ` · Partner cut: ${fmtAmountEur(il!.commissionAmountCents)} excl. BTW` : ''}`
         : isInternal
           ? (p.depositAmountCents != null ? `💰 Deposit: ${fmtAmountEur(p.depositAmountCents)}` : '')
           : `💰 ${fmtAmountEur(p.amountCents)}`,

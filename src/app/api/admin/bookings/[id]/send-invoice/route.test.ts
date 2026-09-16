@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
   }),
   postSlackOps: vi.fn().mockResolvedValue(undefined),
   requireAdmin: vi.fn().mockResolvedValue(null),
+  partnerSelect: vi.fn().mockResolvedValue({ data: null }),
 }))
 
 vi.mock('@/lib/supabase/admin', () => ({
@@ -25,6 +26,9 @@ vi.mock('@/lib/supabase/admin', () => ({
         return {
           upsert: h.dbUpsert,
         }
+      }
+      if (table === 'partners') {
+        return { select: () => ({ eq: () => ({ maybeSingle: h.partnerSelect }) }) }
       }
       return {
         select: () => ({ eq: () => ({ single: h.dbSelect }) }),
@@ -60,6 +64,7 @@ const EXISTING_BOOKING = {
   listing_title: 'Classic Private Tour',
   status: 'confirmed',
   payment_status: 'unpaid',
+  booking_source: 'invoice_later',
 }
 
 function mockReq(body: object = {}): NextRequest {
@@ -96,6 +101,58 @@ describe('POST /api/admin/bookings/[id]/send-invoice', () => {
     expect(res.status).toBe(400)
     const json = await res.json()
     expect(json.error).toContain('geannuleerd')
+  })
+
+  it('rejects bookings whose source is not invoice_later (e.g. complimentary)', async () => {
+    h.dbSelect.mockResolvedValueOnce({
+      data: { ...EXISTING_BOOKING, booking_source: 'complimentary' },
+      error: null,
+    })
+    const res = await POST(mockReq({ companyName: 'Acme Corp' }), mockParams())
+    expect(res.status).toBe(400)
+    const json = await res.json()
+    expect(json.error).toContain('Invoice later')
+    expect(h.createInvoice).not.toHaveBeenCalled()
+  })
+
+  it('rejects when a Stripe invoice is already linked', async () => {
+    h.dbSelect.mockResolvedValueOnce({ data: { ...EXISTING_BOOKING, stripe_invoice_id: 'in_existing' }, error: null })
+    const res = await POST(mockReq({ companyName: 'Acme Corp' }), mockParams())
+    expect(res.status).toBe(400)
+    expect(h.createInvoice).not.toHaveBeenCalled()
+  })
+
+  it('rejects a booking that is already paid', async () => {
+    h.dbSelect.mockResolvedValueOnce({ data: { ...EXISTING_BOOKING, payment_status: 'paid' }, error: null })
+    const res = await POST(mockReq({ companyName: 'Acme Corp' }), mockParams())
+    expect(res.status).toBe(400)
+    expect(h.createInvoice).not.toHaveBeenCalled()
+  })
+
+  it('deducts the partner commission on the invoice when the booking has a partner', async () => {
+    h.dbSelect.mockResolvedValueOnce({
+      data: { ...EXISTING_BOOKING, partner_id: 'partner-ab', commission_amount_cents: 5688 },
+      error: null,
+    })
+    h.partnerSelect.mockResolvedValueOnce({ data: { name: 'Amsterdam Boats B.V.', commission_rate: 20 } })
+
+    const res = await POST(mockReq({ companyName: 'Amsterdam Boats B.V.', contactEmail: 'info@amsterdam-boats.com' }), mockParams())
+
+    expect(res.status).toBe(200)
+    expect(h.createInvoice).toHaveBeenCalledWith(expect.objectContaining({
+      partnerCommission: expect.objectContaining({ partnerName: 'Amsterdam Boats B.V.', commissionAmountCents: 5688 }),
+    }))
+  })
+
+  it('does not deduct the commission when the admin unticks it', async () => {
+    h.dbSelect.mockResolvedValueOnce({
+      data: { ...EXISTING_BOOKING, partner_id: 'partner-ab', commission_amount_cents: 5688 },
+      error: null,
+    })
+
+    await POST(mockReq({ companyName: 'Acme Corp', deductPartnerCommission: false }), mockParams())
+
+    expect(h.createInvoice).toHaveBeenCalledWith(expect.objectContaining({ partnerCommission: null }))
   })
 
   it('creates Stripe customer, generates and sends invoice, and updates booking', async () => {

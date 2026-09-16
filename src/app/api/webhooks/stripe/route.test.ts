@@ -264,6 +264,20 @@ describe('stripe webhook — payment_intent.succeeded (single finalizer)', () =>
     expect(h.fhCreateBookingIdempotent).not.toHaveBeenCalled()
   })
 
+  // Regression (2026-09-15): a paid Stripe Invoice's PI has empty metadata and no
+  // `invoice` field on current API versions. It must not be finalized as a website
+  // booking (invoice.paid reconciles it) or reported to Google Ads.
+  it('ignores Stripe Invoice payments (PI without booking metadata)', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded({ metadata: {}, description: 'Payment for Invoice' }))
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.insert).not.toHaveBeenCalled()
+    expect(h.fhCreateBookingIdempotent).not.toHaveBeenCalled()
+    expect(h.reportBookingConversion).not.toHaveBeenCalled()
+  })
+
   it('attributes campaign/partner + computes commission from PI metadata', async () => {
     h.constructEvent.mockReturnValue(makePiSucceeded({
       metadata: { ...PI_META, campaign_id: 'camp-1', partner_id: 'partner-1', server_base_amount_cents: '15000' },

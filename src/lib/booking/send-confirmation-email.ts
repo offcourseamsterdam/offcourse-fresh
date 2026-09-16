@@ -3,6 +3,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { escapeHtml as esc, fmtEurosRounded as fmtAmountEur } from '@/lib/utils'
 import { generateInvoicePdf, makeInvoiceNumber } from '@/lib/booking/generate-invoice-pdf'
 import { allocateInvoiceNumber } from '@/lib/booking/allocate-invoice-number'
+import { shouldAttachVatInvoicePdf } from '@/lib/booking/invoice-eligibility'
+import type { BookingSource } from '@/lib/constants'
 import { postSlackOps } from '@/lib/slack/send-notification'
 
 let _resend: Resend | null = null
@@ -93,6 +95,8 @@ async function lookupBoatPhoto(
 }
 
 export interface ConfirmationEmailInput {
+  /** Required so every caller decides explicitly — only 'website' may get a VAT invoice PDF. */
+  bookingSource: BookingSource
   contact: { name: string; email: string; phone?: string }
   listingTitle: string
   /** Defaults to 'Brouwersgracht 29, Amsterdam' when omitted. */
@@ -202,7 +206,7 @@ export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<
   // can be conditioned on whether the PDF actually exists — never promise an
   // attachment we didn't produce (payment-link / £0 / generation-failure paths).
   let invoicePdfBytes: Uint8Array | null = null
-  if (p.baseAmountCents) {
+  if (shouldAttachVatInvoicePdf({ bookingSource: p.bookingSource, baseAmountCents: p.baseAmountCents, amountCents: p.amountCents })) {
     try {
       const invoiceDate = new Date().toLocaleDateString('en-GB', {
         day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Amsterdam',
@@ -221,7 +225,7 @@ export async function sendConfirmationEmail(p: ConfirmationEmailInput): Promise<
         listingTitle:  p.listingTitle,
         bookingDate:   p.date,
         guestCount:    p.guestCount,
-        baseAmountCents: p.baseAmountCents,
+        baseAmountCents: p.baseAmountCents ?? 0,
         extrasSelected:  p.extrasSelected,
         cityTaxCents:    p.cityTaxCents ?? null,
         discountAmountCents: p.discountAmountCents ?? null,
