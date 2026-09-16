@@ -19,6 +19,7 @@ import {
   type LoanPayload,
 } from '@/components/admin/finance/cockpit/api-types'
 import { eur, eurCents, dateNL } from '@/components/admin/finance/cockpit/money'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 /** The materialised payment schedule of one loan, with a "Betaald" button per open period. */
 function LoanSchedule({ loanId, onChanged }: { loanId: string; onChanged: () => void }) {
@@ -111,6 +112,7 @@ export default function FinanceLoansPage() {
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
+          <AdminEyebrow label="Performance" />
           <h1 className="text-2xl font-semibold text-zinc-900">Leningen</h1>
           <p className="text-sm text-zinc-500 mt-1">Elke betaling uit het schema telt als verplichting zodra hij in de horizon valt.</p>
         </div>

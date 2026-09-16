@@ -23,6 +23,7 @@ import {
   type SimulationParams,
 } from '@/lib/finance/cockpit/simulator/simulation-engine'
 import { eur, pct } from '@/components/admin/finance/cockpit/money'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 export default function FinanceScenariosPage() {
   // Simulator state parameters
@@ -79,6 +80,7 @@ export default function FinanceScenariosPage() {
       {/* Header */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
+          <AdminEyebrow label="Performance" />
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
             <span className="text-xs font-semibold uppercase tracking-wider text-indigo-700">

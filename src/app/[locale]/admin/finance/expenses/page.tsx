@@ -13,6 +13,7 @@ import { EXPENSES_API, type ExpenseApiRow, type ExpensesResponse, type ExpenseSu
 import { ExpenseRowItem } from '@/components/admin/finance/expenses/ExpenseRow'
 import { ExpenseDrawer } from '@/components/admin/finance/expenses/ExpenseDrawer'
 import { VatPositionCards } from '@/components/admin/finance/expenses/VatPositionCards'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 const PAGE_SIZE = 50
 
@@ -79,6 +80,7 @@ export default function FinanceExpensesPage() {
       <FinanceSubnav />
 
       <div>
+        <AdminEyebrow label="Performance" />
         <h1 className="text-2xl font-semibold text-zinc-900">Uitgaven</h1>
         <p className="text-sm text-zinc-500 mt-1">Elke betaling met zijn factuur of bon, de BTW erop, en of het al bij de boekhouder ligt.</p>
       </div>

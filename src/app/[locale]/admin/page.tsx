@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { TrendingUp, Calendar, Ship, AlertTriangle, MessageSquare, Clock, PackageX } from 'lucide-react'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { formatAmsterdamTime } from '@/lib/utils'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 interface CaptainShift {
   id: string
@@ -70,6 +71,7 @@ export default function AdminDashboardPage() {
   return (
     <div className="p-8 max-w-6xl">
       <div className="mb-8">
+        <AdminEyebrow label="Operations" />
         <h1 className="text-2xl font-semibold text-zinc-900 tracking-tight">Dashboard</h1>
         <p className="text-sm text-zinc-500 mt-1">Welcome back — here&apos;s what&apos;s happening.</p>
       </div>

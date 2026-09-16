@@ -2,6 +2,7 @@
 
 import { Sparkles, RefreshCw } from 'lucide-react'
 import { PeriodSelector, type PeriodKey } from '@/components/admin/tracking/PeriodSelector'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 interface Props {
   period: PeriodKey
@@ -19,6 +20,7 @@ export function AiVisibilityHeader({
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
       <div>
+        <AdminEyebrow label="Marketing" />
         <h1 className="text-2xl font-bold text-zinc-900 tracking-tight flex items-center gap-2">
           <Sparkles className="w-6 h-6 text-violet-600" />
           AI Visibility &amp; LLM Zoekmachines

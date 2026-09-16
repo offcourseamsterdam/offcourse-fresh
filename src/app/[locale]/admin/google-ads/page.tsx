@@ -8,6 +8,7 @@ import { useAdminFetch } from '@/hooks/useAdminFetch'
 import type { DashboardCampaign, HeroStats, FunnelStep } from '@/lib/google-ads/dashboard'
 import type { LinkedCampaign } from '@/lib/google-ads/listings'
 import { CampaignCard } from './CampaignCard'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 interface DashboardData {
   days: number
@@ -43,6 +44,7 @@ export default function GoogleAdsPage() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
+          <AdminEyebrow label="Performance" />
           <h1 className="text-2xl font-bold text-zinc-900 flex items-center gap-2">
             <TrendingUp className="w-6 h-6 text-indigo-600" />
             Google Ads

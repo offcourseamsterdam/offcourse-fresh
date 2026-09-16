@@ -10,6 +10,7 @@ import { ChannelBarChart } from '@/components/admin/tracking/ChannelBarChart'
 import { FunnelChart } from '@/components/admin/tracking/FunnelChart'
 import { CategoryTabs, type CategoryFilter } from '@/components/admin/tracking/CategoryTabs'
 import { fmtAdminAmountRounded } from '@/lib/admin/format'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 interface OverviewData {
   kpis: {
@@ -136,6 +137,7 @@ export default function StatisticsPage() {
             <Activity className="w-5 h-5 text-white" />
           </div>
           <div>
+            <AdminEyebrow label="Performance" />
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold text-zinc-900">Performance</h1>
               <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-medium bg-emerald-50 px-2 py-0.5 rounded-full">

@@ -20,6 +20,7 @@ import {
   type TransactionsResponse,
 } from '@/components/admin/finance/cockpit/api-types'
 import { dateTimeNL } from '@/components/admin/finance/cockpit/money'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 const PAGE_SIZE = 50
 
@@ -144,6 +145,7 @@ export default function FinanceTransactionsPage() {
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
+          <AdminEyebrow label="Performance" />
           <h1 className="text-2xl font-semibold text-zinc-900">Transacties</h1>
           <p className="text-sm text-zinc-500 mt-1">Alles wat er op de Revolut-rekening gebeurt, nieuwste eerst.</p>
           {connected && (

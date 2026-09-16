@@ -8,9 +8,13 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'bg-zinc-900 text-zinc-50 shadow hover:bg-zinc-800',
+        // bg/fg/border read from --ui-button-* custom properties, which default to
+        // these exact zinc values everywhere — so the public site (which never sets
+        // them) is unaffected — and are overridden under [data-admin] in globals.css
+        // to the navy admin theme. One place to repaint every admin button.
+        default: 'bg-[var(--ui-button-bg,#18181b)] text-[var(--ui-button-fg,#fafafa)] shadow hover:bg-[var(--ui-button-bg-hover,#27272a)]',
         destructive: 'bg-red-600 text-white shadow-sm hover:bg-red-700',
-        outline: 'border border-zinc-200 bg-white shadow-sm hover:bg-zinc-50 hover:text-zinc-900',
+        outline: 'border border-[var(--ui-button-border,#e4e4e7)] bg-white shadow-sm hover:bg-zinc-50 hover:text-zinc-900',
         secondary: 'bg-zinc-100 text-zinc-900 shadow-sm hover:bg-zinc-200',
         ghost: 'hover:bg-zinc-100 hover:text-zinc-900',
         link: 'text-zinc-900 underline-offset-4 hover:underline',

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { BookOpen, ArrowLeft, ShieldCheck, FileText } from 'lucide-react'
 import { GHOST_AGENTS, AUTONOMY_LEVEL, AUTONOMY_CEILING, IRREVERSIBLE_KINDS } from '@/lib/ghost/agents'
 import { rulebookForAgent } from '@/lib/ghost/rulebook'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 /**
  * THE RULEBOOK — what every agent is told (the exact prompt text) and what
@@ -34,6 +35,7 @@ export default async function RulebookPage({ params }: Props) {
       </Link>
 
       <div className="flex items-center gap-3 mb-2">
+        <AdminEyebrow label="Dev" />
         <BookOpen className="w-7 h-7 text-violet-600" />
         <h1 className="text-2xl font-bold text-zinc-900">The Rulebook</h1>
       </div>

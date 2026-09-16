@@ -8,6 +8,7 @@ import { CampaignModal } from '@/components/admin/tracking/CampaignModal'
 import { CategoryTabs, type CategoryFilter } from '@/components/admin/tracking/CategoryTabs'
 import { ChannelSection, type ChannelWithMetrics, type Campaign, type CampaignMetrics, type CampaignBooking } from './ChannelSection'
 import { AiReferralsSection } from './AiReferralsSection'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 export default function CampaignsPage() {
   const [period, setPeriod] = useState<PeriodKey>('30d')
@@ -147,6 +148,7 @@ export default function CampaignsPage() {
             <Megaphone className="w-5 h-5 text-white" />
           </div>
           <div>
+            <AdminEyebrow label="Marketing" />
             <h1 className="text-xl font-bold text-zinc-900">Campaigns</h1>
             <p className="text-xs text-zinc-400">Channels, campaigns & tracking links</p>
           </div>

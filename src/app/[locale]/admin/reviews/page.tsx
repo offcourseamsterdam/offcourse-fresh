@@ -11,6 +11,7 @@ import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { ReviewsOverviewCard } from '@/components/admin/ReviewsOverviewCard'
 import { ReviewsStatsSection } from '@/components/admin/ReviewsStatsSection'
 import { useReviews } from './useReviews'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 type SourceFilter = 'all' | 'google' | 'tripadvisor' | 'withlocals' | 'getyourguide'
 
@@ -69,6 +70,7 @@ export default function AdminReviewsPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
+          <AdminEyebrow label="Operations" />
           <h1 className="text-2xl font-semibold text-zinc-900">Reviews</h1>
           <p className="text-sm text-zinc-500 mt-1">
             Manage customer reviews from Google and TripAdvisor.

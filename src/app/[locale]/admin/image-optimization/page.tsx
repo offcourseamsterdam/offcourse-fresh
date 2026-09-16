@@ -5,6 +5,7 @@ import { Loader2, RefreshCw, Zap, Database, RotateCcw, Link2 } from 'lucide-reac
 import { AssetRow } from '@/components/admin/image-optimization/AssetRow'
 import type { ImageListResponse } from '@/components/admin/image-optimization/types'
 import type { ImageAssetStatus } from '@/lib/images/types'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 type Filter = 'all' | ImageAssetStatus
 
@@ -154,6 +155,7 @@ export default function ImageOptimizationPage() {
     <div className="p-6 max-w-7xl mx-auto">
       <header className="flex items-start justify-between mb-6">
         <div>
+          <AdminEyebrow label="Dev" />
           <h1 className="text-2xl font-bold text-zinc-900">Image Optimization</h1>
           <p className="text-sm text-zinc-600 mt-1">
             Pipeline: Sharp → Gemini Vision → Claude translation. Generates AVIF + WebP variants

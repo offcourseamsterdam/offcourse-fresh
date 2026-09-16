@@ -7,6 +7,7 @@ import { Loader2, ArrowLeft, Copy, Check, ExternalLink, Plus, Pencil, Ban } from
 
 import { CampaignModal } from '@/components/admin/tracking/CampaignModal'
 import { PartnerModal } from '@/components/admin/tracking/PartnerModal'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 interface Partner {
   id: string
@@ -117,6 +118,7 @@ export default function PartnerDetailPage() {
 
       {/* Partner info */}
       <div className="bg-white rounded-xl border border-zinc-200 p-5">
+        <AdminEyebrow label="Marketing" />
         <div className="flex items-start justify-between mb-1">
           <h1 className="text-xl font-bold text-zinc-900">{partner.name}</h1>
           <div className="flex items-center gap-2">

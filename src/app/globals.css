@@ -101,6 +101,45 @@
   --radius: 0.5rem;
 }
 
+/* ── Admin design system (Direction C — "Ink & Color Coded") ──────────
+   A warm, calm surface with brand-colored accents borrowed from the
+   public site's palette (--color-lavender/lime/pink/yellow above), but
+   none of the homepage's display fonts or grain textures — those read
+   as fun for a visitor, not for someone doing bookkeeping at 8am.
+   Everything below is consumed by src/components/ui/{button,card,badge,
+   table,tabs,input,separator}.tsx and DashboardSidebar — change it here
+   and it repaints the whole admin. Defined on :root (not [data-admin])
+   because DashboardSidebar is also reused, without the data-admin
+   wrapper, by the captain/support portal layouts. */
+:root {
+  --admin-font:        var(--font-admin-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --admin-bg:          #faf8f4;   /* page background */
+  --admin-card-bg:     #ffffff;
+  --admin-ink:         #1a1a2e;   /* primary text */
+  --admin-muted:       #6d6a78;   /* secondary text */
+  --admin-faint:       #a19dab;   /* placeholders, table headers */
+  --admin-line:        #f1ede5;   /* hairlines, table row dividers */
+  --admin-border:      #ebe6dc;   /* card + input borders */
+  --admin-navy:         #16163a;  /* sidebar bg, primary buttons */
+  --admin-navy-active:  #242452;  /* sidebar active row, button hover */
+  --admin-navy-text:    #b1b1cc;  /* sidebar default label text */
+  --admin-navy-label:   #6c6c96;  /* sidebar section labels */
+  --admin-navy-icon:    #8484a8;  /* sidebar default icon tint */
+  --admin-navy-soon:    #4c4c75;  /* sidebar "coming soon" items */
+}
+
+/* Button's shared `default` variant reads --ui-button-* with a plain-zinc
+   fallback (see button.tsx) so it stays untouched outside admin — the
+   captain/support portals above don't set data-admin and shouldn't turn
+   navy just because the sidebar now lives in a shared file. */
+[data-admin] {
+  --ui-button-bg:            var(--admin-navy);
+  --ui-button-bg-hover:      var(--admin-navy-active);
+  --ui-button-fg:            #ffffff;
+  --ui-button-border:        var(--admin-border);
+  --ui-focus-ring:           var(--admin-navy);
+}
+
 /* ── Animations ────────────────────────────────────── */
 @keyframes polaroid-float {
   0%, 100% { transform: translateY(0px); }
@@ -167,7 +206,10 @@
 
 /* ── Utilities ─────────────────────────────────────── */
 @layer utilities {
-  /* Admin font reset — override display font on all headings */
+  /* Admin font reset — override display font on all headings.
+     Uses DM Sans (see --font-admin-sans, set by next/font/google in the
+     admin layout) instead of the homepage's Briston/Avenir — a calmer,
+     more neutral UI face for something used all day. */
   [data-admin] h1,
   [data-admin] h2,
   [data-admin] h3,
@@ -179,7 +221,7 @@
   [data-admin] button,
   [data-admin] input,
   [data-admin] label {
-    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: var(--admin-font);
     letter-spacing: normal;
   }
   /* Polaroid card frame */

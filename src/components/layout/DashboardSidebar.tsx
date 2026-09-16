@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { preload } from 'swr'
 import { adminFetcher, useAdminFetch } from '@/hooks/useAdminFetch'
 import AdminSignOutButton from '@/components/auth/AdminSignOutButton'
-import { Separator } from '@/components/ui/separator'
+import { isNavItemActive, stripLocale, type NavSection } from '@/lib/admin/nav-sections'
 import type { UserProfile } from '@/lib/auth/types'
 import {
   LayoutDashboard,
@@ -23,6 +24,7 @@ import {
   Search,
   ImageIcon,
   ChevronDown,
+  ChevronRight,
   Clock,
   Tag,
   Handshake,
@@ -40,20 +42,12 @@ import {
   Menu,
   X,
   Sparkles,
+  LogOut,
+  Waves,
 } from 'lucide-react'
 
-export interface NavItem {
-  href: string
-  label: string
-  icon: string
-  badge?: 'pending-catering-count' | 'inbox-open-count' | 'finance-inbox-open-count'
-  comingSoon?: boolean
-}
-
-export interface NavSection {
-  label: string
-  items: NavItem[]
-}
+// Types moved to the shared module; re-exported so older imports keep working.
+export type { NavItem, NavSection } from '@/lib/admin/nav-sections'
 
 interface DashboardSidebarProps {
   locale: string
@@ -62,7 +56,9 @@ interface DashboardSidebarProps {
   navSections: NavSection[]
 }
 
-const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+type IconComponent = React.ComponentType<{ className?: string; style?: React.CSSProperties }>
+
+const ICON_MAP: Record<string, IconComponent> = {
   dashboard: LayoutDashboard,
   bookings: Calendar,
   catering: UtensilsCrossed,
@@ -115,6 +111,8 @@ export default function DashboardSidebar({
   portalName,
   navSections,
 }: DashboardSidebarProps) {
+  const pathname = usePathname()
+  const currentPath = stripLocale(pathname, locale)
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
   // Whole-sidebar collapse (icon rail) — a desktop density preference, persisted.
   // Starts expanded on the server render; the saved preference is applied after
@@ -127,6 +125,7 @@ export default function DashboardSidebar({
   // meaningless once the sidebar is a full-width mobile drawer, so the drawer
   // always shows full labels regardless of the saved desktop preference.
   const displayRail = rail && !mobileOpen
+  const [query, setQuery] = useState('')
   const { data: cateringPending } = useAdminFetch<{ count: number }>('/api/admin/catering/pending-count')
   const pendingCateringCount = cateringPending?.count ?? 0
   const { data: inboxOpen } = useAdminFetch<{ count: number }>('/api/admin/inbox/open-count', {
@@ -163,6 +162,17 @@ export default function DashboardSidebar({
     setCollapsedSections(prev => ({ ...prev, [label]: !prev[label] }))
   }
 
+  const trimmedQuery = query.trim().toLowerCase()
+  const visibleSections = useMemo(() => {
+    if (!trimmedQuery) return navSections
+    return navSections
+      .map(section => ({
+        ...section,
+        items: section.items.filter(item => item.label.toLowerCase().includes(trimmedQuery)),
+      }))
+      .filter(section => section.items.length > 0)
+  }, [navSections, trimmedQuery])
+
   return (
     <>
       {/* Mobile hamburger trigger — the sidebar itself is off-canvas below lg,
@@ -172,7 +182,8 @@ export default function DashboardSidebar({
         <button
           onClick={() => setMobileOpen(true)}
           aria-label="Open menu"
-          className="lg:hidden fixed top-3 right-3 z-30 w-10 h-10 rounded-full bg-white border border-zinc-200 shadow-md flex items-center justify-center text-zinc-600"
+          className="lg:hidden fixed top-3 right-3 z-30 w-11 h-11 rounded-full shadow-md flex items-center justify-center text-white"
+          style={{ backgroundColor: 'var(--admin-navy)' }}
         >
           <Menu className="w-5 h-5" />
         </button>
@@ -182,7 +193,7 @@ export default function DashboardSidebar({
       {mobileOpen && (
         <div
           onClick={() => setMobileOpen(false)}
-          className="lg:hidden fixed inset-0 z-40 bg-black/30"
+          className="lg:hidden fixed inset-0 z-40 bg-black/40"
         />
       )}
 
@@ -191,23 +202,32 @@ export default function DashboardSidebar({
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         } lg:relative lg:inset-auto lg:z-auto lg:translate-x-0 lg:transition-[width] ${
           displayRail ? 'lg:w-16' : 'lg:w-60'
-        } h-screen bg-white border-r border-zinc-200 flex flex-col`}
+        } h-screen flex flex-col flex-shrink-0`}
+        style={{ backgroundColor: 'var(--admin-navy)' }}
       >
-        {/* Header */}
-        <div className={`py-5 flex items-center ${displayRail ? 'justify-center px-2' : 'justify-between px-4'}`}>
+        {/* Brand */}
+        <div className={`flex items-center gap-2.5 py-4 ${displayRail ? 'justify-center px-2' : 'px-3'}`}>
           {!displayRail && (
-            <div>
-              <p className="text-[10px] font-semibold tracking-widest uppercase text-zinc-400 mb-0.5">
-                Off Course
-              </p>
-              <p className="text-sm font-semibold text-zinc-900">{portalName}</p>
-            </div>
+            <>
+              <div
+                className="w-8 h-8 rounded-[9px] flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: 'var(--color-yellow)' }}
+              >
+                <Waves className="w-[18px] h-[18px]" style={{ color: 'var(--admin-navy)' }} />
+              </div>
+              <div className="flex flex-col min-w-0 flex-1">
+                <span className="text-sm font-bold text-white tracking-tight truncate">Off Course</span>
+                <span className="text-[11px] truncate" style={{ color: 'var(--admin-navy-icon)' }}>{portalName}</span>
+              </div>
+            </>
           )}
           {/* Mobile: close the drawer. Desktop: the rail density toggle. */}
           <button
             onClick={() => (mobileOpen ? setMobileOpen(false) : toggleRail())}
             title={mobileOpen ? 'Close menu' : rail ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 transition-colors"
+            aria-label={mobileOpen ? 'Close menu' : rail ? 'Expand sidebar' : 'Collapse sidebar'}
+            className="w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 transition-colors hover:bg-white/10"
+            style={{ color: 'var(--admin-navy-icon)' }}
           >
             {mobileOpen ? (
               <X className="w-4 h-4" />
@@ -219,28 +239,66 @@ export default function DashboardSidebar({
           </button>
         </div>
 
-        <Separator />
+        {/* Search — filters the nav below */}
+        {!displayRail && (
+          <div className="px-3 pb-3">
+            <label
+              className="flex items-center gap-2 h-9 px-2.5 rounded-lg text-[13px]"
+              style={{ backgroundColor: 'var(--admin-navy-active)', color: 'var(--admin-navy-icon)' }}
+            >
+              <Search className="w-3.5 h-3.5 flex-shrink-0" />
+              <input
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Search"
+                aria-label="Search admin navigation"
+                className="flex-1 min-w-0 bg-transparent outline-none text-white placeholder:text-[color:var(--admin-navy-icon)]"
+              />
+              {query && (
+                <button
+                  onClick={() => setQuery('')}
+                  aria-label="Clear search"
+                  className="flex-shrink-0 hover:text-white transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </label>
+          </div>
+        )}
 
         {/* Nav */}
-        <nav className={`flex-1 min-h-0 py-4 overflow-y-auto ${displayRail ? 'px-2 space-y-3' : 'px-3 space-y-4'}`}>
-          {navSections.map((section, sectionIdx) => {
-            const isCollapsed = !displayRail && !!collapsedSections[section.label]
+        <nav className={`flex-1 min-h-0 pb-4 overflow-y-auto ${displayRail ? 'px-2 space-y-3' : 'px-3 space-y-3.5'}`}>
+          {visibleSections.length === 0 && (
+            <p className="px-2 text-xs" style={{ color: 'var(--admin-navy-icon)' }}>
+              No pages match &ldquo;{query}&rdquo;.
+            </p>
+          )}
+          {visibleSections.map((section, sectionIdx) => {
+            // A search shows every match, even inside a group the user folded away.
+            const isCollapsed = !displayRail && !trimmedQuery && !!collapsedSections[section.label]
             return (
               <div key={section.label}>
                 {displayRail ? (
                   // Icon rail: a thin divider stands in for the section header
-                  sectionIdx > 0 && <div className="border-t border-zinc-100 mb-3" />
+                  sectionIdx > 0 && <div className="border-t mb-3" style={{ borderColor: 'var(--admin-navy-active)' }} />
                 ) : (
                   <button
                     onClick={() => toggleSection(section.label)}
-                    className="w-full flex items-center justify-between px-3 mb-1 group"
+                    className="w-full flex items-center gap-1.5 px-2 mb-1"
                   >
-                    <span className="text-[10px] font-semibold tracking-widest uppercase text-zinc-400 group-hover:text-zinc-600 transition-colors">
+                    <span className="w-1.5 h-1.5 rounded-[2px] flex-shrink-0" style={{ backgroundColor: section.color }} />
+                    <span
+                      className="flex-1 text-left text-[11px] font-semibold tracking-widest uppercase"
+                      style={{ color: 'var(--admin-navy-label)' }}
+                    >
                       {section.label}
                     </span>
-                    <ChevronDown
-                      className={`w-3 h-3 text-zinc-300 group-hover:text-zinc-500 transition-all ${isCollapsed ? '-rotate-90' : ''}`}
-                    />
+                    {isCollapsed ? (
+                      <ChevronRight className="w-3 h-3" style={{ color: 'var(--admin-navy-label)' }} />
+                    ) : (
+                      <ChevronDown className="w-3 h-3" style={{ color: 'var(--admin-navy-label)' }} />
+                    )}
                   </button>
                 )}
 
@@ -253,19 +311,21 @@ export default function DashboardSidebar({
                           <li key={item.href}>
                             <span
                               title={displayRail ? `${item.label} (coming soon)` : undefined}
-                              className={`flex items-center rounded-md text-sm text-zinc-300 cursor-default select-none ${displayRail ? 'justify-center p-2' : 'gap-3 px-3 py-2'}`}
+                              className={`flex items-center rounded-md text-[13.5px] cursor-default select-none ${displayRail ? 'justify-center p-2' : 'gap-2.5 px-2.5 py-2'}`}
+                              style={{ color: 'var(--admin-navy-soon)' }}
                             >
-                              <Icon className="w-4 h-4 text-zinc-200 flex-shrink-0" />
+                              <Icon className="w-4 h-4 flex-shrink-0" />
                               {!displayRail && (
                                 <>
                                   <span className="flex-1">{item.label}</span>
-                                  <Clock className="w-3 h-3 text-zinc-300 flex-shrink-0" />
+                                  <span className="text-[10px] font-semibold tracking-wide">SOON</span>
                                 </>
                               )}
                             </span>
                           </li>
                         )
                       }
+                      const active = isNavItemActive(item, currentPath)
                       const badgeCount =
                         item.badge === 'pending-catering-count'
                           ? pendingCateringCount
@@ -279,23 +339,46 @@ export default function DashboardSidebar({
                           <Link
                             href={`/${locale}${item.href}`}
                             title={displayRail ? item.label : undefined}
+                            aria-current={active ? 'page' : undefined}
                             onMouseEnter={() => {
-                              const url = PREFETCH_URLS[item.href]
+                              const url = PREFETCH_URLS[item.activePrefix ?? item.href]
                               if (url) preload(url, adminFetcher)
                             }}
                             onClick={() => setMobileOpen(false)}
-                            className={`flex items-center rounded-md text-sm text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 transition-colors group ${displayRail ? 'justify-center p-2 relative' : 'gap-3 px-3 py-2'}`}
+                            className={`relative flex items-center rounded-md text-[13.5px] transition-colors ${
+                              active ? 'font-semibold text-white' : 'font-medium hover:bg-white/5 hover:text-white'
+                            } ${displayRail ? 'justify-center p-2' : 'gap-2.5 px-2.5 py-2'}`}
+                            style={{
+                              backgroundColor: active ? 'var(--admin-navy-active)' : undefined,
+                              color: active ? undefined : 'var(--admin-navy-text)',
+                            }}
                           >
-                            <Icon className="w-4 h-4 text-zinc-400 group-hover:text-zinc-600 transition-colors flex-shrink-0" />
+                            {/* Section-colored marker on the page you're on */}
+                            {active && !displayRail && (
+                              <span
+                                className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-r"
+                                style={{ backgroundColor: section.color }}
+                              />
+                            )}
+                            <Icon
+                              className="w-4 h-4 flex-shrink-0"
+                              style={{ color: active ? section.color : 'var(--admin-navy-icon)' }}
+                            />
                             {displayRail ? (
                               badgeCount > 0 && (
-                                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500" />
+                                <span
+                                  className="absolute top-1 right-1 w-2 h-2 rounded-full"
+                                  style={{ backgroundColor: 'var(--color-pink)' }}
+                                />
                               )
                             ) : (
                               <>
-                                <span className="flex-1">{item.label}</span>
+                                <span className="flex-1 truncate">{item.label}</span>
                                 {badgeCount > 0 && (
-                                  <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold flex items-center justify-center leading-none flex-shrink-0">
+                                  <span
+                                    className="min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center leading-none flex-shrink-0"
+                                    style={{ backgroundColor: 'var(--color-yellow)', color: 'var(--admin-navy)' }}
+                                  >
                                     {badgeCount > 99 ? '99+' : badgeCount}
                                   </span>
                                 )}
@@ -312,27 +395,38 @@ export default function DashboardSidebar({
           })}
         </nav>
 
-        <Separator />
-
         {/* User footer */}
-        <div className={`py-4 ${displayRail ? 'px-2' : 'px-3 space-y-3'}`}>
-          <div className={`flex items-center ${displayRail ? 'justify-center' : 'gap-3 px-3'}`}>
+        <div
+          className={`py-3 border-t ${displayRail ? 'px-2' : 'px-3'}`}
+          style={{ borderColor: 'var(--admin-navy-active)' }}
+        >
+          <div className={`flex items-center ${displayRail ? 'justify-center' : 'gap-2.5 px-1'}`}>
             <div
               title={displayRail ? `${profile.display_name || profile.email} — expand sidebar to sign out` : undefined}
-              className="w-8 h-8 rounded-full bg-zinc-900 text-white text-xs font-semibold flex items-center justify-center flex-shrink-0"
+              className="w-8 h-8 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0"
+              style={{ backgroundColor: 'var(--color-lime)', color: 'var(--admin-navy)' }}
             >
               {initials}
             </div>
             {!displayRail && (
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-zinc-900 truncate">
-                  {profile.display_name || profile.email}
-                </p>
-                <p className="text-xs text-zinc-400 capitalize">{profile.role}</p>
-              </div>
+              <>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-semibold text-white truncate">
+                    {profile.display_name || profile.email}
+                  </p>
+                  <p className="text-[11px] capitalize" style={{ color: 'var(--admin-navy-icon)' }}>{profile.role}</p>
+                </div>
+                <AdminSignOutButton
+                  locale={locale}
+                  iconOnly
+                  className="w-9 h-9 rounded-md flex items-center justify-center flex-shrink-0 transition-colors hover:bg-white/10"
+                  style={{ color: 'var(--admin-navy-icon)' }}
+                >
+                  <LogOut className="w-4 h-4" />
+                </AdminSignOutButton>
+              </>
             )}
           </div>
-          {!displayRail && <AdminSignOutButton locale={locale} />}
         </div>
       </aside>
     </>

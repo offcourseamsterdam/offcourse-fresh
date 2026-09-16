@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { StaffTab } from './StaffTab'
 import { PayrollTab } from './PayrollTab'
 import { AvailabilityTab } from './AvailabilityTab'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 /**
  * Availability hub. Staff (M1), Payroll (M5) and the monthly availability
@@ -26,6 +27,7 @@ export default function AdminSchedulingPage() {
   return (
     <div className="p-4 sm:p-8 max-w-5xl space-y-6">
       <div>
+        <AdminEyebrow label="Operations" />
         <h1 className="text-2xl font-semibold text-zinc-900">Availability</h1>
         <p className="text-sm text-zinc-500 mt-1">
           Your captains — who they are, their rate, and their pay.

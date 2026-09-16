@@ -1,13 +1,14 @@
 import ProtectedLayout from '@/components/auth/ProtectedLayout'
 import DashboardSidebar from '@/components/layout/DashboardSidebar'
+import type { NavSection } from '@/lib/admin/nav-sections'
 
 interface Props {
   children: React.ReactNode
   params: Promise<{ locale: string }>
 }
 
-const navSections = [
-  { label: 'Support', items: [
+const navSections: NavSection[] = [
+  { label: 'Support', color: '#9bb7fd', ink: '#34449a', items: [
     { href: '/support',           label: 'Dashboard',   icon: 'dashboard' },
     { href: '/support/bookings',  label: 'Bookings',    icon: 'bookings' },
     { href: '/support/content',   label: 'Content',     icon: 'blog' },

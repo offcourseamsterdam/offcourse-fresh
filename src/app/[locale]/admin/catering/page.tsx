@@ -9,6 +9,7 @@ import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { fmtAdminDate, fmtAdminTime, fmtAdminDatetime, fmtAdminAmountRounded } from '@/lib/admin/format'
 import { daysUntilCateringAutoSend } from '@/lib/catering/auto-send-cutoff'
 import type { AdminExtraLineItem } from '@/lib/admin/types'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -327,6 +328,7 @@ export default function CateringPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
+          <AdminEyebrow label="Operations" />
           <h1 className="text-2xl font-semibold text-zinc-900 flex items-center gap-2">
             <UtensilsCrossed className="w-6 h-6 text-amber-500" />
             Food Orders

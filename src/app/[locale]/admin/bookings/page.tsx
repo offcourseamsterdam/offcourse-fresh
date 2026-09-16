@@ -14,6 +14,7 @@ import { fmtAdminDate, fmtAdminTime, fmtAdminAmountRounded, fmtAdminDateCreated 
 import { dateCreatedThreshold, type DateCreatedFilter } from '@/lib/admin/date-filter'
 import { matchesBookingSearch } from '@/lib/admin/booking-search'
 import type { AdminBooking } from '@/lib/admin/types'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 type SourceFilter = 'all' | 'website' | 'internal' | 'open_invoices'
 type SortField = 'booking_date' | 'created_at'
@@ -185,6 +186,7 @@ export default function BookingsPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
+          <AdminEyebrow label="Operations" />
           <h1 className="text-2xl font-semibold text-zinc-900">Bookings</h1>
           <p className="text-sm text-zinc-500 mt-1">From our booking flow · stored in Supabase</p>
         </div>

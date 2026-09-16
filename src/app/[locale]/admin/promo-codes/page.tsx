@@ -8,6 +8,7 @@ import type { AdminPromoCode } from '@/lib/admin/types'
 import { CodesTable } from './CodesTable'
 import { PromoCodeFormModal, blankForm, type FormState, type CampaignOption } from './PromoCodeFormModal'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 /** Raw campaign row shape from /api/admin/tracking/campaigns (returns array directly). */
 type CampaignRow = {
@@ -152,6 +153,7 @@ export default function AdminPromoCodesPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
+          <AdminEyebrow label="Marketing" />
           <h1 className="text-2xl font-semibold text-zinc-900">Promo Codes</h1>
           <p className="text-sm text-zinc-500 mt-1">Discount codes for partners and promotions. Active codes auto-rotate when they hit their usage limit.</p>
         </div>

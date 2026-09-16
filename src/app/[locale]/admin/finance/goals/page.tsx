@@ -21,6 +21,7 @@ import {
 } from '@/components/admin/finance/cockpit/api-types'
 import { eur, pct, dateNL, dateTimeNL } from '@/components/admin/finance/cockpit/money'
 import { useBoats, boatName } from '@/components/admin/finance/cockpit/useBoats'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 type Filter = GoalStatus | 'all'
 const FILTERS: Array<{ value: Filter; label: string }> = [
@@ -110,6 +111,7 @@ export default function FinanceGoalsPage() {
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
+          <AdminEyebrow label="Performance" />
           <h1 className="text-2xl font-semibold text-zinc-900">Doelen</h1>
           <p className="text-sm text-zinc-500 mt-1">
             Geld dat je apart zet voor iets specifieks. {goals.length > 0 && `${eur(totalFunded)} van ${eur(totalTarget)} gereserveerd.`}

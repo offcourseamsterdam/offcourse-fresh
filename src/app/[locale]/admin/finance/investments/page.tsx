@@ -21,6 +21,7 @@ import {
 } from '@/components/admin/finance/cockpit/api-types'
 import { eur, dateNL } from '@/components/admin/finance/cockpit/money'
 import { useBoats, boatName } from '@/components/admin/finance/cockpit/useBoats'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 type Filter = InvestmentStatus | 'open' | 'all'
 
@@ -142,6 +143,7 @@ export default function FinanceInvestmentsPage() {
   return (
     <div className="p-4 sm:p-6 space-y-5 max-w-5xl">
       <div>
+        <AdminEyebrow label="Performance" />
         <h1 className="text-2xl font-semibold text-zinc-900">Investeringen</h1>
         <p className="text-sm text-zinc-500 mt-1">
           Wat je met je groeiruimte zou kunnen doen. Een idee hier reserveert nog niets — pas als je het uitvoert, gaat er geld weg.

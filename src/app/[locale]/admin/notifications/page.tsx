@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { Bell, ArrowUpRight, ArrowDownLeft, CheckCircle, XCircle, Clock, Search, Zap } from 'lucide-react'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 import {
   NOTIFICATION_CATALOG,
   CATEGORY_LABELS,
@@ -115,6 +116,7 @@ export default function NotificationsPage() {
           <Bell className="w-4 h-4 text-white" />
         </div>
         <div>
+          <AdminEyebrow label="Dev" />
           <h1 className="text-xl font-semibold text-zinc-900">Notification Center</h1>
           <p className="text-sm text-zinc-500">All Slack messages this app sends and receives</p>
         </div>

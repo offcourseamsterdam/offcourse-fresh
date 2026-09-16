@@ -6,13 +6,17 @@ const badgeVariants = cva(
   'inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-950 focus:ring-offset-2',
   {
     variants: {
+      // Colors here are the admin's own chip palette (Badge has no non-admin
+      // callers — grepped before touching this) rather than raw Tailwind
+      // emerald/amber/red, so status chips read as one family with the rest
+      // of the admin instead of default shadcn colors.
       variant: {
-        default: 'border-transparent bg-zinc-900 text-zinc-50 shadow hover:bg-zinc-900/80',
-        secondary: 'border-transparent bg-zinc-100 text-zinc-900 hover:bg-zinc-100/80',
-        destructive: 'border-transparent bg-red-600 text-white shadow hover:bg-red-600/80',
-        outline: 'text-zinc-900',
-        success: 'border-transparent bg-emerald-100 text-emerald-800',
-        warning: 'border-transparent bg-amber-100 text-amber-800',
+        default: 'border-transparent bg-[#16163a] text-white shadow hover:bg-[#16163a]/90',
+        secondary: 'border-transparent bg-[#f0f0f4] text-[#50506a] hover:bg-[#f0f0f4]/80',
+        destructive: 'border-transparent bg-[#fde3e9] text-[#9b1c3a] hover:bg-[#fde3e9]/80',
+        outline: 'text-[#1a1a2e] border-[#ebe6dc]',
+        success: 'border-transparent bg-[#e5f3d6] text-[#3b6614]',
+        warning: 'border-transparent bg-[#fff0c2] text-[#7a5800]',
       },
     },
     defaultVariants: {

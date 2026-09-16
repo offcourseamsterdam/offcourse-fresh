@@ -6,6 +6,7 @@ import { Plus, Trash2, ChevronUp, ChevronDown, Image as ImageIcon, Upload, Loade
 import { SafeImage } from '@/components/ui/SafeImage'
 import { SectionStylesEditor } from './SectionStylesEditor'
 import { downscaleImage } from '@/lib/images/client-downscale'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -246,6 +247,7 @@ export default function HomepageAdminPage() {
   return (
     <div className="p-8 max-w-4xl">
       <div className="mb-8">
+        <AdminEyebrow label="Content" />
         <h1 className="text-2xl font-bold text-zinc-900">Homepage</h1>
         <p className="text-sm text-zinc-500 mt-1">Manage content shown on the public homepage.</p>
       </div>

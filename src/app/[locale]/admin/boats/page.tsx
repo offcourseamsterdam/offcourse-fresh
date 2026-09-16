@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { ChevronDown, ChevronUp, Upload, Loader2, Sparkles, RefreshCw } from 'lucide-react'
 import { SafeImage } from '@/components/ui/SafeImage'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 type Boat = {
   id: string
@@ -244,6 +245,7 @@ export default function BoatsAdminPage() {
   return (
     <div className="p-8 max-w-4xl">
       <div className="mb-8">
+        <AdminEyebrow label="Content" />
         <h1 className="text-2xl font-bold text-zinc-900">Boats</h1>
         <p className="text-sm text-zinc-500 mt-1">Manage boat details and photos.</p>
       </div>

@@ -5,6 +5,7 @@ import { Loader2, Clock, Users } from 'lucide-react'
 import { CancellationTiersEditor } from '@/components/admin/CancellationTiersEditor'
 import { normalizeTiers, type CancellationTier } from '@/lib/cancellation/policy'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 interface FHItem {
   id: string
@@ -78,6 +79,7 @@ export default function FareHarborSettingsPage() {
   return (
     <div className="p-8 max-w-3xl">
       <div className="mb-8">
+        <AdminEyebrow label="Dev" />
         <h1 className="text-2xl font-bold text-zinc-900">FareHarbor Settings</h1>
         <p className="text-sm text-zinc-500 mt-1">
           Configure booking cutoff windows and cancellation policy per FareHarbor item.

@@ -8,6 +8,7 @@ import { ExtrasTable } from '@/components/admin/extras/ExtrasTable'
 import { ExtrasFormModal } from '@/components/admin/extras/ExtrasFormModal'
 import type { Extra, FormState } from '@/components/admin/extras/types'
 import { blankForm, extraToForm, formToPayload } from '@/components/admin/extras/types'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
@@ -152,6 +153,7 @@ export default function ExtrasPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
+          <AdminEyebrow label="Content" />
           <h1 className="text-2xl font-semibold text-zinc-900">Extras</h1>
           <p className="text-sm text-zinc-500 mt-1">Manage add-ons, upgrades, and required charges</p>
         </div>

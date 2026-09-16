@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Loader2, RefreshCw, Database, Plus, Check, Globe, Home, Pencil, Clock, Copy, ExternalLink, Trash2, Search } from 'lucide-react'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 // ── Types ──────────────────────────────────────────────
 
@@ -179,6 +180,7 @@ export default function AdminCruisesPage() {
   return (
     <div className="p-8 max-w-5xl space-y-6">
       <div>
+        <AdminEyebrow label="Content" />
         <h1 className="text-2xl font-semibold text-zinc-900">Cruise Listings</h1>
         <p className="text-sm text-zinc-500 mt-1">Manage bookable cruise products and their FareHarbor configuration.</p>
       </div>

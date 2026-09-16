@@ -20,6 +20,7 @@ import {
   CruiseSeoTab,
 } from '@/components/admin/cruise-editor'
 import type { CruiseListing } from '@/components/admin/cruise-editor'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
@@ -87,6 +88,7 @@ export default function CruiseEditPage() {
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div>
+            <AdminEyebrow label="Content" />
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-semibold text-zinc-900">{listing.title}</h1>
               <Badge variant={listing.is_published ? 'success' : 'secondary'}>

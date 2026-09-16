@@ -18,6 +18,7 @@ import { BOOKING_SOURCES } from '@/lib/constants'
 import type { BookingSource } from '@/lib/constants'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { toAmsDateStr } from '@/lib/utils'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 // Declare gtag so TypeScript doesn't complain
 declare global {
@@ -611,6 +612,7 @@ export default function BookingFlowPage() {
   return (
     <div className="p-8 max-w-3xl">
       <div className="mb-6">
+        <AdminEyebrow label="Dev" />
         <h1 className="text-2xl font-semibold text-zinc-900">FareHarbor Booking Flow</h1>
         <p className="text-sm text-zinc-500 mt-1">End-to-end booking · live FareHarbor API</p>
       </div>

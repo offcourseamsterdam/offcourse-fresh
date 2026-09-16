@@ -6,6 +6,7 @@ import { useAdminFetch } from '@/hooks/useAdminFetch'
 import type { AdminPartner } from '@/lib/admin/types'
 import { PeriodSelector, getDateRange, type PeriodKey } from '@/components/admin/tracking/PeriodSelector'
 import { PartnerModal } from '@/components/admin/tracking/PartnerModal'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 
 export default function PartnersPage() {
@@ -27,6 +28,7 @@ export default function PartnersPage() {
             <Handshake className="w-5 h-5 text-white" />
           </div>
           <div>
+            <AdminEyebrow label="Marketing" />
             <h1 className="text-xl font-bold text-zinc-900">Partners</h1>
             <p className="text-xs text-zinc-400">Partners, commissions & reporting</p>
           </div>

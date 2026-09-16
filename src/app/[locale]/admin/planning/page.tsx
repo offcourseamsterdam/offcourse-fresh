@@ -26,6 +26,7 @@ import { useTickingClock } from '@/hooks/useTickingClock'
 import type { SharedCapacityResult } from '@/lib/admin/shared-capacity'
 import { filterCateringItems } from '@/lib/catering/filter'
 import type { AdminBooking } from '@/lib/admin/types'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -1341,6 +1342,7 @@ export default function PlanningPage() {
       {/* Header */}
       <div className="shrink-0 flex items-start justify-between gap-4">
         <div>
+          <AdminEyebrow label="Operations" />
           <h1 className="text-2xl font-semibold text-zinc-900">Planning</h1>
           <p className="text-sm text-zinc-500 mt-1">
             {weekCount === 1 ? 'Week view' : `${weekCount}-week view`} · {weekTotal} booking{weekTotal !== 1 ? 's' : ''} shown

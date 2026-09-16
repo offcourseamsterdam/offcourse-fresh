@@ -11,6 +11,7 @@ import { ContextPane } from './ContextPane'
 import { CallButton } from './CallButton'
 import { UploadInvoiceModal } from './UploadInvoiceModal'
 import { hasGhostCoPilotContent, type InboxConversationDetail, type InboxListItem } from './types'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 /**
  * The three-pane inbox (list · thread · customer/finance context), shared by
@@ -78,6 +79,7 @@ export function InboxShell({ scope, title, subtitle, showUpload = false }: Inbox
     <div className="h-full flex flex-col">
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
+          <AdminEyebrow label={scope === 'finance' ? 'Performance' : 'Operations'} />
           <h1 className="text-2xl font-semibold text-zinc-900">{title}</h1>
           <p className="text-sm text-zinc-500 mt-1">{subtitle}</p>
         </div>

@@ -8,6 +8,7 @@ import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { adminMutate } from '@/hooks/useAdminSave'
 import { formatAmsterdamTime } from '@/lib/utils'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 type Priority = 'essential' | 'cosmetic' | 'wishlist'
 
@@ -87,6 +88,7 @@ export default function MaintenancePage() {
     <div className="p-4 sm:p-6 max-w-4xl">
       <div className="flex items-start justify-between gap-3">
         <div>
+          <AdminEyebrow label="Operations" />
           <h1 className="text-2xl font-bold text-zinc-900 inline-flex items-center gap-2">
             <Wrench className="w-6 h-6 text-violet-500" /> Maintenance &amp; Ideas
           </h1>

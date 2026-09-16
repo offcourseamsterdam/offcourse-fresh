@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { VALID_ROLES } from '@/lib/auth/types'
 import type { UserProfile, UserRole } from '@/lib/auth/types'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 const roleBadgeColors: Record<UserRole, string> = {
   admin:   'bg-red-100 text-red-700',
@@ -57,7 +58,8 @@ export default function AdminUsersPage() {
 
   return (
     <div className="p-8">
-      <h1 className="text-2xl font-bold text-[var(--color-primary)] mb-6">Users</h1>
+      <AdminEyebrow label="Admin" />
+      <h1 className="text-2xl font-bold text-[#1a1a2e] mb-6">Users</h1>
 
       {/* Invite form */}
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-8">

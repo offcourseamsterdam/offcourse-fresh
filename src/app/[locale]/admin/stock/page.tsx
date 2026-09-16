@@ -11,6 +11,7 @@ import {
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { adminMutate } from '@/hooks/useAdminSave'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 interface StockItem {
   id: string
@@ -80,6 +81,7 @@ export default function StockPage() {
     <div className="p-4 sm:p-6 max-w-5xl">
       <div className="flex items-start justify-between gap-3">
         <div>
+          <AdminEyebrow label="Operations" />
           <h1 className="text-2xl font-bold text-zinc-900 inline-flex items-center gap-2">
             <Boxes className="w-6 h-6 text-violet-500" /> Stock
           </h1>

@@ -7,6 +7,7 @@ import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { Loader2, ArrowLeft, Check, CheckCircle2 } from 'lucide-react'
 import { quarterLabel } from '@/lib/quarters'
 import { fmtEuros } from '@/lib/utils'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 interface Partner {
   id: string
@@ -107,7 +108,8 @@ export default function PartnerDetailPage() {
       </Link>
 
       <header className="mb-8">
-        <h1 className="text-2xl font-bold text-[var(--color-primary)]">{partner.name}</h1>
+        <AdminEyebrow label="Marketing" />
+        <h1 className="text-2xl font-bold text-[#1a1a2e]">{partner.name}</h1>
         {partner.email && <p className="text-sm text-zinc-500 mt-0.5">{partner.email}</p>}
       </header>
 

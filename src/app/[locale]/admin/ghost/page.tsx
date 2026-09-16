@@ -27,6 +27,7 @@ import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { GHOST_AGENTS, agentForKind, agentAutonomy } from '@/lib/ghost/agents'
 import { replySimilarity, type SimilarityLabel } from '@/lib/ghost/similarity'
 import { formatAmsterdamTime, amsterdamToday } from '@/lib/utils'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 /**
  * The Ghost AI's notebook — shadow-mode proposals, read-only + teachable.
@@ -288,6 +289,7 @@ export default function GhostPage() {
     <div className="p-4 sm:p-6 max-w-4xl">
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
+          <AdminEyebrow label="Dev" />
           <h1 className="text-2xl font-semibold text-zinc-900 inline-flex items-center gap-2">
             <Ghost className="w-6 h-6 text-violet-500" /> AI Operations
           </h1>

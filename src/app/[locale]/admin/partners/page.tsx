@@ -8,6 +8,7 @@ import {
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { fmtEuros } from '@/lib/utils'
 import { CampaignModal } from '@/components/admin/tracking/CampaignModal'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -224,7 +225,8 @@ export default function PartnersPage() {
     <div className="p-8 max-w-4xl">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-[var(--color-primary)]">Partners</h1>
+          <AdminEyebrow label="Marketing" />
+          <h1 className="text-2xl font-bold text-[#1a1a2e]">Partners</h1>
           <p className="text-sm text-zinc-500 mt-0.5">
             Commission rates are set per campaign.
           </p>

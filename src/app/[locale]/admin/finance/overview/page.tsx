@@ -44,6 +44,7 @@ import { eur, pct, dateNL, dateTimeNL } from '@/components/admin/finance/cockpit
 import { useBoats, boatName } from '@/components/admin/finance/cockpit/useBoats'
 import { horizonEnd } from '@/lib/finance/cockpit/obligations'
 import { parseISODate, todayISO } from '@/lib/finance/cockpit/dates'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 const HORIZONS: Horizon[] = ['1m', '3m', '12m']
 
@@ -302,6 +303,7 @@ export default function FinanceOverviewPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
+          <AdminEyebrow label="Performance" />
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-900">Financieel overzicht</h1>
           <p className="text-sm text-zinc-500 mt-1">Wat kan Off Course verantwoord doen met zijn geld?</p>
           <p className="text-xs text-zinc-400 mt-1">

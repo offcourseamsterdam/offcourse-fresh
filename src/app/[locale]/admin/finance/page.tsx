@@ -25,6 +25,7 @@ import type { QuarterBarqoSummary, BarqoSummaryTotals } from '@/lib/finance/barq
 import type { QuarterRevolutSummary, RevolutSummaryTotals } from '@/lib/finance/revolut-summary'
 import type { QuarterFareHarborPayoutSummary, FareHarborPayoutSummaryTotals } from '@/lib/finance/fareharbor-payout-summary'
 import type { QuarterBtwDashboard, BtwDashboardTotals } from '@/lib/finance/btw-dashboard'
+import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
 interface QuarterRow {
   quarter: string
@@ -208,6 +209,7 @@ export default function FinancePage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div>
+          <AdminEyebrow label="Performance" />
           <h1 className="text-2xl font-semibold text-zinc-900 flex items-center gap-2">
             <Receipt className="w-6 h-6 text-emerald-500" />
             Finance
