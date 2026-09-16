@@ -40,7 +40,8 @@ export async function GET(_req: NextRequest) {
       supabase
         .from('bookings')
         .select('partner_id, booking_date, base_amount_cents, commission_amount_cents, guest_count, booking_source, campaign_id, campaigns ( settlement_model )')
-        .not('partner_id', 'is', null),
+        .not('partner_id', 'is', null)
+        .eq('status', 'confirmed'), // cancelled bookings earn/owe nothing
       supabase
         .from('partner_settlements')
         .select('partner_id, quarter, settlement_type, amount_cents'),

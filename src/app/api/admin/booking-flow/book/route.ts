@@ -203,6 +203,7 @@ export async function POST(request: NextRequest) {
       partnerInvoiceContext,
       invoiceLaterContext,
       baseAmountCents: Number(baseAmountCents ?? 0),
+      listingId: listingId ?? null,
     })
 
     // Idempotency: if a booking already exists for this payment intent, return it (website only)
@@ -957,6 +958,8 @@ export async function resolveAttribution(params: {
   partnerInvoiceContext: PartnerInvoiceContext | null
   invoiceLaterContext: InvoiceLaterContext | null
   baseAmountCents: number
+  /** The listing actually booked — the commission rate follows it, not the clicked link. */
+  listingId?: string | null
 }): Promise<{ campaignId: string | null; partnerId: string | null; commissionAmountCents: number | null }> {
   let campaignId: string | null = null
   let partnerId: string | null = null
@@ -974,7 +977,7 @@ export async function resolveAttribution(params: {
       const attr = parseAttribution(params.attrCookie)
       if (attr?.campaign_id) {
         const supabase = createAdminClient()
-        const resolved = await resolveCampaignCommission(supabase, attr.campaign_id, params.baseAmountCents)
+        const resolved = await resolveCampaignCommission(supabase, attr.campaign_id, params.baseAmountCents, params.listingId)
         if (resolved) {
           campaignId = resolved.campaignId
           partnerId = resolved.partnerId
@@ -996,7 +999,7 @@ export async function resolveAttribution(params: {
         .eq('id', params.promoCodeId)
         .maybeSingle()
       if (promoRow?.campaign_id) {
-        const resolved = await resolveCampaignCommission(supabase, promoRow.campaign_id, params.baseAmountCents)
+        const resolved = await resolveCampaignCommission(supabase, promoRow.campaign_id, params.baseAmountCents, params.listingId)
         if (resolved) {
           campaignId = resolved.campaignId
           partnerId = resolved.partnerId

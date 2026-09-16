@@ -277,7 +277,7 @@ export async function POST(request: NextRequest) {
     let partnerId: string | null = null
     let commissionAmountCents: number | null = null
     if (meta.campaign_id) {
-      const resolved = await resolveCampaignCommission(supabase, String(meta.campaign_id), serverBaseAmount)
+      const resolved = await resolveCampaignCommission(supabase, String(meta.campaign_id), serverBaseAmount, meta.listing_id || null)
       if (resolved) {
         campaignId = resolved.campaignId
         partnerId = resolved.partnerId

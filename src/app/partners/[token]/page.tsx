@@ -59,12 +59,14 @@ export default async function PartnerPortalPage({ params }: Props) {
       .from('bookings')
       .select('id, listing_title, booking_date, start_time, guest_count, base_amount_cents, commission_amount_cents, customer_email, booking_source, campaign_id')
       .eq('partner_id', partnerId)
+      .eq('status', 'confirmed') // cancelled bookings earn/owe nothing
       .order('booking_date', { ascending: false })
       .limit(20),
     supabase
       .from('bookings')
       .select('booking_date, base_amount_cents, commission_amount_cents, booking_source, campaign_id')
-      .eq('partner_id', partnerId),
+      .eq('partner_id', partnerId)
+      .eq('status', 'confirmed'),
     supabase
       .from('partner_settlements')
       .select('id, quarter, settlement_type, amount_cents, paid_at')

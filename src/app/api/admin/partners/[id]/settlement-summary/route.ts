@@ -49,6 +49,8 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     .from('bookings')
     .select('booking_date, base_amount_cents, commission_amount_cents, guest_count, booking_source, campaign_id, campaigns ( settlement_model )')
     .eq('partner_id', id)
+    // Cancelled bookings never sailed, so they earn/owe nothing
+    .eq('status', 'confirmed')
 
   if (error) return apiError(error.message)
 
