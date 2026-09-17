@@ -22,6 +22,7 @@ import { resolvePaymentMethodLabel } from '@/lib/stripe/payment-method-label'
 import { resolveStripeFeeCents } from '@/lib/stripe/fee'
 import { stripeWebhookSecret } from '@/lib/stripe/keys'
 import { formatAmsterdamTime } from '@/lib/utils'
+import { markAcpSessionCompleted } from '@/lib/acp/mark-session-completed'
 import type Stripe from 'stripe'
 
 // The payment_intent.succeeded handler may spend up to ~40s retrying a transient
@@ -396,6 +397,11 @@ export async function POST(request: NextRequest) {
         console.error('[stripe-webhook] availability re-sync error (ignored):', err)
       })
     }
+
+    // ACP (Agentic Commerce Protocol) checkouts poll their own session status
+    // rather than receiving this webhook directly — flip it to `completed`
+    // now that the booking genuinely exists. No-op for every non-ACP PI.
+    await markAcpSessionCompleted(meta.acp_checkout_session_id, insertedBooking?.id ?? null)
 
     const startTime = formatAmsterdamTime(meta.start_at)
     const endTime = formatAmsterdamTime(meta.end_at)

@@ -14,6 +14,63 @@ export type Database = {
   }
   public: {
     Tables: {
+      acp_checkout_sessions: {
+        Row: {
+          avail_pk: number | null
+          booking_id: string | null
+          buyer: Json | null
+          created_at: string
+          currency: string
+          date: string
+          expires_at: string
+          id: string
+          line_items: Json
+          messages: Json
+          payment_intent_id: string | null
+          slug: string
+          status: string
+          time: string
+          total_cents: number | null
+          updated_at: string
+        }
+        Insert: {
+          avail_pk?: number | null
+          booking_id?: string | null
+          buyer?: Json | null
+          created_at?: string
+          currency?: string
+          date: string
+          expires_at?: string
+          id: string
+          line_items?: Json
+          messages?: Json
+          payment_intent_id?: string | null
+          slug: string
+          status?: string
+          time: string
+          total_cents?: number | null
+          updated_at?: string
+        }
+        Update: {
+          avail_pk?: number | null
+          booking_id?: string | null
+          buyer?: Json | null
+          created_at?: string
+          currency?: string
+          date?: string
+          expires_at?: string
+          id?: string
+          line_items?: Json
+          messages?: Json
+          payment_intent_id?: string | null
+          slug?: string
+          status?: string
+          time?: string
+          total_cents?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       admin_event_log: {
         Row: {
           context: Json | null
@@ -260,6 +317,171 @@ export type Database = {
           },
         ]
       }
+      bank_transactions: {
+        Row: {
+          account_id: string
+          allocation_applied: Json | null
+          allocation_applied_at: string | null
+          amount_cents: number
+          balance_after_cents: number | null
+          boat_id: string | null
+          category: string | null
+          classification_reason: string | null
+          classified_by: string | null
+          completed_at: string | null
+          confidence: number | null
+          counterparty: Json | null
+          created_at: string
+          currency: string
+          description: string | null
+          expense_id: string | null
+          fee_cents: number
+          first_seen_at: string
+          goal_id: string | null
+          id: string
+          invoice_id: string | null
+          last_synced_at: string
+          loan_payment_id: string | null
+          merchant: Json | null
+          needs_review: boolean
+          obligation_id: string | null
+          payout_channel: string | null
+          payout_record_id: string | null
+          payout_reference: string | null
+          raw: Json
+          reconciled_at: string | null
+          reference: string | null
+          request_id: string | null
+          reviewed_at: string | null
+          revolut_id: string
+          state: string
+          subcategory: string | null
+          type: string
+          updated_at: string
+          vat_cents: number | null
+        }
+        Insert: {
+          account_id: string
+          allocation_applied?: Json | null
+          allocation_applied_at?: string | null
+          amount_cents: number
+          balance_after_cents?: number | null
+          boat_id?: string | null
+          category?: string | null
+          classification_reason?: string | null
+          classified_by?: string | null
+          completed_at?: string | null
+          confidence?: number | null
+          counterparty?: Json | null
+          created_at: string
+          currency?: string
+          description?: string | null
+          expense_id?: string | null
+          fee_cents?: number
+          first_seen_at?: string
+          goal_id?: string | null
+          id?: string
+          invoice_id?: string | null
+          last_synced_at?: string
+          loan_payment_id?: string | null
+          merchant?: Json | null
+          needs_review?: boolean
+          obligation_id?: string | null
+          payout_channel?: string | null
+          payout_record_id?: string | null
+          payout_reference?: string | null
+          raw: Json
+          reconciled_at?: string | null
+          reference?: string | null
+          request_id?: string | null
+          reviewed_at?: string | null
+          revolut_id: string
+          state: string
+          subcategory?: string | null
+          type: string
+          updated_at: string
+          vat_cents?: number | null
+        }
+        Update: {
+          account_id?: string
+          allocation_applied?: Json | null
+          allocation_applied_at?: string | null
+          amount_cents?: number
+          balance_after_cents?: number | null
+          boat_id?: string | null
+          category?: string | null
+          classification_reason?: string | null
+          classified_by?: string | null
+          completed_at?: string | null
+          confidence?: number | null
+          counterparty?: Json | null
+          created_at?: string
+          currency?: string
+          description?: string | null
+          expense_id?: string | null
+          fee_cents?: number
+          first_seen_at?: string
+          goal_id?: string | null
+          id?: string
+          invoice_id?: string | null
+          last_synced_at?: string
+          loan_payment_id?: string | null
+          merchant?: Json | null
+          needs_review?: boolean
+          obligation_id?: string | null
+          payout_channel?: string | null
+          payout_record_id?: string | null
+          payout_reference?: string | null
+          raw?: Json
+          reconciled_at?: string | null
+          reference?: string | null
+          request_id?: string | null
+          reviewed_at?: string | null
+          revolut_id?: string
+          state?: string
+          subcategory?: string | null
+          type?: string
+          updated_at?: string
+          vat_cents?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bank_transactions_boat_id_fkey"
+            columns: ["boat_id"]
+            isOneToOne: false
+            referencedRelation: "boats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bank_transactions_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: false
+            referencedRelation: "finance_expenses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bank_transactions_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: false
+            referencedRelation: "finance_goals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bank_transactions_loan_payment_id_fkey"
+            columns: ["loan_payment_id"]
+            isOneToOne: false
+            referencedRelation: "finance_loan_payments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bank_transactions_obligation_id_fkey"
+            columns: ["obligation_id"]
+            isOneToOne: false
+            referencedRelation: "finance_obligations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       barqo_bookings: {
         Row: {
           boat_name: string | null
@@ -301,6 +523,7 @@ export type Database = {
       }
       boatlocal_payout_batches: {
         Row: {
+          bank_transaction_id: string | null
           commission_ex_vat_cents: number | null
           created_at: string
           id: string
@@ -318,6 +541,7 @@ export type Database = {
           vat_9_in_payout_cents: number | null
         }
         Insert: {
+          bank_transaction_id?: string | null
           commission_ex_vat_cents?: number | null
           created_at?: string
           id?: string
@@ -335,6 +559,7 @@ export type Database = {
           vat_9_in_payout_cents?: number | null
         }
         Update: {
+          bank_transaction_id?: string | null
           commission_ex_vat_cents?: number | null
           created_at?: string
           id?: string
@@ -351,7 +576,15 @@ export type Database = {
           vat_21_cents?: number | null
           vat_9_in_payout_cents?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "boatlocal_payout_batches_bank_transaction_id_fkey"
+            columns: ["bank_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "bank_transactions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       boatlocal_payout_lines: {
         Row: {
@@ -496,12 +729,17 @@ export type Database = {
           booking_id: string
           booking_source: string
           booking_uuid: string | null
+          business_profile_id: string | null
           campaign_id: string | null
           category: string | null
           catering_confirmed_at: string | null
           catering_email_sent_at: string | null
           catering_thread_id: string | null
           commission_amount_cents: number | null
+          company_address: string | null
+          company_kvk: string | null
+          company_name: string | null
+          company_vat: string | null
           created_at: string | null
           currency: string | null
           customer_email: string
@@ -523,6 +761,7 @@ export type Database = {
           guest_count: number | null
           guest_note: string | null
           id: string
+          invoice_due_date: string | null
           invoice_number: string | null
           listing_id: string | null
           listing_title: string | null
@@ -532,6 +771,7 @@ export type Database = {
           payment_link_expires_at: string | null
           payment_reminder_sent: boolean | null
           payment_status: string | null
+          payment_terms_days: number | null
           promo_code_id: string | null
           raw_payload: Json | null
           receipt_total: number | null
@@ -543,15 +783,8 @@ export type Database = {
           start_time: string | null
           status: string | null
           stripe_amount: number | null
-          stripe_fee_cents: number | null
-          business_profile_id: string | null
-          company_address: string | null
-          company_kvk: string | null
-          company_name: string | null
-          company_vat: string | null
-          invoice_due_date: string | null
-          payment_terms_days: number | null
           stripe_customer_id: string | null
+          stripe_fee_cents: number | null
           stripe_invoice_id: string | null
           stripe_invoice_url: string | null
           stripe_payment_intent_id: string | null
@@ -715,6 +948,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "bookings_business_profile_id_fkey"
+            columns: ["business_profile_id"]
+            isOneToOne: false
+            referencedRelation: "business_profiles"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "bookings_campaign_id_fkey"
             columns: ["campaign_id"]
             isOneToOne: false
@@ -746,54 +986,51 @@ export type Database = {
       }
       business_profiles: {
         Row: {
-          address_line1: string
-          city: string
+          address_line1: string | null
+          city: string | null
           company_name: string
           contact_email: string | null
           contact_name: string | null
           contact_phone: string | null
           country_code: string | null
-          created_at: string
+          created_at: string | null
           id: string
           kvk_number: string | null
-          notes: string | null
-          postal_code: string
+          postal_code: string | null
           stripe_customer_id: string | null
-          updated_at: string
+          updated_at: string | null
           vat_number: string | null
         }
         Insert: {
-          address_line1: string
-          city: string
+          address_line1?: string | null
+          city?: string | null
           company_name: string
           contact_email?: string | null
           contact_name?: string | null
           contact_phone?: string | null
           country_code?: string | null
-          created_at?: string
+          created_at?: string | null
           id?: string
           kvk_number?: string | null
-          notes?: string | null
-          postal_code: string
+          postal_code?: string | null
           stripe_customer_id?: string | null
-          updated_at?: string
+          updated_at?: string | null
           vat_number?: string | null
         }
         Update: {
-          address_line1?: string
-          city?: string
+          address_line1?: string | null
+          city?: string | null
           company_name?: string
           contact_email?: string | null
           contact_name?: string | null
           contact_phone?: string | null
           country_code?: string | null
-          created_at?: string
+          created_at?: string | null
           id?: string
           kvk_number?: string | null
-          notes?: string | null
-          postal_code?: string
+          postal_code?: string | null
           stripe_customer_id?: string | null
-          updated_at?: string
+          updated_at?: string | null
           vat_number?: string | null
         }
         Relationships: []
@@ -1149,6 +1386,7 @@ export type Database = {
           ota_source: string | null
           ota_status: string | null
           provider_thread_id: string | null
+          source_category: string | null
           status: string
           subject: string | null
           unread_count: number
@@ -1170,6 +1408,7 @@ export type Database = {
           ota_source?: string | null
           ota_status?: string | null
           provider_thread_id?: string | null
+          source_category?: string | null
           status?: string
           subject?: string | null
           unread_count?: number
@@ -1191,6 +1430,7 @@ export type Database = {
           ota_source?: string | null
           ota_status?: string | null
           provider_thread_id?: string | null
+          source_category?: string | null
           status?: string
           subject?: string | null
           unread_count?: number
@@ -2101,6 +2341,827 @@ export type Database = {
         }
         Relationships: []
       }
+      finance_classification_rules: {
+        Row: {
+          boat_id: string | null
+          category: string
+          created_at: string
+          created_from_transaction_id: string | null
+          direction: string
+          goal_id: string | null
+          hit_count: number
+          id: string
+          is_active: boolean
+          last_hit_at: string | null
+          match_field: string
+          note: string | null
+          pattern: string
+          priority: number
+          subcategory: string | null
+          updated_at: string
+        }
+        Insert: {
+          boat_id?: string | null
+          category: string
+          created_at?: string
+          created_from_transaction_id?: string | null
+          direction?: string
+          goal_id?: string | null
+          hit_count?: number
+          id?: string
+          is_active?: boolean
+          last_hit_at?: string | null
+          match_field: string
+          note?: string | null
+          pattern: string
+          priority?: number
+          subcategory?: string | null
+          updated_at?: string
+        }
+        Update: {
+          boat_id?: string | null
+          category?: string
+          created_at?: string
+          created_from_transaction_id?: string | null
+          direction?: string
+          goal_id?: string | null
+          hit_count?: number
+          id?: string
+          is_active?: boolean
+          last_hit_at?: string | null
+          match_field?: string
+          note?: string | null
+          pattern?: string
+          priority?: number
+          subcategory?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_classification_rules_boat_id_fkey"
+            columns: ["boat_id"]
+            isOneToOne: false
+            referencedRelation: "boats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_classification_rules_created_from_transaction_id_fkey"
+            columns: ["created_from_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "bank_transactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_classification_rules_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: false
+            referencedRelation: "finance_goals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      finance_documents: {
+        Row: {
+          created_at: string
+          duplicate_of: string | null
+          expense_id: string | null
+          extracted: Json | null
+          file_path: string | null
+          id: string
+          kind: string
+          link_fetch_status: string | null
+          link_url: string | null
+          mime_type: string | null
+          original_filename: string | null
+          revolut_expense_id: string | null
+          revolut_receipt_id: string | null
+          sha256: string | null
+          source: string
+          source_message_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          duplicate_of?: string | null
+          expense_id?: string | null
+          extracted?: Json | null
+          file_path?: string | null
+          id?: string
+          kind: string
+          link_fetch_status?: string | null
+          link_url?: string | null
+          mime_type?: string | null
+          original_filename?: string | null
+          revolut_expense_id?: string | null
+          revolut_receipt_id?: string | null
+          sha256?: string | null
+          source: string
+          source_message_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          duplicate_of?: string | null
+          expense_id?: string | null
+          extracted?: Json | null
+          file_path?: string | null
+          id?: string
+          kind?: string
+          link_fetch_status?: string | null
+          link_url?: string | null
+          mime_type?: string | null
+          original_filename?: string | null
+          revolut_expense_id?: string | null
+          revolut_receipt_id?: string | null
+          sha256?: string | null
+          source?: string
+          source_message_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_documents_duplicate_of_fkey"
+            columns: ["duplicate_of"]
+            isOneToOne: false
+            referencedRelation: "finance_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_documents_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: false
+            referencedRelation: "finance_expenses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_documents_source_message_id_fkey"
+            columns: ["source_message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      finance_events: {
+        Row: {
+          actor: string
+          delta_cents: number | null
+          entity_id: string | null
+          entity_type: string
+          event_type: string
+          id: string
+          occurred_at: string
+          payload: Json
+        }
+        Insert: {
+          actor: string
+          delta_cents?: number | null
+          entity_id?: string | null
+          entity_type: string
+          event_type: string
+          id?: string
+          occurred_at?: string
+          payload?: Json
+        }
+        Update: {
+          actor?: string
+          delta_cents?: number | null
+          entity_id?: string | null
+          entity_type?: string
+          event_type?: string
+          id?: string
+          occurred_at?: string
+          payload?: Json
+        }
+        Relationships: []
+      }
+      finance_expenses: {
+        Row: {
+          bank_transaction_id: string | null
+          booked_at: string | null
+          cash_out_cents: number | null
+          created_at: string
+          gross_cents: number | null
+          id: string
+          invoice_date: string | null
+          invoice_number: string | null
+          match_confidence: number | null
+          match_signals: Json | null
+          matched_at: string | null
+          needs_review_reason: string | null
+          net_cents: number | null
+          notes: string | null
+          order_number: string | null
+          paid_at: string | null
+          primary_document_id: string | null
+          ref: string
+          reviewed_at: string | null
+          revolut_draft_id: string | null
+          revolut_expense_id: string | null
+          revolut_expense_state: string | null
+          revolut_vat_cents: number | null
+          revolut_vat_rate_pct: number | null
+          snelstart_document_id: string | null
+          snelstart_message_id: string | null
+          snelstart_recipient: string | null
+          snelstart_sent_at: string | null
+          status: string
+          supplier_id: string | null
+          supplier_name: string | null
+          updated_at: string
+          vat_cents: number | null
+          vat_conflict: Json | null
+          vat_rate_pct: number | null
+          vat_source: string | null
+        }
+        Insert: {
+          bank_transaction_id?: string | null
+          booked_at?: string | null
+          cash_out_cents?: number | null
+          created_at?: string
+          gross_cents?: number | null
+          id?: string
+          invoice_date?: string | null
+          invoice_number?: string | null
+          match_confidence?: number | null
+          match_signals?: Json | null
+          matched_at?: string | null
+          needs_review_reason?: string | null
+          net_cents?: number | null
+          notes?: string | null
+          order_number?: string | null
+          paid_at?: string | null
+          primary_document_id?: string | null
+          ref?: string
+          reviewed_at?: string | null
+          revolut_draft_id?: string | null
+          revolut_expense_id?: string | null
+          revolut_expense_state?: string | null
+          revolut_vat_cents?: number | null
+          revolut_vat_rate_pct?: number | null
+          snelstart_document_id?: string | null
+          snelstart_message_id?: string | null
+          snelstart_recipient?: string | null
+          snelstart_sent_at?: string | null
+          status?: string
+          supplier_id?: string | null
+          supplier_name?: string | null
+          updated_at?: string
+          vat_cents?: number | null
+          vat_conflict?: Json | null
+          vat_rate_pct?: number | null
+          vat_source?: string | null
+        }
+        Update: {
+          bank_transaction_id?: string | null
+          booked_at?: string | null
+          cash_out_cents?: number | null
+          created_at?: string
+          gross_cents?: number | null
+          id?: string
+          invoice_date?: string | null
+          invoice_number?: string | null
+          match_confidence?: number | null
+          match_signals?: Json | null
+          matched_at?: string | null
+          needs_review_reason?: string | null
+          net_cents?: number | null
+          notes?: string | null
+          order_number?: string | null
+          paid_at?: string | null
+          primary_document_id?: string | null
+          ref?: string
+          reviewed_at?: string | null
+          revolut_draft_id?: string | null
+          revolut_expense_id?: string | null
+          revolut_expense_state?: string | null
+          revolut_vat_cents?: number | null
+          revolut_vat_rate_pct?: number | null
+          snelstart_document_id?: string | null
+          snelstart_message_id?: string | null
+          snelstart_recipient?: string | null
+          snelstart_sent_at?: string | null
+          status?: string
+          supplier_id?: string | null
+          supplier_name?: string | null
+          updated_at?: string
+          vat_cents?: number | null
+          vat_conflict?: Json | null
+          vat_rate_pct?: number | null
+          vat_source?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_expenses_bank_transaction_id_fkey"
+            columns: ["bank_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "bank_transactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_expenses_primary_document_fk"
+            columns: ["primary_document_id"]
+            isOneToOne: false
+            referencedRelation: "finance_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_expenses_snelstart_document_fk"
+            columns: ["snelstart_document_id"]
+            isOneToOne: false
+            referencedRelation: "finance_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_expenses_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "finance_suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      finance_goals: {
+        Row: {
+          boat_id: string | null
+          completed_at: string | null
+          completed_transaction_id: string | null
+          created_at: string
+          deadline: string | null
+          description: string | null
+          flexibility: string
+          funded_cents: number
+          id: string
+          monthly_funding_cents: number
+          name: string
+          priority: number
+          status: string
+          target_cents: number
+          updated_at: string
+        }
+        Insert: {
+          boat_id?: string | null
+          completed_at?: string | null
+          completed_transaction_id?: string | null
+          created_at?: string
+          deadline?: string | null
+          description?: string | null
+          flexibility?: string
+          funded_cents?: number
+          id?: string
+          monthly_funding_cents?: number
+          name: string
+          priority?: number
+          status?: string
+          target_cents: number
+          updated_at?: string
+        }
+        Update: {
+          boat_id?: string | null
+          completed_at?: string | null
+          completed_transaction_id?: string | null
+          created_at?: string
+          deadline?: string | null
+          description?: string | null
+          flexibility?: string
+          funded_cents?: number
+          id?: string
+          monthly_funding_cents?: number
+          name?: string
+          priority?: number
+          status?: string
+          target_cents?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_goals_boat_id_fkey"
+            columns: ["boat_id"]
+            isOneToOne: false
+            referencedRelation: "boats"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      finance_investments: {
+        Row: {
+          amount_cents: number
+          boat_id: string | null
+          created_at: string
+          executed_transaction_id: string | null
+          expected_return_cents: number | null
+          goal_id: string | null
+          id: string
+          impact: Json
+          notes: string | null
+          status: string
+          title: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          amount_cents: number
+          boat_id?: string | null
+          created_at?: string
+          executed_transaction_id?: string | null
+          expected_return_cents?: number | null
+          goal_id?: string | null
+          id?: string
+          impact?: Json
+          notes?: string | null
+          status?: string
+          title: string
+          type?: string
+          updated_at?: string
+        }
+        Update: {
+          amount_cents?: number
+          boat_id?: string | null
+          created_at?: string
+          executed_transaction_id?: string | null
+          expected_return_cents?: number | null
+          goal_id?: string | null
+          id?: string
+          impact?: Json
+          notes?: string | null
+          status?: string
+          title?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_investments_boat_id_fkey"
+            columns: ["boat_id"]
+            isOneToOne: false
+            referencedRelation: "boats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_investments_executed_transaction_id_fkey"
+            columns: ["executed_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "bank_transactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_investments_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: false
+            referencedRelation: "finance_goals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      finance_invoices: {
+        Row: {
+          checks: Json
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          decision: string | null
+          decision_note: string | null
+          expected_amount_cents: number | null
+          extracted: Json | null
+          file_path: string
+          id: string
+          matched_booking_id: string | null
+          matched_shift_id: string | null
+          obligation_id: string | null
+          original_filename: string | null
+          paid_transaction_id: string | null
+          revolut_draft_id: string | null
+          source: string
+          source_message_id: string | null
+          status: string
+          supplier_id: string | null
+          updated_at: string
+          uploaded_at: string
+        }
+        Insert: {
+          checks?: Json
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decision?: string | null
+          decision_note?: string | null
+          expected_amount_cents?: number | null
+          extracted?: Json | null
+          file_path: string
+          id?: string
+          matched_booking_id?: string | null
+          matched_shift_id?: string | null
+          obligation_id?: string | null
+          original_filename?: string | null
+          paid_transaction_id?: string | null
+          revolut_draft_id?: string | null
+          source: string
+          source_message_id?: string | null
+          status?: string
+          supplier_id?: string | null
+          updated_at?: string
+          uploaded_at?: string
+        }
+        Update: {
+          checks?: Json
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decision?: string | null
+          decision_note?: string | null
+          expected_amount_cents?: number | null
+          extracted?: Json | null
+          file_path?: string
+          id?: string
+          matched_booking_id?: string | null
+          matched_shift_id?: string | null
+          obligation_id?: string | null
+          original_filename?: string | null
+          paid_transaction_id?: string | null
+          revolut_draft_id?: string | null
+          source?: string
+          source_message_id?: string | null
+          status?: string
+          supplier_id?: string | null
+          updated_at?: string
+          uploaded_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_invoices_matched_booking_id_fkey"
+            columns: ["matched_booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_invoices_matched_shift_id_fkey"
+            columns: ["matched_shift_id"]
+            isOneToOne: false
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_invoices_obligation_id_fkey"
+            columns: ["obligation_id"]
+            isOneToOne: false
+            referencedRelation: "finance_obligations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_invoices_paid_transaction_id_fkey"
+            columns: ["paid_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "bank_transactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_invoices_source_message_id_fkey"
+            columns: ["source_message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_invoices_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "finance_suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      finance_loan_payments: {
+        Row: {
+          created_at: string
+          due_date: string
+          id: string
+          interest_cents: number
+          is_paid: boolean
+          loan_id: string
+          paid_at: string | null
+          paid_transaction_id: string | null
+          principal_cents: number
+          total_cents: number
+        }
+        Insert: {
+          created_at?: string
+          due_date: string
+          id?: string
+          interest_cents?: number
+          is_paid?: boolean
+          loan_id: string
+          paid_at?: string | null
+          paid_transaction_id?: string | null
+          principal_cents?: number
+          total_cents?: number
+        }
+        Update: {
+          created_at?: string
+          due_date?: string
+          id?: string
+          interest_cents?: number
+          is_paid?: boolean
+          loan_id?: string
+          paid_at?: string | null
+          paid_transaction_id?: string | null
+          principal_cents?: number
+          total_cents?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_loan_payments_loan_id_fkey"
+            columns: ["loan_id"]
+            isOneToOne: false
+            referencedRelation: "finance_loans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      finance_loans: {
+        Row: {
+          created_at: string
+          duration_years: number
+          id: string
+          interest_free_years: number
+          interest_rate_pct: number
+          lender_name: string
+          name: string
+          notes: string | null
+          principal_cents: number
+          repayment_type: string
+          start_date: string
+          status: string
+          tranches: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          duration_years: number
+          id?: string
+          interest_free_years?: number
+          interest_rate_pct?: number
+          lender_name: string
+          name: string
+          notes?: string | null
+          principal_cents: number
+          repayment_type?: string
+          start_date: string
+          status?: string
+          tranches?: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          duration_years?: number
+          id?: string
+          interest_free_years?: number
+          interest_rate_pct?: number
+          lender_name?: string
+          name?: string
+          notes?: string | null
+          principal_cents?: number
+          repayment_type?: string
+          start_date?: string
+          status?: string
+          tranches?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      finance_obligations: {
+        Row: {
+          amount_cents: number
+          boat_id: string | null
+          created_at: string
+          due_date: string
+          id: string
+          invoice_id: string | null
+          kind: string
+          loan_id: string | null
+          notes: string | null
+          paid_at: string | null
+          paid_transaction_id: string | null
+          recurrence_months: number | null
+          recurrence_until: string | null
+          revolut_draft_id: string | null
+          source_key: string | null
+          status: string
+          supplier_id: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          amount_cents: number
+          boat_id?: string | null
+          created_at?: string
+          due_date: string
+          id?: string
+          invoice_id?: string | null
+          kind: string
+          loan_id?: string | null
+          notes?: string | null
+          paid_at?: string | null
+          paid_transaction_id?: string | null
+          recurrence_months?: number | null
+          recurrence_until?: string | null
+          revolut_draft_id?: string | null
+          source_key?: string | null
+          status?: string
+          supplier_id?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          amount_cents?: number
+          boat_id?: string | null
+          created_at?: string
+          due_date?: string
+          id?: string
+          invoice_id?: string | null
+          kind?: string
+          loan_id?: string | null
+          notes?: string | null
+          paid_at?: string | null
+          paid_transaction_id?: string | null
+          recurrence_months?: number | null
+          recurrence_until?: string | null
+          revolut_draft_id?: string | null
+          source_key?: string | null
+          status?: string
+          supplier_id?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_obligations_boat_id_fkey"
+            columns: ["boat_id"]
+            isOneToOne: false
+            referencedRelation: "boats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_obligations_loan_id_fkey"
+            columns: ["loan_id"]
+            isOneToOne: false
+            referencedRelation: "finance_loans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_obligations_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "finance_suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      finance_settings: {
+        Row: {
+          allocation_priority: Json
+          id: string
+          manual_cash_at: string | null
+          manual_cash_cents: number | null
+          marketing_reserve_pct: number
+          operational_coverage_cents: number
+          owner_salary_coverage_cents: number
+          owner_salary_monthly_cents: number
+          owner_salary_months: number
+          planning_horizon: string
+          safety_margin_cents: number
+          snelstart_auto_forward: boolean
+          updated_at: string
+        }
+        Insert: {
+          allocation_priority?: Json
+          id?: string
+          manual_cash_at?: string | null
+          manual_cash_cents?: number | null
+          marketing_reserve_pct?: number
+          operational_coverage_cents?: number
+          owner_salary_coverage_cents?: number
+          owner_salary_monthly_cents?: number
+          owner_salary_months?: number
+          planning_horizon?: string
+          safety_margin_cents?: number
+          snelstart_auto_forward?: boolean
+          updated_at?: string
+        }
+        Update: {
+          allocation_priority?: Json
+          id?: string
+          manual_cash_at?: string | null
+          manual_cash_cents?: number | null
+          marketing_reserve_pct?: number
+          operational_coverage_cents?: number
+          owner_salary_coverage_cents?: number
+          owner_salary_monthly_cents?: number
+          owner_salary_months?: number
+          planning_horizon?: string
+          safety_margin_cents?: number
+          snelstart_auto_forward?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
       finance_share_links: {
         Row: {
           created_at: string
@@ -2127,6 +3188,129 @@ export type Database = {
           token?: string
         }
         Relationships: []
+      }
+      finance_suppliers: {
+        Row: {
+          bic: string | null
+          created_at: string
+          default_boat_id: string | null
+          default_category: string | null
+          email: string | null
+          iban: string | null
+          id: string
+          is_active: boolean
+          name: string
+          revolut_counterparty_id: string | null
+          staff_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          bic?: string | null
+          created_at?: string
+          default_boat_id?: string | null
+          default_category?: string | null
+          email?: string | null
+          iban?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          revolut_counterparty_id?: string | null
+          staff_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          bic?: string | null
+          created_at?: string
+          default_boat_id?: string | null
+          default_category?: string | null
+          email?: string | null
+          iban?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          revolut_counterparty_id?: string | null
+          staff_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_suppliers_default_boat_id_fkey"
+            columns: ["default_boat_id"]
+            isOneToOne: false
+            referencedRelation: "boats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_suppliers_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      finance_vat_returns: {
+        Row: {
+          created_at: string
+          file_path: string
+          filed_date: string
+          id: string
+          net_cents: number
+          notes: string | null
+          obligation_id: string | null
+          original_filename: string | null
+          quarter: string
+          source_document_id: string | null
+          vat21_owed_cents: number | null
+          vat9_owed_cents: number | null
+          voorbelasting_cents: number | null
+        }
+        Insert: {
+          created_at?: string
+          file_path: string
+          filed_date: string
+          id?: string
+          net_cents: number
+          notes?: string | null
+          obligation_id?: string | null
+          original_filename?: string | null
+          quarter: string
+          source_document_id?: string | null
+          vat21_owed_cents?: number | null
+          vat9_owed_cents?: number | null
+          voorbelasting_cents?: number | null
+        }
+        Update: {
+          created_at?: string
+          file_path?: string
+          filed_date?: string
+          id?: string
+          net_cents?: number
+          notes?: string | null
+          obligation_id?: string | null
+          original_filename?: string | null
+          quarter?: string
+          source_document_id?: string | null
+          vat21_owed_cents?: number | null
+          vat9_owed_cents?: number | null
+          voorbelasting_cents?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_vat_returns_obligation_id_fkey"
+            columns: ["obligation_id"]
+            isOneToOne: false
+            referencedRelation: "finance_obligations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_vat_returns_source_document_id_fkey"
+            columns: ["source_document_id"]
+            isOneToOne: false
+            referencedRelation: "finance_documents"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       getmyboat_bookings: {
         Row: {
@@ -2168,6 +3352,7 @@ export type Database = {
         Row: {
           account_number: string | null
           amount_cents: number | null
+          bank_transaction_id: string | null
           created_at: string
           id: string
           invoice_number: string | null
@@ -2179,6 +3364,7 @@ export type Database = {
         Insert: {
           account_number?: string | null
           amount_cents?: number | null
+          bank_transaction_id?: string | null
           created_at?: string
           id?: string
           invoice_number?: string | null
@@ -2190,6 +3376,7 @@ export type Database = {
         Update: {
           account_number?: string | null
           amount_cents?: number | null
+          bank_transaction_id?: string | null
           created_at?: string
           id?: string
           invoice_number?: string | null
@@ -2198,7 +3385,15 @@ export type Database = {
           raw_filename?: string | null
           storage_path?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "getyourguide_payments_bank_transaction_id_fkey"
+            columns: ["bank_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "bank_transactions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ghost_knowledge: {
         Row: {
@@ -3702,6 +4897,96 @@ export type Database = {
           },
         ]
       }
+      revolut_balance_snapshots: {
+        Row: {
+          account_id: string
+          balance_cents: number
+          currency: string
+          id: string
+          source: string
+          taken_at: string
+        }
+        Insert: {
+          account_id: string
+          balance_cents: number
+          currency?: string
+          id?: string
+          source?: string
+          taken_at?: string
+        }
+        Update: {
+          account_id?: string
+          balance_cents?: number
+          currency?: string
+          id?: string
+          source?: string
+          taken_at?: string
+        }
+        Relationships: []
+      }
+      revolut_connection: {
+        Row: {
+          access_token_enc: string | null
+          access_token_expires_at: string | null
+          account_id: string | null
+          account_name: string | null
+          client_id: string | null
+          consented_at: string | null
+          environment: string
+          id: string
+          last_sync_at: string | null
+          last_sync_error: string | null
+          redirect_uri: string | null
+          refresh_lock_until: string | null
+          refresh_token_enc: string | null
+          scopes: string[]
+          updated_at: string
+          webhook_id: string | null
+          webhook_secret_enc: string | null
+          webhook_url: string | null
+        }
+        Insert: {
+          access_token_enc?: string | null
+          access_token_expires_at?: string | null
+          account_id?: string | null
+          account_name?: string | null
+          client_id?: string | null
+          consented_at?: string | null
+          environment?: string
+          id?: string
+          last_sync_at?: string | null
+          last_sync_error?: string | null
+          redirect_uri?: string | null
+          refresh_lock_until?: string | null
+          refresh_token_enc?: string | null
+          scopes?: string[]
+          updated_at?: string
+          webhook_id?: string | null
+          webhook_secret_enc?: string | null
+          webhook_url?: string | null
+        }
+        Update: {
+          access_token_enc?: string | null
+          access_token_expires_at?: string | null
+          account_id?: string | null
+          account_name?: string | null
+          client_id?: string | null
+          consented_at?: string | null
+          environment?: string
+          id?: string
+          last_sync_at?: string | null
+          last_sync_error?: string | null
+          redirect_uri?: string | null
+          refresh_lock_until?: string | null
+          refresh_token_enc?: string | null
+          scopes?: string[]
+          updated_at?: string
+          webhook_id?: string | null
+          webhook_secret_enc?: string | null
+          webhook_url?: string | null
+        }
+        Relationships: []
+      }
       revolut_transactions: {
         Row: {
           created_at: string
@@ -3747,6 +5032,39 @@ export type Database = {
           updated_at?: string
           vat21_gross_cents?: number | null
           vat9_gross_cents?: number | null
+        }
+        Relationships: []
+      }
+      revolut_webhook_events: {
+        Row: {
+          dedupe_key: string
+          error: string | null
+          event_type: string
+          id: string
+          payload: Json
+          processed_at: string | null
+          received_at: string
+          transaction_id: string | null
+        }
+        Insert: {
+          dedupe_key: string
+          error?: string | null
+          event_type: string
+          id?: string
+          payload: Json
+          processed_at?: string | null
+          received_at?: string
+          transaction_id?: string | null
+        }
+        Update: {
+          dedupe_key?: string
+          error?: string | null
+          event_type?: string
+          id?: string
+          payload?: Json
+          processed_at?: string | null
+          received_at?: string
+          transaction_id?: string | null
         }
         Relationships: []
       }
@@ -4056,6 +5374,7 @@ export type Database = {
           max_shifts_per_week: number | null
           name: string
           notes: string | null
+          payment_aliases: string[]
           phone: string | null
           role: string
           slack_member_id: string | null
@@ -4072,6 +5391,7 @@ export type Database = {
           max_shifts_per_week?: number | null
           name: string
           notes?: string | null
+          payment_aliases?: string[]
           phone?: string | null
           role: string
           slack_member_id?: string | null
@@ -4088,6 +5408,7 @@ export type Database = {
           max_shifts_per_week?: number | null
           name?: string
           notes?: string | null
+          payment_aliases?: string[]
           phone?: string | null
           role?: string
           slack_member_id?: string | null
@@ -4432,6 +5753,7 @@ export type Database = {
       viator_payment_batches: {
         Row: {
           advice_date: string | null
+          bank_transaction_id: string | null
           created_at: string
           document_number: string | null
           id: string
@@ -4441,6 +5763,7 @@ export type Database = {
         }
         Insert: {
           advice_date?: string | null
+          bank_transaction_id?: string | null
           created_at?: string
           document_number?: string | null
           id?: string
@@ -4450,6 +5773,7 @@ export type Database = {
         }
         Update: {
           advice_date?: string | null
+          bank_transaction_id?: string | null
           created_at?: string
           document_number?: string | null
           id?: string
@@ -4457,7 +5781,15 @@ export type Database = {
           storage_path?: string | null
           total_amount_cents?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "viator_payment_batches_bank_transaction_id_fkey"
+            columns: ["bank_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "bank_transactions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       viator_payment_lines: {
         Row: {
@@ -4796,12 +6128,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      acquire_revolut_refresh_lock: {
+        Args: { p_lock_until: string; p_now: string }
+        Returns: boolean
+      }
       ai_spend_summary: { Args: never; Returns: Json }
       ai_usage_total_cents: { Args: never; Returns: number }
       allocate_invoice_number: {
         Args: { p_stripe_pi_id: string }
         Returns: string
       }
+      finance_expense_next_ref: { Args: never; Returns: string }
       get_translatable_columns: { Args: never; Returns: Json }
       ghost_stats: { Args: never; Returns: Json }
       set_section_text_color: {
@@ -4839,12 +6176,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -4868,11 +6205,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -4893,11 +6230,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -4918,11 +6255,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -4935,11 +6272,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

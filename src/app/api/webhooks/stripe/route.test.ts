@@ -163,6 +163,29 @@ describe('stripe webhook — payment_intent.succeeded (single finalizer)', () =>
     expect(h.refundsCreate).not.toHaveBeenCalled()
   })
 
+  it('flips the matching ACP checkout session to completed when the PI carries acp_checkout_session_id', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded({ metadata: { ...PI_META, acp_checkout_session_id: 'cs_test123' } }))
+    h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
+
+    await POST(mockReq())
+
+    expect(h.update).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'completed', booking_id: 'booking-row-id' }),
+      'id',
+      'cs_test123',
+    )
+  })
+
+  it('does not touch acp_checkout_sessions for a regular (non-ACP) website booking', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded())
+    h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
+
+    await POST(mockReq())
+
+    const acpCalls = h.update.mock.calls.filter(([, col]) => col === 'id')
+    expect(acpCalls).toHaveLength(0)
+  })
+
   it('stores the resolved Stripe fee on the booking, best-effort', async () => {
     h.constructEvent.mockReturnValue(makePiSucceeded())
     h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
