@@ -5,6 +5,7 @@ import { routing } from '@/i18n/routing'
 import AuthProvider from '@/components/auth/AuthProvider'
 import { SearchProvider } from '@/lib/search/SearchContext'
 import { TrackingScript } from '@/components/tracking/TrackingScript'
+import { WebMcpTools } from '@/components/agent/WebMcpTools'
 import type { Locale } from '@/lib/i18n/config'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://offcourseamsterdam.com'
@@ -51,6 +52,7 @@ export default async function LocaleLayout({ children, params }: Props) {
           <link rel="alternate" type="text/markdown" href={`${BASE_URL}/llms.txt`} title="LLM Summary" />
           <link rel="alternate" type="text/markdown" href={`${BASE_URL}/llms-full.txt`} title="Full LLM Knowledge Base" />
           <TrackingScript />
+          <WebMcpTools />
           {children}
         </SearchProvider>
       </AuthProvider>
