@@ -50,6 +50,7 @@
     "stripe": "^22.0.0",
     "swr": "^2.4.1",
     "tailwind-merge": "^3.5.0",
+    "turndown": "^7.2.4",
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -59,6 +60,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/turndown": "^5.0.6",
     "eslint": "^9",
     "eslint-config-next": "^16.2.9",
     "jsdom": "^29.1.0",
