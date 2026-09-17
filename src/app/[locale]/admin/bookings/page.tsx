@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, Fragment } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useState, useEffect, Fragment } from 'react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Loader2, RefreshCw, ChevronDown, ChevronUp, Plus, ArrowUp, ArrowDown, Search, X, CalendarRange, FileText, Clock, CheckCircle2, AlertCircle } from 'lucide-react'
 import { BookingDetailRow } from '@/components/admin/BookingDetailRow'
@@ -117,6 +117,7 @@ export default function BookingsPage() {
   const params = useParams()
   const locale = params.locale as string
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { data: bookings, isLoading: loading, error, refresh: fetchBookings } =
     useAdminFetch<AdminBooking[]>('/api/admin/bookings/local')
   // Event-based, not polling: the server pings this channel the moment a booking
@@ -143,6 +144,26 @@ export default function BookingsPage() {
       setSortDir('desc')
     }
   }
+
+  // A Cmd+K search result deep-links here as `?booking=<id>` — once that
+  // booking's data is in, clear whatever filter/search would hide it, expand
+  // its row, and scroll it into view. Runs once per booking id (not on every
+  // bookings refresh) so it doesn't fight the user re-collapsing the row.
+  useEffect(() => {
+    const targetId = searchParams.get('booking')
+    if (!targetId || !bookings?.some(b => b.id === targetId)) return
+    setSourceFilter('all')
+    setReconciliationOnly(false)
+    setDateCreatedFilter('all')
+    setSearch('')
+    setExpanded(prev => ({ ...prev, [targetId]: true }))
+    // Filter state above hasn't re-rendered the row list yet on this tick — wait one before scrolling.
+    const raf = requestAnimationFrame(() => {
+      document.getElementById(`booking-row-${targetId}`)?.scrollIntoView({ block: 'center' })
+    })
+    return () => cancelAnimationFrame(raf)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed only on the id + whether data has loaded, not on the filter setters or every `bookings` refresh.
+  }, [searchParams, bookings?.some(b => b.id === searchParams.get('booking'))])
 
   const openInvoicesCount = bookings?.filter(b => b.payment_status === 'stripe_invoice_sent').length ?? 0
 
@@ -372,6 +393,7 @@ export default function BookingsPage() {
                 {filteredBookings.map(b => (
                   <Fragment key={b.id}>
                     <tr
+                      id={`booking-row-${b.id}`}
                       className="hover:bg-zinc-50 transition-colors cursor-pointer"
                       onClick={() => toggleRow(b.id)}
                     >

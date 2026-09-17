@@ -54,4 +54,16 @@ describe('matchesBookingSearch', () => {
     expect(matchesBookingSearch(sparse, 'anything')).toBe(false)
     expect(matchesBookingSearch(sparse, '')).toBe(true)
   })
+
+  it('matches on invoice number', () => {
+    expect(matchesBookingSearch({ ...BOOKING, invoice_number: 'INV-2026-0042' }, 'inv-2026-0042')).toBe(true)
+  })
+
+  it('matches on company name', () => {
+    expect(matchesBookingSearch({ ...BOOKING, company_name: 'Acme Charters BV' }, 'acme charters')).toBe(true)
+  })
+
+  it('does not throw when invoice_number/company_name are omitted (both optional)', () => {
+    expect(matchesBookingSearch(BOOKING, 'artem')).toBe(true)
+  })
 })

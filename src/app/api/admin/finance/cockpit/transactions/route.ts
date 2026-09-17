@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { ilikePattern } from '@/lib/admin/command-palette/ilike'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,7 +35,14 @@ export async function GET(req: NextRequest) {
     const before = p.get('before')
     if (before) q = q.lt('created_at', before)
     const text = p.get('q')?.trim()
-    if (text) q = q.or(`description.ilike.%${text.replace(/[%,]/g, '')}%,reference.ilike.%${text.replace(/[%,]/g, '')}%`)
+    if (text) {
+      const pattern = ilikePattern(text)
+      // A search term of only ,()%_ characters escapes to nothing — same as
+      // no search text at all, so just skip the filter rather than build one
+      // from an empty pattern (which would otherwise mean "match everything"
+      // via a literal "%%", not "match nothing").
+      if (pattern) q = q.or(`description.ilike.${pattern},reference.ilike.${pattern}`)
+    }
 
     const { data, error } = await q
     if (error) return apiError(error.message, 500)

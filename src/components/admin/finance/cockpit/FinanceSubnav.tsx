@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useParams, usePathname } from 'next/navigation'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 
-interface SubnavItem {
+export interface SubnavItem {
   href: string
   label: string
   /** Greyed-out placeholder for a later phase. */
@@ -16,7 +16,7 @@ interface SubnavItem {
  * Order matters: the cockpit pages first (what can happen next), then the
  * existing kasboek (what happened), then the phases that aren't built yet.
  */
-const ITEMS: SubnavItem[] = [
+export const ITEMS: SubnavItem[] = [
   { href: '/admin/finance/overview', label: 'Overzicht' },
   { href: '/admin/finance/scenarios', label: 'Scenario Planner' },
   { href: '/admin/finance/goals', label: 'Doelen' },

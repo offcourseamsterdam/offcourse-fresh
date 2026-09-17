@@ -1,7 +1,7 @@
 'use client'
 
 import { Fragment, useRef, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Loader2, RefreshCw, Receipt, ArrowRight, AlertTriangle, Upload, ChevronDown, ChevronRight, FileDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
@@ -188,8 +188,19 @@ function formatShortEuro(cents: number): string {
   return `€ ${Math.round(cents / 100).toLocaleString('nl-NL')}`
 }
 
+function isTabKey(value: string | null): value is TabKey {
+  return value !== null && (ALL_TAB_KEYS as readonly string[]).includes(value)
+}
+
 export default function FinancePage() {
-  const [tab, setTab] = useState<TabKey>('btw-dashboard')
+  // Lets a Cmd+K search result (or any other link) deep-link straight to a
+  // tab via `?tab=viator` etc. — read once on mount; `setTab` afterwards is
+  // just local UI state, same as before.
+  const searchParams = useSearchParams()
+  const [tab, setTab] = useState<TabKey>(() => {
+    const requested = searchParams.get('tab')
+    return isTabKey(requested) ? requested : 'btw-dashboard'
+  })
 
   const { data: statusData } = useAdminFetch<FinanceChannelStatusData>(
     '/api/admin/finance/channel-status'
