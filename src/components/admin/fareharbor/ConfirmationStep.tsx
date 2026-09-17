@@ -16,6 +16,8 @@ interface ConfirmationStepProps {
   paymentIntentId: string | null
   paymentLinkUrl?: string | null
   stripeInvoiceUrl?: string | null
+  /** Only "Invoice later" bookings ever get a Stripe Invoice — every other source's loading message must not claim one is coming. */
+  isInvoiceLater?: boolean
   onReset: () => void
 }
 
@@ -30,6 +32,7 @@ export function ConfirmationStep({
   paymentIntentId,
   paymentLinkUrl,
   stripeInvoiceUrl,
+  isInvoiceLater,
   onReset,
 }: ConfirmationStepProps) {
   const invoiceUrl = stripeInvoiceUrl || (booking && typeof booking === 'object' && 'stripeInvoiceUrl' in booking ? (booking as Record<string, string>).stripeInvoiceUrl : null)
@@ -41,7 +44,9 @@ export function ConfirmationStep({
             <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
             <div>
               <p className="text-sm font-medium text-zinc-900">Processing booking</p>
-              <p className="text-xs text-zinc-500 mt-0.5">Creating your FareHarbor reservation & Stripe Invoice…</p>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                {isInvoiceLater ? 'Creating your FareHarbor reservation & Stripe Invoice…' : 'Creating your FareHarbor reservation…'}
+              </p>
             </div>
           </CardContent>
         </Card>

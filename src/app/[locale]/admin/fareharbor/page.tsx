@@ -965,6 +965,7 @@ export default function BookingFlowPage() {
           paymentIntentId={paymentIntentId}
           paymentLinkUrl={paymentLinkUrl}
           stripeInvoiceUrl={stripeInvoiceUrl}
+          isInvoiceLater={isInvoiceLater}
           onReset={reset}
         />
       )}
