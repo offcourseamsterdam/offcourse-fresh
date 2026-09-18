@@ -6,7 +6,6 @@ import { ReviewSlider } from './ReviewSlider'
 import { BoatCard } from './BoatCard'
 import { FoodHostCard } from './FoodHostCard'
 import { TruncatedDescription } from './TruncatedDescription'
-import { UpcomingDeparturesSection } from './UpcomingDeparturesSection'
 import { getLocalizedField } from '@/lib/i18n/get-localized-field'
 import type { Locale } from '@/lib/i18n/config'
 import type { CancellationTier } from '@/lib/cancellation/policy'
@@ -88,17 +87,6 @@ export function CruiseContentSections({
           </ul>
         </section>
       )}
-
-      {/* Upcoming Departures & Live Availability (SSR & LLM readable) */}
-      <UpcomingDeparturesSection
-        snapshot={availabilitySnapshot ?? null}
-        listingTitle={listing.title ?? ''}
-        category={(listing.category as 'private' | 'shared') || 'private'}
-        startingPrice={listing.starting_price ?? null}
-        priceDisplay={listing.price_display ?? null}
-        slug={listing.slug ?? ''}
-        locale={loc}
-      />
 
       {/* Description */}
       {description && (
