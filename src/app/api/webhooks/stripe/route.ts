@@ -11,6 +11,7 @@ import { notifyCateringOrder } from '@/lib/catering/notify'
 import { hasFood, type ExtrasLineItem } from '@/lib/catering/filter'
 import { isWithinCateringAutoSendWindow } from '@/lib/catering/auto-send-cutoff'
 import { sendCateringOrderEmailForBooking } from '@/lib/catering/send-catering-email'
+import { sendPartnerBookingNotification } from '@/lib/partner/send-booking-notification'
 import { extractVat } from '@/lib/extras/calculate'
 import { CRUISE_VAT_RATE, EXTRAS_VAT_RATE } from '@/lib/booking/constants'
 import { reportBookingConversion } from '@/lib/google-ads/report-conversion'
@@ -491,6 +492,21 @@ export async function POST(request: NextRequest) {
         listingId: meta.listing_id ?? null,
       }),
       ...(shouldAutoSendCateringNow && insertedBookingId ? [sendCateringOrderEmailForBooking(insertedBookingId)] : []),
+      ...(partnerId && commissionAmountCents != null && commissionAmountCents > 0 ? [
+        sendPartnerBookingNotification({
+          partnerId,
+          listingTitle: meta.listing_title ?? '',
+          bookingDate: meta.date ?? '',
+          startTime: meta.start_at || null,
+          endTime: meta.end_at || null,
+          guestCount,
+          customerTypeName: meta.customer_type_name || null,
+          baseAmountCents: serverBaseAmount,
+          commissionAmountCents,
+          campaignId,
+          supabase,
+        }),
+      ] : []),
     ])
   }
 
