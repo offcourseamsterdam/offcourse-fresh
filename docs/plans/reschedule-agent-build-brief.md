@@ -7,26 +7,48 @@ before an agent touches a domain (already true here — `/rebook` predates
 this brief). Detail pattern: `ai-operations-vision.md` §1.
 **Decided in chat (2026-09-20):**
 - Intake = the WhatsApp customer chat channel.
-- Autonomy = draft-then-approve, no auto-execute in v1.
+- Autonomy = draft-then-approve for anything risky — but that's now a
+  property of the *action*, not of the agent's reasoning. The agent
+  always reasons all the way to a concrete recommended action, even for
+  things it has no execute-tool for; the gate is that turning a proposal
+  into a real-world effect always needs a human click. Reasoning is free,
+  acting isn't.
 - **Scope is general, not reschedule-only.** Every inbound message/email
   reaches ONE agent. There is no upfront "is this a reschedule?" gate —
   the agent reasons over a toolbox and decides for itself what's useful,
   the way this session decides whether to Grep or Read rather than
   following a fixed script. Reschedule is just the first toolset it has,
   not a special-cased path.
-- **When no tool covers the ask, the agent doesn't guess or fabricate a
-  proposal — it escalates to Beer's Slack in plain language** (see the
-  `escalation` kind below). This is the safety valve that makes "general
-  agent, narrow toolbox" work: the agent can reason about anything, but
-  can only ever *act* through tools that exist, and escalation is what
-  happens when none fit.
+- **One unified proposal path, not a separate "escalation" dead end.**
+  Earlier draft of this brief had the agent either produce a structured
+  `reschedule_request` proposal or, for anything else, just forward the
+  raw message to Slack with no real reasoning attached. That's worse than
+  it needs to be — the agent should still reason its way to a recommended
+  action even when it can't execute one itself (e.g. "customer wants a
+  refund of €90 for booking #4821, weather cancellation, our policy
+  covers this"). So there's **one** `create_proposal(kind, payload,
+  reasoning)` tool. Whether Approve does something automatically or just
+  flips the row to "approved — handle manually" depends only on whether
+  that `kind` has a registered execute-handler (M4) — v1 registers exactly
+  one, for `reschedule_request`. Every other `kind` the agent invents
+  still gets full reasoning + trace + a Slack ping, it just can't
+  self-execute yet.
+- **A low-risk exception to the gate: asking the customer a clarifying
+  question.** If the agent can't identify which booking a message is
+  about, it's allowed to message the customer back directly asking for
+  their email, phone, or booking ID — no approval needed for that,
+  because it changes nothing (see M2's `ask_customer` tool). Anything
+  beyond a clarifying question about identity stays gated.
+- **Beer gets pinged on every single inbound message**, not just ones
+  needing approval — see "Slack notifications" in M2. What varies is the
+  ping's content (FYI vs. needs-your-approval), not whether it fires.
 
 This is the **pilot** for the whole `agent_proposals` pattern — the first
 row this table has ever held. Keep the toolbox narrow (reschedule-only
-tools); the point is to prove the *loop* end-to-end (signal → agent
-reasons → proposal → decision → outcome) in a shape that adding a second
-toolset later (replies, cancellations, stock) doesn't require touching —
-only adding more tools and proposal `kind`s.
+execution); the point is to prove the *loop* end-to-end (signal → agent
+reasons → proposal → decision → outcome) in a shape that adding real
+execution for a second `kind` later (refunds, cancellations, stock)
+doesn't require touching this loop — only registering another handler.
 
 ---
 
@@ -75,10 +97,25 @@ assumption is reuse, not a new table.
 - **`agent_proposals` columns** — `kind`, `payload` (jsonb), `reasoning`,
   `status`, `human_edits`, `outcome`, `conversation_id`,
   `trigger_message_id`, `model` already match the vision doc's design
-  exactly. Two `kind`s in v1: `'reschedule_request'` and `'escalation'`.
+  exactly. `kind` is free text (not an enum) — the agent can write
+  whatever `kind` fits (`'reschedule_request'`, or its own word for
+  something new), which is what makes "one execute-handler registered,
+  everything else still gets reasoned about" work without a migration
+  every time a new situation comes up.
   **The tool-call trace (below) also lives in `payload` as `payload.trace`
   — no new column.** `payload` is already an unstructured jsonb bucket;
   giving the trace its own column would just be the same data typed twice.
+- **Outbound WhatsApp send** — no existing helper sends WhatsApp
+  specifically, but `src/lib/twilio/client.ts` (`sendTwilioSms`) is the
+  pattern to mirror for `ask_customer`: phone normalization, mock-send
+  when credentials are missing (keeps local dev/tests working without
+  hitting Twilio), same error shape. A WhatsApp send needs the
+  `whatsapp:` prefix on `To`/`From` and must respect
+  `conversations.wa_window_expires_at` (WhatsApp rejects a free-form
+  message once the 24h customer-initiated window has closed — outside
+  it, only a pre-approved template message is deliverable. `ask_customer`
+  must check this and fall back to an approved template, or refuse and
+  escalate, rather than silently failing).
 - **Brand voice** — `src/lib/ai/context.ts` already exists and is the
   system-prompt seed every other AI feature in this codebase uses
   (translations, blog content). The agent's system prompt should import
@@ -108,8 +145,18 @@ assumption is reuse, not a new table.
    it never silently books a cruise with nobody assigned. Confirm.
 4. ~~Non-reschedule messages~~ — **resolved (2026-09-20):** every message
    reaches the same agent, no upfront classifier gate. If nothing in its
-   toolbox fits the ask, it writes an `escalation` proposal and Slacks
-   Beer directly — see M2.
+   toolbox can execute the ask, it still writes a fully-reasoned
+   `create_proposal` (just one with no execute-handler registered for its
+   `kind`) and Slacks Beer directly — see M2.
+5. **How far can `ask_customer` go before it needs approval too?**
+   Proposed line: identity/matching questions only ("what's your booking
+   ID or the email you booked with?") are auto-sent, because they carry
+   no business effect and stall the whole interaction otherwise — waiting
+   on Beer to approve "can I ask a question" would make every
+   hard-to-match message slower than a human just answering WhatsApp
+   directly. Anything beyond that (answering a policy question, offering
+   a specific alternative slot) stays a `create_proposal` a human sends.
+   Confirm this line is right, or move it.
 
 ## M1 — WhatsApp intake (data capture only, no UI)
 
@@ -142,44 +189,59 @@ new message lands mid-thread). No upfront classifier — the system prompt
 (brand voice from `src/lib/ai/context.ts` + the job description below) and
 the tools available are the entire steering mechanism.
 
-**Tools in v1 (reschedule-only toolbox; deliberately narrow):**
+**Tools in v1 (reschedule-only execution; deliberately narrow):**
 
 | Tool | Type | What it does |
 |---|---|---|
-| `lookup_booking(phone_or_email)` | read | `bookings` where contact matches, `booking_date >= today`, `status != 'cancelled'`. Zero or multiple matches are valid results — the agent decides whether to ask a clarifying question (via `create_proposal` with a question, or `escalate`) or pick the obvious one. |
+| `lookup_booking({ phone?, email?, bookingId? })` | read | `bookings` matched by whichever identifier(s) are known — the WhatsApp channel always supplies a phone via the contact, but the agent should try email or a booking ID mentioned in the message text too, since the phone messaging from isn't always the phone the booking was made under (partner's phone, a second traveler, etc). Zero matches, or more than one live booking on the matched identifier, means it can't safely proceed — see `ask_customer` below. |
 | `check_fareharbor_availability(listingId, date)` | read | wraps `/api/admin/booking-flow?date=` |
 | `check_skipper_availability(staffId, date)` | read | `staff_availability` |
 | `list_active_skippers()` | read | `staff` where `is_active` |
-| `create_proposal(kind, payload, reasoning)` | **write — the only one** | inserts into `agent_proposals`, `status: 'pending'`. `kind` is `'reschedule_request'` in v1. |
-| `escalate(reason)` | **write** | inserts into `agent_proposals` with `kind: 'escalation'`, `payload: { rawMessage, reason }`, then `postSlackOps()`s Beer directly with the message + the agent's own explanation of why nothing in its toolbox covers it. |
+| `ask_customer(question)` | **write — ungated** | sends `question` back over WhatsApp (see the outbound-send note above), logs it as an outbound `messages` row, and ends the agent's turn for this message — the next customer reply re-triggers the loop with the Q&A now in the conversation's history. **Reserved for identity/matching questions in v1** (open decision #5) — the agent isn't given license to freelance other questions yet, that's a prompt-level constraint, not a technical one, and is exactly the kind of thing to watch in early runs. |
+| `create_proposal(kind, payload, reasoning)` | **write — always human-gated** | inserts into `agent_proposals`, `status: 'pending'`, `kind` free text. Always produces a fully-reasoned recommendation regardless of whether anything can auto-execute it (M4 decides that by whether a handler is registered for `kind`, not the agent). |
 
 **The hard rule, restated:** the agent has no `rebook_booking`,
-`update_shifts`, or `notify_skipper` tool. It cannot execute anything —
-only propose or escalate. That boundary is enforced by *what tools exist*,
-not by a code branch checking intent, which is what makes "reason freely,
-narrow toolbox" safe to ship even before the agent's judgment is proven.
+`update_shifts`, or `notify_skipper` tool — those only run from M4's
+approve action, never from inside the loop. `ask_customer` is the one
+tool that sends something without a human clicking anything first, and
+it's deliberately incapable of doing more than ask a question: no
+attachments, no offers, no numbers, just text back to the same
+conversation. That narrowness is what makes it safe to leave ungated —
+the boundary is still "what a tool is capable of," just drawn one notch
+more permissively for this one low-stakes case.
 
-**Trace capture:** every tool call the loop makes gets appended to an
-in-memory list as `{ tool, input_summary, result_summary }` — a short
-human-readable line per call, not the raw request/response (keeps
-`payload.trace` skimmable and avoids parking raw PII in a jsonb blob
-longer than needed). Whichever of `create_proposal`/`escalate` ends the
-loop writes that list into `payload.trace` on the row it creates. This is
-what the sidepane (M3) renders as "how the agent got here."
+**Trace capture:** every tool call the loop makes (including
+`ask_customer` calls) gets appended to an in-memory list as
+`{ tool, input_summary, result_summary }` — a short human-readable line
+per call, not the raw request/response (keeps `payload.trace` skimmable
+and avoids parking raw PII in a jsonb blob longer than needed).
+`create_proposal` writes that list into `payload.trace` on the row it
+creates. This is what the sidepane (M3) renders as "how the agent got
+here."
 
-**Escalation is the general fallback**, not a reschedule-specific thing —
-a booking question, a complaint, a cancellation ask, anything the v1
-toolbox has no tool for, all land here identically. This is intentional:
-it means the *loop* is already general-purpose on day one, even though
-only one real toolset exists yet. Adding a second toolset later (e.g.
-reply drafting) is additive — more tools, one more `kind` — not a rewrite
-of this file.
+**Slack notification fires on every inbound message, not just ones
+needing approval** — `postSlackOps()` after each agent turn, varying by
+what happened:
+- Loop ended in `ask_customer` → low-key FYI: *"Sarah asked to move
+  Saturday's cruise — couldn't match her booking, asked for her email/
+  booking ID. No action needed from you."*
+- Loop ended in `create_proposal` with a registered handler → *"Sarah
+  wants to move Saturday to Sunday — proposal ready, needs your
+  approval: [link]"*
+- Loop ended in `create_proposal` with no handler for that `kind` → same
+  shape, phrased as *"...needs your approval — no auto-action for this
+  one yet, you'll do it manually: [link]"*
+
+One Slack message per inbound customer message, always — this is
+deliberately the "ping each incoming message" requirement, not just an
+escalation-only alert.
 
 **Unit-test:** the tool functions themselves (pure logic — availability
-lookup, skipper-swap decision, matching) exactly as before, plus a small
-set of scripted scenarios (mocked tool responses) asserting the loop ends
-in the right `kind` and payload shape — not asserting an exact call
-sequence, since that's allowed to vary. This is the real testing
+lookup, skipper-swap decision, the multi-identifier matching in
+`lookup_booking`) exactly as before, plus a small set of scripted
+scenarios (mocked tool responses) asserting the loop ends in the right
+`kind`/`ask_customer` outcome and payload shape — not asserting an exact
+call sequence, since that's allowed to vary. This is the real testing
 trade-off called out when this shift was discussed: less deterministic
 than a fixed pipeline, tested by outcome instead of by exact steps.
 
@@ -194,15 +256,15 @@ ships (same component, just relocated).
 
 1. **Header** — status badge (pending / approved / rejected / handled) +
    timestamp + `kind`.
-2. **Headline** — one line, the actual proposed action, rendered per
-   `kind`:
+2. **Headline** — one line, the actual recommended action, straight from
+   `reasoning`/`payload`, regardless of `kind`:
    - `reschedule_request` → *"Move to Sun 28 Sep, 14:00 · keep Jasper"*
      (or *"· swap to Anna — Jasper unavailable"* / *"· no skipper free
      yet — assign manually"*).
-   - `escalation` → *"Can't act on this yet — flagged to you on Slack"*,
-     no Approve/Reject, just the raw customer message + the agent's own
-     note on why nothing covered it, and a **Mark handled** toggle for
-     bookkeeping once Beer's dealt with it manually.
+   - anything else (no execute-handler registered) → whatever the agent
+     recommended, same styling — e.g. *"Refund €90 for booking #4821 —
+     weather cancellation, covered by policy"*. The only visible
+     difference from a reschedule card is the actions row below.
 3. **"How the agent got here"** — collapsed by default (this is detail,
    not the headline). Expands to the `payload.trace` list, one line per
    tool call:
@@ -217,10 +279,17 @@ ships (same component, just relocated).
 4. **Reasoning** — the `agent_proposals.reasoning` prose, sits right
    under the trace (the trace is *what* it looked at, reasoning is *why*
    it concluded what it did — keep them visually distinct, don't merge).
-5. **Actions**, per `kind`:
-   - `reschedule_request`: **Approve** / **Edit** (adjust slot or skipper
-     before approving) / **Reject**.
-   - `escalation`: **Mark handled** only.
+5. **Actions** — looked up from a small handler registry keyed by `kind`
+   (M4), not hardcoded per `kind` in the UI:
+   - `kind` has a registered handler (`reschedule_request` in v1):
+     **Approve** (runs it) / **Edit** (adjust before approving) /
+     **Reject**.
+   - `kind` has no handler yet: **Mark done** (handled manually, just
+     bookkeeping — same `status: 'approved'`, no execution call fires)
+     / **Reject**. This is the exact "propose the refund, Beer clicks
+     approve, Beer does it in Stripe himself" case — reasoned and
+     recorded, not auto-executed, because nobody's built that
+     handler yet.
 6. **Footer**, low-emphasis — model id used, created timestamp.
 
 **Unit-test:** the pure rendering-selection logic (which headline/actions
@@ -229,8 +298,14 @@ per this project's "don't test React rendering" rule.
 
 ## M4 — Execution on approve
 
-**On Approve (`reschedule_request` only — `escalation` has no execution
-path, just "mark handled"):**
+New: `src/lib/agents/customer-chat/proposal-handlers.ts` — a tiny registry,
+`Record<string, (proposal) => Promise<void>>`, keyed by `kind`. The
+approve action looks up `handlers[proposal.kind]`; found → runs it (below);
+not found → just flips `status` (the M3 "Mark done" case). This registry,
+not the agent, is what decides whether a `kind` is auto-actionable — the
+agent never needs to know or declare that itself.
+
+**`reschedule_request` handler (v1's only registered one):**
 1. Call the existing `/api/admin/bookings/[id]/rebook` with the
    (possibly human-edited) slot — reuse verbatim, this is the whole point
    of rule 3.
@@ -256,19 +331,22 @@ WhatsApp reply is out of scope — see below).
 - The full three-pane inbox UI (Phase 1) — M3 builds the sidepane
   component as a standalone page for now; relocating it into an actual
   inbox thread view is Phase 1's job, not this brief's.
-- Outbound WhatsApp reply to the customer (confirmation is email-only via
-  the reused `/rebook` call; replying on WhatsApp itself, and any
-  `reply_draft`-style tool that would let the agent draft one, is a
-  Phase 1/3 concern — until then, anything needing a reply escalates).
+- Outbound WhatsApp reply to the customer **beyond `ask_customer`'s
+  narrow identity-matching question** — confirmation is email-only via
+  the reused `/rebook` call; a general reply-drafting tool is a Phase
+  1/3 concern. `ask_customer` is intentionally the one sliver of
+  customer-facing autonomy in this brief, not a foot in the door for more.
 - Slack interactive Approve/Reject buttons — needs the full Slack
   Events API app upgrade; the admin-page link is the v1 approval surface.
-- Auto-execute without approval — explicitly decided against this session.
-  This still holds for the general loop: `escalate` and `create_proposal`
-  are its only write tools, full stop.
-- Any `agent_proposals` `kind` beyond `reschedule_request` and
-  `escalation` — no stock, cancellation, or refund tools/kinds yet. The
-  loop is general-purpose by construction, but v1 ships with exactly one
-  real capability; everything else correctly escalates.
+- Auto-execute without approval, for anything beyond `ask_customer` —
+  explicitly decided against this session. `create_proposal` is always
+  human-gated regardless of `kind`; only whether a registered handler
+  exists varies, never whether a human clicks first.
+- Any real execute-handler beyond `reschedule_request` — the agent may
+  reason its way to a refund/cancellation/other recommendation and write
+  it as a `create_proposal`, and that's fine (it's just reasoning), but
+  M4's handler registry stays one entry deep in this brief. Building the
+  refund/cancellation handlers is separate work, later.
 - Backfilling `shifts` for bookings that AREN'T being rescheduled — this
   brief only ever touches the one shift belonging to the booking in play.
   The general "sync shifts from all bookings" job is still
@@ -280,15 +358,22 @@ WhatsApp reply is out of scope — see below).
   `docs/features/README.md`.
 - Full pass: `npx tsc --noEmit`, `npm test` (green before and after),
   `npm run build`.
-- Dev-server / sandbox walkthrough, two cases:
-  1. Reschedule: send a real WhatsApp sandbox message ("can we move
-     Saturday's cruise to Sunday?") → confirm the sidepane shows a
+- Dev-server / sandbox walkthrough, three cases:
+  1. Clean reschedule: send a real WhatsApp sandbox message from a number
+     matching an existing booking ("can we move Saturday's cruise to
+     Sunday?") → confirm Beer gets one Slack ping, the sidepane shows a
      correctly reasoned proposal with a sensible trace → approve →
      confirm booking rebooked, shift moved, skipper DMed, customer
      emailed → check `agent_proposals.outcome`/`status` reflects it.
-  2. Escalation: send a message the toolbox can't handle ("can I get a
-     refund?") → confirm it lands as an `escalation` row, Beer gets the
-     Slack ping, and the sidepane renders the no-actions "flagged to you"
-     state correctly rather than a broken proposal card.
+  2. Unmatched sender: same message from a number/name that doesn't match
+     any booking → confirm the agent calls `ask_customer` (not
+     `create_proposal`), the customer actually receives the WhatsApp
+     question, Beer's Slack ping is the low-key FYI variant, and no
+     `agent_proposals` row exists yet for this thread.
+  3. No handler: send a message the v1 registry can't execute ("can I get
+     a refund?") → confirm it still lands as a well-reasoned
+     `create_proposal`, Beer's Slack ping says "no auto-action, you'll do
+     it manually," and the sidepane shows Mark done / Reject rather than
+     Approve.
 - Mobile check on `/admin/proposals/[id]` per the responsive-design rules
   (this is a page Beer will very plausibly open from his phone).
