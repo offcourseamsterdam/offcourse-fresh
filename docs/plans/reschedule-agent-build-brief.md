@@ -193,12 +193,32 @@ the tools available are the entire steering mechanism.
 
 | Tool | Type | What it does |
 |---|---|---|
-| `lookup_booking({ phone?, email?, bookingId? })` | read | `bookings` matched by whichever identifier(s) are known — the WhatsApp channel always supplies a phone via the contact, but the agent should try email or a booking ID mentioned in the message text too, since the phone messaging from isn't always the phone the booking was made under (partner's phone, a second traveler, etc). Zero matches, or more than one live booking on the matched identifier, means it can't safely proceed — see `ask_customer` below. |
+| `lookup_booking({ phone?, email?, bookingId?, name? })` | read | `bookings` matched by whichever identifier(s) are known — the WhatsApp channel always supplies a phone via the contact, but the agent should try email or a booking ID mentioned in the message text too, since the phone messaging from isn't always the phone the booking was made under (partner's phone, a second traveler, etc). `name` matches against `bookings.customer_name`, case-insensitive. See the confidence tiering below — `name` is not treated the same as the other three. |
 | `check_fareharbor_availability(listingId, date)` | read | wraps `/api/admin/booking-flow?date=` |
 | `check_skipper_availability(staffId, date)` | read | `staff_availability` |
 | `list_active_skippers()` | read | `staff` where `is_active` |
 | `ask_customer(question)` | **write — ungated** | sends `question` back over WhatsApp (see the outbound-send note above), logs it as an outbound `messages` row, and ends the agent's turn for this message — the next customer reply re-triggers the loop with the Q&A now in the conversation's history. **Reserved for identity/matching questions in v1** (open decision #5) — the agent isn't given license to freelance other questions yet, that's a prompt-level constraint, not a technical one, and is exactly the kind of thing to watch in early runs. |
 | `create_proposal(kind, payload, reasoning)` | **write — always human-gated** | inserts into `agent_proposals`, `status: 'pending'`, `kind` free text. Always produces a fully-reasoned recommendation regardless of whether anything can auto-execute it (M4 decides that by whether a handler is registered for `kind`, not the agent). |
+
+**Matching confidence tiering — name is not a peer of phone/email/booking
+ID.** Email and booking ID are effectively unique in this dataset; phone
+is unique enough that its only real failure mode is "more than one live
+booking under this number." A customer's *name*, on the other hand, isn't
+— Off Course plausibly has more than one "Sarah" or "Tom" with an
+upcoming booking at any given time, and matching on name alone risks
+surfacing a *different customer's* booking (date, price, skipper) into
+this conversation, which is a real correctness and privacy problem, not
+just a UX one. So:
+- Name is never sufficient **alone** unless exactly one live booking
+  matches it — and even then, `create_proposal`'s `reasoning` must say
+  so explicitly ("matched by name only, single result — no phone/email
+  corroboration") so it's visibly a weaker match on the sidepane, not
+  indistinguishable from a booking-ID-certain one.
+- Its better use is **corroboration**: phone matches two live bookings →
+  name picks between them. Or **disambiguation**: phone matches nothing
+  usable, but name plus a mentioned date narrows to one.
+- Name matches more than one live booking, with nothing else to narrow
+  it → same as any other unresolved match: `ask_customer`, not a guess.
 
 **The hard rule, restated:** the agent has no `rebook_booking`,
 `update_shifts`, or `notify_skipper` tool — those only run from M4's
