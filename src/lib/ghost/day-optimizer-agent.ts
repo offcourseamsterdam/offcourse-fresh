@@ -1,5 +1,6 @@
 import { runAgenticLoop } from './agent-runtime'
 import { CLAUDE_AGENT_MODEL } from '@/lib/ai/clients'
+import { emitOpsEvent } from '@/lib/ops/events'
 
 /**
  * The reasoning layer the Planning Optimizer route was missing: today, when
@@ -193,22 +194,25 @@ export async function resolveDayPlan(
 
     const byId = new Map(cluster.map(c => [c.id, c]))
     const reasoningById = new Map<string, string>()
-    let proposedPicks: string[]
+    // null = no usable answer from the agent (error, or it only named ids that
+    // weren't in the cluster) → deterministic fallback. An EMPTY list is a
+    // real answer: the agent decided none of these is worth a guest's
+    // attention, and that decision is respected, not overridden.
+    let proposedPicks: string[] | null = null
     if (plan) {
       for (const p of plan.picks) reasoningById.set(p.id, p.why)
       for (const s of plan.skipped) reasoningById.set(s.id, s.why)
-      proposedPicks = plan.picks.map(p => p.id).filter(id => byId.has(id))
-    } else {
-      proposedPicks = []
+      const valid = plan.picks.map(p => p.id).filter(id => byId.has(id))
+      proposedPicks = plan.picks.length > 0 && valid.length === 0 ? null : valid
     }
+    const usedFallback = proposedPicks === null
 
     // Safety net: re-derive picks so an agent's own logic error (or a null
     // result) can never violate "at most one per shared day" or invent an
     // id that wasn't in the cluster. Runs even on a successful plan.
     const claimedDays = new Set<string>()
     const finalPicks = new Set<string>()
-    const orderedCandidateIds = proposedPicks.length ? proposedPicks : pickBySavingsFallback(cluster).picks
-    const usedFallback = !proposedPicks.length
+    const orderedCandidateIds = proposedPicks ?? pickBySavingsFallback(cluster).picks
     for (const id of orderedCandidateIds) {
       const c = byId.get(id)
       if (!c) continue
@@ -224,6 +228,24 @@ export async function resolveDayPlan(
         (usedFallback ? 'Fell back to the highest-saving, non-conflicting pick (the reasoning agent was unavailable).' : undefined)
       decisions.set(c.id, { allowed, reasoning: allowed ? reasoning : reasoning ?? 'Another candidate for the same day was chosen instead.' })
     }
+
+    // The audit trail: why this move and not that one. Only ever written for
+    // a real conflict (a cluster of one never reaches here), and once a pick
+    // is drafted its day is claimed, so the same conflict doesn't re-log on
+    // every panel open.
+    await emitOpsEvent({
+      eventType: 'recommendation_created',
+      actorType: usedFallback ? 'system' : 'agent',
+      source: 'ghost/day-optimizer-agent',
+      payload: {
+        finding_type: 'day_plan',
+        candidates: cluster.map(c => ({ id: c.id, type: c.type, days: c.daysTouched, est_saving_cents: c.estSavingCents })),
+        picked: [...finalPicks],
+        reasoning: plan?.reasoning ?? null,
+        per_candidate: Object.fromEntries(cluster.map(c => [c.id, decisions.get(c.id)?.reasoning ?? null])),
+        used_fallback: usedFallback,
+      },
+    })
   }
 
   return decisions

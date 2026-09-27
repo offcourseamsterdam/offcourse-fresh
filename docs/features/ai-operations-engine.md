@@ -395,6 +395,11 @@ agent's allow-list.
 headline per kind from `GHOST_KIND_HEADLINE` in `src/lib/slack/notify-inbox.ts`.
 Never `#bookings`.
 
+**Platform bookings.** A GetYourGuide/Withlocals/etc. booking is never moved here:
+`get_customer_bookings` returns `booked_via` + `is_ota_booking`, the prompt tells the agent
+to point the guest to the platform instead, and `reschedule_booking` refuses it in code
+(409) regardless. Scenario `edge-10-ota-booking`: 3/3 on Sonnet 5.
+
 **Re-running the scenarios** (real Claude, fully mocked world, ~$1.50):
 `AGENT_PROTOTYPE=1 AGENT_PROTOTYPE_MODELS=claude-sonnet-5 npx vitest run scripts/agent-prototype`.
 Last run on the built agent: 24/24.
@@ -433,6 +438,21 @@ net — all pure, no network) plus three new cases in `optimizer/route.test.ts`
 falls back on an agent error). All 18 pre-existing + new route tests and all 3,903
 project tests pass unchanged.
 
-**Not yet done:** no UI surfaces `agentReasoning` on a skipped candidate — it's in the
-API response (`OptimizerItem.agentReasoning`) but the Planning overlay doesn't render
-it yet.
+**Review fixes (same day).** An empty `picks` list from the agent is a real answer
+("neither is worth a guest message") and is respected; only an error or an answer naming
+no real candidate falls back. A guest with no contact detail or who opted out never
+competes for a day (checked before clustering, not after winning). Every real conflict
+decision is logged to `ops_events` (`source: 'ghost/day-optimizer-agent'`, marked
+`agent` or `system` when it fell back).
+
+**Known gaps, not built:**
+- **Only 2 of the 3 move types are arbitrated.** The same-day gap-closing time move is
+  drafted by `guest-move-drafter.ts` — nightly (`draftGuestMoveRequest`, ghost-ops cron)
+  and on every new booking (`draftGuestMoveForNewBooking`) — outside this route, still
+  first-come via `openMoveRequestExists`. Bringing it in means routing those two
+  triggers through `resolveDayPlan` too.
+- `agentReasoning` is in the API response but the Planning overlay doesn't render it.
+- The agent's live `recheck_boat_swap` result isn't fed back into the draft; the draft
+  uses the swap validated at prepare time.
+- No offline real-model scenarios for the day optimizer yet (the route tests mock the
+  model; only the clustering/safety net is proven, not the model's judgment).

@@ -6,6 +6,8 @@
  */
 import { hhmm, type Booking, type World } from './scenarios'
 
+const OTA = ['tripadvisor', 'getyourguide', 'withlocals', 'clickandboat', 'boatlocal']
+
 type Runner = (input: Record<string, unknown>) => unknown
 
 const digits = (p: unknown) => String(p ?? '').replace(/\D/g, '')
@@ -25,7 +27,7 @@ export function weekday(date: string): string {
 
 function bookingRow(b: Booking) {
   // name_on_booking: without it the agent can't use a name to break a tie (round 2, case 2).
-  return { booking_id: b.id, name_on_booking: b.name, date: b.date, weekday: weekday(b.date), time: b.time, cruise: b.cruise, listing_slug: b.slug, option: b.option, guests: b.guests, status: b.status, extras: [] }
+  return { booking_id: b.id, name_on_booking: b.name, date: b.date, weekday: weekday(b.date), time: b.time, cruise: b.cruise, listing_slug: b.slug, option: b.option, guests: b.guests, status: b.status, booked_via: b.source ?? 'website', is_ota_booking: OTA.includes(b.source ?? ''), extras: [] }
 }
 
 export function mockRunners(world: World): Record<string, Runner> {

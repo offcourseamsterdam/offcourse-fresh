@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { escapeLikePattern } from '@/lib/supabase/escape-like'
 import { fetchSearchResults } from '@/lib/search/fetch-search-results'
 import { BOATS } from '@/lib/fareharbor/config'
+import { OTA_BOOKING_SOURCES } from '@/lib/constants'
 import { amsterdamToday, fmtEuros, formatAmsterdamTime } from '@/lib/utils'
 import { checkBookingViability } from './dry-run'
 import { computeCancellationTerms } from './cancellation-terms'
@@ -206,6 +207,11 @@ export function bookingClock(value: string | null | undefined): string | null {
   return value.includes('T') ? formatAmsterdamTime(value) : value.slice(0, 5)
 }
 
+/** True for a booking that belongs to a reseller platform, not to us. */
+export function isOtaSource(source: string | null | undefined): boolean {
+  return !!source && (OTA_BOOKING_SOURCES as readonly string[]).includes(source)
+}
+
 export function buildGhostTools(): AgentTool[] {
   return [
     {
@@ -300,8 +306,8 @@ export function buildGhostTools(): AgentTool[] {
         const key = phoneKey(String(input.phone ?? ''))
         if (!email && !key) throw new Error('Pass an email or a phone number')
         const supabase = createAdminClient()
-        const cols = 'id, customer_name, customer_phone, booking_date, start_time, status, guest_count, listing_id, listing_title, category, customer_type_name, extras_selected'
-        type Row = { id: string; customer_name: string | null; customer_phone: string | null; booking_date: string | null; start_time: string | null; status: string | null; guest_count: number | null; listing_id: string | null; listing_title: string | null; category: string | null; customer_type_name: string | null; extras_selected: unknown }
+        const cols = 'id, customer_name, customer_phone, booking_date, start_time, status, guest_count, listing_id, listing_title, category, customer_type_name, extras_selected, booking_source'
+        type Row = { id: string; customer_name: string | null; customer_phone: string | null; booking_date: string | null; start_time: string | null; status: string | null; guest_count: number | null; listing_id: string | null; listing_title: string | null; category: string | null; customer_type_name: string | null; extras_selected: unknown; booking_source: string | null }
         const found = new Map<string, Row>()
 
         if (email) {
@@ -346,6 +352,11 @@ export function buildGhostTools(): AgentTool[] {
             option: b.customer_type_name,
             guests: b.guest_count,
             status: b.status,
+            // A platform booking (GetYourGuide, Withlocals…) lives on that
+            // platform — moving or cancelling it here leaves the platform
+            // showing the old one. Same flag check_cancellation_terms returns.
+            booked_via: b.booking_source,
+            is_ota_booking: isOtaSource(b.booking_source),
             extras: Array.isArray(b.extras_selected)
               ? (b.extras_selected as { name?: string }[]).map(e => e.name).filter(Boolean)
               : [],
@@ -372,7 +383,7 @@ export function buildGhostTools(): AgentTool[] {
         const supabase = createAdminClient()
         let query = supabase
           .from('bookings')
-          .select('id, customer_name, customer_email, booking_date, start_time, listing_title, guest_count, status')
+          .select('id, customer_name, customer_email, booking_date, start_time, listing_title, guest_count, status, booking_source')
           .ilike('customer_name', `%${escapeLikePattern(name)}%`)
           .order('booking_date', { ascending: false })
           .limit(5)
@@ -391,6 +402,8 @@ export function buildGhostTools(): AgentTool[] {
             cruise: b.listing_title,
             guests: b.guest_count,
             status: b.status,
+            booked_via: b.booking_source,
+            is_ota_booking: isOtaSource(b.booking_source),
           })),
         }
       },

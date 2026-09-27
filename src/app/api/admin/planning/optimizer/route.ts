@@ -12,6 +12,7 @@ import { draftCrossDayConsolidation } from '@/lib/ghost/cross-day-move-drafter'
 import { validateBoatSwap, draftBoatSwap, type BoatSwapBooking } from '@/lib/ghost/boat-swap-drafter'
 import { openMoveRequestExists } from '@/lib/ghost/guest-move-drafter'
 import { resolveDayPlan, type DayOptimizerCandidate } from '@/lib/ghost/day-optimizer-agent'
+import { isOptedOut } from '@/lib/ghost/reschedule-opt-outs'
 import { OPTIMIZE_HORIZON_DAYS, hasEnoughNotice } from '@/lib/ghost/rulebook'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { deriveOptimizerState, type OptimizerDisplayState, type ProposalOutcome } from '@/lib/scheduling/optimizer-status'
@@ -328,6 +329,14 @@ type PreparedItem =
   | { item: OptimizerItem }
   | { item: OptimizerItem; live: DayOptimizerCandidate; finish: () => Promise<OptimizerItem> }
 
+/** The same two checks the drafters themselves run before writing an ask
+ *  (no contact detail → nothing to send; opted out → never ask) — run
+ *  BEFORE a candidate competes for its day, not after it has already won. */
+async function isContactable(supabase: AdminClient, email: string | null, phone: string | null): Promise<boolean> {
+  if (!email && !phone) return false
+  return !(await isOptedOut(supabase, { email, phone }))
+}
+
 export async function GET(_request: NextRequest) {
   const denied = await requireAdmin()
   if (denied) return denied
@@ -455,6 +464,10 @@ export async function GET(_request: NextRequest) {
         // Not enough runway to bother the guest — still worth reporting the
         // finding, just never contacted about it.
         if (!hasEnoughNotice(booking.start_time)) return { item: anchored }
+        // A guest we can't (or mustn't) contact never competes for the day's
+        // one ask — otherwise the day optimizer could pick them, the draft
+        // would silently no-op, and the reachable guest would never be asked.
+        if (!(await isContactable(supabase, booking.customer_email, booking.customer_phone))) return { item: anchored }
 
         const existing = await findOpenBoatSwapProposal(supabase, booking.id)
         if (existing) return { item: withProposal(anchored, existing, booking.customer_name) }
@@ -532,6 +545,7 @@ export async function GET(_request: NextRequest) {
         // Not enough runway to bother the guest — still worth reporting the
         // finding, just never contacted about it.
         if (!hasEnoughNotice(c.booking.startTime)) return { item: base }
+        if (!(await isContactable(supabase, c.booking.customerEmail, c.booking.customerPhone))) return { item: base }
 
         const existing = await findOpenCrossDayProposal(supabase, c.booking.id)
         if (existing) return { item: withProposal(base, existing, c.booking.customerName) }

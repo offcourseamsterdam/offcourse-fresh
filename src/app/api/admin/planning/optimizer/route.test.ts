@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   validateBoatSwap: vi.fn().mockResolvedValue(null),
   draftBoatSwap: vi.fn(),
   runAgenticLoop: vi.fn(),
+  isOptedOut: vi.fn().mockResolvedValue(false),
   // Defaults to "plenty of notice" — real wall-clock time keeps advancing
   // past hardcoded fixture dates, so this route's tests pin it explicitly
   // rather than relying on the fixture dates always being >18h in the real
@@ -21,6 +22,7 @@ vi.mock('@/lib/ghost/boat-swap-drafter', () => ({ validateBoatSwap: h.validateBo
 // its own in day-optimizer-agent.test.ts — only its one network-touching
 // call is mocked, so a singleton candidate never even reaches this mock.
 vi.mock('@/lib/ghost/agent-runtime', () => ({ runAgenticLoop: h.runAgenticLoop }))
+vi.mock('@/lib/ghost/reschedule-opt-outs', () => ({ isOptedOut: h.isOptedOut }))
 vi.mock('@/lib/ghost/rulebook', async importOriginal => {
   const actual = await importOriginal<typeof import('@/lib/ghost/rulebook')>()
   return { ...actual, hasEnoughNotice: h.hasEnoughNotice }
@@ -202,6 +204,7 @@ beforeEach(() => {
   // — restore the "plenty of notice" default so one test's override of
   // hasEnoughNotice never leaks into the next.
   h.hasEnoughNotice.mockReturnValue(true)
+  h.isOptedOut.mockResolvedValue(false)
 })
 
 describe('GET /api/admin/planning/optimizer', () => {
@@ -723,5 +726,25 @@ describe('the day optimizer agent — same-day boat swap vs. cross-day move on t
     const drafted = [h.draftBoatSwap.mock.calls.length, h.draftCrossDayConsolidation.mock.calls.length]
     expect(drafted.reduce((a, b) => a + b, 0)).toBe(1)
     void body
+  })
+
+  it("an opted-out guest never competes for the day — the reachable one is drafted with no agent call", async () => {
+    h.validateBoatSwap.mockResolvedValue(VALIDATED_SWAP)
+    h.draftBoatSwap.mockResolvedValue('drafted')
+    // Priya (the boat-swap guest) opted out of move requests.
+    h.isOptedOut.mockImplementation(async (_supabase: unknown, { email }: { email: string | null }) => email === 'priya@example.com')
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeSupabase({
+        shifts: [PAIGE_SHIFT, SOPHIE_SHIFT, PRIYA_SHIFT],
+        bookings: [PAIGE_BOOKING, SOPHIE_BOOKING, PRIYA_BOOKING],
+        listingSlug: 'private-morning-cruise',
+      }) as never,
+    )
+
+    await GET(makeReq('2026-08-25', '2026-08-26'))
+
+    expect(h.runAgenticLoop).not.toHaveBeenCalled()
+    expect(h.draftBoatSwap).not.toHaveBeenCalled()
+    expect(h.draftCrossDayConsolidation).toHaveBeenCalledTimes(1)
   })
 })

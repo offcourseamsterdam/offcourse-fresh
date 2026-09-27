@@ -3,6 +3,7 @@ import { clusterCandidates, pickBySavingsFallback, resolveDayPlan, type DayOptim
 
 vi.mock('@/lib/ai/usage', () => ({ recordAiUsage: vi.fn() }))
 vi.mock('@/lib/ai/clients', () => ({ getClaude: vi.fn(), CLAUDE_AGENT_MODEL: 'claude-sonnet-5' }))
+vi.mock('@/lib/ops/events', () => ({ emitOpsEvent: vi.fn().mockResolvedValue(undefined) }))
 
 // Each mocked test spies on runAgenticLoop with a *Once implementation — restore
 // between tests so an earlier test's queued mock never leaks into the next one.
@@ -124,5 +125,48 @@ describe('resolveDayPlan', () => {
     const decisions = await resolveDayPlan([swap('gentle-swap', '2026-10-03', 100), cross('disruptive-move', '2026-10-03', '2026-10-06', 120)], noRecheck)
     expect(decisions.get('gentle-swap')).toEqual({ allowed: true, reasoning: 'Keeps the same date, only swaps boats — less disruptive.' })
     expect(decisions.get('disruptive-move')).toEqual({ allowed: false, reasoning: "Would change the guest’s date; the swap achieves a similar saving." })
+  })
+
+  it("respects the agent deciding neither move is worth asking about — never overridden by the fallback", async () => {
+    vi.spyOn(await import('./agent-runtime'), 'runAgenticLoop').mockResolvedValueOnce({
+      submission: {
+        picks: [],
+        skipped: [
+          { id: 'a', why: 'Saving is tiny; not worth a message.' },
+          { id: 'b', why: 'Same.' },
+        ],
+        reasoning: 'Neither is worth a guest message.',
+      },
+      submittedVia: 'submit_day_plan',
+      steps: [],
+      turns: 1,
+    })
+    const decisions = await resolveDayPlan([swap('a', '2026-10-03', 100), swap('b', '2026-10-03', 200)], noRecheck)
+    expect(decisions.get('a')?.allowed).toBe(false)
+    expect(decisions.get('b')?.allowed).toBe(false)
+    expect(decisions.get('a')?.reasoning).toBe('Saving is tiny; not worth a message.')
+  })
+
+  it('falls back when the agent only names ids that were never in the cluster', async () => {
+    vi.spyOn(await import('./agent-runtime'), 'runAgenticLoop').mockResolvedValueOnce({
+      submission: { picks: [{ id: 'ghost-id', why: 'x' }], skipped: [], reasoning: 'x' },
+      submittedVia: 'submit_day_plan',
+      steps: [],
+      turns: 1,
+    })
+    const decisions = await resolveDayPlan([swap('cheap', '2026-10-03', 100), swap('expensive', '2026-10-03', 500)], noRecheck)
+    expect(decisions.get('expensive')?.allowed).toBe(true)
+    expect(decisions.get('cheap')?.allowed).toBe(false)
+  })
+
+  it('logs every real conflict decision to ops_events, marked agent vs fallback', async () => {
+    const { emitOpsEvent } = await import('@/lib/ops/events')
+    vi.spyOn(await import('./agent-runtime'), 'runAgenticLoop').mockRejectedValueOnce(new Error('down'))
+    await resolveDayPlan([swap('a', '2026-10-03', 100), swap('b', '2026-10-03', 200)], noRecheck)
+    expect(emitOpsEvent).toHaveBeenCalledWith(expect.objectContaining({
+      actorType: 'system',
+      source: 'ghost/day-optimizer-agent',
+      payload: expect.objectContaining({ picked: ['b'], used_fallback: true }),
+    }))
   })
 })

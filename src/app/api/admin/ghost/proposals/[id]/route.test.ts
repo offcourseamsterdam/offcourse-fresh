@@ -1471,4 +1471,19 @@ describe('POST reschedule_booking action', () => {
     const res = await POST(makeReq({ action: 'reschedule_booking' }), { params: Promise.resolve({ id: 'r1' }) })
     expect(res.status).toBe(409)
   })
+
+  it('refuses to move a platform (OTA) booking, before claiming anything', async () => {
+    const sb = makeSupabase({ proposal: rescheduleProposal, claimed: [{ id: 'r1' }] })
+    withBookingRow(sb, { ...BOOKING_ROW, booking_source: 'getyourguide' })
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await POST(makeReq({ action: 'reschedule_booking' }), { params: Promise.resolve({ id: 'r1' }) })
+
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toContain('getyourguide')
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(sb.updates).toHaveLength(0)
+  })
 })

@@ -18,6 +18,8 @@ export interface Booking {
   guests: number
   status: 'confirmed' | 'completed' | 'cancelled'
   paid_eur: number
+  /** bookings.booking_source; absent means a website booking. */
+  source?: string
 }
 
 export interface Shift {
@@ -474,6 +476,25 @@ export const SCENARIOS: Scenario[] = [
       if (s?.via === 'submit_reply_draft') return { pass: true, why: `${via(s)} (asked for the exact date — acceptable)` }
       const ok = s?.via === 'submit_reschedule_request' && to(s).date === '2026-10-06'
       return { pass: ok, why: `${via(s)} · resolved to ${to(s).date ?? '-'} (correct: 2026-10-06)` }
+    },
+  },
+  {
+    id: 'edge-10-ota-booking',
+    title: 'Reschedule request for a booking made through GetYourGuide',
+    expected: 'no reschedule proposal — tells them to change it on GetYourGuide',
+    world: {
+      today: '2026-09-27',
+      contact: { name: 'Hannah', phone: '+31698765432', email: null, locale: 'en' },
+      message: "Hi! Could we move Saturday's cruise to Sunday, same time?",
+      bookings: [{ id: 'B-8010', name: 'Hannah Weber', email: 'hannah@example.com', phone: '+31698765432', date: '2026-10-03', time: '14:00', ...PRIVATE, option: 'Diana - 2 Hours', guests: 4, status: 'confirmed', paid_eur: 310, source: 'getyourguide' }],
+      shifts: [{ id: 'sh-1', booking_id: 'B-8010', date: '2026-10-03', start: '14:00', end: '16:00', boat: 'Diana', captain_id: 'st-jasper' }],
+      staff: STAFF,
+      availability: [...allAvailable('2026-10-03'), ...allAvailable('2026-10-04')],
+      slots: { '2026-10-04': { '14:00': ALL } },
+    },
+    check: s => {
+      const mentionsPlatform = /getyourguide|get your guide/i.test(reply(s))
+      return { pass: s?.via !== 'submit_reschedule_request' && mentionsPlatform, why: `${via(s)}${mentionsPlatform ? ' · points them to GetYourGuide' : ' · does NOT mention the platform'}` }
     },
   },
 ]

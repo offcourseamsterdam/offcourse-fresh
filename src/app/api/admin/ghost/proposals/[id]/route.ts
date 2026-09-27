@@ -25,6 +25,7 @@ import type { BookingProposalInput, AltSlot } from '@/lib/ghost/dry-run'
 import { resolveBookingSlot } from '@/lib/ghost/dry-run'
 import { fetchSearchResults } from '@/lib/search/fetch-search-results'
 import { applyRescheduleShifts, findShiftForBooking, type CaptainDecision } from '@/lib/ghost/apply-reschedule-captain'
+import { isOtaSource } from '@/lib/ghost/tools'
 
 /**
  * POST /api/admin/ghost/proposals/[id]  { action }
@@ -596,11 +597,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
       const { data: booking } = await supabase
         .from('bookings')
-        .select('id, status, guest_count, booking_date')
+        .select('id, status, guest_count, booking_date, booking_source')
         .eq('id', r.booking_id)
         .single()
       if (!booking) return apiError('That booking no longer exists.', 404)
       if (booking.status === 'cancelled') return apiError('That booking is cancelled — nothing to move.', 409)
+      // Enforced here in code, not just in the agent's prompt: a platform
+      // booking moved only in FareHarbor leaves the platform on the old date.
+      if (isOtaSource(booking.booking_source)) {
+        return apiError(`This booking was made through ${booking.booking_source} — move it there; it will sync back here.`, 409)
+      }
 
       // Re-resolve the new slot LIVE — the proposal may be hours old.
       const guests = Number(booking.guest_count ?? 0) || 2
