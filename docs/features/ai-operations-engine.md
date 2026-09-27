@@ -355,3 +355,46 @@ The click goes through `POST /api/admin/ghost/proposals/[id]` with
 `src/lib/cancellation/policy.ts` (exists, unchanged), the cancel route (exists,
 already guarded), Stripe refunds (exists), the atomic-claim pattern (exists).
 Nothing new is required beyond the agent itself.
+
+## Reschedule agent (`reschedule_request`) — built 2026-09-27
+
+**What it does.** When a customer (WhatsApp, email or webchat) asks to move an
+existing booking, the inbox agent finds the booking, checks the new slot is
+really bookable, checks whether the booking's captain is free at the new time,
+and ends with `submit_reschedule_request`: a reply draft plus the move and a
+captain decision (`keep` / `swap` / `none_available`). It is not a separate
+loop — it's one more terminal action on the same inbox agent, which now runs on
+**Sonnet 5** (`CLAUDE_AGENT_MODEL`); the other Ghost drafters stay on Haiku.
+
+**Identity rules (in the prompt).** Phone, email and booking reference are
+strong; a name only breaks a tie between bookings a strong identifier found,
+or — alone — only when it's a full name with exactly one live match, marked
+`match_basis: name_only` (the card shows that in amber). Anything ambiguous →
+a reply draft asking for the booking reference/email. Never reveal another
+booking's details.
+
+**Approve (`reschedule_booking` in `proposals/[id]/route.ts`).** Re-resolves the
+slot live (`resolveBookingSlot`), atomic claim, then calls the existing
+`/api/admin/bookings/[id]/rebook` route with `deferShiftSync: true` (FareHarbor
+rebooking link + reschedule email to the guest, unchanged). Then
+`applyRescheduleShifts` syncs both days' shifts in order, places the chosen
+captain on the new shift via `applyScheduleAssignments` only if it's still open
+(`notify: false` — no captain DMs from this flow), and lets the scheduler fill
+anything left. Once the booking has moved, a shift failure is recorded in the
+outcome but never re-opens the proposal (that would allow a second move).
+
+**Tool changes that made it work** (found by the offline scenario runs in
+`scripts/agent-prototype/`, see `docs/plans/customer-chat-agent-handoff.md`):
+`get_customer_bookings` takes a phone and returns `name_on_booking`,
+`listing_slug`, `option` and a weekday; `get_schedule` returns each shift's
+start/end, `booking_ids` and `captain_id`; the prompt states today's weekday,
+the contact's phone and the channel. `get_schedule` is now in the inbox
+agent's allow-list.
+
+**Slack.** Every inbound WhatsApp message now DMs Beer (as email already did),
+headline per kind from `GHOST_KIND_HEADLINE` in `src/lib/slack/notify-inbox.ts`.
+Never `#bookings`.
+
+**Re-running the scenarios** (real Claude, fully mocked world, ~$1.50):
+`AGENT_PROTOTYPE=1 AGENT_PROTOTYPE_MODELS=claude-sonnet-5 npx vitest run scripts/agent-prototype`.
+Last run on the built agent: 24/24.

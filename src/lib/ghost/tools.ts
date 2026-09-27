@@ -2,7 +2,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { escapeLikePattern } from '@/lib/supabase/escape-like'
 import { fetchSearchResults } from '@/lib/search/fetch-search-results'
 import { BOATS } from '@/lib/fareharbor/config'
-import { amsterdamToday, fmtEuros } from '@/lib/utils'
+import { amsterdamToday, fmtEuros, formatAmsterdamTime } from '@/lib/utils'
 import { checkBookingViability } from './dry-run'
 import { computeCancellationTerms } from './cancellation-terms'
 import type { AgentTool } from './agent-runtime'
@@ -183,6 +183,29 @@ export function compactExtras(
   }
 }
 
+/**
+ * A phone number reduced to its last 9 digits, so "+31 6 1234 5678",
+ * "0612345678" and "whatsapp:+31612345678" all match. 9 digits is a Dutch
+ * mobile number without its country/trunk prefix, and still specific enough
+ * for foreign numbers. Returns null for anything too short to trust.
+ */
+export function phoneKey(phone: string | null | undefined): string | null {
+  const digits = String(phone ?? '').replace(/\D/g, '')
+  return digits.length >= 8 ? digits.slice(-9) : null
+}
+
+/** "2026-10-03" → "Saturday". Stated explicitly so the agent never has to work out a weekday itself. */
+export function weekdayOf(date: string | null | undefined): string | null {
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null
+  return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' })
+}
+
+/** bookings.start_time holds a full ISO timestamp for most rows; show it as Amsterdam HH:MM. */
+export function bookingClock(value: string | null | undefined): string | null {
+  if (!value) return null
+  return value.includes('T') ? formatAmsterdamTime(value) : value.slice(0, 5)
+}
+
 export function buildGhostTools(): AgentTool[] {
   return [
     {
@@ -264,33 +287,63 @@ export function buildGhostTools(): AgentTool[] {
     {
       name: 'get_customer_bookings',
       description:
-        "Look up a customer's booking history by email — dates, cruises, party sizes, status, catering extras. Call when you need to know if/what they booked (rescheduling, 'my booking', repeat guests).",
+        "Look up a customer's bookings by email and/or phone — dates (with weekday), times, cruise, boat + duration option, party size, status, the name on each booking, catering extras. Call when you need to know if/what they booked (rescheduling, 'my booking', repeat guests). On WhatsApp the chat's phone number is the best first lookup. When several bookings come back, name_on_booking is what lets you tell whose is whose.",
       input_schema: {
         type: 'object',
         properties: {
           email: { type: 'string', description: "The customer's email address" },
+          phone: { type: 'string', description: 'Phone number, ideally international (+31612345678)' },
         },
-        required: ['email'],
       },
       run: async input => {
         const email = String(input.email ?? '').trim()
-        if (!email) throw new Error('email is required')
+        const key = phoneKey(String(input.phone ?? ''))
+        if (!email && !key) throw new Error('Pass an email or a phone number')
         const supabase = createAdminClient()
-        const { data } = await supabase
-          .from('bookings')
-          .select('id, booking_date, start_time, status, guest_count, listing_title, category, extras_selected')
-          .eq('customer_email', email)
-          .order('booking_date', { ascending: false })
-          .limit(5)
-        if (!data?.length) return { bookings: [], note: 'No bookings found for this email.' }
+        const cols = 'id, customer_name, customer_phone, booking_date, start_time, status, guest_count, listing_id, listing_title, category, customer_type_name, extras_selected'
+        type Row = { id: string; customer_name: string | null; customer_phone: string | null; booking_date: string | null; start_time: string | null; status: string | null; guest_count: number | null; listing_id: string | null; listing_title: string | null; category: string | null; customer_type_name: string | null; extras_selected: unknown }
+        const found = new Map<string, Row>()
+
+        if (email) {
+          const { data } = await supabase.from('bookings').select(cols).eq('customer_email', email).order('booking_date', { ascending: false }).limit(5)
+          for (const b of (data ?? []) as Row[]) found.set(b.id, b)
+        }
+        if (key) {
+          // Stored phone formats vary ("+31 6 …", "06…"), so match on the
+          // normalized key in code. Narrowed to recent + upcoming bookings and a
+          // cheap LIKE on the last 4 digits first, so this never reads the table.
+          const since = amsterdamToday(-60)
+          const { data } = await supabase
+            .from('bookings')
+            .select(cols)
+            .gte('booking_date', since)
+            .ilike('customer_phone', `%${key.slice(-4)}%`)
+            .order('booking_date', { ascending: false })
+            .limit(25)
+          for (const b of (data ?? []) as Row[]) if (phoneKey(b.customer_phone) === key) found.set(b.id, b)
+        }
+
+        const rows = [...found.values()].sort((a, b) => String(b.booking_date).localeCompare(String(a.booking_date))).slice(0, 8)
+        if (!rows.length) return { bookings: [], note: `No bookings found for this ${email && key ? 'email or phone' : email ? 'email' : 'phone'}.` }
+
+        const listingIds = [...new Set(rows.map(r => r.listing_id).filter(Boolean))] as string[]
+        const { data: listings } = listingIds.length
+          ? await supabase.from('cruise_listings').select('id, slug').in('id', listingIds)
+          : { data: [] as { id: string; slug: string }[] }
+        const slugById = new Map((listings ?? []).map(l => [l.id, l.slug]))
+
         return {
-          bookings: data.map(b => ({
-            // The id a cancellation/correction action would target — carried
-            // through so a later tool call never has to re-search for it.
+          bookings: rows.map(b => ({
+            // The id a cancellation/correction/reschedule action would target —
+            // carried through so a later tool call never has to re-search for it.
             booking_id: b.id,
+            name_on_booking: b.customer_name,
             date: b.booking_date,
-            time: b.start_time,
+            weekday: weekdayOf(b.booking_date),
+            time: bookingClock(b.start_time),
             cruise: b.listing_title,
+            listing_slug: b.listing_id ? slugById.get(b.listing_id) ?? null : null,
+            option: b.customer_type_name,
             guests: b.guest_count,
             status: b.status,
             extras: Array.isArray(b.extras_selected)
@@ -333,7 +386,8 @@ export function buildGhostTools(): AgentTool[] {
             name_on_booking: b.customer_name,
             email_on_booking: b.customer_email,
             date: b.booking_date,
-            time: b.start_time,
+            weekday: weekdayOf(b.booking_date),
+            time: bookingClock(b.start_time),
             cruise: b.listing_title,
             guests: b.guest_count,
             status: b.status,
@@ -344,7 +398,7 @@ export function buildGhostTools(): AgentTool[] {
     {
       name: 'get_schedule',
       description:
-        'See the shift schedule for a date range: every shift (boat, time, status, assigned captain) plus each captain\'s stated availability. Availability rows may carry start_time/end_time ("partly available") — null on both means all day; if end_time is not after start_time, the window crosses midnight (e.g. 22:00-00:30). Call when reasoning about who works when, open shifts, or whether a captain is free.',
+        'See the shift schedule for a date range: every shift (boat, start/end time in Amsterdam, status, assigned captain, and booking_ids = the departures it covers) plus each captain\'s stated availability. Availability rows may carry start_time/end_time ("partly available") — null on both means all day; if end_time is not after start_time, the window crosses midnight (e.g. 22:00-00:30). Call when reasoning about who works when, open shifts, or whether a captain is free.',
       input_schema: {
         type: 'object',
         properties: {
@@ -360,7 +414,7 @@ export function buildGhostTools(): AgentTool[] {
         const [shifts, staff, availability] = await Promise.all([
           supabase
             .from('shifts')
-            .select('id, date, start_at, end_at, status, staff(name), boats(name), bookings(listing_title, guest_count)')
+            .select('id, date, start_at, end_at, status, booking_id, staff_id, staff(name), boats(name), bookings(listing_title, guest_count), shift_bookings(booking_id)')
             .gte('date', from)
             .lte('date', to)
             .order('start_at'),
@@ -371,8 +425,20 @@ export function buildGhostTools(): AgentTool[] {
           shifts: (shifts.data ?? []).map(s => ({
             id: s.id,
             date: s.date,
+            weekday: weekdayOf(s.date),
+            // Times + covered departures let an agent find a booking's captain
+            // and see whether a captain is already out at a given hour.
+            start: formatAmsterdamTime(s.start_at),
+            end: formatAmsterdamTime(s.end_at),
+            booking_ids: [
+              ...new Set([
+                ...((s.shift_bookings as { booking_id: string }[] | null) ?? []).map(sb => sb.booking_id),
+                ...(s.booking_id ? [s.booking_id] : []),
+              ]),
+            ],
             boat: (s.boats as { name?: string } | null)?.name,
             status: s.status,
+            captain_id: s.staff_id,
             captain: (s.staff as { name?: string } | null)?.name ?? null,
             cruise: (s.bookings as { listing_title?: string | null } | null)?.listing_title ?? null,
           })),

@@ -4,6 +4,10 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }))
 vi.mock('@/lib/twilio/verify-signature', () => ({ verifyTwilioSignature: vi.fn() }))
 vi.mock('@/lib/webhooks/log', () => ({ logWebhookEvent: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/chat/shadow-drafter', () => ({ draftShadowReply: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@/lib/slack/notify-inbox', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/lib/slack/notify-inbox')>()
+  return { ...actual, notifyInboxItem: vi.fn().mockResolvedValue(undefined) }
+})
 // after() needs a real Next.js request scope, absent when calling POST directly
 // in a unit test — run the callback inline instead (fire-and-forget → forget-now).
 vi.mock('next/server', async importOriginal => {
@@ -16,6 +20,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyTwilioSignature } from '@/lib/twilio/verify-signature'
 import { logWebhookEvent } from '@/lib/webhooks/log'
 import { draftShadowReply } from '@/lib/chat/shadow-drafter'
+import { notifyInboxItem } from '@/lib/slack/notify-inbox'
 
 const PARAMS = {
   From: 'whatsapp:+31612345678',
@@ -206,5 +211,35 @@ describe('POST /api/webhooks/twilio-whatsapp — guards', () => {
       expect.anything(),
       expect.objectContaining({ error: expect.stringContaining('row-level security violation') }),
     )
+  })
+})
+
+describe('POST /api/webhooks/twilio-whatsapp — Slack DM to Beer', () => {
+  it('DMs Beer with the draft and an approval nudge when Ghost proposed a reschedule', async () => {
+    const sb = makeSupabase()
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(verifyTwilioSignature).mockReturnValue(true)
+    vi.mocked(draftShadowReply).mockResolvedValueOnce({ kind: 'reschedule_request', reasoning: 'Matched by phone.', reply: 'Moved you to Sunday!' })
+
+    await POST(makeReq())
+
+    expect(notifyInboxItem).toHaveBeenCalledWith(expect.objectContaining({
+      conversationId: 'convo-1',
+      from: 'Susanne Hartmann',
+      headline: 'New message — reschedule proposed',
+      draft: 'Moved you to Sunday!',
+      action: 'Needs your approval in the admin panel.',
+    }))
+  })
+
+  it('sends a plain FYI (no approval nudge) for a reply draft', async () => {
+    const sb = makeSupabase()
+    vi.mocked(createAdminClient).mockReturnValue(sb.client as never)
+    vi.mocked(verifyTwilioSignature).mockReturnValue(true)
+    vi.mocked(draftShadowReply).mockResolvedValueOnce({ kind: 'reply_draft', reasoning: 'Asked for booking ref.', reply: "What's your booking reference?" })
+
+    await POST(makeReq())
+
+    expect(notifyInboxItem).toHaveBeenCalledWith(expect.objectContaining({ headline: 'New message', action: undefined }))
   })
 })

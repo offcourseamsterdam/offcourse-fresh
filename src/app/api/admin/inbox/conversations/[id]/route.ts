@@ -208,7 +208,7 @@ async function loadFinanceDocuments(
 /** The narrowed columns we pull per proposal — never the whole payload/outcome. */
 interface NarrowedGhostRow {
   id: string
-  kind: 'reply_draft' | 'booking_proposal' | 'booking_correction' | 'cancellation_request' | 'ota_availability' | 'ota_booking_ready' | 'fh_booking_import_ready'
+  kind: 'reply_draft' | 'booking_proposal' | 'booking_correction' | 'cancellation_request' | 'reschedule_request' | 'ota_availability' | 'ota_booking_ready' | 'fh_booking_import_ready'
   status: string
   reasoning: string | null
   created_at: string
@@ -220,6 +220,8 @@ interface NarrowedGhostRow {
   correction: Record<string, unknown> | null
   cancellation: Record<string, unknown> | null
   cancellation_terms: Record<string, unknown> | null
+  reschedule: Record<string, unknown> | null
+  reschedule_captain: Record<string, unknown> | null
   /** Tool NAMES only — never the fat `steps` blob; see the select below. */
   tools_used: string[] | null
   human_reply: string | null
@@ -254,6 +256,7 @@ async function loadGhostProposals(supabase: ReturnType<typeof createAdminClient>
        reply:payload->>reply, reply_en:payload->>reply_en, language:payload->>language,
        booking:payload->booking, verdict:payload->verdict, correction:payload->correction,
        cancellation:payload->cancellation, cancellation_terms:payload->cancellation_terms,
+       reschedule:payload->reschedule, reschedule_captain:outcome->captain,
        tools_used:payload->tools_used,
        human_reply:outcome->>human_reply, comparison:outcome->comparison,
        ota_platform:payload->>platform, ota_booking_ref:payload->>bookingRef, ota_guest_name:payload->>guestName,
@@ -261,7 +264,7 @@ async function loadGhostProposals(supabase: ReturnType<typeof createAdminClient>
        ota_availability_data:payload->availability`,
     )
     .eq('conversation_id', conversationId)
-    .in('kind', ['reply_draft', 'booking_proposal', 'booking_correction', 'cancellation_request', 'ota_availability', 'ota_booking_ready', 'fh_booking_import_ready'])
+    .in('kind', ['reply_draft', 'booking_proposal', 'booking_correction', 'cancellation_request', 'reschedule_request', 'ota_availability', 'ota_booking_ready', 'fh_booking_import_ready'])
     .order('created_at', { ascending: false })
     .limit(20)
 
@@ -281,6 +284,7 @@ async function loadGhostProposals(supabase: ReturnType<typeof createAdminClient>
       correction: r.correction ?? undefined,
       cancellation: r.cancellation ?? undefined,
       cancellation_terms: r.cancellation_terms ?? undefined,
+      reschedule: r.reschedule ?? undefined,
       tools_used: r.tools_used ?? undefined,
       platform: r.ota_platform ?? undefined,
       booking_ref: r.ota_booking_ref ?? undefined,
@@ -291,8 +295,8 @@ async function loadGhostProposals(supabase: ReturnType<typeof createAdminClient>
       availability: r.ota_availability_data ?? undefined,
     },
     outcome:
-      r.human_reply || r.comparison
-        ? { human_reply: r.human_reply ?? undefined, comparison: r.comparison ?? undefined }
+      r.human_reply || r.comparison || r.reschedule_captain
+        ? { human_reply: r.human_reply ?? undefined, comparison: r.comparison ?? undefined, captain: r.reschedule_captain ?? undefined }
         : null,
   }))
 
@@ -306,6 +310,7 @@ async function loadGhostProposals(supabase: ReturnType<typeof createAdminClient>
     bookingProposal: isOta ? null : rows.find(r => r.kind === 'booking_proposal') ?? null,
     bookingCorrection: isOta ? null : rows.find(r => r.kind === 'booking_correction') ?? null,
     cancellationRequest: isOta ? null : rows.find(r => r.kind === 'cancellation_request') ?? null,
+    rescheduleRequest: isOta ? null : rows.find(r => r.kind === 'reschedule_request') ?? null,
     otaAvailability: rows.find(r => r.kind === 'ota_availability') ?? null,
     otaBookingReady: rows.find(r => r.kind === 'ota_booking_ready') ?? null,
     fhImportReady: rows.find(r => r.kind === 'fh_booking_import_ready') ?? null,

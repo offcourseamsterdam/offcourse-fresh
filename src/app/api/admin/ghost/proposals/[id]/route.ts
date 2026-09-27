@@ -22,6 +22,9 @@ import { computeCancellationTerms } from '@/lib/ghost/cancellation-terms'
 import { commissionCentsFor } from '@/lib/scheduling/extra-hours-bonus'
 import type { BookingSource } from '@/lib/constants'
 import type { BookingProposalInput, AltSlot } from '@/lib/ghost/dry-run'
+import { resolveBookingSlot } from '@/lib/ghost/dry-run'
+import { fetchSearchResults } from '@/lib/search/fetch-search-results'
+import { applyRescheduleShifts, findShiftForBooking, type CaptainDecision } from '@/lib/ghost/apply-reschedule-captain'
 
 /**
  * POST /api/admin/ghost/proposals/[id]  { action }
@@ -57,6 +60,13 @@ import type { BookingProposalInput, AltSlot } from '@/lib/ghost/dry-run'
  *              RECOMPUTED here, not read from the payload — see
  *              cancellation-terms.ts. Same atomic-claim shape as `book`;
  *              fires only on an explicit human click.
+ *   - reschedule_booking: the human approves a reschedule_request → re-resolve
+ *              the new slot live, move the booking through the existing
+ *              /api/admin/bookings/[id]/rebook route (FareHarbor rebooking
+ *              link + reschedule email; never a forked path), then re-sync
+ *              both days' shifts and place the proposal's captain on the new
+ *              shift if it's still open (apply-reschedule-captain.ts). Same
+ *              atomic-claim shape as `book`; fires only on an explicit click.
  *   - mark_rebooked: the human confirms they completed the ACTUAL FareHarbor
  *              rebook after a guest_move_request's guest answered 'accept'
  *              (Beer 2026-08-23 — a guest yes only ever fires a Slack
@@ -556,6 +566,122 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       } catch (cancelErr) {
         await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
         throw cancelErr
+      }
+    }
+
+    if (body.action === 'reschedule_booking') {
+      if (levelRank(autonomyForKind('reschedule_request')) < levelRank('ask')) {
+        return apiError('reschedule_request is not at the ask level', 403)
+      }
+      const { data: p } = await supabase
+        .from('agent_proposals')
+        .select('id, kind, status, payload')
+        .eq('id', id)
+        .single()
+      if (!p || p.kind !== 'reschedule_request') return apiError('Not a reschedule request', 400)
+      if (p.status === 'executed') return apiError('This booking was already moved.', 409)
+
+      const r = ((p.payload as { reschedule?: Record<string, unknown> } | null)?.reschedule ?? {}) as {
+        booking_id?: string
+        to?: { listing_slug?: string; date?: string; time?: string; option?: string }
+        captain?: CaptainDecision
+      }
+      if (!r.booking_id || !r.to?.listing_slug || !r.to.date || !r.to.time) {
+        return apiError('This proposal is missing the booking or the new slot.', 422)
+      }
+
+      const { data: booking } = await supabase
+        .from('bookings')
+        .select('id, status, guest_count, booking_date')
+        .eq('id', r.booking_id)
+        .single()
+      if (!booking) return apiError('That booking no longer exists.', 404)
+      if (booking.status === 'cancelled') return apiError('That booking is cancelled — nothing to move.', 409)
+
+      // Re-resolve the new slot LIVE — the proposal may be hours old.
+      const guests = Number(booking.guest_count ?? 0) || 2
+      const results = await fetchSearchResults(r.to.date, guests)
+      const resolved = resolveBookingSlot(results, { listing_slug: r.to.listing_slug, date: r.to.date, time: r.to.time, guests, option: r.to.option })
+      if ('error' in resolved) return apiError(`The new slot is no longer bookable — ${resolved.error}`, 422)
+      const slot = results.find(x => x.listing.slug === r.to!.listing_slug)?.availableSlots.find(x => x.pk === resolved.availPk)
+      if (!slot) return apiError('The new slot is no longer available — re-check the proposal.', 422)
+      const ct = slot.customerTypes.find(c => c.pk === resolved.customerTypeRatePk)
+
+      // Who was on it BEFORE the move — the ground truth for a "keep" decision.
+      const previousShift = booking.booking_date ? await findShiftForBooking(supabase, booking.id, booking.booking_date) : null
+
+      const { data: claimed } = await supabase
+        .from('agent_proposals')
+        .update({ status: 'booking' })
+        .eq('id', id)
+        .eq('status', 'shadow')
+        .select('id')
+      if (!claimed?.length) return apiError('This reschedule is already being processed (or was processed).', 409)
+
+      let moved = false
+      try {
+        const rebookRes = await fetch(new URL(`/api/admin/bookings/${booking.id}/rebook`, req.nextUrl.origin), {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: req.headers.get('cookie') ?? '' },
+          body: JSON.stringify({
+            newAvailPk: resolved.availPk,
+            newCustomerTypeRatePk: resolved.customerTypeRatePk,
+            newCustomerTypeName: r.to.option ?? ct?.name,
+            newDate: r.to.date,
+            newStartAt: slot.startAt,
+            newEndAt: slot.endAt,
+            // We sync shifts ourselves below, in order, so the captain lands on the right shift.
+            deferShiftSync: true,
+          }),
+        })
+        const rebookJson = (await rebookRes.json().catch(() => null)) as
+          | { ok?: boolean; error?: string; data?: { rebooked?: boolean; oldDate?: string | null; newDate?: string } }
+          | null
+        if (!rebookRes.ok || !rebookJson?.data?.rebooked) {
+          await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
+          return apiError(rebookJson?.error ?? 'FareHarbor did not accept the move', 502)
+        }
+
+        moved = true
+        // The booking has moved for real from here on — a shift/captain hiccup
+        // must not flip the proposal back to pending, so it's recorded, not thrown.
+        let captain: { captain: 'assigned' | 'skipped'; note: string }
+        try {
+          captain = await applyRescheduleShifts(supabase, {
+            bookingId: booking.id,
+            oldDate: booking.booking_date,
+            newDate: r.to.date,
+            previousCaptainId: previousShift?.staff_id ?? null,
+            decision: r.captain,
+            proposalId: id,
+          })
+        } catch (shiftErr) {
+          console.error('[reschedule_booking] shift update failed:', shiftErr)
+          captain = { captain: 'skipped', note: 'Moved, but the shift update failed — check Planning for both days.' }
+        }
+
+        await supabase
+          .from('agent_proposals')
+          .update({
+            status: 'executed',
+            outcome: JSON.parse(JSON.stringify({ rescheduled_at: new Date().toISOString(), booking_id: booking.id, to: r.to, captain })),
+          })
+          .eq('id', id)
+
+        await emitOpsEvent({
+          eventType: 'recommendation_approved',
+          actorType: 'human',
+          proposalId: id,
+          source: 'admin/ghost/proposals/[id]:reschedule_booking',
+          payload: { booking_id: booking.id, to: r.to, captain: captain.captain },
+        })
+
+        return apiOk({ rescheduled: true, captain })
+      } catch (err) {
+        // Only release the claim if nothing moved — re-approving an already
+        // moved booking would rebook it a second time.
+        if (!moved) await supabase.from('agent_proposals').update({ status: 'shadow' }).eq('id', id)
+        throw err
       }
     }
 

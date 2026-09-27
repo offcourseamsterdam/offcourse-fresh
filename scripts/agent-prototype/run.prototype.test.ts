@@ -2,9 +2,9 @@
  * Inbox-agent reschedule prototype — real Claude, fake world.
  *
  * Runs the REAL inbox agent definition (system prompt, task prompt, tool
- * descriptions, submit actions from src/lib/chat/shadow-drafter.ts) plus the
- * PROPOSED reschedule additions (mock-tools.ts) against synthetic scenarios
- * (scenarios.ts). Every tool answers from made-up data.
+ * descriptions, submit actions from src/lib/chat/shadow-drafter.ts) against
+ * synthetic scenarios (scenarios.ts). Every tool answers from made-up data
+ * (mock-tools.ts), shaped like the real tool's output.
  *
  * Opt-in; self-skips in `npm test`. Run it with:
  *   AGENT_PROTOTYPE=1 npx vitest run scripts/agent-prototype
@@ -44,7 +44,7 @@ import { buildGhostTools } from '@/lib/ghost/tools'
 import { OFF_COURSE_SYSTEM_PROMPT } from '@/lib/ai/context'
 import { INBOX_TOOL_NAMES, INBOX_SUBMIT_TOOLS, buildInboxAgentPrompt } from '@/lib/chat/shadow-drafter'
 import { SCENARIOS, type Scenario, type Submission } from './scenarios'
-import { mockRunners, proposedAdditions, GET_CUSTOMER_BOOKINGS_WITH_PHONE, SUBMIT_RESCHEDULE } from './mock-tools'
+import { mockRunners } from './mock-tools'
 
 const RUN = process.env.AGENT_PROTOTYPE === '1'
 const MODELS = (process.env.AGENT_PROTOTYPE_MODELS ?? 'claude-sonnet-5,claude-haiku-4-5').split(',').map(s => s.trim())
@@ -91,11 +91,12 @@ interface RunResult {
 function toolsFor(world: Scenario['world']) {
   const runners = mockRunners(world)
   const real = buildGhostTools()
-  const names: string[] = [...INBOX_TOOL_NAMES, 'get_schedule'] // get_schedule: PROPOSED for the inbox agent
+  // Exactly the production toolbox and actions — no prototype-only additions left.
+  const names: readonly string[] = INBOX_TOOL_NAMES
   const specs: Anthropic.Tool[] = real
     .filter(t => names.includes(t.name))
-    .map(t => (t.name === 'get_customer_bookings' ? GET_CUSTOMER_BOOKINGS_WITH_PHONE : { name: t.name, description: t.description, input_schema: t.input_schema }))
-  const submit: Anthropic.Tool[] = [...INBOX_SUBMIT_TOOLS, SUBMIT_RESCHEDULE]
+    .map(t => ({ name: t.name, description: t.description, input_schema: t.input_schema }))
+  const submit: Anthropic.Tool[] = [...INBOX_SUBMIT_TOOLS]
   return { specs, submit, runners }
 }
 
@@ -107,10 +108,11 @@ async function runOne(client: Anthropic, model: string, sc: Scenario, run: numbe
     buildInboxAgentPrompt({
       knowledgeBlock: '',
       correctionsBlock: '',
-      contact: { name: sc.world.contact.name, email: sc.world.contact.email, locale: sc.world.contact.locale, notes: null },
+      contact: { name: sc.world.contact.name, email: sc.world.contact.email, phone_e164: sc.world.contact.phone, locale: sc.world.contact.locale, notes: null },
       transcript: `CUSTOMER (${sc.world.contact.name}): ${sc.world.message}`,
       today: sc.world.today,
-    }) + proposedAdditions(sc.world)
+      channel: 'whatsapp',
+    })
 
   const messages: Anthropic.MessageParam[] = [{ role: 'user', content: prompt }]
   const steps: Step[] = []

@@ -68,6 +68,10 @@ export const AUTONOMY_CEILING: Record<string, AutonomyLevel> = {
   // by the model. The human click still performs the real cancel + refund —
   // see docs/features/ai-operations-engine.md's cancellation agent section.
   cancellation_request: 'ask', // refunds money and tells a guest their trip is off — never auto
+  // Moving a paid booking to another slot is reversible (FareHarbor links the
+  // rebooking; it can be moved back) but it consumes a real slot and emails
+  // the guest — so a human click, never auto.
+  reschedule_request: 'ask',
   // Read-only fact blocks — no action button exists yet for either, so there's
   // nothing an autonomy climb would even mean. Raise this ceiling only once a
   // real one-click action (e.g. auto-creating the FareHarbor booking) is built.
@@ -98,6 +102,8 @@ export const AUTONOMY_LEVEL: Record<string, AutonomyLevel> = {
   // Starts at its ceiling like booking_correction: the point is a one-click
   // "Cancel & refund" action from day one, not a shadow-only note.
   cancellation_request: 'ask',
+  // Same as cancellation: the point is a one-click "Move it" from day one.
+  reschedule_request: 'ask',
   ota_availability: 'propose',
   ota_booking_ready: 'propose',
 }
@@ -170,6 +176,15 @@ export const GHOST_AGENTS: GhostAgent[] = [
     status: 'active',
     kinds: ['cancellation_request'],
     trigger: 'cancellation intent detected in a conversation',
+  },
+  {
+    key: 'reschedule',
+    name: 'Reschedule agent',
+    description:
+      "When a customer asks to move their booking to another date or time, identifies the booking (phone/email/reference strong, name only as a tie-breaker), checks the new slot is really bookable, and checks whether the booking's captain is free at the new time — proposing to keep them, swap to a free captain, or flag that nobody is free. One click moves it in FareHarbor, emails the guest, and puts the chosen captain on the new shift.",
+    status: 'active',
+    kinds: ['reschedule_request'],
+    trigger: 'reschedule intent detected in a conversation',
   },
   {
     key: 'scheduling',

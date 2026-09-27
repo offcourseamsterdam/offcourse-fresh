@@ -326,6 +326,21 @@ export const RULEBOOK: RulebookEntry[] = [
     promptShared: false,
     dataInjected: ['the matched booking (from get_customer_bookings/search_bookings_by_details)', 'cancellation terms from check_cancellation_terms — hours until departure, refund tier, refund €, all policy-computed'],
   },
+  {
+    kind: 'reschedule_request',
+    agentKey: 'reschedule',
+    title: 'Reschedule request (one-click move + captain)',
+    hardRules: [
+      { rule: 'A name alone never identifies a booking unless it is a full name with exactly one live match — and the proposal then says "matched by name only". Two plausible bookings → ask, never guess.', enforcedIn: 'inbox agent prompt (buildInboxAgentPrompt) — outcome-tested in scripts/agent-prototype' },
+      { rule: 'The new slot is re-resolved and re-validated live at the moment of the click; the stored proposal is never trusted.', enforcedIn: 'proposals/[id]/route.ts (reschedule_booking) + resolveBookingSlot' },
+      { rule: 'The move reuses the existing /api/admin/bookings/[id]/rebook route (FareHarbor rebooking link, reschedule email) — never a second, forked rebook path, and never a separate cancel call.', enforcedIn: 'proposals/[id]/route.ts (reschedule_booking) calling bookings/[id]/rebook' },
+      { rule: 'The chosen captain is only placed on the new shift if it is still unassigned; an existing human assignment is never overwritten. Nobody free → the shift stays open for the scheduler or a human.', enforcedIn: 'src/lib/ghost/apply-reschedule-captain.ts' },
+      { rule: 'Captains are not DMed by this flow; the Slack note goes to Beer only.', enforcedIn: 'proposals/[id]/route.ts (reschedule_booking)' },
+    ],
+    prompt: 'Emitted by the inbox agent via its terminal submit_reschedule_request tool — see the Inbox reply draft entry; there is no separate prompt.',
+    promptShared: false,
+    dataInjected: ['the matched booking (get_customer_bookings by phone/email, with name_on_booking)', 'the new slot verdict from check_booking', 'shifts, captains and availability from get_schedule'],
+  },
 ]
 
 /** Entries for one agent, in registry order. */

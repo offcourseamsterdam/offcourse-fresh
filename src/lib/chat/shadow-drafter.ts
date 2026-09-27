@@ -1,7 +1,7 @@
 import { CLAUDE_AGENT_MODEL } from '@/lib/ai/clients'
 import { OFF_COURSE_SYSTEM_PROMPT } from '@/lib/ai/context'
 import { runAgenticLoop } from '@/lib/ghost/agent-runtime'
-import { buildGhostTools } from '@/lib/ghost/tools'
+import { buildGhostTools, weekdayOf } from '@/lib/ghost/tools'
 import { autonomyForKind, levelRank } from '@/lib/ghost/agents'
 import { dryRunBookingProposal } from '@/lib/ghost/dry-run'
 import { storeCancellationTerms } from '@/lib/ghost/cancellation-terms'
@@ -129,6 +129,58 @@ const SUBMIT_CANCELLATION = {
   },
 }
 
+const SUBMIT_RESCHEDULE = {
+  name: 'submit_reschedule_request',
+  description:
+    "Finish with a reschedule when the customer wants to move an EXISTING booking to another date/time — use ONLY after you found the exact booking, confirmed the new slot with check_booking, and checked the captain with get_schedule. Includes the reply you would send plus the move for the team to approve; their one click rebooks it in FareHarbor (the customer gets the reschedule email automatically) and puts the chosen captain on the new shift. Never use this if more than one booking could be the one they mean, or if the new slot isn't bookable.",
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      reply: { type: 'string', description: "The reply you would send once the team approves, in the customer's language." },
+      language: { type: 'string', description: 'Language of the reply, in English' },
+      reasoning: { type: 'string', description: '1-3 sentences in English: how you identified the booking, and the captain decision.' },
+      reschedule: {
+        type: 'object',
+        description: 'The move the team would approve — every value from a tool result, never invented.',
+        properties: {
+          booking_id: { type: 'string', description: 'Exact booking_id from get_customer_bookings/search_bookings_by_details' },
+          match_basis: { type: 'string', enum: ['phone', 'email', 'booking_reference', 'phone+name', 'name_only'], description: 'How you know this booking is theirs' },
+          from: {
+            type: 'object',
+            properties: { date: { type: 'string', description: 'YYYY-MM-DD' }, time: { type: 'string', description: 'HH:MM' } },
+            required: ['date', 'time'],
+          },
+          to: {
+            type: 'object',
+            properties: {
+              listing_slug: { type: 'string', description: 'The cruise slug, as used in check_booking' },
+              date: { type: 'string', description: 'YYYY-MM-DD' },
+              time: { type: 'string', description: 'Departure time exactly as check_booking/search_availability showed it, e.g. 4pm' },
+              option: { type: 'string', description: 'Boat + duration, e.g. "Curaçao - 2 Hours" — normally the one they already have' },
+              price_eur: { type: 'number', description: 'Price from check_booking, if shown' },
+            },
+            required: ['listing_slug', 'date', 'time', 'option'],
+          },
+          captain: {
+            type: 'object',
+            properties: {
+              action: { type: 'string', enum: ['keep', 'swap', 'none_available'] },
+              current: { type: ['string', 'null'], description: 'Captain on the booking now (name), or null if none' },
+              proposed: { type: ['string', 'null'], description: 'Captain for the new time (name), or null for none_available' },
+              proposed_staff_id: { type: ['string', 'null'], description: 'captain_id / staff id of the proposed captain, from get_schedule' },
+              why: { type: 'string' },
+            },
+            required: ['action'],
+          },
+        },
+        required: ['booking_id', 'match_basis', 'from', 'to', 'captain'],
+      },
+      open_question: { type: ['string', 'null'], description: 'ONE question for the team if something needs a human decision. null otherwise.' },
+    },
+    required: ['reply', 'language', 'reasoning', 'reschedule'],
+  },
+}
+
 /**
  * The inbox agent's toolbox (explicit allow-list, so a new Ghost tool can't
  * leak in), its terminal actions, and its task prompt. Kept pure and exported
@@ -143,9 +195,10 @@ export const INBOX_TOOL_NAMES = [
   'check_booking',
   'check_cancellation_terms',
   'list_extras',
+  'get_schedule',
 ] as const
 
-export const INBOX_SUBMIT_TOOLS = [SUBMIT_REPLY, SUBMIT_BOOKING, SUBMIT_BOOKING_CORRECTION, SUBMIT_CANCELLATION]
+export const INBOX_SUBMIT_TOOLS = [SUBMIT_REPLY, SUBMIT_BOOKING, SUBMIT_BOOKING_CORRECTION, SUBMIT_CANCELLATION, SUBMIT_RESCHEDULE]
 
 export function buildInboxAgentPrompt({
   knowledgeBlock,
@@ -153,21 +206,25 @@ export function buildInboxAgentPrompt({
   contact,
   transcript,
   today,
+  channel,
 }: {
   knowledgeBlock: string
   correctionsBlock: string
-  contact: { name: string; email: string | null; locale: string | null; notes: string | null }
+  contact: { name: string; email: string | null; phone_e164?: string | null; locale: string | null; notes: string | null }
   transcript: string
   today: string
+  channel?: string | null
 }): string {
   return `You are the shadow inbox agent for Off Course Amsterdam. A customer sent a chat message; investigate what you need (tools), then submit the reply you WOULD send. This is SHADOW mode: nothing is sent or booked — the team compares your work against what a human actually does.
 
 ${knowledgeBlock}${correctionsBlock}CUSTOMER
 - Name: ${contact.name}
 - Email: ${contact.email ?? 'unknown'}
+- Phone: ${contact.phone_e164 ?? 'unknown'}
+- Channel: ${channel ?? 'unknown'}${channel === 'whatsapp' ? ' (the name above is their WhatsApp profile name, not a verified name)' : ''}
 - Locale: ${contact.locale ?? 'unknown'}
 - Internal notes: ${contact.notes ?? 'none'}
-- Today is ${today} (Amsterdam)
+- Today is ${weekdayOf(today) ?? ''} ${today} (Amsterdam)
 
 CONVERSATION SO FAR
 ${transcript}
@@ -175,7 +232,8 @@ ${transcript}
 RULES
 - Reply in the customer's language, chat-length, brand voice.
 - Dates/availability/prices: NEVER from memory — use search_availability.
-- Customer's own bookings: use get_customer_bookings with their email.
+- Customer's own bookings: use get_customer_bookings with their email and/or phone (on WhatsApp, start with the phone). Also try any email or booking reference they mention.
+- Identity: phone, email and booking reference are strong. A name is weak, and only counts when it's a real first or last name — never an initial or a nickname. When the phone (or email) finds several bookings and exactly one has name_on_booking matching the first or last name the customer uses (in their message or profile), that one is theirs (match_basis phone+name). Only ask when the name fits none of them or more than one. If nothing strong matched, act on a name only when search_bookings_by_details returns exactly ONE live booking and it's a full name that clearly matches; then use match_basis name_only and start your reasoning with "Matched by name only". Otherwise don't guess: submit_reply_draft asking only for their booking reference or the email they booked with (or which of their bookings they mean, by date). Never reveal another booking's details (names, dates, times, boats) to someone who hasn't shown it's theirs.
 - Policies/amenities not in taught knowledge: don't invent — warm "let me check" + open_question.
 - Food, drinks, snacks, catering ("what bites/drinks can we get?"): call list_extras with the cruise slug for the real menu + prices. Offer those; say they're added at checkout on the booking page (no payment until the day). Never invent menu items or prices.
 - Before you PROPOSE or PROMISE a specific booking, call check_booking to confirm FareHarbor will accept it. Only submit_booking_proposal after it says bookable.
@@ -186,7 +244,9 @@ RULES
 - A booking_proposal MUST be unambiguous: include the exact option (boat + duration, e.g. "Diana 2h") in booking.option, taken from search_availability. If the customer hasn't said which duration/boat and several fit, do NOT guess — submit_reply_draft asking them to pick, with the options + prices.
 - A real booking needs the customer's name + email. If you're ready to book but don't have their email, ask for it (open_question) before promising it's done.
 - If the customer says they ALREADY booked/paid but get_customer_bookings found nothing for their email, their contact details on file are probably wrong (a typo, a different address) — do NOT tell them no booking exists. Call search_bookings_by_details with their name (+ date/boat if given). If it returns exactly one confident match, submit_booking_correction with that booking_id. If it returns multiple candidates or a weak match, submit_reply_draft asking them to confirm which booking (date/boat) rather than guessing — never assume which stranger's paid booking is theirs.
-- If the customer wants to CANCEL (with or without asking for a refund): find their booking (get_customer_bookings, or search_bookings_by_details if the email doesn't match), then ALWAYS call check_cancellation_terms with that booking_id before replying — never state a refund % or amount from memory. If check_cancellation_terms says is_ota_booking:true, do NOT submit_cancellation_request — reply telling them to cancel on that platform (mention it by name) since that's where their booking and payment actually live. If can_cancel_here is false, reply asking them to check their confirmation email for how to cancel, and flag it via open_question. Otherwise submit_cancellation_request with the reply stating the real terms (e.g. "that's more than 48 hours out, so you'll get a full refund" — only if check_cancellation_terms actually said 100%). A cancellation is NOT a reschedule — if the customer might want either, ask which they mean rather than assuming.`
+- If the customer wants to CANCEL (with or without asking for a refund): find their booking (get_customer_bookings, or search_bookings_by_details if the email doesn't match), then ALWAYS call check_cancellation_terms with that booking_id before replying — never state a refund % or amount from memory. If check_cancellation_terms says is_ota_booking:true, do NOT submit_cancellation_request — reply telling them to cancel on that platform (mention it by name) since that's where their booking and payment actually live. If can_cancel_here is false, reply asking them to check their confirmation email for how to cancel, and flag it via open_question. Otherwise submit_cancellation_request with the reply stating the real terms (e.g. "that's more than 48 hours out, so you'll get a full refund" — only if check_cancellation_terms actually said 100%). A cancellation is NOT a reschedule — if the customer might want either, ask which they mean rather than assuming.
+- Reschedule (they want another date/time for an existing booking): once you have the exact booking, check the new slot with check_booking (same guests and the option they already have). Then call get_schedule covering the booking's current date and the new date: the captain on the shift whose booking_ids contain the booking, and whether they're free at the new time (availability that day, their hours cover it, not on another shift then). Finish with submit_reschedule_request: keep the captain if free; else swap to another captain who is free; else none_available (the move can still be approved, the shift gets assigned by hand). If the new slot isn't bookable, don't submit a reschedule — reply offering check_booking's alternatives.
+- Requests you have no action for (a partial refund, a complaint): never promise money, percentages or outcomes. submit_reply_draft with a warm holding reply, and use open_question to give the team a concrete recommendation (what you'd do and why; amounts only if a tool gave them).`
 }
 
 export interface ReplySubmission {
@@ -197,6 +257,7 @@ export interface ReplySubmission {
   booking?: Record<string, unknown>
   correction?: Record<string, unknown>
   cancellation?: Record<string, unknown>
+  reschedule?: Record<string, unknown>
 }
 
 /** Validate + normalize a submit-tool input (schemas constrain shape, not sanity). */
@@ -219,11 +280,15 @@ export function validateSubmission(input: Record<string, unknown>): ReplySubmiss
       input.cancellation && typeof input.cancellation === 'object'
         ? (input.cancellation as Record<string, unknown>)
         : undefined,
+    reschedule:
+      input.reschedule && typeof input.reschedule === 'object'
+        ? (input.reschedule as Record<string, unknown>)
+        : undefined,
   }
 }
 
 export interface ShadowReplyResult {
-  kind: 'reply_draft' | 'booking_proposal' | 'booking_correction' | 'cancellation_request'
+  kind: 'reply_draft' | 'booking_proposal' | 'booking_correction' | 'cancellation_request' | 'reschedule_request'
   /** 1-2 sentences, English — for anything that wants a quick gist of what Ghost decided (e.g. the inbox list's AI summary). */
   reasoning: string
   /** The drafted reply itself — so a caller can show it without re-reading the proposal row (e.g. the Slack DM). */
@@ -319,7 +384,7 @@ export async function draftShadowReply(
       // exactly those tools (an explicit allow-list, so a new tool can't leak in).
       tools: buildGhostTools().filter(t => (INBOX_TOOL_NAMES as readonly string[]).includes(t.name)),
       submitTools: INBOX_SUBMIT_TOOLS,
-      prompt: buildInboxAgentPrompt({ knowledgeBlock, correctionsBlock, contact, transcript, today: amsterdamToday() }),
+      prompt: buildInboxAgentPrompt({ knowledgeBlock, correctionsBlock, contact, transcript, today: amsterdamToday(), channel: convo.channel }),
     })
     if (!result) return null
 
@@ -329,13 +394,16 @@ export async function draftShadowReply(
     const isBooking = result.submittedVia === 'submit_booking_proposal' && parsed.booking
     const isCorrection = result.submittedVia === 'submit_booking_correction' && parsed.correction
     const isCancellation = result.submittedVia === 'submit_cancellation_request' && parsed.cancellation
+    const isReschedule = result.submittedVia === 'submit_reschedule_request' && parsed.reschedule
     const kind = isBooking
       ? 'booking_proposal'
       : isCorrection
         ? 'booking_correction'
         : isCancellation
           ? 'cancellation_request'
-          : 'reply_draft'
+          : isReschedule
+            ? 'reschedule_request'
+            : 'reply_draft'
 
     // The team reads English + Dutch — translate any other-language draft so it
     // can actually be read and approved. Off the hot path (after()); metered.
@@ -361,6 +429,7 @@ export async function draftShadowReply(
             ...(isBooking ? { booking: parsed.booking } : {}),
             ...(isCorrection ? { correction: parsed.correction } : {}),
             ...(isCancellation ? { cancellation: parsed.cancellation } : {}),
+            ...(isReschedule ? { reschedule: parsed.reschedule } : {}),
             steps: result.steps,
             // Just the tool NAMES, in call order, deduped — denormalized on
             // purpose. The inbox shows "which tools did the agent use" under

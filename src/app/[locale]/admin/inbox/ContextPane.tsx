@@ -84,6 +84,14 @@ export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
               <CancellationApproval proposal={ghost.cancellationRequest} onChanged={onChanged} />
             </>
           )}
+          {ghost.rescheduleRequest && (
+            <>
+              {ghost.rescheduleRequest.payload.reply && (
+                <SuggestedReply proposal={ghost.rescheduleRequest} onUseDraft={onUseDraft} onChanged={onChanged} />
+              )}
+              <RescheduleApproval proposal={ghost.rescheduleRequest} onChanged={onChanged} />
+            </>
+          )}
           {ghost.otaAvailability && <OtaAvailabilityCard proposal={ghost.otaAvailability} />}
           {ghost.otaBookingReady && <OtaBookingReadyCard proposal={ghost.otaBookingReady} />}
           {ghost.fhImportReady && <FhImportReadyCard proposal={ghost.fhImportReady} onChanged={onChanged} />}
@@ -810,6 +818,103 @@ function CancellationApproval({ proposal, onChanged }: { proposal: InboxGhostPro
             Cancel, no refund
           </button>
         </div>
+      )}
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+    </div>
+  )
+}
+
+/** "Sat 3 Oct" from a plain YYYY-MM-DD, read as a calendar date (no timezone shift). */
+function dayLabel(date: string | undefined): string {
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return date ?? '?'
+  return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
+}
+
+const MATCH_BASIS_LABEL: Record<string, string> = {
+  phone: 'matched by phone',
+  email: 'matched by email',
+  booking_reference: 'matched by booking reference',
+  'phone+name': 'matched by phone + name',
+  name_only: 'matched by NAME ONLY — double-check',
+}
+
+/**
+ * Approve a reschedule_request → the server re-checks the new slot live, moves
+ * the booking through the existing rebook route (the guest gets the reschedule
+ * email from there), and puts the proposed captain on the new shift if it's
+ * still open. The reply draft above is still sent by hand, like every other
+ * Ghost reply.
+ */
+function RescheduleApproval({ proposal, onChanged }: { proposal: InboxGhostProposal; onChanged: () => void }) {
+  const { busy, error, run } = useProposalAction(proposal.id, onChanged)
+  const [confirming, setConfirming] = useState(false)
+  const r = proposal.payload.reschedule
+  const executed = proposal.status === 'executed'
+  if (!r?.booking_id || !r.to?.date) return null
+
+  const c = r.captain
+  const captainLine =
+    c?.action === 'keep'
+      ? `Keep ${c.current ?? 'the same captain'}`
+      : c?.action === 'swap'
+        ? `Swap ${c.current ?? '—'} → ${c.proposed ?? '?'}`
+        : c?.action === 'none_available'
+          ? 'No captain free — assign by hand'
+          : null
+  const nameOnly = r.match_basis === 'name_only'
+
+  return (
+    <div className="mt-2 pt-2 border-t border-violet-100">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 mb-1">Wants to move their booking</p>
+      <div className="rounded-lg bg-white border border-indigo-100 px-3 py-2 text-xs text-zinc-700 space-y-1">
+        <p className="font-semibold text-zinc-900">
+          {dayLabel(r.from?.date)} {r.from?.time ?? ''} → {dayLabel(r.to.date)} {r.to.time ?? ''}
+        </p>
+        {r.to.option && (
+          <p className="text-zinc-500">
+            {r.to.option}
+            {r.to.price_eur != null ? ` · €${r.to.price_eur}` : ''}
+          </p>
+        )}
+        {captainLine && (
+          <p className={c?.action === 'none_available' ? 'text-amber-700' : ''}>
+            Captain: <span className="font-semibold">{captainLine}</span>
+          </p>
+        )}
+        {r.match_basis && (
+          <p className={nameOnly ? 'text-amber-700 font-semibold' : 'text-zinc-400'}>
+            {MATCH_BASIS_LABEL[r.match_basis] ?? r.match_basis}
+          </p>
+        )}
+      </div>
+
+      {executed ? (
+        <div className="mt-1.5 space-y-0.5">
+          <p className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
+            <Check className="w-3.5 h-3.5" /> Moved &amp; reschedule email sent
+          </p>
+          {proposal.outcome?.captain?.note && <p className="text-xs text-zinc-500">{proposal.outcome.captain.note}</p>}
+        </div>
+      ) : confirming ? (
+        <ConfirmCreate
+          onYes={() => run({ action: 'reschedule_booking' }, 'Could not move the booking', () => setConfirming(false))}
+          onCancel={() => setConfirming(false)}
+          busy={busy}
+          message={
+            <>
+              This moves the booking in FareHarbor to <span className="font-semibold">{dayLabel(r.to.date)} {r.to.time}</span>,
+              emails the guest the new time{c?.action && c.action !== 'none_available' ? ' and puts the captain on the new shift' : ''}. Continue?
+            </>
+          }
+          confirmLabel="Yes, move it"
+        />
+      ) : (
+        <button
+          onClick={() => setConfirming(true)}
+          className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-indigo-700 min-h-[36px]"
+        >
+          <CalendarDays className="w-3.5 h-3.5" /> Approve &amp; move booking
+        </button>
       )}
       {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
     </div>

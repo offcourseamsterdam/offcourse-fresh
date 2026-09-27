@@ -107,7 +107,7 @@ export interface OtaRequestedDetails {
 /** A Ghost proposal surfaced for this conversation (reply draft, booking, or OTA fact block). */
 export interface InboxGhostProposal {
   id: string
-  kind: 'reply_draft' | 'booking_proposal' | 'booking_correction' | 'cancellation_request' | 'ota_availability' | 'ota_booking_ready' | 'fh_booking_import_ready'
+  kind: 'reply_draft' | 'booking_proposal' | 'booking_correction' | 'cancellation_request' | 'reschedule_request' | 'ota_availability' | 'ota_booking_ready' | 'fh_booking_import_ready'
   status: string
   reasoning: string | null
   created_at: string
@@ -137,6 +137,14 @@ export interface InboxGhostProposal {
     }
     cancellation?: {
       booking_id?: string
+    }
+    /** The move the reschedule agent proposes — see submit_reschedule_request in shadow-drafter.ts. */
+    reschedule?: {
+      booking_id?: string
+      match_basis?: string
+      from?: { date?: string; time?: string }
+      to?: { listing_slug?: string; date?: string; time?: string; option?: string; price_eur?: number }
+      captain?: { action?: 'keep' | 'swap' | 'none_available'; current?: string | null; proposed?: string | null; why?: string }
     }
     /** Policy-computed terms, stored right after the proposal is drafted — see
      *  src/lib/ghost/cancellation-terms.ts. Every number here is code output,
@@ -173,6 +181,8 @@ export interface InboxGhostProposal {
   outcome: {
     human_reply?: string
     comparison?: { verdict: 'match' | 'minor' | 'different'; summary: string }
+    /** reschedule_request only: what happened to the captain when it was approved. */
+    captain?: { captain: 'assigned' | 'skipped'; note: string }
   } | null
 }
 
@@ -305,6 +315,7 @@ export interface InboxConversationDetail {
     bookingProposal: InboxGhostProposal | null
     bookingCorrection: InboxGhostProposal | null
     cancellationRequest: InboxGhostProposal | null
+    rescheduleRequest: InboxGhostProposal | null
     /** New OTA booking request — read-only availability check, no reply to send. */
     otaAvailability: InboxGhostProposal | null
     /** OTA booking confirmed by the guest on the platform — review and create it manually. */
@@ -333,6 +344,7 @@ export function hasGhostCoPilotContent(ghost: InboxConversationDetail['ghost'] |
     ghost.bookingProposal ||
     ghost.bookingCorrection ||
     ghost.cancellationRequest ||
+    ghost.rescheduleRequest ||
     ghost.otaAvailability ||
     ghost.otaBookingReady ||
     ghost.fhImportReady

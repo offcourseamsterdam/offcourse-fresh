@@ -8,7 +8,7 @@ import { detectCateringConfirmation } from '@/lib/catering/detect-confirmation'
 import { matchCateringReplyToBooking } from '@/lib/catering/match-reply'
 import { postSlackText } from '@/lib/slack/send-notification'
 import { detectOtaEmail, OTA_PLATFORM_NAME, type OtaDetection } from '@/lib/ota/detect'
-import { notifyInboxItem } from '@/lib/slack/notify-inbox'
+import { notifyInboxItem, GHOST_KIND_HEADLINE, ghostKindVerb } from '@/lib/slack/notify-inbox'
 import { handleOtaMessage } from '@/lib/ota/handle-message'
 import { detectGygReviewNotification } from '@/lib/getyourguide/detect-review-notification'
 import { awardReviewBonuses } from '@/lib/scheduling/review-bonuses'
@@ -103,14 +103,6 @@ function inboxQuery(): string {
 }
 
 type SupabaseAdmin = ReturnType<typeof createAdminClient>
-
-/** What the Slack DM calls each kind of thing the Ghost proposed. */
-const GHOST_KIND_HEADLINE: Record<'reply_draft' | 'booking_proposal' | 'booking_correction' | 'cancellation_request', string> = {
-  reply_draft: 'New message',
-  booking_proposal: 'New message — booking proposed',
-  booking_correction: 'New message — contact-info fix proposed',
-  cancellation_request: 'New message — CANCELLATION requested',
-}
 
 /**
  * Grouped strictly by Gmail's own threadId — NOT by "any open email conversation
@@ -605,7 +597,7 @@ export async function syncGmailInbox(queryOverride?: string): Promise<GmailSyncR
             // request handler, so there's no after() to defer to).
             const shadowResult = await draftShadowReply(conversationId, inserted?.id ?? null)
             ghostContext = shadowResult
-              ? `Ghost ${shadowResult.kind === 'reply_draft' ? 'drafted a reply' : shadowResult.kind === 'booking_proposal' ? 'proposed a booking' : 'proposed a contact-info correction'}: ${shadowResult.reasoning}`
+              ? `Ghost ${ghostKindVerb(shadowResult.kind)}: ${shadowResult.reasoning}`
               : null
 
             // A real guest is waiting — DM the draft so Beer can act from his

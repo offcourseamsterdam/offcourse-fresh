@@ -18,7 +18,7 @@ export async function POST(
   try {
     const { id } = await params
     const body = await request.json()
-    const { newAvailPk, newCustomerTypeRatePk, newCustomerTypeName, newDate, newStartAt, newEndAt, sendEmail } = body as {
+    const { newAvailPk, newCustomerTypeRatePk, newCustomerTypeName, newDate, newStartAt, newEndAt, sendEmail, deferShiftSync } = body as {
       newAvailPk: number
       newCustomerTypeRatePk: number
       newCustomerTypeName?: string
@@ -26,6 +26,8 @@ export async function POST(
       newStartAt: string
       newEndAt: string
       sendEmail?: boolean
+      /** The caller re-syncs shifts itself (Ghost's reschedule approve, which then places the chosen captain). Avoids two syncs racing to create the same shift. */
+      deferShiftSync?: boolean
     }
 
     if (!newAvailPk || !newCustomerTypeRatePk || !newDate) {
@@ -132,7 +134,7 @@ export async function POST(
     // only departure, the new one may need a shift that doesn't exist yet.
     // Sync both rather than assuming the move stayed within a single day.
     const oldDate = booking.booking_date
-    after(async () => {
+    if (!deferShiftSync) after(async () => {
       for (const d of [...new Set([oldDate, newDate].filter(Boolean) as string[])]) {
         await syncAndScheduleShifts(supabase, d).catch(err => console.error('[rebook] shift sync failed for', d, err))
       }
@@ -164,7 +166,7 @@ export async function POST(
       fareharborCustomerTypeRatePk: newCustomerTypeRatePk,
     }).catch(err => console.error('[rebook] reschedule email error (ignored):', err))
 
-    return apiOk({ rebooked: true, newBookingUuid: newFhBooking.uuid })
+    return apiOk({ rebooked: true, newBookingUuid: newFhBooking.uuid, oldDate, newDate })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return apiError(message)

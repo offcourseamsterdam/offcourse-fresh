@@ -21,6 +21,26 @@ import { postSlackDM } from './send-notification'
  * Best-effort: never throws, never blocks ingestion (postSlackDM already
  * swallows its own errors and no-ops without SLACK_BOT_TOKEN).
  */
+/** What the Slack DM calls each kind of thing the inbox agent proposed. Shared by every inbound channel. */
+export const GHOST_KIND_HEADLINE: Record<'reply_draft' | 'booking_proposal' | 'booking_correction' | 'cancellation_request' | 'reschedule_request', string> = {
+  reply_draft: 'New message',
+  booking_proposal: 'New message — booking proposed',
+  booking_correction: 'New message — contact-info fix proposed',
+  cancellation_request: 'New message — CANCELLATION requested',
+  reschedule_request: 'New message — reschedule proposed',
+}
+
+/** One line for the inbox list's AI summary: what Ghost did with the message. */
+export function ghostKindVerb(kind: keyof typeof GHOST_KIND_HEADLINE): string {
+  return {
+    reply_draft: 'drafted a reply',
+    booking_proposal: 'proposed a booking',
+    booking_correction: 'proposed a contact-info correction',
+    cancellation_request: 'proposed a cancellation',
+    reschedule_request: 'proposed a reschedule',
+  }[kind]
+}
+
 export interface InboxSlackNotification {
   conversationId: string
   /** Who it's from — guest name for a customer, platform name for an OTA notification. */
