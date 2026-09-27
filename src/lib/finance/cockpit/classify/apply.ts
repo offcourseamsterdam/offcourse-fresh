@@ -23,6 +23,7 @@ import { todayISO } from '../dates'
 import { allocationEffects, type AllocationChange, type AllocationState } from './allocation-effect'
 import { classifyWithAi, type AiCorrectionExample } from './ai'
 import { classifyDeterministic, type ClassifiableTransaction, type Classification, type RuleContext } from './rules'
+import { classifyByHistory, examplesFor, historyKey, type PastClassification } from './history'
 import { reverseChanges } from './reverse'
 
 import { loadPayoutCandidatePool } from '../reconcile/channel-matcher'
@@ -45,7 +46,7 @@ export interface ClassifyOutcome {
 
 // ── Context loading ──────────────────────────────────────────────────────────
 
-export async function loadRuleContext(supabase: Admin): Promise<RuleContext & { boats: Array<{ id: string; name: string }>; corrections: AiCorrectionExample[] }> {
+export async function loadRuleContext(supabase: Admin): Promise<RuleContext & { boats: Array<{ id: string; name: string }>; corrections: AiCorrectionExample[]; history: PastClassification[] }> {
   const [staffRes, paymentsRes, obligationsRes, rulesRes, boatsRes, connRes, correctionsRes, payoutPool] = await Promise.all([
     supabase.from('staff').select('id, name, role').eq('is_active', true),
     supabase.from('finance_loan_payments').select('id, loan_id, due_date, total_cents, is_paid, finance_loans!inner(name, lender_name, status)').eq('is_paid', false),
@@ -53,11 +54,14 @@ export async function loadRuleContext(supabase: Admin): Promise<RuleContext & { 
     supabase.from('finance_classification_rules').select('*').eq('is_active', true),
     supabase.from('boats').select('id, name').eq('is_active', true),
     supabase.from('revolut_connection').select('account_name').eq('id', 'default').maybeSingle(),
+    // Every decision Beer made by hand: the history layer's precedents and
+    // the AI's examples (history.ts). A few hundred small rows; bounded anyway.
     supabase.from('bank_transactions')
-      .select('description, merchant, counterparty, amount_cents, category, subcategory')
+      .select('description, merchant, counterparty, amount_cents, category, subcategory, boat_id, goal_id, obligation_id, loan_payment_id, reviewed_at')
       .eq('classified_by', 'user')
+      .not('category', 'is', null)
       .order('reviewed_at', { ascending: false })
-      .limit(20),
+      .limit(2000),
     loadPayoutCandidatePool(supabase),
   ])
 
@@ -92,13 +96,30 @@ export async function loadRuleContext(supabase: Admin): Promise<RuleContext & { 
     ownAccountNames: connRes.data?.account_name ? [connRes.data.account_name] : [],
     boats: boatsRes.data ?? [],
     payoutPool,
-    corrections: (correctionsRes.data ?? []).flatMap(c => {
+    corrections: (correctionsRes.data ?? []).slice(0, 20).flatMap(c => {
       if (!c.category) return []
       const merchant = c.merchant as { name?: string } | null
       const counterparty = c.counterparty as { name?: string } | null
       const label = merchant?.name ?? counterparty?.name ?? c.description ?? ''
       if (!label) return []
       return [{ label, amountCents: c.amount_cents, category: c.category, subcategory: c.subcategory }]
+    }),
+    history: (correctionsRes.data ?? []).flatMap(c => {
+      if (!c.category) return []
+      const merchant = c.merchant as { name?: string } | null
+      const counterparty = c.counterparty as { id?: string; account_id?: string } | null
+      return [{
+        key: historyKey({ counterpartyId: counterparty?.id ?? counterparty?.account_id ?? null, merchantName: merchant?.name ?? null, description: c.description }),
+        amountCents: c.amount_cents,
+        category: c.category,
+        subcategory: c.subcategory,
+        boatId: c.boat_id,
+        goalId: c.goal_id,
+        obligationId: c.obligation_id,
+        loanPaymentId: c.loan_payment_id,
+        label: merchant?.name ?? c.description ?? '',
+        reviewedAt: c.reviewed_at,
+      }]
     }),
   }
 }
@@ -126,7 +147,7 @@ async function loadAllocationState(supabase: Admin): Promise<AllocationState> {
 
 export function toClassifiable(row: Database['public']['Tables']['bank_transactions']['Row']): ClassifiableTransaction {
   const merchant = row.merchant as { name?: string; category_code?: string } | null
-  const counterparty = row.counterparty as { name?: string; account_type?: string } | null
+  const counterparty = row.counterparty as { name?: string; id?: string; account_id?: string; account_type?: string } | null
   return {
     id: row.id,
     revolutId: row.revolut_id,
@@ -138,6 +159,7 @@ export function toClassifiable(row: Database['public']['Tables']['bank_transacti
     reference: row.reference,
     description: row.description,
     counterpartyName: counterparty?.name ?? null,
+    counterpartyId: counterparty?.id ?? counterparty?.account_id ?? null,
     counterpartyAccountType: counterparty?.account_type ?? null,
     merchantName: merchant?.name ?? null,
     merchantCategoryCode: merchant?.category_code ?? null,
@@ -164,11 +186,16 @@ export async function classifyAndApply(
   const tx = toClassifiable(row)
   const actor = opts.actor ?? (opts.userClassification ? 'user' : 'cron')
 
-  let classification: Classification | null = opts.userClassification ?? classifyDeterministic(tx, ctx)
+  let classification: Classification | null =
+    opts.userClassification ?? classifyDeterministic(tx, ctx) ?? classifyByHistory(tx, ctx.history ?? [])
   let needsReview = false
 
   if (!classification && !opts.skipAi) {
-    const ai = await (opts.aiOverride ?? classifyWithAi)(tx, { boats: ctx.boats, recentCorrections: ctx.corrections })
+    // This counterparty's own precedents first, then Beer's recent decisions.
+    const examples = ctx.history
+      ? examplesFor(tx, ctx.history).map(p => ({ label: p.label, amountCents: p.amountCents, category: p.category, subcategory: p.subcategory }))
+      : ctx.corrections
+    const ai = await (opts.aiOverride ?? classifyWithAi)(tx, { boats: ctx.boats, recentCorrections: examples })
     if (ai && ai.confidence >= AI_SUGGEST_THRESHOLD) {
       classification = ai
       needsReview = ai.confidence < AI_AUTO_THRESHOLD
@@ -373,4 +400,50 @@ async function event(
     delta_cents: deltaCents,
     payload: { reason, transaction_id: transactionId },
   })
+}
+
+/**
+ * Classifies transactions nobody has looked at yet: completed, no category,
+ * and not already sent to Beer for review (a row the AI couldn't place is
+ * marked needs_review and left for him — without that filter the oldest
+ * hopeless rows would be retried, and the AI paid, on every single run, and
+ * newer rows might never be reached).
+ *
+ * Runs after every Revolut sync (cron/revolut-sync) and behind the manual
+ * "classify" button. `budgetMs` stops starting new rows once used up, so it
+ * fits inside the sync's own time limit; the rest waits for the next run.
+ */
+export async function classifyPending(
+  supabase: Admin,
+  opts: { limit?: number; budgetMs?: number } = {},
+): Promise<{ processed: number; classified: number; needsReview: number; unresolved: number; remaining: boolean }> {
+  const limit = opts.limit ?? 50
+  const { data: rows, error } = await supabase
+    .from('bank_transactions')
+    .select('*')
+    .is('category', null)
+    .eq('needs_review', false)
+    .eq('state', 'completed')
+    .order('created_at', { ascending: true })
+    .limit(limit)
+  if (error) throw new Error(error.message)
+  const pending = rows ?? []
+  const result = { processed: 0, classified: 0, needsReview: 0, unresolved: 0, remaining: false }
+  if (pending.length === 0) return result
+
+  const ctx = await loadRuleContext(supabase)
+  const started = Date.now()
+  for (const row of pending) {
+    if (opts.budgetMs != null && Date.now() - started > opts.budgetMs) {
+      result.remaining = true
+      break
+    }
+    const outcome = await classifyAndApply(supabase, row, ctx, { actor: 'cron' })
+    result.processed++
+    if (!outcome.classification) result.unresolved++
+    else if (outcome.needsReview) result.needsReview++
+    else result.classified++
+  }
+  if (pending.length === limit) result.remaining = true
+  return result
 }

@@ -35,6 +35,7 @@ const ctx = (o: Partial<RuleContext> = {}): Awaited<ReturnType<typeof import('./
   ownAccountNames: [],
   boats: [],
   corrections: [],
+  history: [],
   ...o,
 })
 

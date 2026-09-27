@@ -12,7 +12,8 @@ import 'server-only'
  * towards his own vocabulary instead of a generic bookkeeping default.
  */
 
-import { CLAUDE_DRAFTER_MODEL, firstText, getClaude } from '@/lib/ai/clients'
+import { CLAUDE_AGENT_MODEL, firstText, getClaude } from '@/lib/ai/clients'
+import { recordAiUsage } from '@/lib/ai/usage'
 import { CATEGORIES, directionAllows, isCategory, isSubcategory, type Category } from './taxonomy'
 import type { ClassifiableTransaction, Classification } from './rules'
 
@@ -138,12 +139,21 @@ export async function classifyWithAi(tx: ClassifiableTransaction, opts: AiClassi
   return validateAiAnswer(parseAiAnswer(raw), tx, opts.boats ?? [])
 }
 
+/**
+ * Sonnet 5, not Haiku: replaying Beer's 155 hand-classified transactions
+ * (scripts/finance-backtest, 2026-09-27), Sonnet 5 matched him on 28 of the
+ * 29 it was sure enough to auto-apply, Haiku on 36 of 39 — Sonnet also says
+ * "not sure" honestly instead of guessing confidently, which is what the
+ * auto-apply threshold relies on. Room for its (adaptive) thinking before the
+ * short JSON answer.
+ */
 async function defaultCall(prompt: string): Promise<string> {
   const claude = getClaude()
   const res = await claude.messages.create({
-    model: CLAUDE_DRAFTER_MODEL,
-    max_tokens: 300,
+    model: CLAUDE_AGENT_MODEL,
+    max_tokens: 1500,
     messages: [{ role: 'user', content: prompt }],
   })
+  await recordAiUsage({ feature: 'finance_classify', model: CLAUDE_AGENT_MODEL, inputTokens: res.usage.input_tokens, outputTokens: res.usage.output_tokens })
   return firstText(res)
 }

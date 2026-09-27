@@ -7,6 +7,7 @@ import { createRevolutClient, loadConnection, isConnected, getRevolutEnvConfig }
 import { syncRevolut } from '@/lib/revolut/sync'
 import { ensureExpensesForTransactions, syncRevolutExpenses, type EnsureResult, type ExpenseSyncResult } from '@/lib/finance/expenses/sync-revolut'
 import { matchOrphanDocuments, type MatchOutcome } from '@/lib/finance/expenses/match-orchestrator'
+import { classifyPending } from '@/lib/finance/cockpit/classify/apply'
 
 export const dynamic = 'force-dynamic'
 /** Cash sync + expense records + receipts + orphan matching in one run; the receipt step has its own 25 s budget inside this. */
@@ -19,6 +20,8 @@ const EXPENSE_LOOKBACK_DAYS = 30
  * The source of truth for cash: pulls the balance and the last 7 days of
  * transactions (state changes included). Webhooks only make this faster.
  * Alerts Beer's DM the first time a sync fails after a healthy run.
+ *
+ * Last, new transactions are classified (classifyPending).
  *
  * Then the Finance Inbox v2 step (plan §3.1): every completed outgoing
  * transaction gets its Expense Record, and Revolut's own expenses/receipts
@@ -59,7 +62,19 @@ export async function GET(request: NextRequest) {
         expenses = { error: message }
       }
     }
-    return NextResponse.json({ ...result, ok: true, expenses })
+    // New transactions are classified right away: your own past decisions
+    // first, then the rules, then the AI (classify/apply.ts). Own try/catch
+    // for the same reason as the expense step — never fail the cash sync.
+    let classification: Awaited<ReturnType<typeof classifyPending>> | { error: string } | undefined
+    try {
+      classification = await classifyPending(supabase, { limit: 25, budgetMs: 20_000 })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('[cron/revolut-sync] classification step failed:', message)
+      classification = { error: message }
+    }
+
+    return NextResponse.json({ ...result, ok: true, expenses, classification })
   } catch (err) {
     await alertCronFailure('revolut-sync', err)
     return NextResponse.json({ ok: false, error: (err as Error).message }, { status: 500 })

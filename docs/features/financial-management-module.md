@@ -180,3 +180,45 @@ finance_settings + finance_obligations + finance_loan_payments + finance_goals �
 - Revolut Business API (Phase 2). Claude Sonnet for classification (Phase 3), Gemini for invoice
   extraction (Phase 4).
 - Env: `REVOLUT_*`, `NEXT_PUBLIC_SITE_URL`, `CRON_SECRET`.
+
+## Automatic classification of new transactions (2026-09-27)
+
+**Before:** the classifier (rules → learned rules → AI) existed but only ran when someone
+pressed classify in the admin — the Revolut webhook and the 15-minute sync only stored
+transactions. In the live data 155 transactions were classified by hand, 7 by rules, 0 by
+the AI, and new ones sat unclassified.
+
+**Now:**
+1. **Runs after every Revolut sync** — `classifyPending` (classify/apply.ts), called at the
+   end of `cron/revolut-sync`: completed, uncategorised rows not already waiting for review,
+   oldest first, 25 per run within a 20-second budget (the sync has 60 s total); the rest
+   waits 15 minutes. The manual classify-batch route uses the same function.
+2. **Your own history, before the AI** — `classify/history.ts`. If Beer classified the same
+   counterparty (same direction of money) at least twice and always the same way, that's
+   applied automatically (stored as `classified_by = 'rule'`, reason "Zoals je de vorige N
+   keer…"; the DB only allows rule/ai/user). Strict on purpose: only Beer's own decisions
+   count, never copies a goal/obligation/loan link, and an unusual amount (over 3× outside
+   the usual range) goes to the AI and a human instead. Counterparty = Revolut's stable
+   counterparty id (Revolut never sends a transfer's counterparty NAME — `counterpartyName`
+   is always null; the name only appears in `description`), else merchant name, else
+   description.
+3. **Better AI examples** — the AI now sees this counterparty's own precedents first, then
+   Beer's recent decisions (was: the last 20 corrections of anything).
+4. **Sonnet 5 instead of Haiku** for the AI layer, metered as `finance_classify`.
+5. **No endless retries** — a row the AI can't place confidently is marked `needs_review`
+   and never picked up automatically again (before, the oldest hopeless rows were retried
+   every batch and could starve newer ones).
+
+Thresholds are unchanged (≥ 0.9 applied, 0.6–0.9 suggested for review, below that left).
+
+**Measured, not assumed:** `scripts/finance-backtest/classify.backtest.test.ts` replays
+Beer's 155 hand-classified transactions in date order, each seeing only what he had
+classified before it (read-only; `FINANCE_BACKTEST=1 npx vitest run scripts/finance-backtest`).
+Result on 2026-09-27:
+- history layer: fired on 47, agreed with Beer on 46;
+- AI on the other 108, auto-applied bucket (≥ 0.9): today's Haiku + last-20 matched Beer on
+  25/29; Haiku with counterparty-first examples 36/39; **Sonnet 5 with them 28/29**;
+  overall category + subcategory match 46 → 54 → 63 of 108.
+
+**Unchanged on purpose:** Revolut payment-link VAT splits (the kasboek source) stay
+suggest-only — that's a separate system and Beer's rule; this is bank-transaction categories.

@@ -67,3 +67,4 @@ stervoor beer.jpeg
 # Supabase CLI local link cache (machine-specific, not portable)
 supabase/.temp/
 scripts/agent-prototype/out/
+scripts/finance-backtest/out/

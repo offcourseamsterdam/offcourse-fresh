@@ -32,6 +32,11 @@ export interface ClassifiableTransaction {
   reference: string | null
   description: string | null
   counterpartyName: string | null
+  /** Revolut's stable counterparty id. Revolut never sends a counterparty
+   *  NAME for a transfer (counterpartyName is always null in the live feed;
+   *  the name only appears inside `description`), so this id is the reliable
+   *  way to recognise "the same person again" — see history.ts. */
+  counterpartyId?: string | null
   counterpartyAccountType: string | null
   merchantName: string | null
   merchantCategoryCode: string | null
