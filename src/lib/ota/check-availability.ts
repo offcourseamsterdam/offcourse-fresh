@@ -24,5 +24,5 @@ export async function checkOtaAvailability(ota: OtaDetection): Promise<OtaAvaila
     return { checked: false, reason: "Could not read a clear date and guest count from the email — check it manually." }
   }
   const results = await fetchSearchResults(dateISO, guests)
-  return { checked: true, dateISO, guests, availability: compactAvailability(results) }
+  return { checked: true, dateISO, guests, availability: compactAvailability(results, guests) }
 }

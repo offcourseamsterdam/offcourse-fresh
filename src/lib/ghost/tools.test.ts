@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { extraPriceLabel, compactExtras, compactAvailability, nearbyDates, sharedListingsAlreadyBooked } from './tools'
+import { extraPriceLabel, compactExtras, compactAvailability, fitsGroup, nearbyDates, sharedListingsAlreadyBooked } from './tools'
 
 // Pure helpers only — the tool `run()` functions hit Supabase and are covered
 // by the live/integration path, not unit tests.
@@ -54,9 +54,47 @@ describe('compactExtras', () => {
 // Guard the existing compaction helper still behaves (it shares this file).
 describe('compactAvailability', () => {
   it('reports nothing available when no slots', () => {
-    expect(compactAvailability([{ listing: { slug: 's', title: 'T', category: 'private' }, availableSlots: [] }])).toMatchObject({
+    expect(compactAvailability([{ listing: { slug: 's', title: 'T', category: 'private' }, availableSlots: [] }], 2)).toMatchObject({
       available: false,
     })
+  })
+})
+
+// Regression: a Withlocals request for 10 guests showed "Bookable — Diana -
+// 1.5 Hours, from €310". The slot survived because Curaçao fits 10, but every
+// boat's rate was still listed, and Diana (max 8) was the cheapest.
+describe('compactAvailability group-size filter', () => {
+  const listing = { slug: 'p', title: 'Private Cruise', category: 'private' }
+  const diana = { name: 'Diana - 1.5 Hours', priceCents: 31000, durationMinutes: 90, boatId: 'diana' as const, maximumParty: 8, totalCapacity: 1 }
+  const curacao = { name: 'Curaçao - 1.5 Hours', priceCents: 39000, durationMinutes: 90, boatId: 'curacao' as const, maximumParty: 12, totalCapacity: 1 }
+  const options = (guests: number, types = [diana, curacao]) =>
+    (compactAvailability([{ listing, availableSlots: [{ startTime: '18:30', customerTypes: types }] }], guests) as {
+      listings: { options: { name: string }[] }[]
+    }).listings[0].options.map(o => o.name)
+
+  it('drops Diana for a group of 10 so Curaçao is the cheapest option', () => {
+    expect(options(10)).toEqual(['Curaçao - 1.5 Hours'])
+  })
+
+  it('keeps both boats for a group that fits Diana', () => {
+    expect(options(8)).toEqual(['Diana - 1.5 Hours', 'Curaçao - 1.5 Hours'])
+  })
+
+  it('trusts the boat capacity even when FareHarbor reports a too-high maximumParty', () => {
+    expect(options(10, [{ ...diana, maximumParty: 12 }, curacao])).toEqual(['Curaçao - 1.5 Hours'])
+  })
+
+  it('drops a boat that is already booked on that departure', () => {
+    expect(options(4, [{ ...diana, totalCapacity: 0 }, curacao])).toEqual(['Curaçao - 1.5 Hours'])
+  })
+})
+
+describe('fitsGroup', () => {
+  it('passes when capacity fields are unknown (minimal shapes)', () => {
+    expect(fitsGroup({}, 12)).toBe(true)
+  })
+  it('rejects anything over 12, even on Curaçao', () => {
+    expect(fitsGroup({ boatId: 'curacao' }, 13)).toBe(false)
   })
 })
 
