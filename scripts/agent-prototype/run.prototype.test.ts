@@ -119,7 +119,7 @@ async function runOne(client: Anthropic, model: string, sc: Scenario, run: numbe
   let inputTokens = 0
   let outputTokens = 0
   const done = (submission: Submission | null, turns: number, error?: string): RunResult => {
-    const verdict = sc.check(submission)
+    const verdict = sc.check(submission, steps)
     return { scenario: sc.id, model, run, submission, steps, turns, ...verdict, inputTokens, outputTokens, ms: Date.now() - started, error }
   }
 
