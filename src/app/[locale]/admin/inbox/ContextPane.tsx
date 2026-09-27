@@ -873,7 +873,9 @@ function RescheduleApproval({ proposal, onChanged }: { proposal: InboxGhostPropo
         {r.to.option && (
           <p className="text-zinc-500">
             {r.to.option}
-            {r.to.price_eur != null ? ` · €${r.to.price_eur}` : ''}
+            {/* The new slot's list price — a reschedule never changes what the
+                guest paid; any difference is absorbed (Beer, 2026-09-27). */}
+            {r.to.price_eur != null ? ` · list price €${r.to.price_eur}, guest pays nothing extra` : ''}
           </p>
         )}
         {captainLine && (

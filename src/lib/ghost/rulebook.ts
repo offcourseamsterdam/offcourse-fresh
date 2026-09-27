@@ -344,17 +344,19 @@ export const RULEBOOK: RulebookEntry[] = [
   {
     kind: 'guest_move_request',
     agentKey: 'day_optimizer',
-    title: 'Day optimizer agent (arbitrates which guest_move_request gets drafted)',
+    title: 'Day optimizer agent (picks which guest move gets asked when several compete for a day)',
     hardRules: [
       { rule: 'Never touches a day with only one live candidate — auto-allowed in code, no LLM call, no added cost for the common case.', enforcedIn: 'src/lib/ghost/day-optimizer-agent.ts (resolveDayPlan, singleton clusters)' },
       { rule: "At most one drafted candidate per calendar date, enforced AGAIN in code after the agent answers — an agent picking two candidates that share a day has its second pick silently dropped, never trusted blindly.", enforcedIn: 'day-optimizer-agent.ts (the safety-net dedupe pass in resolveDayPlan)' },
       { rule: 'An id the agent invents that was never in the cluster it was given is ignored, not acted on.', enforcedIn: 'day-optimizer-agent.ts (byId.get(id) lookup, unknown ids drop silently)' },
       { rule: 'If the agent call itself errors, falls back to the highest-saving non-conflicting candidate rather than drafting nothing — a model outage never means the whole optimizer goes silent.', enforcedIn: 'day-optimizer-agent.ts (resolveDayPlan try/catch → pickBySavingsFallback)' },
-      { rule: "Owns no create/execute path of its own — the actual draft still runs through the SAME draftBoatSwap/draftCrossDayConsolidation functions and the SAME guest_move_request approve flow as before this agent existed.", enforcedIn: 'src/app/api/admin/planning/optimizer/route.ts (finalize())' },
+      { rule: "Owns no create/execute path of its own — the actual draft still runs through the SAME time-shift / boat-swap / cross-day drafters and the SAME guest_move_request approve flow as before this agent existed.", enforcedIn: 'src/lib/ghost/move-planner.ts (finishMoves)' },
+      { rule: 'All three move kinds meet in ONE decision step: the Optimizer panel, the nightly run (at most one draft per run) and the new-booking trigger (only its own date) all go through the move planner — no path claims a day just by finding a move first.', enforcedIn: 'src/lib/ghost/move-planner.ts (planMoves → decideMoves → finishMoves)' },
+      { rule: 'A decision for the identical set of competing moves is reused for 24h instead of asking again — cheaper, and the panel and the nightly run can never disagree. Only real agent decisions are reused; a fallback retries the agent.', enforcedIn: 'move-planner.ts (priorDecisionLookup) + day-optimizer-agent.ts (clusterKey)' },
     ],
     prompt: 'Emitted by runDayOptimizerAgent via its terminal submit_day_plan tool — see day-optimizer-agent.ts.',
     promptShared: false,
-    dataInjected: ['every live candidate sharing a day (type, days touched, summary, estimated saving)', 'a live FareHarbor re-check for boat_swap candidates only, via recheck_boat_swap'],
+    dataInjected: ['every live move sharing a day (time_move / boat_swap / cross_day, days touched, summary, estimated saving in euro cents)', 'a live FareHarbor re-check for boat_swap candidates only, via recheck_boat_swap'],
   },
 ]
 

@@ -8,6 +8,12 @@ vi.mock('@/lib/ops/events', () => ({ emitOpsEvent: vi.fn().mockResolvedValue(und
 vi.mock('@/lib/search/fetch-search-results', () => ({ fetchSearchResults: vi.fn() }))
 const fhValidate = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/fareharbor/client', () => ({ getFareHarborClient: () => ({ validateBooking: fhValidate }) }))
+// The decision step (move-planner.ts) is tested on its own; here the time
+// shift is the only move on the date, so the planner simply drafts it.
+vi.mock('./move-planner', () => ({
+  draftMovesForDate: vi.fn(async (_sb: unknown, _date: string, t: { draft: (o: { source: string; reasoningSuffix: string }) => Promise<string> }) =>
+    (await t.draft({ source: 'ghost/guest-move-drafter:new-booking', reasoningSuffix: 'a new booking just revealed this opportunity' })) === 'drafted' ? 1 : 0),
+}))
 
 import { draftGuestMoveForNewBooking } from './guest-move-drafter'
 import { createAdminClient } from '@/lib/supabase/admin'

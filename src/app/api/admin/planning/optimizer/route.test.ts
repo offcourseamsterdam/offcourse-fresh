@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   draftBoatSwap: vi.fn(),
   runAgenticLoop: vi.fn(),
   isOptedOut: vi.fn().mockResolvedValue(false),
+  prepareTimeMoves: vi.fn().mockResolvedValue({ live: [], claimed: [] }),
   // Defaults to "plenty of notice" — real wall-clock time keeps advancing
   // past hardcoded fixture dates, so this route's tests pin it explicitly
   // rather than relying on the fixture dates always being >18h in the real
@@ -23,6 +24,13 @@ vi.mock('@/lib/ghost/boat-swap-drafter', () => ({ validateBoatSwap: h.validateBo
 // call is mocked, so a singleton candidate never even reaches this mock.
 vi.mock('@/lib/ghost/agent-runtime', () => ({ runAgenticLoop: h.runAgenticLoop }))
 vi.mock('@/lib/ghost/reschedule-opt-outs', () => ({ isOptedOut: h.isOptedOut }))
+// Time-shift candidates come from guest-move-drafter.ts (its own loader,
+// tested in guest-move-drafter.test.ts); here we only control what it hands
+// the planner. openMoveRequestExists stays real (via the Supabase mock).
+vi.mock('@/lib/ghost/guest-move-drafter', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/lib/ghost/guest-move-drafter')>()
+  return { ...actual, prepareTimeMoves: h.prepareTimeMoves }
+})
 vi.mock('@/lib/ghost/rulebook', async importOriginal => {
   const actual = await importOriginal<typeof import('@/lib/ghost/rulebook')>()
   return { ...actual, hasEnoughNotice: h.hasEnoughNotice }
@@ -205,6 +213,7 @@ beforeEach(() => {
   // hasEnoughNotice never leaks into the next.
   h.hasEnoughNotice.mockReturnValue(true)
   h.isOptedOut.mockResolvedValue(false)
+  h.prepareTimeMoves.mockResolvedValue({ live: [], claimed: [] })
 })
 
 describe('GET /api/admin/planning/optimizer', () => {
@@ -319,6 +328,8 @@ describe('GET /api/admin/planning/optimizer', () => {
     expect(crossDay).toBeTruthy()
     expect(crossDay.proposalId).toBeUndefined()
     expect(crossDay.smsText).toBeUndefined()
+    expect(crossDay.notAskedReason).toBe('Too close to departure to ask the guest.')
+    expect(crossDay.notAskedBy).toBe('rule')
     expect(h.draftCrossDayConsolidation).not.toHaveBeenCalled()
   })
 
@@ -684,11 +695,12 @@ describe('the day optimizer agent — same-day boat swap vs. cross-day move on t
     const crossDay = body.data.items.find((i: { kind: string }) => i.kind === 'cross_day_consolidation')
 
     expect(h.draftBoatSwap).toHaveBeenCalledTimes(1)
-    expect(boatSwap.agentReasoning).toBeUndefined()
+    expect(boatSwap.notAskedReason).toBeUndefined()
 
     expect(h.draftCrossDayConsolidation).not.toHaveBeenCalled()
     expect(crossDay.proposalId).toBeUndefined()
-    expect(crossDay.agentReasoning).toBe('The boat swap covers the same saving with less disruption.')
+    expect(crossDay.notAskedReason).toBe('The boat swap covers the same saving with less disruption.')
+    expect(crossDay.notAskedBy).toBe('agent')
   })
 
   it('never invokes the agent when candidates do not compete for a shared day — the common case stays free', async () => {
@@ -704,7 +716,7 @@ describe('the day optimizer agent — same-day boat swap vs. cross-day move on t
     // doesn't lose the underlying candidate.
     const crossDay = body.data.items.find((i: { kind: string }) => i.kind === 'cross_day_consolidation')
     expect(h.draftCrossDayConsolidation).toHaveBeenCalledTimes(1)
-    expect(crossDay.agentReasoning).toBeUndefined()
+    expect(crossDay.notAskedReason).toBeUndefined()
   })
 
   it("falls back to the highest-saving candidate if the agent errors, rather than drafting nothing", async () => {
@@ -746,5 +758,68 @@ describe('the day optimizer agent — same-day boat swap vs. cross-day move on t
     expect(h.runAgenticLoop).not.toHaveBeenCalled()
     expect(h.draftBoatSwap).not.toHaveBeenCalled()
     expect(h.draftCrossDayConsolidation).toHaveBeenCalledTimes(1)
+  })
+
+  it('a same-day time shift now competes too — all three kinds on one date go to the agent together', async () => {
+    h.validateBoatSwap.mockResolvedValue(VALIDATED_SWAP)
+    h.draftBoatSwap.mockResolvedValue('drafted')
+    const timeMoveDraft = vi.fn().mockResolvedValue('drafted')
+    h.prepareTimeMoves.mockResolvedValue({
+      live: [
+        {
+          date: '2026-08-25',
+          candidate: {
+            bookingId: 'paige',
+            shiftId: 'tue-shift',
+            boat: 'Curaçao',
+            currentStartAt: '2026-08-25T15:00:00Z',
+            currentEndAt: '2026-08-25T16:30:00Z',
+            proposedStartAt: '2026-08-25T11:00:00Z',
+            proposedEndAt: '2026-08-25T12:30:00Z',
+            gapMinutes: 240,
+            estSavingCents: 12000,
+            booking: { customerName: 'Paige Monacelli', guestCount: 4 },
+          },
+          draft: timeMoveDraft,
+        },
+      ],
+      claimed: [],
+    })
+    h.runAgenticLoop.mockResolvedValue({
+      submission: {
+        picks: [{ id: 'time_move:paige', why: 'Biggest saving, and Paige keeps her boat and date.' }],
+        skipped: [
+          { id: 'boat_swap:priya', why: 'Smaller saving on the same day.' },
+          { id: 'cross_day:sophie', why: 'Would move Sophie to another date.' },
+        ],
+        reasoning: 'The time shift wins the day.',
+      },
+      submittedVia: 'submit_day_plan',
+      steps: [],
+      turns: 1,
+    })
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeSupabase({
+        shifts: [PAIGE_SHIFT, SOPHIE_SHIFT, PRIYA_SHIFT],
+        bookings: [PAIGE_BOOKING, SOPHIE_BOOKING, PRIYA_BOOKING],
+        listingSlug: 'private-morning-cruise',
+      }) as never,
+    )
+
+    const res = await GET(makeReq('2026-08-25', '2026-08-26'))
+    const body = await res.json()
+
+    expect(h.runAgenticLoop).toHaveBeenCalledTimes(1)
+    const prompt = h.runAgenticLoop.mock.calls[0][0].prompt as string
+    for (const id of ['time_move:paige', 'boat_swap:priya', 'cross_day:sophie']) expect(prompt).toContain(id)
+
+    expect(timeMoveDraft).toHaveBeenCalledWith({ source: 'admin/planning/optimizer', reasoningSuffix: 'found when the Optimizer panel was opened' })
+    expect(h.draftBoatSwap).not.toHaveBeenCalled()
+    expect(h.draftCrossDayConsolidation).not.toHaveBeenCalled()
+
+    const timeItem = body.data.items.find((i: { kind: string }) => i.kind === 'same_day_time_move')
+    expect(timeItem).toMatchObject({ bookingId: 'paige', estSavingCents: 12000 })
+    const swapItem = body.data.items.find((i: { kind: string; bookingId?: string }) => i.kind === 'same_day_merge' && i.bookingId === 'priya')
+    expect(swapItem).toMatchObject({ notAskedBy: 'agent', notAskedReason: 'Smaller saving on the same day.' })
   })
 })

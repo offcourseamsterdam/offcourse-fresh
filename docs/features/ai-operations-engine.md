@@ -146,7 +146,7 @@ never reasons over a stale roster.
 | `src/lib/ghost/agents.ts` | `operations` agent registered; `ops_review` at `propose`, ceiling `ask` |
 | `src/app/[locale]/admin/ghost/page.tsx` | Ops-review card: facts strip + per-recommendation badge, €, guest impact, confidence |
 | `scripts/run-ops-review.ts` | Run the agent once for real (sync + draft + print the proposal) |
-| `src/lib/ghost/guest-move-drafter.ts` | `selectMoveCandidate()` (pure, tested — all outreach hard rules) + `draftGuestMoveRequest()` + 48h expiry sweep |
+| `src/lib/ghost/guest-move-drafter.ts` | `selectMoveCandidate()` (pure, tested — all outreach hard rules) + `prepareTimeMoves()` (feeds the move planner) + the new-booking trigger + 48h expiry sweep |
 | `src/lib/ops/move-token.ts` | Per-proposal HMAC token for the guest's personal response link |
 | `src/lib/sms/send-sms.ts` | Twilio SMS via one fetch — `false` when unconfigured, throws on real failure |
 | `src/app/[locale]/(public)/move/[id]/[token]/` | The guest response page (en/nl): offer, quote, three buttons |
@@ -400,6 +400,11 @@ Never `#bookings`.
 to point the guest to the platform instead, and `reschedule_booking` refuses it in code
 (409) regardless. Scenario `edge-10-ota-booking`: 3/3 on Sonnet 5.
 
+**Price differences are absorbed** (Beer, 2026-09-27). The rebook route never charges or
+refunds; the agent is told never to ask for the difference or promise a refund, and the
+inbox card labels the new slot's price as "list price …, guest pays nothing extra".
+Scenario `edge-11-pricier-slot`: 3/3.
+
 **Re-running the scenarios** (real Claude, fully mocked world, ~$1.50):
 `AGENT_PROTOTYPE=1 AGENT_PROTOTYPE_MODELS=claude-sonnet-5 npx vitest run scripts/agent-prototype`.
 Last run on the built agent: 24/24.
@@ -445,14 +450,34 @@ competes for a day (checked before clustering, not after winning). Every real co
 decision is logged to `ops_events` (`source: 'ghost/day-optimizer-agent'`, marked
 `agent` or `system` when it fell back).
 
-**Known gaps, not built:**
-- **Only 2 of the 3 move types are arbitrated.** The same-day gap-closing time move is
-  drafted by `guest-move-drafter.ts` — nightly (`draftGuestMoveRequest`, ghost-ops cron)
-  and on every new booking (`draftGuestMoveForNewBooking`) — outside this route, still
-  first-come via `openMoveRequestExists`. Bringing it in means routing those two
-  triggers through `resolveDayPlan` too.
-- `agentReasoning` is in the API response but the Planning overlay doesn't render it.
-- The agent's live `recheck_boat_swap` result isn't fed back into the draft; the draft
-  uses the swap validated at prepare time.
-- No offline real-model scenarios for the day optimizer yet (the route tests mock the
-  model; only the clustering/safety net is proven, not the model's judgment).
+**All three move kinds, one decision (2026-09-27, later the same day).** Finding,
+deciding and drafting moved out of the route into `src/lib/ghost/move-planner.ts`:
+`planMoves` finds time shifts (via `guest-move-drafter.ts`'s new `prepareTimeMoves`),
+boat swaps and cross-day moves; `decideMoves` runs `resolveDayPlan` over all of them;
+`finishMoves` drafts the allowed ones. Three callers:
+- the Optimizer panel (`GET /api/admin/planning/optimizer`): today → horizon, drafts
+  every allowed move;
+- the nightly ghost-ops cron (`draftNightlyMove`, replaces `draftGuestMoveRequest`):
+  tomorrow → horizon, drafts at most ONE move per run (the highest-saving allowed one,
+  of any kind — before, the nightly run only ever drafted time shifts);
+- every new booking (`draftGuestMoveForNewBooking`): keeps its fast skips and its
+  FareHarbor dry-run, then hands its time shift to `draftMovesForDate`, which weighs it
+  against boat swaps / cross-day moves touching that date and only drafts on that date.
+
+Time-shift asks now carry `payload.move_type: 'time_shift'` so the planner (and the
+panel) can find them by booking like the other two kinds. A decision for the identical
+set of competing moves is reused for 24h (`ops_events.payload.cluster_key`) instead of
+re-running the agent on every panel open and nightly run.
+
+The panel (`OptimizerPanel.tsx`) now shows time shifts as actionable, and every move
+that wasn't drafted says why — `notAskedReason` + `notAskedBy: 'rule' | 'agent'` on
+`OptimizerItem` (renamed from the never-deployed `agentReasoning`). Before, an undrafted
+move showed "Drafting…" forever.
+
+**Real-model check:** `scripts/agent-prototype/day-optimizer.prototype.test.ts` — five
+conflicts (big saving wins, two same-day swaps, a three-day chain where the right answer
+is a combination, a time shift vs a swap, a near-tie where the gentler move wins). 15/15
+on Sonnet 5. Run with `AGENT_PROTOTYPE=1 npx vitest run scripts/agent-prototype/day-optimizer`.
+
+**Still not built:** the agent's live `recheck_boat_swap` result isn't fed back into the
+draft (the send step re-validates the slot before anything goes out anyway).

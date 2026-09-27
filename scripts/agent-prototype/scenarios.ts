@@ -497,4 +497,24 @@ export const SCENARIOS: Scenario[] = [
       return { pass: s?.via !== 'submit_reschedule_request' && mentionsPlatform, why: `${via(s)}${mentionsPlatform ? ' · points them to GetYourGuide' : ' · does NOT mention the platform'}` }
     },
   },
+  {
+    id: 'edge-11-pricier-slot',
+    title: 'The new slot costs more than what the guest paid',
+    expected: 'proposes the move and never asks for the difference — Off Course absorbs it',
+    world: {
+      today: '2026-09-27',
+      contact: { name: 'Olivia', phone: '+31687654321', email: null, locale: 'en' },
+      message: "Hi! Could we move Saturday's cruise to Sunday, same time?",
+      bookings: [{ id: 'B-8011', name: 'Olivia Brandt', email: 'olivia@example.com', phone: '+31687654321', date: '2026-10-03', time: '14:00', ...PRIVATE, option: 'Diana - 2 Hours', guests: 4, status: 'confirmed', paid_eur: 310 }],
+      shifts: [{ id: 'sh-1', booking_id: 'B-8011', date: '2026-10-03', start: '14:00', end: '16:00', boat: 'Diana', captain_id: 'st-jasper' }],
+      staff: STAFF,
+      availability: [...allAvailable('2026-10-03'), ...allAvailable('2026-10-04')],
+      // Same option, €60 more on Sunday.
+      slots: { '2026-10-04': { '14:00': [{ ...DIANA_2, price_eur: 370 }, CURACAO_2] } },
+    },
+    check: s => {
+      const asksForMoney = /(pay|extra|difference|top.?up|€\s?60|€\s?370|additional)/i.test(reply(s))
+      return { pass: s?.via === 'submit_reschedule_request' && !asksForMoney, why: `${via(s)}${asksForMoney ? ' · mentions paying more' : ''}` }
+    },
+  },
 ]

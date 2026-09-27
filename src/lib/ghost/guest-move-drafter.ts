@@ -36,8 +36,9 @@ import { amsterdamToday, formatAmsterdamTime } from '@/lib/utils'
  * probability training data.
  *
  * Two triggers, one shared core (craftAndInsertMoveProposal):
- *   - draftGuestMoveRequest() — nightly, scans the whole horizon, drafts the
- *     single best opportunity across it.
+ *   - the nightly run — now move-planner.ts's draftNightlyMove, which uses
+ *     prepareTimeMoves below and weighs time shifts against boat swaps and
+ *     cross-day moves before drafting the single best allowed move.
  *   - draftGuestMoveForNewBooking(date) — event-driven (Beer 2026-07-04:
  *     "every time a new booking comes in"), fired right after a booking is
  *     confirmed, scoped to just that booking's date.
@@ -565,6 +566,9 @@ ${channel === 'sms'
       payload: JSON.parse(
         JSON.stringify({
           target_date: targetDate,
+          // Lets the move planner find this ask again by booking (same way it
+          // finds cross_day / boat_swap asks) to show its state on the panel.
+          move_type: 'time_shift',
           booking_id: candidate.bookingId,
           shift_id: candidate.shiftId,
           guest_name: candidate.booking.customerName,
@@ -621,82 +625,86 @@ ${channel === 'sms'
   return 'drafted'
 }
 
-export async function draftGuestMoveRequest(): Promise<'drafted' | 'skipped'> {
-  try {
-    const supabase = createAdminClient()
-    const from = amsterdamToday(1)
-    const to = amsterdamToday(OPTIMIZE_HORIZON_DAYS)
+/** A time-shift ask ready to draft: FareHarbor already confirmed the slot. */
+export interface PreparedTimeMove {
+  date: string
+  /** Times and saving already corrected to the real FareHarbor slot. */
+  candidate: MoveCandidate
+  draft: (opts: { source: string; reasoningSuffix: string }) => Promise<'drafted' | 'skipped'>
+}
 
-    // One query pair for the whole window, then per-day analysis.
-    const [shiftsRes, bookingsRes] = await Promise.all([
-      supabase
-        .from('shifts')
-        .select(`${SHIFT_SELECT}, date`)
-        .gte('date', from)
-        .lte('date', to)
-        .in('status', ['open', 'assigned', 'confirmed'])
-        .order('start_at'),
-      supabase
-        .from('bookings')
-        .select(BOOKING_SELECT)
-        .gte('booking_date', from)
-        .lte('booking_date', to)
-        .in('status', ['confirmed', 'booked']),
-    ])
+/**
+ * Everything draftGuestMoveRequest used to do up to (not including) the
+ * draft, for every day in [from, to] — so the move planner can put these
+ * candidates in front of the day optimizer alongside boat swaps and
+ * cross-day moves, instead of each drafter racing first-come for the day.
+ * Same gates as before, in the same order: two+ sailings, selectMoveCandidate's
+ * hard rules, notice window, opt-out, the day not already claimed, then the
+ * FareHarbor dry-run. `claimed` lists days that had a candidate but already
+ * carry an open ask, so the planner can still show the finding.
+ */
+export async function prepareTimeMoves(
+  supabase: AdminClient,
+  from: string,
+  to: string,
+): Promise<{ live: PreparedTimeMove[]; claimed: { date: string; candidate: MoveCandidate }[] }> {
+  const [shiftsRes, bookingsRes] = await Promise.all([
+    supabase
+      .from('shifts')
+      .select(`${SHIFT_SELECT}, date`)
+      .gte('date', from)
+      .lte('date', to)
+      .in('status', ['open', 'assigned', 'confirmed'])
+      .order('start_at'),
+    supabase
+      .from('bookings')
+      .select(BOOKING_SELECT)
+      .gte('booking_date', from)
+      .lte('booking_date', to)
+      .in('status', ['confirmed', 'booked']),
+  ])
 
-    const bookingsByDate = new Map<string, MoveBooking[]>()
-    for (const b of (bookingsRes.data ?? []) as RawBookingRow[]) {
-      const date = (b as RawBookingRow & { booking_date: string | null }).booking_date
-      if (!date) continue
-      const list = bookingsByDate.get(date) ?? []
-      list.push(toMoveBooking(b))
-      bookingsByDate.set(date, list)
-    }
-
-    const rawShiftsByDate = new Map<string, RawShiftRow[]>()
-    for (const s of (shiftsRes.data ?? []) as (RawShiftRow & { date: string })[]) {
-      const list = rawShiftsByDate.get(s.date) ?? []
-      list.push(s)
-      rawShiftsByDate.set(s.date, list)
-    }
-
-    // Candidates per day — only days where a second sailing exists (one shift
-    // has no gap to close). Best saving across the whole window wins.
-    const candidates: Array<{ date: string; candidate: MoveCandidate }> = []
-    for (const [date, rawShifts] of rawShiftsByDate) {
-      const candidate = await candidateFromDayRows(supabase, rawShifts, bookingsByDate.get(date) ?? [])
-      if (candidate) candidates.push({ date, candidate })
-    }
-    if (!candidates.length) return 'skipped' // optimal (or unaskable) days are a good outcome
-    candidates.sort((a, b) => b.candidate.estSavingCents - a.candidate.estSavingCents)
-
-    // Most valuable ask whose day is still free (sequential invariant), max
-    // ONE draft per cron run — outreach trickles, it never floods.
-    let picked: { date: string; candidate: MoveCandidate } | null = null
-    for (const c of candidates) {
-      if (!(await openMoveRequestExists(supabase, c.date))) {
-        picked = c
-        break
-      }
-    }
-    if (!picked) return 'skipped'
-
-    // Dry-run gate: no ask exists until FareHarbor confirmed the target slot.
-    const dryRun = await dryRunCandidate(supabase, picked.date, picked.candidate)
-    if (!dryRun) return 'skipped'
-
-    return await craftAndInsertMoveProposal(supabase, picked.date, dryRun.candidate, {
-      reasoningSuffix: `the best opportunity in the next ${OPTIMIZE_HORIZON_DAYS} days; FareHarbor confirmed the ${formatAmsterdamTime(dryRun.candidate.proposedStartAt)} slot`,
-      source: 'ghost/guest-move-drafter:nightly',
-      listingSlug: dryRun.listingSlug,
-      verdict: dryRun.validated.verdict,
-      customerTypeRatePk: dryRun.validated.snap.customerTypeRatePk,
-      snappedFromIso: dryRun.snappedFromIso,
-    })
-  } catch (err) {
-    console.error('[ghost/guest_move] failed:', err instanceof Error ? err.message : err)
-    return 'skipped'
+  const bookingsByDate = new Map<string, MoveBooking[]>()
+  for (const b of (bookingsRes.data ?? []) as RawBookingRow[]) {
+    const date = (b as RawBookingRow & { booking_date: string | null }).booking_date
+    if (!date) continue
+    const list = bookingsByDate.get(date) ?? []
+    list.push(toMoveBooking(b))
+    bookingsByDate.set(date, list)
   }
+  const rawShiftsByDate = new Map<string, RawShiftRow[]>()
+  for (const s of (shiftsRes.data ?? []) as (RawShiftRow & { date: string })[]) {
+    const list = rawShiftsByDate.get(s.date) ?? []
+    list.push(s)
+    rawShiftsByDate.set(s.date, list)
+  }
+
+  const live: PreparedTimeMove[] = []
+  const claimed: { date: string; candidate: MoveCandidate }[] = []
+  for (const [date, rawShifts] of rawShiftsByDate) {
+    const candidate = await candidateFromDayRows(supabase, rawShifts, bookingsByDate.get(date) ?? [])
+    if (!candidate) continue
+    if (await openMoveRequestExists(supabase, date)) {
+      claimed.push({ date, candidate })
+      continue
+    }
+    const dryRun = await dryRunCandidate(supabase, date, candidate)
+    if (!dryRun) continue
+    live.push({
+      date,
+      candidate: dryRun.candidate,
+      draft: ({ source, reasoningSuffix }) =>
+        craftAndInsertMoveProposal(supabase, date, dryRun.candidate, {
+          reasoningSuffix: `${reasoningSuffix}; FareHarbor confirmed the ${formatAmsterdamTime(dryRun.candidate.proposedStartAt)} slot`,
+          source,
+          listingSlug: dryRun.listingSlug,
+          verdict: dryRun.validated.verdict,
+          customerTypeRatePk: dryRun.validated.snap.customerTypeRatePk,
+          snappedFromIso: dryRun.snappedFromIso,
+        }),
+    })
+  }
+  return { live, claimed }
 }
 
 /**
@@ -742,14 +750,25 @@ export async function draftGuestMoveForNewBooking(bookingDate: string): Promise<
     const dryRun = await dryRunCandidate(supabase, bookingDate, candidate)
     if (!dryRun) return 'skipped'
 
-    return await craftAndInsertMoveProposal(supabase, bookingDate, dryRun.candidate, {
-      reasoningSuffix: `a new booking just revealed this opportunity; FareHarbor confirmed the ${formatAmsterdamTime(dryRun.candidate.proposedStartAt)} slot`,
-      source: 'ghost/guest-move-drafter:new-booking',
-      listingSlug: dryRun.listingSlug,
-      verdict: dryRun.validated.verdict,
-      customerTypeRatePk: dryRun.validated.snap.customerTypeRatePk,
-      snappedFromIso: dryRun.snappedFromIso,
+    // The decision step: this time shift competes with any boat swap or
+    // cross-day move touching the same date (move-planner.ts) instead of
+    // claiming the day just because it was found first. Dynamic import: the
+    // planner imports this module, so a static import would be circular.
+    const { draftMovesForDate } = await import('./move-planner')
+    const drafted = await draftMovesForDate(supabase, bookingDate, {
+      date: bookingDate,
+      candidate: dryRun.candidate,
+      draft: ({ source, reasoningSuffix }) =>
+        craftAndInsertMoveProposal(supabase, bookingDate, dryRun.candidate, {
+          reasoningSuffix: `${reasoningSuffix}; FareHarbor confirmed the ${formatAmsterdamTime(dryRun.candidate.proposedStartAt)} slot`,
+          source,
+          listingSlug: dryRun.listingSlug,
+          verdict: dryRun.validated.verdict,
+          customerTypeRatePk: dryRun.validated.snap.customerTypeRatePk,
+          snappedFromIso: dryRun.snappedFromIso,
+        }),
     })
+    return drafted > 0 ? 'drafted' : 'skipped'
   } catch (err) {
     console.error('[ghost/guest_move] new-booking check failed:', err instanceof Error ? err.message : err)
     return 'skipped'

@@ -7,7 +7,10 @@ vi.mock('@/lib/ops/events', () => ({ emitOpsEvent: vi.fn().mockResolvedValue(und
 
 // Each mocked test spies on runAgenticLoop with a *Once implementation — restore
 // between tests so an earlier test's queued mock never leaks into the next one.
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.clearAllMocks()
+})
 
 const swap = (id: string, day: string, saving: number | null): DayOptimizerCandidate => ({
   id,
@@ -166,7 +169,20 @@ describe('resolveDayPlan', () => {
     expect(emitOpsEvent).toHaveBeenCalledWith(expect.objectContaining({
       actorType: 'system',
       source: 'ghost/day-optimizer-agent',
-      payload: expect.objectContaining({ picked: ['b'], used_fallback: true }),
+      payload: expect.objectContaining({ picked: ['b'], used_fallback: 'true', cluster_key: 'a|b' }),
     }))
+  })
+
+  it('reuses a recent decision for the identical conflict instead of asking the agent again', async () => {
+    const spy = vi.spyOn(await import('./agent-runtime'), 'runAgenticLoop')
+    const { emitOpsEvent } = await import('@/lib/ops/events')
+    const decisions = await resolveDayPlan([swap('a', '2026-10-03', 100), swap('b', '2026-10-03', 200)], {
+      ...noRecheck,
+      priorDecision: async key => (key === 'a|b' ? { picked: ['a'], perCandidate: { a: 'Gentler for the guest.', b: 'Would move their date.' } } : null),
+    })
+    expect(spy).not.toHaveBeenCalled()
+    expect(emitOpsEvent).not.toHaveBeenCalled()
+    expect(decisions.get('a')).toEqual({ allowed: true, reasoning: 'Gentler for the guest.' })
+    expect(decisions.get('b')).toEqual({ allowed: false, reasoning: 'Would move their date.' })
   })
 })

@@ -226,10 +226,10 @@ export const GHOST_AGENTS: GhostAgent[] = [
     key: 'day_optimizer',
     name: 'Day optimizer agent',
     description:
-      "Sits inside the operations optimizer: when a same-day boat swap and a cross-day consolidation both compete for the same date, reasons about which is worth actually asking a guest about (savings vs. disruption) instead of whichever the math happened to compute first. Owns no proposal kind of its own — it only decides which of the operations agent's own guest_move_request drafts gets written; a day with just one candidate never reaches it at all.",
+      "Decides which guest move to ask about when several compete for the same day — a time shift, a boat swap and a cross-day move — weighing savings against how disruptive each is for the guest, and picking the best combination across neighbouring days. Runs inside the move planner, which the Optimizer panel, the nightly run and every new booking all go through. Owns no proposal kind of its own; a day with only one move never reaches it.",
     status: 'active',
     kinds: [],
-    trigger: "invoked inline by GET /api/admin/planning/optimizer whenever 2+ live candidates share a day",
+    trigger: 'inline in move-planner.ts whenever 2+ live moves share a day (Optimizer panel, nightly ghost-ops, new booking)',
   },
   {
     key: 'ota',

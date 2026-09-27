@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireCronSecret } from '@/lib/auth/require-cron-secret'
 import { draftCateringOrders, draftCateringUpsells } from '@/lib/ghost/ops-drafters'
 import { draftOpsReview } from '@/lib/ghost/ops-review'
-import { draftGuestMoveRequest, expireStaleGuestMoves, OPTIMIZE_HORIZON_DAYS } from '@/lib/ghost/guest-move-drafter'
+import { expireStaleGuestMoves, OPTIMIZE_HORIZON_DAYS } from '@/lib/ghost/guest-move-drafter'
+import { draftNightlyMove } from '@/lib/ghost/move-planner'
 import { evaluateExpiredProposals } from '@/lib/ghost/evaluate'
 import { syncShiftsForRange } from '@/lib/scheduling/sync-shifts'
 import { runProactiveScheduling } from '@/lib/scheduling/proactive-scheduling'
@@ -47,9 +48,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       expireStaleGuestMoves(),
     ])
 
-    // After the ops review: draft at most ONE guest-move ask for tomorrow
-    // (sequential outreach — see guest-move-drafter.ts hard rules).
-    const guestMove = await draftGuestMoveRequest()
+    // After the ops review: draft at most ONE guest-move ask across the
+    // horizon — the best move the day plan allows, of any kind (time shift,
+    // boat swap, cross-day). See move-planner.ts.
+    const guestMove = await draftNightlyMove(createAdminClient())
 
     return NextResponse.json({
       sync: 'error' in sync ? { error: sync.error } : sync,

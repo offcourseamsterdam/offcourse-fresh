@@ -21,7 +21,7 @@ import { emitOpsEvent } from '@/lib/ops/events'
 
 export interface DayOptimizerCandidate {
   id: string
-  type: 'boat_swap' | 'cross_day'
+  type: 'boat_swap' | 'cross_day' | 'time_move'
   /** Every calendar date this candidate touches — a boat swap touches one
    *  day, a cross-day move touches two (the day it vacates and the day it
    *  joins). Two candidates that share ANY day compete for that day's one
@@ -114,11 +114,25 @@ const SUBMIT_DAY_PLAN = {
   },
 }
 
+/** A previous agent decision for the exact same set of candidates. */
+export interface PriorDecision {
+  picked: string[]
+  perCandidate: Record<string, string | null>
+}
+
 interface RunOpts {
   /** Re-validates one boat_swap candidate live against FareHarbor right now
    *  (candidates were computed moments earlier in the same request, but real
    *  availability can move under it) — the only tool this agent gets. */
   recheckBoatSwap: (candidateId: string) => Promise<{ bookable: boolean; note?: string }>
+  /** Returns a recent agent decision for this exact cluster, to reuse instead
+   *  of asking again. Optional; without it every conflict runs the agent. */
+  priorDecision?: (clusterKey: string) => Promise<PriorDecision | null>
+}
+
+/** Stable identity of a conflict: the sorted candidate ids. */
+export function clusterKey(cluster: DayOptimizerCandidate[]): string {
+  return cluster.map(c => c.id).sort().join('|')
 }
 
 interface DayPlanResult {
@@ -149,7 +163,7 @@ async function runDayOptimizerAgent(cluster: DayOptimizerCandidate[], opts: RunO
     feature: 'ghost_agent_day_optimizer',
     model: CLAUDE_AGENT_MODEL,
     system:
-      "You help Off Course Amsterdam's ops team decide which schedule-saving move to actually ask a guest about, when several compete for the same day(s). Contacting a guest has a real cost even when the move is free — it takes their attention, and asking about two different things the same day looks chaotic. Never pick more than one candidate for the same calendar date. Prefer the higher savings, but weigh it against how disruptive the move is to guests (a cross_day move changes the guest's date; a boat_swap keeps their date and time, only the boat changes, so it's normally the gentler ask). Only re-check a boat_swap if you have a real reason to doubt it's still bookable.",
+      "You help Off Course Amsterdam's ops team decide which schedule-saving move to actually ask a guest about, when several compete for the same day(s). Contacting a guest has a real cost even when the move is free — it takes their attention, and asking about two different things the same day looks chaotic. Never pick more than one candidate for the same calendar date. Prefer the higher savings, but weigh it against how disruptive the move is to guests: a cross_day move changes the guest's date (the biggest ask); a time_move keeps their date and boat but shifts their departure time; a boat_swap keeps their date and time and only changes the boat (normally the gentlest). Choose the combination with the best total, never two moves on the same date. estSavingCents is in euro cents: write every amount in euros (e.g. €180), never dollars. Only re-check a boat_swap if you have a real reason to doubt it's still bookable.",
     prompt: `Candidates competing for the same day(s):\n${JSON.stringify(cluster, null, 2)}\n\nDecide which to pursue and which to skip, then call submit_day_plan.`,
     tools,
     submitTools: [SUBMIT_DAY_PLAN],
@@ -162,9 +176,9 @@ async function runDayOptimizerAgent(cluster: DayOptimizerCandidate[], opts: RunO
 }
 
 /**
- * The route's single entry point: given every LIVE candidate found across
- * same-day boat swaps and cross-day consolidation for the whole scan
- * horizon, decide which ones may actually be drafted.
+ * The move planner's decision step: given every LIVE move candidate (time
+ * shifts, boat swaps, cross-day moves) in the planned range, decide which
+ * ones may actually be drafted.
  *
  * A cluster of exactly one candidate never touches the agent at all — there
  * is no decision to make, so it costs nothing beyond what the route already
@@ -185,11 +199,22 @@ export async function resolveDayPlan(
       continue
     }
 
+    const key = clusterKey(cluster)
+    const prior = opts.priorDecision ? await opts.priorDecision(key) : null
     let plan: DayPlanResult | null = null
-    try {
-      plan = await runDayOptimizerAgent(cluster, opts)
-    } catch (err) {
-      console.error('[day-optimizer-agent] failed, falling back to highest-saving-first:', err instanceof Error ? err.message : err)
+    if (prior) {
+      // Same conflict decided recently: reuse it, don't ask (or pay) again.
+      plan = {
+        picks: prior.picked.map(id => ({ id, why: prior.perCandidate[id] ?? '' })).map(p => ({ ...p, why: p.why || 'Chosen earlier for this same set of moves.' })),
+        skipped: cluster.filter(c => !prior.picked.includes(c.id)).map(c => ({ id: c.id, why: prior.perCandidate[c.id] ?? 'Another move was chosen for this day.' })),
+        reasoning: 'Reused the decision made earlier for this same set of moves.',
+      }
+    } else {
+      try {
+        plan = await runDayOptimizerAgent(cluster, opts)
+      } catch (err) {
+        console.error('[day-optimizer-agent] failed, falling back to highest-saving-first:', err instanceof Error ? err.message : err)
+      }
     }
 
     const byId = new Map(cluster.map(c => [c.id, c]))
@@ -230,20 +255,22 @@ export async function resolveDayPlan(
     }
 
     // The audit trail: why this move and not that one. Only ever written for
-    // a real conflict (a cluster of one never reaches here), and once a pick
-    // is drafted its day is claimed, so the same conflict doesn't re-log on
-    // every panel open.
+    // a real conflict (a cluster of one never reaches here), and not again
+    // when a recent decision was reused — the original entry already says it.
+    if (prior) continue
     await emitOpsEvent({
       eventType: 'recommendation_created',
       actorType: usedFallback ? 'system' : 'agent',
       source: 'ghost/day-optimizer-agent',
       payload: {
         finding_type: 'day_plan',
+        cluster_key: key,
         candidates: cluster.map(c => ({ id: c.id, type: c.type, days: c.daysTouched, est_saving_cents: c.estSavingCents })),
         picked: [...finalPicks],
         reasoning: plan?.reasoning ?? null,
         per_candidate: Object.fromEntries(cluster.map(c => [c.id, decisions.get(c.id)?.reasoning ?? null])),
-        used_fallback: usedFallback,
+        // A string: payload->>used_fallback is what the reuse lookup filters on.
+        used_fallback: usedFallback ? 'true' : 'false',
       },
     })
   }

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { X, Sparkles, Loader2, Send, CheckCircle2, Clock, Merge } from 'lucide-react'
+import { X, Sparkles, Loader2, Send, CheckCircle2, Clock, Merge, Timer, Ghost } from 'lucide-react'
 import { fmtCostEuros } from '@/lib/scheduling/shift-cost'
 import { adminMutate } from '@/hooks/useAdminSave'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
@@ -17,15 +17,18 @@ const KIND_META: Record<OptimizerItem['kind'], { label: string; Icon: typeof Clo
   same_day_gap: { label: 'Paid gap', Icon: Clock, color: 'text-amber-600' },
   same_day_merge: { label: 'Could consolidate boats', Icon: Merge, color: 'text-amber-600' },
   cross_day_consolidation: { label: 'Cross-day consolidation', Icon: Sparkles, color: 'text-violet-500' },
+  same_day_time_move: { label: 'Shift departure time', Icon: Timer, color: 'text-sky-600' },
 }
 
 /**
  * Dedicated Optimizer panel (Beer, 2026-08-23: "a new, dedicated panel" —
  * not folded into /admin/ghost's review page). Every schedule inefficiency:
- * same-day paid gaps (informational only — no ask exists for these yet);
- * same-day boat swaps and cross-day consolidation are both actionable here
- * (approve sends the drafted SMS/email straight away) — same underlying
- * guest_move_request proposal either way, just a different move_type.
+ * same-day paid gaps (informational only); time shifts, boat swaps and
+ * cross-day consolidation are all actionable here (approve sends the drafted
+ * SMS/email straight away) — same underlying guest_move_request proposal,
+ * just a different move_type. A move that wasn't drafted says why: a hard
+ * rule held it back, or the day optimizer agent picked another move for
+ * that day (see src/lib/ghost/move-planner.ts).
  *
  * Takes no date-range props on purpose (Beer, 2026-08-23: "always from the
  * point of view of today, not the past week") — the route itself always
@@ -114,7 +117,7 @@ export function OptimizerPanel({
 
           {items.map((item, i) => {
             const meta = KIND_META[item.kind]
-            const isActionable = item.kind === 'cross_day_consolidation' || item.kind === 'same_day_merge'
+            const isActionable = item.kind !== 'same_day_gap'
             const sent = !!item.proposalId && sentIds.has(item.proposalId)
             const isFocused = !!focusProposalId && item.proposalId === focusProposalId
             return (
@@ -181,8 +184,16 @@ export function OptimizerPanel({
                         {sendingId === item.proposalId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                         {sendingId === item.proposalId ? 'Sending…' : `Approve & send to ${item.guestName ?? 'guest'}`}
                       </button>
+                    ) : item.notAskedReason ? (
+                      <p className="text-xs rounded-lg px-3 py-2 border bg-zinc-50 border-zinc-200 text-zinc-600 flex items-start gap-1.5">
+                        {item.notAskedBy === 'agent' && <Ghost className="w-3.5 h-3.5 mt-0.5 shrink-0 text-violet-400" />}
+                        <span>
+                          <span className="font-semibold">{item.notAskedBy === 'agent' ? 'Ghost picked another move: ' : 'Not asked: '}</span>
+                          {item.notAskedReason}
+                        </span>
+                      </p>
                     ) : (
-                      <p className="text-xs text-zinc-400 italic">Drafting…</p>
+                      <p className="text-xs text-zinc-400 italic">Not drafted yet — the nightly run picks one move at a time.</p>
                     )}
                     {sendError && sendError.id === item.proposalId && (
                       <p className="text-xs text-red-600 mt-1.5">{sendError.message}</p>
