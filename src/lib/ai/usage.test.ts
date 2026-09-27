@@ -12,6 +12,14 @@ describe('computeCostEurCents', () => {
     expect(computeCostEurCents('some-future-model', 1500, 200)).toBeCloseTo(0.69, 2)
   })
 
+  it('prices the models Ghost actually runs, not the Sonnet fallback', () => {
+    // A typical inbox-agent message: ~26k in + ~1k out.
+    // Sonnet 5 ($2/$10): (26000×2 + 1000×10)/1M = $0.062 → 5.70 cents
+    expect(computeCostEurCents('claude-sonnet-5', 26_000, 1_000)).toBeCloseTo(5.7, 1)
+    // Haiku 4.5 ($1/$5): (26000 + 5000)/1M = $0.031 → 2.85 cents
+    expect(computeCostEurCents('claude-haiku-4-5', 26_000, 1_000)).toBeCloseTo(2.85, 1)
+  })
+
   it('returns 0 for zero tokens', () => {
     expect(computeCostEurCents('claude-sonnet-4-20250514', 0, 0)).toBe(0)
   })

@@ -80,9 +80,12 @@ export async function runAgenticLoop(opts: {
   /** Terminal tools — calling one ends the run; their input IS the proposal. */
   submitTools: Omit<AgentTool, 'run'>[]
   maxTurns?: number
+  /** Defaults to the high-volume drafter model; the inbox agent passes CLAUDE_AGENT_MODEL. */
+  model?: string
 }): Promise<AgentRunResult | null> {
   const { feature, system, prompt, tools, submitTools } = opts
   const maxTurns = opts.maxTurns ?? MAX_TURNS
+  const model = opts.model ?? CLAUDE_DRAFTER_MODEL
 
   const claude = getClaude()
   const toolMap = new Map(tools.map(t => [t.name, t]))
@@ -100,7 +103,7 @@ export async function runAgenticLoop(opts: {
     for (let turn = 1; turn <= maxTurns; turn++) {
       const lastTurn = turn === maxTurns
       const response = await claude.messages.create({
-        model: CLAUDE_DRAFTER_MODEL,
+        model,
         max_tokens: 1200,
         system,
         messages,
@@ -111,7 +114,7 @@ export async function runAgenticLoop(opts: {
 
       await recordAiUsage({
         feature,
-        model: CLAUDE_DRAFTER_MODEL,
+        model,
         inputTokens: response.usage.input_tokens,
         outputTokens: response.usage.output_tokens,
       })

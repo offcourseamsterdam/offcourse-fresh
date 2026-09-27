@@ -124,13 +124,17 @@ async function runOne(client: Anthropic, model: string, sc: Scenario, run: numbe
   try {
     for (let turn = 1; turn <= MAX_TURNS; turn++) {
       const last = turn === MAX_TURNS
+      // Opus 5.5 / Fable 5.1 reject forced tool_choice ('any') and always think,
+      // so they get 'auto' plus an instruction, and room for thinking tokens.
+      const noForcedTool = /opus-5-5|fable-5-1/.test(model)
+      if (last && noForcedTool) messages.push({ role: 'user', content: 'This is your last step: call one of the submit tools now.' })
       const res = await client.messages.create({
         model,
-        max_tokens: MAX_TOKENS,
+        max_tokens: noForcedTool ? 4000 : MAX_TOKENS,
         system: OFF_COURSE_SYSTEM_PROMPT,
         messages,
         tools: [...specs, ...submit],
-        tool_choice: last ? { type: 'any' } : { type: 'auto' },
+        tool_choice: last && !noForcedTool ? { type: 'any' } : { type: 'auto' },
       })
       inputTokens += res.usage.input_tokens
       outputTokens += res.usage.output_tokens
@@ -192,11 +196,11 @@ function report(results: RunResult[], scenarios: Scenario[]): string {
     })
     lines.push(`| ${sc.id} | ${sc.expected} | ${cells.join(' | ')} |`)
   }
-  lines.push('', '## Tokens and speed', '', '| Model | Avg input tok | Avg output tok | Avg turns | Avg seconds |', '|---|---|---|---|---|')
+  lines.push('', '## Tokens and speed', '', '| Model | Avg input tok | Avg output tok | Avg turns | Avg tool calls | Avg seconds |', '|---|---|---|---|---|---|')
   for (const m of MODELS) {
     const rs = results.filter(r => r.model === m)
     const avg = (f: (r: RunResult) => number) => (rs.reduce((a, r) => a + f(r), 0) / Math.max(rs.length, 1)).toFixed(0)
-    lines.push(`| ${m} | ${avg(r => r.inputTokens)} | ${avg(r => r.outputTokens)} | ${(rs.reduce((a, r) => a + r.turns, 0) / Math.max(rs.length, 1)).toFixed(1)} | ${(rs.reduce((a, r) => a + r.ms, 0) / Math.max(rs.length, 1) / 1000).toFixed(1)} |`)
+    lines.push(`| ${m} | ${avg(r => r.inputTokens)} | ${avg(r => r.outputTokens)} | ${(rs.reduce((a, r) => a + r.turns, 0) / Math.max(rs.length, 1)).toFixed(1)} | ${(rs.reduce((a, r) => a + r.steps.length, 0) / Math.max(rs.length, 1)).toFixed(1)} | ${(rs.reduce((a, r) => a + r.ms, 0) / Math.max(rs.length, 1) / 1000).toFixed(1)} |`)
   }
   for (const sc of scenarios) {
     lines.push('', `## ${sc.id}: ${sc.title}`, '', `**Customer:** ${sc.world.message}`, '', `**Expected:** ${sc.expected}`)

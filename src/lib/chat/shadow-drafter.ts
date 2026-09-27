@@ -1,4 +1,4 @@
-import { CLAUDE_DRAFTER_MODEL } from '@/lib/ai/clients'
+import { CLAUDE_AGENT_MODEL } from '@/lib/ai/clients'
 import { OFF_COURSE_SYSTEM_PROMPT } from '@/lib/ai/context'
 import { runAgenticLoop } from '@/lib/ghost/agent-runtime'
 import { buildGhostTools } from '@/lib/ghost/tools'
@@ -313,6 +313,7 @@ export async function draftShadowReply(
     // ── Run the agent ────────────────────────────────────────────────────
     const result = await runAgenticLoop({
       feature: 'ghost_agent_inbox',
+      model: CLAUDE_AGENT_MODEL,
       system: OFF_COURSE_SYSTEM_PROMPT,
       // The inbox agent reasons about replies + bookings, not staffing — give it
       // exactly those tools (an explicit allow-list, so a new tool can't leak in).
@@ -374,7 +375,7 @@ export async function draftShadowReply(
         ),
         reasoning: parsed.reasoning,
         status: 'shadow',
-        model: CLAUDE_DRAFTER_MODEL,
+        model: CLAUDE_AGENT_MODEL,
       })
       .select('id')
       .single()

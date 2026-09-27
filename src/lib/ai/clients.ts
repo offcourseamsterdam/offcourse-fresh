@@ -28,6 +28,12 @@ export const CLAUDE_OPUS_MODEL = 'claude-opus-4-6'
 // High-volume Ghost reasoning (inbox/booking/ops drafters, draft-vs-actual
 // comparison). Haiku 4.5 is ~3x cheaper and ample for these internal tasks.
 export const CLAUDE_DRAFTER_MODEL = 'claude-haiku-4-5'
+// The customer-facing inbox agent (reply / booking / reschedule / cancellation
+// proposals). Sonnet 5, not Haiku: in the 2026-09-27 scenario runs
+// (scripts/agent-prototype) Haiku moved a guessed booking when two matched,
+// assigned a captain already out on another boat, and malformed tool calls;
+// Sonnet 5 passed every case. $2/$10 per Mtok, about 2x Haiku.
+export const CLAUDE_AGENT_MODEL = 'claude-sonnet-5'
 export const GEMINI_MODEL = 'gemini-2.5-flash'
 
 /** First text block of a Claude response, trimmed — or '' if there is none. */

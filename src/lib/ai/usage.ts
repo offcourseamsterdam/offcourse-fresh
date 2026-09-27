@@ -23,6 +23,10 @@ import { getClaude, CLAUDE_MODEL } from '@/lib/ai/clients'
 // alerting, not bookkeeping.
 const PRICING_USD_PER_MTOK: Record<string, { input: number; output: number }> = {
   'claude-sonnet-4-20250514': { input: 3, output: 15 },
+  'claude-sonnet-4-6': { input: 3, output: 15 },
+  'claude-sonnet-5': { input: 2, output: 10 },
+  'claude-haiku-4-5': { input: 1, output: 5 },
+  'claude-opus-4-6': { input: 5, output: 25 },
   // Gemini 2.5 Flash — vision (photo descriptions). Estimate for the spend
   // alert, not bookkeeping; update if Google's pricing moves.
   'gemini-2.5-flash': { input: 0.3, output: 2.5 },
