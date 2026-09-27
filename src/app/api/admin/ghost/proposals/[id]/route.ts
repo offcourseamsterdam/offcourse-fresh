@@ -282,7 +282,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           id, booking_uuid, customer_name, customer_email, customer_phone,
           listing_title, booking_date, start_time, end_time, guest_count,
           category, extras_selected, stripe_amount, fareharbor_customer_type_rate_pk,
-          stripe_payment_intent_id, base_amount_cents, discount_amount_cents, status
+          stripe_payment_intent_id, base_amount_cents, discount_amount_cents, status, booking_source
         `)
         .eq('id', correction.booking_id)
         .single()
@@ -314,6 +314,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         // customer was notified of their corrected email when they weren't.
         const emailSent = await sendConfirmationEmail({
           contact: { name: booking.customer_name ?? '', email: newEmail, phone: booking.customer_phone ?? undefined },
+          // Decides whether our VAT-invoice PDF is attached (website/invoice_later only, per
+          // Beer's rule). A legacy row with no source only counts as a website booking when
+          // it was actually paid through Stripe — never guess an invoice onto a comp booking.
+          bookingSource: (booking.booking_source ?? (booking.stripe_payment_intent_id ? 'website' : 'complimentary')) as BookingSource,
           listingTitle: booking.listing_title ?? '',
           date: booking.booking_date ?? '',
           startAt: booking.start_time,

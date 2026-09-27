@@ -147,6 +147,11 @@
     "pageTitle": "Terms of Service",
     "lastUpdated": "Last updated: {date}"
   },
+  "partners": {
+    "pageTitle": "Partners",
+    "pageSubtitle": "Amsterdam folks we know, trust, and love working with.",
+    "visitWebsite": "Visit website"
+  },
   "404": {
     "title": "Looks like you went off course.",
     "subtitle": "This page doesn't exist — but the canals do.",

@@ -11,6 +11,7 @@ import { notifyCateringOrder } from '@/lib/catering/notify'
 import { hasFood, type ExtrasLineItem } from '@/lib/catering/filter'
 import { isWithinCateringAutoSendWindow } from '@/lib/catering/auto-send-cutoff'
 import { sendCateringOrderEmailForBooking } from '@/lib/catering/send-catering-email'
+import { sendPartnerBookingNotification } from '@/lib/partner/send-booking-notification'
 import { extractVat } from '@/lib/extras/calculate'
 import { CRUISE_VAT_RATE, EXTRAS_VAT_RATE } from '@/lib/booking/constants'
 import { reportBookingConversion } from '@/lib/google-ads/report-conversion'
@@ -26,6 +27,7 @@ import { logWebhookEvent } from '@/lib/webhooks/log'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { draftGuestMoveForNewBooking } from '@/lib/ghost/guest-move-drafter'
 import { syncAndScheduleShifts } from '@/lib/scheduling/proactive-scheduling'
+import { markAcpSessionCompleted } from '@/lib/acp/mark-session-completed'
 import type Stripe from 'stripe'
 
 // The payment_intent.succeeded handler may spend up to ~40s retrying a transient
@@ -178,6 +180,7 @@ export async function POST(request: NextRequest) {
         startAt: booking.start_time || null,
         endAt: booking.end_time || null,
         guestCount,
+        bookingSource: 'payment_link',
         amountCents: session.amount_total ?? 0,
         extrasSelected: [],
         fhBookingUuid: booking.booking_uuid ?? undefined,
@@ -259,8 +262,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true })
     }
 
-    // Stripe Invoice payments are handled in invoice.paid below.
-    if ((pi as { invoice?: unknown }).invoice || meta.booking_source === 'stripe_invoice') {
+    // Only our own checkout PIs carry booking metadata (avail_pk is set server-side in
+    // create-intent). A paid Stripe Invoice's PI also lands here, with empty metadata
+    // and no `invoice` field on current API versions — invoice.paid below reconciles
+    // it, so it must never be finalized as a website booking or reported to Google Ads.
+    if (!meta.avail_pk) {
       return NextResponse.json({ received: true })
     }
 
@@ -308,7 +314,7 @@ export async function POST(request: NextRequest) {
     let partnerId: string | null = null
     let commissionAmountCents: number | null = null
     if (meta.campaign_id) {
-      const resolved = await resolveCampaignCommission(supabase, String(meta.campaign_id), serverBaseAmount)
+      const resolved = await resolveCampaignCommission(supabase, String(meta.campaign_id), serverBaseAmount, meta.listing_id || null)
       if (resolved) {
         campaignId = resolved.campaignId
         partnerId = resolved.partnerId
@@ -454,6 +460,11 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // ACP (Agentic Commerce Protocol) checkouts poll their own session status
+    // rather than receiving this webhook directly — flip it to `completed`
+    // now that the booking genuinely exists. No-op for every non-ACP PI.
+    await markAcpSessionCompleted(meta.acp_checkout_session_id, insertedBooking?.id ?? null)
+
     const startTime = formatAmsterdamTime(meta.start_at)
     const endTime = formatAmsterdamTime(meta.end_at)
     // The method actually USED lives on the charge (pi.payment_method_types is the
@@ -529,6 +540,7 @@ export async function POST(request: NextRequest) {
           ? Number(meta.customer_type_rate_pk)
           : null,
         stripePaymentIntentId: pi.id,
+        bookingSource: 'website',
         baseAmountCents: serverBaseAmount || null,
         discountAmountCents: Number(meta.discount_amount_cents ?? 0),
       }),
@@ -541,6 +553,21 @@ export async function POST(request: NextRequest) {
         listingId: meta.listing_id ?? null,
       }),
       ...(shouldAutoSendCateringNow && insertedBookingId ? [sendCateringOrderEmailForBooking(insertedBookingId)] : []),
+      ...(partnerId && commissionAmountCents != null && commissionAmountCents > 0 ? [
+        sendPartnerBookingNotification({
+          partnerId,
+          listingTitle: meta.listing_title ?? '',
+          bookingDate: meta.date ?? '',
+          startTime: meta.start_at || null,
+          endTime: meta.end_at || null,
+          guestCount,
+          customerTypeName: meta.customer_type_name || null,
+          baseAmountCents: serverBaseAmount,
+          commissionAmountCents,
+          campaignId,
+          supabase,
+        }),
+      ] : []),
     ])
   }
 

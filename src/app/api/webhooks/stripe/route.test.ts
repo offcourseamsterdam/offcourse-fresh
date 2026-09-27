@@ -179,6 +179,29 @@ describe('stripe webhook — payment_intent.succeeded (single finalizer)', () =>
     expect(syncShiftsForRange).toHaveBeenCalledWith(expect.anything(), '2026-06-20', '2026-06-20')
   })
 
+  it('flips the matching ACP checkout session to completed when the PI carries acp_checkout_session_id', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded({ metadata: { ...PI_META, acp_checkout_session_id: 'cs_test123' } }))
+    h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
+
+    await POST(mockReq())
+
+    expect(h.update).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'completed', booking_id: 'booking-row-id' }),
+      'id',
+      'cs_test123',
+    )
+  })
+
+  it('does not touch acp_checkout_sessions for a regular (non-ACP) website booking', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded())
+    h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
+
+    await POST(mockReq())
+
+    const acpCalls = h.update.mock.calls.filter(([, col]) => col === 'id')
+    expect(acpCalls).toHaveLength(0)
+  })
+
   it('stores the resolved Stripe fee on the booking, best-effort', async () => {
     h.constructEvent.mockReturnValue(makePiSucceeded())
     h.fhCreateBookingIdempotent.mockResolvedValue({ uuid: 'fh-new' })
@@ -278,6 +301,20 @@ describe('stripe webhook — payment_intent.succeeded (single finalizer)', () =>
     expect(res.status).toBe(200)
     expect(h.insert).not.toHaveBeenCalled()
     expect(h.fhCreateBookingIdempotent).not.toHaveBeenCalled()
+  })
+
+  // Regression (2026-09-15): a paid Stripe Invoice's PI has empty metadata and no
+  // `invoice` field on current API versions. It must not be finalized as a website
+  // booking (invoice.paid reconciles it) or reported to Google Ads.
+  it('ignores Stripe Invoice payments (PI without booking metadata)', async () => {
+    h.constructEvent.mockReturnValue(makePiSucceeded({ metadata: {}, description: 'Payment for Invoice' }))
+
+    const res = await POST(mockReq())
+
+    expect(res.status).toBe(200)
+    expect(h.insert).not.toHaveBeenCalled()
+    expect(h.fhCreateBookingIdempotent).not.toHaveBeenCalled()
+    expect(h.reportBookingConversion).not.toHaveBeenCalled()
   })
 
   it('attributes campaign/partner + computes commission from PI metadata', async () => {

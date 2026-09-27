@@ -24,7 +24,7 @@ export async function computeBtwDashboard(supabase: SupabaseClient): Promise<Btw
   const { data: bookingRows, error: bookingsErr } = await supabase
     .from('bookings')
     .select('created_at, stripe_amount, base_vat_amount_cents, extras_vat_amount_cents, total_vat_amount_cents, stripe_fee_cents')
-    .or('stripe_payment_intent_id.not.is.null,and(booking_source.eq.stripe_invoice,payment_status.eq.paid)')
+    .or('stripe_payment_intent_id.not.is.null,and(stripe_invoice_id.not.is.null,payment_status.eq.paid)')
     .neq('payment_status', 'refunded')
   if (bookingsErr) throw new Error(bookingsErr.message)
 

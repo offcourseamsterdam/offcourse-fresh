@@ -63,6 +63,7 @@ async function main() {
 
   // ── 1. Booking confirmation ──────────────────────────────────────────────────
   await sendConfirmationEmail({
+    bookingSource: 'website',
     contact: { name: 'Beer Zoomer', email: TO },
     listingTitle: 'Private Hidden Gems Cruise',
     departureLocation: 'Brouwersgracht 29, Amsterdam',

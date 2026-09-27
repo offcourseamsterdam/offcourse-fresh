@@ -157,4 +157,20 @@ describe('generateInvoicePdf — never throws on hostile input', () => {
     const reloaded = await PDFDocument.load(bytes)
     expect(reloaded.getPageCount()).toBeGreaterThan(1)
   })
+
+  it('renders an invoice with company details, refund lines, and partial refund note', async () => {
+    const bytes = await generateInvoicePdf(baseInput({
+      companyName: 'Hip voor de Heb B.V.',
+      companyAddress: 'Steenweg 12, 3511 JP Utrecht, Netherlands',
+      companyKvk: '81961421',
+      companyVat: 'NL862285562B01',
+      extrasSelected: [{ name: 'Bites Box Large (6 guests)', amount_cents: 6500, vatRate: 9 }],
+      refundLines: [{ desc: 'Refund cancelled catering (pyr_123)', amount_cents: 2750, vatRate: 9 }],
+      paymentStatus: 'partially_refunded',
+      stripeRefundId: 'pyr_123',
+    }))
+    expect(bytes).toBeInstanceOf(Uint8Array)
+    expect(Array.from(bytes.slice(0, 4))).toEqual([0x25, 0x50, 0x44, 0x46])
+  })
 })
+

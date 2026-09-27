@@ -1,48 +1,65 @@
-# "Invoice later" admin booking (pick a partner directly)
+# "Invoice later" — book now, bill with a Stripe Invoice
 
 ## What was built
 
-A new admin-only booking source, **Invoice later**, that lets staff create a booking billed to an existing partner without any payment now. It grew out of discovering that "Partner invoice" — the only partner-billing option previously visible in the admin wizard — is actually the *public* Webikeamsterdam QR-checkout flow (a customer types a rotating code; see [partner-invoice-auth-gate-fix.md](partner-invoice-auth-gate-fix.md)) and was never meant for admin use. "Partner invoice" is now hidden from the admin wizard's source picker; "Invoice later" replaces it for the admin use case.
+**Invoice later** is the single admin booking source for anything paid by invoice. Staff books the cruise in the admin wizard and a real Stripe Invoice (iDEAL, card, or bank transfer to a Virtual IBAN, due 14 days after the tour) is emailed straight away to the business entered in step 3.
 
-Flow: pick "Invoice later" as the booking source → go through the normal listing/slot/guest steps → at the confirm step, pick an existing partner from a dropdown and confirm (or edit) a suggested amount to invoice them. No Stripe charge happens. The booking is created in FareHarbor immediately; the invoice itself is handled later (e.g. via Snelstart), same as the existing partner-invoice accounting model.
+It replaces two older sources that meant the same thing:
+
+- `stripe_invoice` ("Stripe Invoice (Factuur)") — sent a Stripe invoice at booking time. Removed; it was never used in production.
+- The old `invoice_later` — only recorded "a partner owes us", and a Stripe invoice had to be sent afterwards by hand.
+
+A **partner is optional**. Without one, the full amount is invoiced. With one (e.g. Amsterdam Boats B.V.), their commission (excl. 9% BTW) is suggested, is editable, and appears on the invoice as a "Partnerkorting" line.
+
+Sending the invoice afterwards ("Factuur sturen via Stripe" on the booking row) still exists, but **only** for `invoice_later` bookings. It's the retry path when sending at booking time fails. Complimentary, platform (GYG, Withlocals, …) and website bookings can't get a Stripe invoice.
+
+Our own VAT-invoice PDF on the confirmation email is a different thing. It's only attached to `website` bookings the guest actually paid through our checkout — never to complimentary or any other source.
 
 ## Key files
 
-- [`src/lib/constants.ts`](../../src/lib/constants.ts) — `BOOKING_SOURCES` gained `invoice_later` and an `adminSelectable` flag; `partner_invoice` is now `adminSelectable: false`.
-- [`src/lib/booking/invoice-suggestion.ts`](../../src/lib/booking/invoice-suggestion.ts) — pure helpers: `computeInvoiceSuggestion(baseAmountCents, campaign)` (base minus commission when an active % campaign exists, else full amount) and `commissionFromInvoiceAmount(base, invoiceAmount)` (the inverse, for storing `commission_amount_cents`). Unit tested.
-- [`src/app/api/admin/booking-flow/invoice-suggestion/route.ts`](../../src/app/api/admin/booking-flow/invoice-suggestion/route.ts) — `GET ?partnerId&listingId&baseAmountCents`, looks up an active campaign for that partner+listing and returns the suggestion. Admin-only.
-- [`src/app/api/admin/booking-flow/book/route.ts`](../../src/app/api/admin/booking-flow/book/route.ts) — `resolveInvoiceLaterContext()` validates the partner exists and derives `commission_amount_cents` from the admin's confirmed invoice amount; wired into `resolveAttribution()` as a 4th, highest-priority attribution source; `saveToSupabase` sets `payment_status: 'partner_invoice_pending'` for this source (same as the QR flow — same real-world state).
-- [`src/app/[locale]/admin/fareharbor/page.tsx`](../../src/app/[locale]/admin/fareharbor/page.tsx) — partner dropdown + editable invoice-amount field in the step-5 confirm panel; fetches the partner list once, fetches the suggestion once a partner + listing are both known, never overwrites an amount the admin already typed.
-- [`src/app/api/admin/finance/partners-summary/route.ts`](../../src/app/api/admin/finance/partners-summary/route.ts), [`src/app/api/admin/partners/[id]/settlement-summary/route.ts`](../../src/app/api/admin/partners/[id]/settlement-summary/route.ts), [`src/app/partners/[token]/page.tsx`](../../src/app/partners/[token]/page.tsx) — the `directionFor()` fallback (used when a booking has no linked campaign) now also treats `invoice_later` as the "partner owes us" direction, same as `partner_invoice`. Without this fix, invoice_later bookings without a campaign would have been miscategorized as "we owe partner" in quarterly settlements — including on the partner's own portal page.
+- [`src/lib/stripe/issue-booking-invoice.ts`](../../src/lib/stripe/issue-booking-invoice.ts) — `issueStripeInvoiceForBooking(bookingRowId, billing, options)`: the one path that creates, sends and links a Stripe Invoice for a booking row. Guards: row exists, not cancelled, source is `invoice_later`, not paid, no invoice linked yet.
+- [`src/app/api/admin/booking-flow/book/route.ts`](../../src/app/api/admin/booking-flow/book/route.ts) — validates business details before booking FareHarbor, resolves the optional partner commission (`resolveInvoiceLaterContext`), saves the row, then calls `issueStripeInvoiceForBooking`. Returns `invoice` and `invoiceError`.
+- [`src/app/api/admin/bookings/[id]/send-invoice/route.ts`](../../src/app/api/admin/bookings/[id]/send-invoice/route.ts) — thin admin wrapper around the same function (retroactive send / retry).
+- [`src/lib/booking/invoice-eligibility.ts`](../../src/lib/booking/invoice-eligibility.ts) — `shouldAttachVatInvoicePdf()`: the single rule for attaching our PDF to a confirmation email.
+- [`src/lib/booking/send-confirmation-email.ts`](../../src/lib/booking/send-confirmation-email.ts) — `bookingSource` is now a required input, so every caller must say what kind of booking it is.
+- [`src/app/api/webhooks/stripe/route.ts`](../../src/app/api/webhooks/stripe/route.ts) — `payment_intent.succeeded` ignores PIs without booking metadata (`avail_pk`). A paid invoice's PI has none; `invoice.paid` reconciles it.
+- [`src/app/[locale]/admin/fareharbor/page.tsx`](../../src/app/[locale]/admin/fareharbor/page.tsx) + [`GuestInfoStep.tsx`](../../src/components/admin/fareharbor/GuestInfoStep.tsx) — business details in step 3; optional partner, commission, and an invoice-total preview in step 5; a warning if the booking succeeded but the invoice didn't send.
+- Finance: [`vat-stripe-summary`](../../src/app/api/admin/finance/vat-stripe-summary/route.ts) and [`btw-dashboard-calculator.ts`](../../src/lib/finance/btw-dashboard-calculator.ts) count paid invoices by `stripe_invoice_id`, not by booking source.
 
 ## Architecture decisions
 
-**Reuses the existing partner-invoice accounting model rather than inventing a new one.** `commission_amount_cents` already means "the partner's cut" everywhere in this codebase (settlement summaries, the partner portal, finance dashboards). Rather than add a parallel `invoice_amount_cents` concept, the admin-facing "amount to invoice" is converted to/from that existing column: `commission_amount_cents = base_amount_cents - invoiceAmountCents`. Every existing report that already understands `commission_amount_cents` works correctly for `invoice_later` bookings with zero changes beyond the direction fallback above.
+**Row first, invoice second.** The booking row is saved before the Stripe invoice is created, and the invoice is issued through the same function the retry button uses. If Stripe fails, the FareHarbor booking and row stay, ops gets a Slack DM, and the admin retries from the row. The old `stripe_invoice` flow cancelled the FareHarbor booking instead, which lost the boat slot over a Stripe hiccup.
 
-**Suggestion is fetched, not enforced.** If an active percentage campaign exists for the chosen partner + listing, the suggested amount reflects it (same commission math as the QR flow). If not, the suggestion defaults to the full base amount. Either way the admin can freely override the number before confirming — there's no server-side requirement that a campaign exist (unlike the public `partner_invoice` flow, which does require one).
+**One money model for the partner deduction.** `commission_amount_cents` for these bookings is the partner's cut **excl. 9% BTW**, computed over the cruise price only (drinks and city tax pass through at 100%). The invoice deducts `round(commission × 1.09)`. The wizard preview, the booking route and the invoice use that same formula. (The old "amount to invoice" field stored a gross difference in the same column, which disagreed with the partner-rate path.)
 
-**No code required, unlike `partner_invoice`.** The admin picks the partner directly from a dropdown populated from `GET /api/admin/partners`. This is intentionally a different trust model from the QR flow: an authenticated admin session is the authorization here (this source is never exempted from the `requireAdmin()` gate), where the QR flow instead trusts a valid rotating code from an unauthenticated customer.
+**Why the PDF rule lives inside the email function.** A guard at one caller already existed and still let a PDF through — from an older deploy, and the ai-ops branch has another caller (booking corrections) with no guard at all. Making `bookingSource` required and deciding inside `sendConfirmationEmail` covers every present and future caller.
+
+**payment_status lifecycle:** `partner_invoice_pending` (row saved, invoice not sent yet) → `stripe_invoice_sent` → `paid` (via `invoice.paid`). No new status values were introduced.
 
 ## How it works
 
 ```
-Admin wizard, step 5 (source = invoice_later)
-  → GET /api/admin/partners                          (populate dropdown, once)
-  → partner selected + listing/rate known
-  → GET /api/admin/booking-flow/invoice-suggestion    (pre-fill suggested amount)
-  → admin confirms or edits the amount
+Admin wizard (source = invoice_later)
+  step 3: business details (search / KVK / VIES)
+  step 5: optional partner → GET /api/admin/booking-flow/invoice-suggestion?…&netBase=true
+          → editable commission excl. BTW → invoice-total preview
   → POST /api/admin/booking-flow/book
-      → resolveInvoiceLaterContext: partner exists? → commission = base - invoiceAmount
-      → resolveAttribution: invoiceLaterContext wins (highest priority)
-      → saveToSupabase: partner_id, commission_amount_cents, payment_status='partner_invoice_pending'
+      → requireAdmin → billing details complete?        (400 before touching FareHarbor)
+      → resolveInvoiceLaterContext → FareHarbor validate + create
+      → saveToSupabase (partner_invoice_pending, company fields, stripe_amount 0)
+      → issueStripeInvoiceForBooking(row id)
+          → Stripe customer → invoice lines (cruise 9%, extras 21%, city tax 0%, −Partnerkorting)
+          → finalize + email → row: stripe_invoice_id, stripe_invoice_sent, amount due, OC-number
+      → confirmation email (no PDF) + Slack
+Later: invoice.paid webhook → payment_status 'paid', real PI + Stripe fee
 ```
 
 ## How to extend
 
-If a future admin flow needs a different billing model (e.g. a fixed platform fee instead of a base-minus-commission split), extend `computeInvoiceSuggestion`/`commissionFromInvoiceAmount` rather than introducing a new column — every downstream report already reads `commission_amount_cents`.
+Anything that needs to bill a booking by Stripe Invoice should call `issueStripeInvoiceForBooking`, not the lower-level `createAndSendStripeInvoice`. If another source ever needs Stripe invoices, change `STRIPE_INVOICE_BOOKING_SOURCE` deliberately and update the "Factuur sturen via Stripe" button gating in `BookingDetailRow.tsx` to match.
 
 ## Dependencies
 
-- Depends on `GET /api/admin/partners` (pre-existing) for the dropdown list.
-- Depends on the `campaigns` table's `percentage_value`/`investment_type` (pre-existing) for the suggestion lookup — same source as the QR flow's commission math.
-- Feeds the same quarterly settlement reports as `partner_invoice` ([`partner-invoiced-listings.md`](partner-invoiced-listings.md)).
+- `GET /api/admin/partners` and `GET /api/admin/booking-flow/invoice-suggestion` (campaigns / partner `commission_rate`).
+- Stripe Invoicing (`src/lib/stripe/invoicing.ts`), `allocate_invoice_number` RPC, `business_profiles`.
+- Feeds partner settlement reports (`directionFor()` treats `invoice_later` as "partner owes us") and the BTW dashboards.

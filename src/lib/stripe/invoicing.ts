@@ -237,7 +237,7 @@ export async function createAndSendStripeInvoice(input: CreateInvoiceInput): Pro
       booking_date: input.bookingDate,
       tour_date_formatted: tourDateFormatted,
       invoice_number: input.invoiceNumber ?? '',
-      booking_source: 'stripe_invoice',
+      booking_source: 'invoice_later',
       guest_count: String(guestCount),
     },
     description: `Off Course Amsterdam — ${input.listingTitle} (Tourdatum: ${tourDateFormatted})`,

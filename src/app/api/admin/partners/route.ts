@@ -34,6 +34,7 @@ export async function GET() {
       .from('bookings')
       .select('partner_id, commission_amount_cents')
       .not('partner_id', 'is', null)
+      .eq('status', 'confirmed') // cancelled bookings earn no commission
 
     const commissionByPartner: Record<string, number> = {}
     for (const row of totals ?? []) {

@@ -28,9 +28,7 @@ function SortIcon({ field, sortField, sortDir }: { field: SortField; sortField: 
 }
 
 function InvoiceStatusIndicator({ booking }: { booking: AdminBooking }) {
-  const isInvoiceBooking = 
-    booking.booking_source === 'stripe_invoice' || 
-    booking.booking_source === 'invoice_later' || 
+  const isInvoiceBooking =     booking.booking_source === 'invoice_later' || 
     Boolean(booking.stripe_invoice_id)
 
   if (!isInvoiceBooking || booking.status === 'cancelled') return null
@@ -189,7 +187,7 @@ export default function BookingsPage() {
 
   const confirmed = bookings?.filter(b => b.status === 'confirmed' || b.status === 'booked').length ?? 0
   const totalRevenue = bookings
-    ?.filter(b => (b.status === 'confirmed' || b.status === 'booked') && (b.booking_source === 'website' || b.booking_source === 'stripe_invoice'))
+    ?.filter(b => (b.status === 'confirmed' || b.status === 'booked') && (b.booking_source === 'website' || (b.booking_source === 'invoice_later' && !!b.stripe_invoice_id)))
     .reduce((sum, b) => sum + (b.stripe_amount ?? 0), 0) ?? 0
   const needsReconciliationCount = bookings?.filter(b => b.payment_status === 'needs_reconciliation').length ?? 0
 
@@ -422,7 +420,7 @@ export default function BookingsPage() {
                         {b.guest_count ?? '—'}
                       </td>
                       <td className="px-4 py-3 text-zinc-900 font-medium whitespace-nowrap">
-                        {b.booking_source === 'website' || b.booking_source === 'payment_link' || b.booking_source === 'phone_walkin' || b.booking_source === 'stripe_invoice' || b.booking_source === 'stripe_recovery' || !b.booking_source
+                        {b.booking_source === 'website' || b.booking_source === 'payment_link' || b.booking_source === 'phone_walkin' || b.booking_source === 'invoice_later' || b.booking_source === 'stripe_recovery' || !b.booking_source
                           ? fmtAdminAmountRounded(b.stripe_amount)
                           : (b.deposit_amount_cents != null ? `€${(b.deposit_amount_cents / 100).toFixed(0)}` : '—')
                         }

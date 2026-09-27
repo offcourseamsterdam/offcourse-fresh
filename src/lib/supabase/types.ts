@@ -14,6 +14,63 @@ export type Database = {
   }
   public: {
     Tables: {
+      acp_checkout_sessions: {
+        Row: {
+          avail_pk: number | null
+          booking_id: string | null
+          buyer: Json | null
+          created_at: string
+          currency: string
+          date: string
+          expires_at: string
+          id: string
+          line_items: Json
+          messages: Json
+          payment_intent_id: string | null
+          slug: string
+          status: string
+          time: string
+          total_cents: number | null
+          updated_at: string
+        }
+        Insert: {
+          avail_pk?: number | null
+          booking_id?: string | null
+          buyer?: Json | null
+          created_at?: string
+          currency?: string
+          date: string
+          expires_at?: string
+          id: string
+          line_items?: Json
+          messages?: Json
+          payment_intent_id?: string | null
+          slug: string
+          status?: string
+          time: string
+          total_cents?: number | null
+          updated_at?: string
+        }
+        Update: {
+          avail_pk?: number | null
+          booking_id?: string | null
+          buyer?: Json | null
+          created_at?: string
+          currency?: string
+          date?: string
+          expires_at?: string
+          id?: string
+          line_items?: Json
+          messages?: Json
+          payment_intent_id?: string | null
+          slug?: string
+          status?: string
+          time?: string
+          total_cents?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       admin_event_log: {
         Row: {
           context: Json | null

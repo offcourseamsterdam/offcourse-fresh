@@ -1,0 +1,248 @@
+openapi: 3.0.3
+info:
+  title: Off Course Amsterdam — Public API
+  description: >
+    Read-only, unauthenticated JSON endpoints for cruise listings and live
+    availability. Returns the same public data already shown on
+    offcourseamsterdam.com — no API key, no booking or payment actions.
+    Human docs: /api/v1/docs. Catalog entry point (RFC 9727):
+    /.well-known/api-catalog.
+  version: "1.0.0"
+  contact:
+    name: Off Course Amsterdam
+    url: https://offcourseamsterdam.com
+servers:
+  - url: https://offcourseamsterdam.com
+paths:
+  /api/v1/cruises:
+    get:
+      operationId: listCruises
+      summary: List every publicly bookable cruise
+      parameters:
+        - $ref: '#/components/parameters/locale'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  data:
+                    type: object
+                    properties:
+                      cruises:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/CruiseSummary'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/v1/cruises/{slug}:
+    get:
+      operationId: getCruise
+      summary: Full detail for one cruise
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+          example: book-curacao-boat-tour-amsterdam
+        - $ref: '#/components/parameters/locale'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  data:
+                    $ref: '#/components/schemas/CruiseDetail'
+        '404':
+          description: No published cruise with this slug
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/search/slots:
+    get:
+      operationId: getAvailability
+      summary: Live availability for one cruise on a given date
+      parameters:
+        - name: slug
+          in: query
+          required: true
+          schema: { type: string }
+          example: book-curacao-boat-tour-amsterdam
+        - name: date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+          example: "2026-07-04"
+        - name: guests
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, default: 2 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  data:
+                    type: object
+                    properties:
+                      slug: { type: string }
+                      date: { type: string, format: date }
+                      guests: { type: integer }
+                      reasonCode:
+                        type: string
+                        nullable: true
+                        enum: [TOO_LARGE, ALL_FULL, NO_AVAILABILITIES, PAST_DATE, API_ERROR, LISTING_NOT_FOUND, null]
+                        description: Set when slots is empty, explaining why.
+                      slots:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/AvailabilitySlot'
+        '400':
+          description: Missing or invalid slug/date
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No published cruise with this slug
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/v1/status:
+    get:
+      operationId: getStatus
+      summary: API health check
+      responses:
+        '200':
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok] }
+        '503':
+          description: A dependency (database) is unreachable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [error] }
+
+components:
+  parameters:
+    locale:
+      name: locale
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [en, nl, de, fr, es, pt, zh]
+        default: en
+  responses:
+    RateLimited:
+      description: Too many requests (60/min per IP)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        ok: { type: boolean, example: false }
+        error: { type: string }
+    CruiseSummary:
+      type: object
+      properties:
+        slug: { type: string }
+        title: { type: string }
+        tagline: { type: string, nullable: true }
+        category: { type: string, nullable: true, example: private }
+        price_display: { type: string, nullable: true }
+        starting_price: { type: number, nullable: true }
+        duration_display: { type: string, nullable: true }
+        max_guests: { type: integer, nullable: true }
+        url: { type: string, format: uri }
+    CruiseDetail:
+      type: object
+      properties:
+        slug: { type: string }
+        title: { type: string }
+        tagline: { type: string, nullable: true }
+        description:
+          type: string
+          nullable: true
+          description: Markdown-formatted (converted from the admin editor's rich text).
+        price_display: { type: string, nullable: true }
+        starting_price: { type: number, nullable: true }
+        duration_display: { type: string, nullable: true }
+        max_guests: { type: integer, nullable: true }
+        category: { type: string, nullable: true }
+        departure_location: { type: string, nullable: true }
+        hero_image_url: { type: string, nullable: true, format: uri }
+        highlights:
+          type: array
+          items: { type: string }
+        faqs:
+          type: array
+          items:
+            type: object
+            properties:
+              question: { type: string }
+              answer: { type: string }
+        rates:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string, example: "Diana 1.5h" }
+              price_cents: { type: integer, nullable: true }
+              price_display: { type: string, example: "€310" }
+        url: { type: string, format: uri }
+    AvailabilitySlot:
+      type: object
+      properties:
+        pk: { type: integer }
+        startTime: { type: string, example: "14:00" }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+        headline: { type: string }
+        capacity: { type: integer, description: Max across customer-type rates; ≥1 means bookable. }
+        callToBook:
+          type: boolean
+          description: True when the slot is past the booking cutoff with no prior bookings.
+        customerTypes:
+          type: array
+          items:
+            type: object
+            properties:
+              pk: { type: integer }
+              customerTypePk: { type: integer }
+              name: { type: string, example: "Adult (13+)" }
+              boatId: { type: string, enum: [diana, curacao] }
+              minimumParty: { type: integer }
+              maximumParty: { type: integer }
+              priceCents: { type: integer }
+              durationMinutes: { type: integer }

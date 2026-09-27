@@ -44,6 +44,7 @@ export async function Footer() {
                 { href: '/cruises', label: 'Our Cruises' },
                 { href: '/crew', label: 'About the Crew' },
                 { href: '/merch', label: 'Merch' },
+                { href: '/partners', label: 'Partners' },
               ].map((l) => (
                 <li key={l.href}>
                   <Link href={l.href}

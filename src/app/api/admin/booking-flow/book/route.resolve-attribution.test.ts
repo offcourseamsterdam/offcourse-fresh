@@ -124,7 +124,6 @@ describe('resolveAttribution', () => {
         partnerId: 'partner-later',
         partnerName: 'Later Partner',
         commissionAmountCents: 999,
-        invoiceAmountCents: 5000,
       },
       baseAmountCents: 10000,
     })
@@ -132,6 +131,17 @@ describe('resolveAttribution', () => {
     // route.ts's own comment: "No campaign lookup here" for invoice-later).
     expect(result.partnerId).toBe('partner-later')
     expect(result.commissionAmountCents).toBe(999)
+  })
+
+  it('Layer 4: an invoice-later booking WITHOUT a partner leaves attribution untouched', async () => {
+    const result = await resolveAttribution({
+      attrCookie: null,
+      promoCodeId: null,
+      partnerInvoiceContext: null,
+      invoiceLaterContext: { partnerId: null, partnerName: null, commissionAmountCents: 0 },
+      baseAmountCents: 10000,
+    })
+    expect(result).toEqual({ campaignId: null, partnerId: null, commissionAmountCents: null })
   })
 
   it('returns all-null when nothing is provided', async () => {
