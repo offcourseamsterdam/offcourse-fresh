@@ -84,6 +84,11 @@ describe('compactAvailability group-size filter', () => {
     expect(options(10, [{ ...diana, maximumParty: 12 }, curacao])).toEqual(['Curaçao - 1.5 Hours'])
   })
 
+  // Private rates are one unit per boat, so FareHarbor reports max party 1.
+  it('still offers private boats whose FareHarbor maximumParty is 1', () => {
+    expect(options(6, [{ ...diana, maximumParty: 1 }, { ...curacao, maximumParty: 1 }])).toEqual(['Diana - 1.5 Hours', 'Curaçao - 1.5 Hours'])
+  })
+
   it('drops a boat that is already booked on that departure', () => {
     expect(options(4, [{ ...diana, totalCapacity: 0 }, curacao])).toEqual(['Curaçao - 1.5 Hours'])
   })

@@ -24,20 +24,23 @@ const DATE_SCHEMA = {
 } as const
 
 /**
- * A customer type (boat + duration) only counts as an option when it can
- * actually carry the whole group and still has capacity. The search keeps a
- * departure if ANY boat fits the group, but each departure still lists every
- * boat's rates, so without this filter a 10-person request surfaced
+ * A customer type (boat + duration) only counts as an option when its boat
+ * can actually carry the whole group and it still has capacity. The search
+ * keeps a departure if ANY boat fits the group, but each departure still lists
+ * every boat's rates, so without this filter a 10-person request surfaced
  * "Diana - 1.5 Hours" (max 8) as the cheapest option, because Curaçao is what
- * kept the slot alive. Checks both FareHarbor's own maximumParty and the
- * boat's physical capacity: either one alone would be a single point of trust.
+ * kept the slot alive.
+ *
+ * Uses the boat's physical capacity, NOT FareHarbor's maximumParty: private
+ * rates are sold as one unit per boat, so FareHarbor reports min/max party
+ * 1/1 for them (see resolveBookingSlot in dry-run.ts). Comparing that against
+ * the group size would hide every private boat for any group over one.
  */
 export function fitsGroup(
-  ct: { boatId?: 'diana' | 'curacao'; maximumParty?: number; totalCapacity?: number },
+  ct: { boatId?: 'diana' | 'curacao'; totalCapacity?: number },
   guests: number,
 ): boolean {
   if (ct.totalCapacity !== undefined && ct.totalCapacity < 1) return false
-  if (ct.maximumParty !== undefined && ct.maximumParty < guests) return false
   const boatMax = BOATS.find(b => b.id === ct.boatId)?.maxGuests
   if (boatMax !== undefined && boatMax < guests) return false
   return true
