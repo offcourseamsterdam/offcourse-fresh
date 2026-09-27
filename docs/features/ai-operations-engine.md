@@ -398,3 +398,41 @@ Never `#bookings`.
 **Re-running the scenarios** (real Claude, fully mocked world, ~$1.50):
 `AGENT_PROTOTYPE=1 AGENT_PROTOTYPE_MODELS=claude-sonnet-5 npx vitest run scripts/agent-prototype`.
 Last run on the built agent: 24/24.
+
+## Day optimizer agent — built 2026-09-27
+
+**The problem it fixes.** The Planning Optimizer route finds three kinds of schedule
+waste — same-day gaps, same-day boat swaps, cross-day consolidation — with plain
+deterministic code (unchanged, still `computeDayFacts` / `findCrossDayConsolidationCandidates`).
+But when a same-day swap and a cross-day move both touched the same date, whichever
+was computed first in the route just won — not because it was the better move, only
+because of array order. Two same-day boat swaps on the same date didn't even check
+each other.
+
+**What changed.** `src/lib/ghost/day-optimizer-agent.ts` sits between "the math found
+these candidates" and "actually draft an ask". Every candidate the route finds is now
+*prepared* (all the same eligibility checks as before — notice window, opt-outs, no
+existing proposal, a real bookable slot) but not drafted yet. `clusterCandidates`
+groups them by shared days (union-find); a cluster of exactly one never touches an
+LLM at all — auto-allowed in code, same cost as before. Only a genuine conflict (2+
+candidates sharing a day) invokes a real Sonnet-5 tool-use loop (`runAgenticLoop`,
+same infra the reschedule agent uses) with one tool — `recheck_boat_swap`, a live
+FareHarbor re-validate — and one terminal action, `submit_day_plan`.
+
+**The agent owns no proposal kind of its own.** Its only output is which candidate
+id(s) to actually draft; the real draft still runs through the unchanged
+`draftBoatSwap` / `draftCrossDayConsolidation` functions and the existing
+`guest_move_request` approve/send flow. A safety net in code (`resolveDayPlan`)
+re-derives the final picks regardless of what the agent said: at most one per shared
+day, unknown ids dropped, and if the agent call itself errors, falls back to the
+highest-saving non-conflicting candidate rather than drafting nothing.
+
+**Tests:** `day-optimizer-agent.test.ts` (clustering, the fallback, the dedupe safety
+net — all pure, no network) plus three new cases in `optimizer/route.test.ts`
+(candidates handed to the agent together; the singleton fast path never invokes it;
+falls back on an agent error). All 18 pre-existing + new route tests and all 3,903
+project tests pass unchanged.
+
+**Not yet done:** no UI surfaces `agentReasoning` on a skipped candidate — it's in the
+API response (`OptimizerItem.agentReasoning`) but the Planning overlay doesn't render
+it yet.

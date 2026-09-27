@@ -341,6 +341,21 @@ export const RULEBOOK: RulebookEntry[] = [
     promptShared: false,
     dataInjected: ['the matched booking (get_customer_bookings by phone/email, with name_on_booking)', 'the new slot verdict from check_booking', 'shifts, captains and availability from get_schedule'],
   },
+  {
+    kind: 'guest_move_request',
+    agentKey: 'day_optimizer',
+    title: 'Day optimizer agent (arbitrates which guest_move_request gets drafted)',
+    hardRules: [
+      { rule: 'Never touches a day with only one live candidate — auto-allowed in code, no LLM call, no added cost for the common case.', enforcedIn: 'src/lib/ghost/day-optimizer-agent.ts (resolveDayPlan, singleton clusters)' },
+      { rule: "At most one drafted candidate per calendar date, enforced AGAIN in code after the agent answers — an agent picking two candidates that share a day has its second pick silently dropped, never trusted blindly.", enforcedIn: 'day-optimizer-agent.ts (the safety-net dedupe pass in resolveDayPlan)' },
+      { rule: 'An id the agent invents that was never in the cluster it was given is ignored, not acted on.', enforcedIn: 'day-optimizer-agent.ts (byId.get(id) lookup, unknown ids drop silently)' },
+      { rule: 'If the agent call itself errors, falls back to the highest-saving non-conflicting candidate rather than drafting nothing — a model outage never means the whole optimizer goes silent.', enforcedIn: 'day-optimizer-agent.ts (resolveDayPlan try/catch → pickBySavingsFallback)' },
+      { rule: "Owns no create/execute path of its own — the actual draft still runs through the SAME draftBoatSwap/draftCrossDayConsolidation functions and the SAME guest_move_request approve flow as before this agent existed.", enforcedIn: 'src/app/api/admin/planning/optimizer/route.ts (finalize())' },
+    ],
+    prompt: 'Emitted by runDayOptimizerAgent via its terminal submit_day_plan tool — see day-optimizer-agent.ts.',
+    promptShared: false,
+    dataInjected: ['every live candidate sharing a day (type, days touched, summary, estimated saving)', 'a live FareHarbor re-check for boat_swap candidates only, via recheck_boat_swap'],
+  },
 ]
 
 /** Entries for one agent, in registry order. */

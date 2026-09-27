@@ -223,6 +223,15 @@ export const GHOST_AGENTS: GhostAgent[] = [
     trigger: 'daily ops cron (15:00 UTC)',
   },
   {
+    key: 'day_optimizer',
+    name: 'Day optimizer agent',
+    description:
+      "Sits inside the operations optimizer: when a same-day boat swap and a cross-day consolidation both compete for the same date, reasons about which is worth actually asking a guest about (savings vs. disruption) instead of whichever the math happened to compute first. Owns no proposal kind of its own — it only decides which of the operations agent's own guest_move_request drafts gets written; a day with just one candidate never reaches it at all.",
+    status: 'active',
+    kinds: [],
+    trigger: "invoked inline by GET /api/admin/planning/optimizer whenever 2+ live candidates share a day",
+  },
+  {
     key: 'ota',
     name: 'OTA agent',
     description:

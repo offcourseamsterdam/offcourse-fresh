@@ -5,6 +5,7 @@ const h = vi.hoisted(() => ({
   draftCrossDayConsolidation: vi.fn(),
   validateBoatSwap: vi.fn().mockResolvedValue(null),
   draftBoatSwap: vi.fn(),
+  runAgenticLoop: vi.fn(),
   // Defaults to "plenty of notice" — real wall-clock time keeps advancing
   // past hardcoded fixture dates, so this route's tests pin it explicitly
   // rather than relying on the fixture dates always being >18h in the real
@@ -15,6 +16,11 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/auth/require-admin', () => ({ requireAdmin: h.requireAdmin }))
 vi.mock('@/lib/ghost/cross-day-move-drafter', () => ({ draftCrossDayConsolidation: h.draftCrossDayConsolidation }))
 vi.mock('@/lib/ghost/boat-swap-drafter', () => ({ validateBoatSwap: h.validateBoatSwap, draftBoatSwap: h.draftBoatSwap }))
+// The day optimizer agent's own reasoning (clustering, the safety-net dedupe,
+// the singleton auto-allow fast path) is the REAL code here, unit-tested on
+// its own in day-optimizer-agent.test.ts — only its one network-touching
+// call is mocked, so a singleton candidate never even reaches this mock.
+vi.mock('@/lib/ghost/agent-runtime', () => ({ runAgenticLoop: h.runAgenticLoop }))
 vi.mock('@/lib/ghost/rulebook', async importOriginal => {
   const actual = await importOriginal<typeof import('@/lib/ghost/rulebook')>()
   return { ...actual, hasEnoughNotice: h.hasEnoughNotice }
@@ -601,5 +607,121 @@ describe('GET /api/admin/planning/optimizer', () => {
 
       expect(insertedOpsEvents).toHaveLength(0)
     })
+  })
+})
+
+// A same-day boat swap and a cross-day consolidation candidate that both
+// touch 2026-08-25 — the day optimizer agent's whole reason to exist. Priya's
+// Diana shift (09:00-10:30, small party) can swap onto Curaçao's day without
+// clashing with Paige's 15:00-16:30 departure; Sophie's booking a day later
+// can join that same Curaçao departure instead. Only one of the two should
+// ever actually get drafted.
+const PRIYA_SHIFT = {
+  id: 'priya-shift',
+  date: '2026-08-25',
+  start_at: '2026-08-25T09:00:00Z',
+  end_at: '2026-08-25T10:30:00Z',
+  status: 'open',
+  staff_id: null,
+  booking_id: null,
+  fareharbor_availability_pk: 2001,
+  boat_id: 'boat-2',
+  staff: null,
+  // Capacity 3 blocks the OTHER direction (Curaçao's 4-guest Paige booking
+  // can't fit Diana here) — so exactly one merge candidate arises, not two.
+  boats: { name: 'Diana', max_capacity: 3 },
+}
+const PRIYA_BOOKING = {
+  ...PAIGE_BOOKING,
+  id: 'priya',
+  category: 'private',
+  customer_name: 'Priya Nair',
+  customer_email: 'priya@example.com',
+  listing_id: 'listing-priya',
+  listing_title: 'Private Morning Cruise',
+  guest_count: 2,
+  fareharbor_availability_pk: 2001,
+  start_time: '2026-08-25T09:00:00Z',
+  end_time: '2026-08-25T10:30:00Z',
+}
+const VALIDATED_SWAP = { slot: { availPk: 9999, customerTypeRatePk: 8888, optionName: 'Curaçao' }, verdict: { is_bookable: true } }
+
+describe('the day optimizer agent — same-day boat swap vs. cross-day move on the same date', () => {
+  it("reasons over both candidates together and only drafts the one it picks", async () => {
+    h.validateBoatSwap.mockResolvedValue(VALIDATED_SWAP)
+    h.draftBoatSwap.mockResolvedValue('drafted')
+    h.runAgenticLoop.mockResolvedValue({
+      submission: {
+        picks: [{ id: 'boat_swap:priya', why: 'Same saving, keeps everyone on their booked date.' }],
+        skipped: [{ id: 'cross_day:sophie', why: 'The boat swap covers the same saving with less disruption.' }],
+        reasoning: 'Picked the boat swap over the cross-day move.',
+      },
+      submittedVia: 'submit_day_plan',
+      steps: [],
+      turns: 1,
+    })
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeSupabase({
+        shifts: [PAIGE_SHIFT, SOPHIE_SHIFT, PRIYA_SHIFT],
+        bookings: [PAIGE_BOOKING, SOPHIE_BOOKING, PRIYA_BOOKING],
+        listingSlug: 'private-morning-cruise',
+      }) as never,
+    )
+
+    const res = await GET(makeReq('2026-08-25', '2026-08-26'))
+    const body = await res.json()
+
+    // Both candidates were handed to the agent in ONE call, not decided one at a time.
+    expect(h.runAgenticLoop).toHaveBeenCalledTimes(1)
+    const promptArg = h.runAgenticLoop.mock.calls[0][0].prompt as string
+    expect(promptArg).toContain('boat_swap:priya')
+    expect(promptArg).toContain('cross_day:sophie')
+
+    const boatSwap = body.data.items.find((i: { kind: string; bookingId?: string }) => i.kind === 'same_day_merge' && i.bookingId === 'priya')
+    const crossDay = body.data.items.find((i: { kind: string }) => i.kind === 'cross_day_consolidation')
+
+    expect(h.draftBoatSwap).toHaveBeenCalledTimes(1)
+    expect(boatSwap.agentReasoning).toBeUndefined()
+
+    expect(h.draftCrossDayConsolidation).not.toHaveBeenCalled()
+    expect(crossDay.proposalId).toBeUndefined()
+    expect(crossDay.agentReasoning).toBe('The boat swap covers the same saving with less disruption.')
+  })
+
+  it('never invokes the agent when candidates do not compete for a shared day — the common case stays free', async () => {
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeSupabase({ shifts: [PAIGE_SHIFT, SOPHIE_SHIFT], bookings: [PAIGE_BOOKING, SOPHIE_BOOKING] }) as never,
+    )
+
+    const res = await GET(makeReq('2026-08-25', '2026-08-26'))
+    const body = await res.json()
+
+    expect(h.runAgenticLoop).not.toHaveBeenCalled()
+    // Drafting still happens exactly as before — the singleton fast path
+    // doesn't lose the underlying candidate.
+    const crossDay = body.data.items.find((i: { kind: string }) => i.kind === 'cross_day_consolidation')
+    expect(h.draftCrossDayConsolidation).toHaveBeenCalledTimes(1)
+    expect(crossDay.agentReasoning).toBeUndefined()
+  })
+
+  it("falls back to the highest-saving candidate if the agent errors, rather than drafting nothing", async () => {
+    h.validateBoatSwap.mockResolvedValue(VALIDATED_SWAP)
+    h.draftBoatSwap.mockResolvedValue('drafted')
+    h.runAgenticLoop.mockRejectedValue(new Error('API unavailable'))
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeSupabase({
+        shifts: [PAIGE_SHIFT, SOPHIE_SHIFT, PRIYA_SHIFT],
+        bookings: [PAIGE_BOOKING, SOPHIE_BOOKING, PRIYA_BOOKING],
+        listingSlug: 'private-morning-cruise',
+      }) as never,
+    )
+
+    const res = await GET(makeReq('2026-08-25', '2026-08-26'))
+    const body = await res.json()
+
+    // One of the two still gets drafted (whichever has the higher estSavingCents), never both, never neither.
+    const drafted = [h.draftBoatSwap.mock.calls.length, h.draftCrossDayConsolidation.mock.calls.length]
+    expect(drafted.reduce((a, b) => a + b, 0)).toBe(1)
+    void body
   })
 })

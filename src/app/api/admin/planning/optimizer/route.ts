@@ -11,6 +11,7 @@ import {
 import { draftCrossDayConsolidation } from '@/lib/ghost/cross-day-move-drafter'
 import { validateBoatSwap, draftBoatSwap, type BoatSwapBooking } from '@/lib/ghost/boat-swap-drafter'
 import { openMoveRequestExists } from '@/lib/ghost/guest-move-drafter'
+import { resolveDayPlan, type DayOptimizerCandidate } from '@/lib/ghost/day-optimizer-agent'
 import { OPTIMIZE_HORIZON_DAYS, hasEnoughNotice } from '@/lib/ghost/rulebook'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { deriveOptimizerState, type OptimizerDisplayState, type ProposalOutcome } from '@/lib/scheduling/optimizer-status'
@@ -315,7 +316,17 @@ export interface OptimizerItem {
   /** Start of the idle span a `same_day_gap` covers, for the ghost outline. */
   gapStartAt?: string
   gapEndAt?: string
+  /** Set only when the day optimizer agent chose a different candidate for a day this one also touches — explains why no ask was sent for this one. */
+  agentReasoning?: string
 }
+
+/** A candidate mid-preparation: either already resolved to a plain finding
+ *  (nothing to draft, or draft-worthiness could not be established), or
+ *  ready to draft pending resolveDayPlan's decision (`live` + a deferred
+ *  `finish` that actually drafts and returns the final item). */
+type PreparedItem =
+  | { item: OptimizerItem }
+  | { item: OptimizerItem; live: DayOptimizerCandidate; finish: () => Promise<OptimizerItem> }
 
 export async function GET(_request: NextRequest) {
   const denied = await requireAdmin()
@@ -407,14 +418,18 @@ export async function GET(_request: NextRequest) {
       allMergeCandidates.push(...facts.mergeCandidates)
     }
 
-    // ── Boat swap (new). ── Each merge candidate is dry-run validated against
-    // FareHarbor (same time, other boat) and, when bookable, drafted as an
-    // actual ask — same eager-draft-with-idempotency-check shape as cross-day
-    // below. A candidate that can't be resolved to a contactable booking, or
-    // has no real slot to swap onto, still surfaces as a read-only finding
-    // (unchanged from before) rather than being dropped.
-    const boatSwapItems = await Promise.all(
-      allMergeCandidates.map(async (merge): Promise<OptimizerItem> => {
+    // ── Boat swap + cross-day consolidation, prepared but NOT drafted yet. ──
+    // Each candidate is checked for real (dry-run validated against
+    // FareHarbor for a swap; every existing eligibility gate for either
+    // kind) but stops short of actually drafting an ask — that only happens
+    // once resolveDayPlan below has decided which candidates competing for
+    // the same day(s) are worth pursuing. A candidate that fails its own
+    // checks (no notice, opted out, no real slot, already settled) is
+    // finished here as a plain read-only finding, same as before.
+    const boatSwapRecheck = new Map<string, () => Promise<{ bookable: boolean; note?: string }>>()
+
+    const boatSwapPrepared = await Promise.all(
+      allMergeCandidates.map(async (merge): Promise<PreparedItem> => {
         const base: OptimizerItem = {
           kind: 'same_day_merge',
           date: merge.date,
@@ -426,7 +441,7 @@ export async function GET(_request: NextRequest) {
 
         const rawShift = rawShifts.find(s => s.id === merge.shiftId)
         const booking = rawShift ? bookingsForShift(rawShift, bookingsById, bookingsByAvailPk)[0] : null
-        if (!booking?.listing_id) return base // nothing to validate a swap against — read-only finding only
+        if (!booking?.listing_id) return { item: base } // nothing to validate a swap against — read-only finding only
         const anchored: OptimizerItem = { ...base, bookingId: booking.id }
 
         // A move that already ran its course (guest declined, rebooked, expired)
@@ -434,44 +449,51 @@ export async function GET(_request: NextRequest) {
         // checked before the notice gate, since a finished move's runway is moot.
         const settled = await findAnyBoatSwapProposal(supabase, booking.id)
         if (settled && !OPEN_PROPOSAL_STATUSES.includes(settled.status)) {
-          return withProposal(anchored, settled, booking.customer_name)
+          return { item: withProposal(anchored, settled, booking.customer_name) }
         }
 
         // Not enough runway to bother the guest — still worth reporting the
         // finding, just never contacted about it.
-        if (!hasEnoughNotice(booking.start_time)) return anchored
+        if (!hasEnoughNotice(booking.start_time)) return { item: anchored }
 
         const existing = await findOpenBoatSwapProposal(supabase, booking.id)
-        if (existing) return withProposal(anchored, existing, booking.customer_name)
-        // Sequential, across every move type (Beer, 2026-08-23): a day
-        // already mid-conversation with one guest never gets a second,
-        // different guest asked to rework it too.
-        if (await openMoveRequestExists(supabase, merge.date)) return base
+        if (existing) return { item: withProposal(anchored, existing, booking.customer_name) }
+        // A day an EARLIER request already put an ask on (not a same-request
+        // conflict — those are the day optimizer agent's job below) never
+        // gets a second, different guest asked to rework it too.
+        if (await openMoveRequestExists(supabase, merge.date)) return { item: anchored }
 
         const { data: listing } = await supabase.from('cruise_listings').select('slug').eq('id', booking.listing_id).single()
-        if (!listing?.slug) return base
+        if (!listing?.slug) return { item: anchored }
 
         const swapBooking = toBoatSwapBooking(booking)
         const validated = await validateBoatSwap(merge, swapBooking, listing.slug)
-        if (!validated) return base
+        if (!validated) return { item: anchored }
 
-        const outcome = await draftBoatSwap(supabase, merge, swapBooking, validated, { source: 'admin/planning/optimizer', listingSlug: listing.slug })
-        if (outcome !== 'drafted') return base
+        const id = `boat_swap:${booking.id}`
+        boatSwapRecheck.set(id, async () => {
+          const revalidated = await validateBoatSwap(merge, swapBooking, listing.slug)
+          return revalidated ? { bookable: true } : { bookable: false, note: 'No longer bookable at this exact time.' }
+        })
 
-        const drafted = await findOpenBoatSwapProposal(supabase, booking.id)
-        const payload = (drafted?.payload ?? {}) as { sms_text?: string; email_subject?: string; email_body?: string }
-        return { ...base, proposalId: drafted?.id, guestName: swapBooking.customerName, smsText: payload.sms_text, emailSubject: payload.email_subject, emailBody: payload.email_body }
+        return {
+          item: anchored,
+          live: { id, type: 'boat_swap', daysTouched: [merge.date], summary: base.summary, estSavingCents: merge.estSavingCents },
+          finish: async () => {
+            const outcome = await draftBoatSwap(supabase, merge, swapBooking, validated, { source: 'admin/planning/optimizer', listingSlug: listing.slug })
+            if (outcome !== 'drafted') return anchored
+            const drafted = await findOpenBoatSwapProposal(supabase, booking.id)
+            const payload = (drafted?.payload ?? {}) as { sms_text?: string; email_subject?: string; email_body?: string }
+            return { ...anchored, proposalId: drafted?.id, guestName: swapBooking.customerName, smsText: payload.sms_text, emailSubject: payload.email_subject, emailBody: payload.email_body }
+          },
+        }
       }),
     )
-    items.push(...boatSwapItems)
 
-    // Persist same-day findings — see the file doc comment on why. Runs after
-    // gaps AND boat swaps are both in `items` (not inline per-gap) so the
-    // finding's own already-built OptimizerItem is what's recorded, rather
-    // than reconstructing the same fields twice.
-    await Promise.all(items.map(item => recordSameDayFinding(supabase, item)))
-
-    // ── Cross-day consolidation (new). ──
+    // ── Cross-day consolidation candidates — computed here (moved up from
+    // after the same-day findings persist step) so the day optimizer agent
+    // below can weigh a boat swap against a cross-day move for the SAME day
+    // together. Nothing about the computation itself changed. ──
     const consolidationShifts: ConsolidationShift[] = rawShifts.map(s => ({
       shiftId: s.id,
       boat: s.boats?.name ?? '?',
@@ -487,8 +509,8 @@ export async function GET(_request: NextRequest) {
     }
     const candidates = findCrossDayConsolidationCandidates(consolidationShifts, boatCapacityByBoat)
 
-    const crossDayItems = await Promise.all(
-      candidates.map(async (c): Promise<OptimizerItem> => {
+    const crossDayPrepared = await Promise.all(
+      candidates.map(async (c): Promise<PreparedItem> => {
         const base: OptimizerItem = {
           kind: 'cross_day_consolidation',
           date: c.fromDate,
@@ -504,31 +526,63 @@ export async function GET(_request: NextRequest) {
         // checked before the notice gate, since a finished move's runway is moot.
         const settled = await findAnyCrossDayProposal(supabase, c.booking.id)
         if (settled && !OPEN_PROPOSAL_STATUSES.includes(settled.status)) {
-          return withProposal(base, settled, c.booking.customerName)
+          return { item: withProposal(base, settled, c.booking.customerName) }
         }
 
         // Not enough runway to bother the guest — still worth reporting the
         // finding, just never contacted about it.
-        if (!hasEnoughNotice(c.booking.startTime)) return base
+        if (!hasEnoughNotice(c.booking.startTime)) return { item: base }
 
         const existing = await findOpenCrossDayProposal(supabase, c.booking.id)
-        const drafted =
-          existing ??
-          (await (async () => {
-            // Sequential, across every move type (Beer, 2026-08-23): a day
-            // already mid-conversation with one guest never gets a second,
-            // different guest asked to rework it too — check BOTH days this
-            // move touches, not just the one being vacated.
-            const dayClaimed =
-              (await openMoveRequestExists(supabase, c.fromDate)) || (await openMoveRequestExists(supabase, c.toDate))
-            if (dayClaimed) return null
-            const outcome = await draftCrossDayConsolidation(supabase, c, { source: 'admin/planning/optimizer' })
-            return outcome === 'drafted' ? await findOpenCrossDayProposal(supabase, c.booking.id) : null
-          })())
+        if (existing) return { item: withProposal(base, existing, c.booking.customerName) }
 
-        return withProposal(base, drafted, c.booking.customerName)
+        // Checks BOTH days this move touches, not just the one being vacated —
+        // an EARLIER request's ask on either day blocks this one, same as above.
+        const dayClaimed =
+          (await openMoveRequestExists(supabase, c.fromDate)) || (await openMoveRequestExists(supabase, c.toDate))
+        if (dayClaimed) return { item: base }
+
+        return {
+          item: base,
+          live: { id: `cross_day:${c.booking.id}`, type: 'cross_day', daysTouched: [c.fromDate, c.toDate], summary: base.summary, estSavingCents: c.estSavingCents },
+          finish: async () => {
+            const outcome = await draftCrossDayConsolidation(supabase, c, { source: 'admin/planning/optimizer' })
+            const drafted = outcome === 'drafted' ? await findOpenCrossDayProposal(supabase, c.booking.id) : null
+            return withProposal(base, drafted, c.booking.customerName)
+          },
+        }
       }),
     )
+
+    // ── The day optimizer agent: decide which of the candidates competing
+    // for the same day(s) actually get drafted. A day with only one live
+    // candidate never touches this — resolveDayPlan auto-allows it, no AI
+    // call, no added cost. Only a genuine overlap (e.g. a same-day boat swap
+    // AND a cross-day move both touching the same date) reasons about it. ──
+    const isLive = (p: PreparedItem): p is Extract<PreparedItem, { live: DayOptimizerCandidate }> => 'live' in p
+    const livePrepared = [...boatSwapPrepared, ...crossDayPrepared].filter(isLive)
+    const plan = await resolveDayPlan(
+      livePrepared.map(p => p.live),
+      { recheckBoatSwap: async id => (await boatSwapRecheck.get(id)?.()) ?? { bookable: false, note: 'Could not re-check.' } },
+    )
+
+    async function finalize(p: PreparedItem): Promise<OptimizerItem> {
+      if (!isLive(p)) return p.item
+      const decision = plan.get(p.live.id)
+      if (decision?.allowed) return p.finish()
+      return { ...p.item, agentReasoning: decision?.reasoning }
+    }
+
+    const boatSwapItems = await Promise.all(boatSwapPrepared.map(finalize))
+    items.push(...boatSwapItems)
+
+    // Persist same-day findings — see the file doc comment on why. Runs after
+    // gaps AND boat swaps are both in `items` (not inline per-gap) so the
+    // finding's own already-built OptimizerItem is what's recorded, rather
+    // than reconstructing the same fields twice.
+    await Promise.all(items.map(item => recordSameDayFinding(supabase, item)))
+
+    const crossDayItems = await Promise.all(crossDayPrepared.map(finalize))
     items.push(...crossDayItems)
 
     return apiOk({ items, from, to })
