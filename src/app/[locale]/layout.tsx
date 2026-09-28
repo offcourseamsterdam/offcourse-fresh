@@ -55,7 +55,9 @@ export default async function LocaleLayout({ children, params }: Props) {
           <TrackingScript />
           <WebMcpTools />
           {children}
-          <ChatWidget />
+          {/* Hidden until it's ready to go live (Beer, 2026-09-28). Turn it on by
+              setting NEXT_PUBLIC_CHAT_WIDGET_ENABLED=true in Vercel and redeploying. */}
+          {process.env.NEXT_PUBLIC_CHAT_WIDGET_ENABLED === 'true' && <ChatWidget />}
         </SearchProvider>
       </AuthProvider>
     </NextIntlClientProvider>
