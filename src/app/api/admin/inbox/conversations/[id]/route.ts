@@ -150,9 +150,15 @@ async function loadFinanceDocuments(
     )
     .eq('message.conversation_id', conversationId)
     .order('created_at', { ascending: false })
-    .limit(10)
+    .limit(40)
 
-  let docs = (data ?? []).map(({ message: _message, ...doc }) => doc)
+  // Link-only rows (a login page, an unfetched link) must never push real
+  // invoices out of view: up to 10 real documents, plus at most 3 link cards.
+  const all = (data ?? []).map(({ message: _message, ...doc }) => doc)
+  const isLinkOnly = (d: { kind: string; file_path: string | null }) => d.kind === 'invoice_link' && !d.file_path
+  const keepReal = new Set(all.filter(d => !isLinkOnly(d)).slice(0, 10))
+  const keepLinks = new Set(all.filter(isLinkOnly).slice(0, 3))
+  let docs = all.filter(d => keepReal.has(d) || keepLinks.has(d))
   if (docs.length === 0) return []
 
   const invNumbers = docs
