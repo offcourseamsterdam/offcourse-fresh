@@ -4,6 +4,7 @@ import { OFF_COURSE_SYSTEM_PROMPT, LOCALES, type Locale } from './context'
 import { flattenKeywords } from './seo-keywords'
 import { CLAUDE_MODEL, GEMINI_MODEL, getClaude, getGemini } from './clients'
 import { fetchImageAsBase64 } from './describe-image'
+import { recordAiUsage } from './usage'
 import { buildSeoFilename } from '../images/seo-filename'
 
 export type QualityIssue = 'blurry' | 'too_dark' | 'too_bright' | 'low_resolution' | 'bad_composition' | 'watermarked'
@@ -94,6 +95,7 @@ async function generateImageMetadataFromBase64(
 
   const translations = await translateWithClaude({
     claude,
+    meter: !opts.claude,
     altEn: visionResult.en_alt,
     captionEn: visionResult.en_caption,
   })
@@ -171,6 +173,8 @@ async function describeWithGemini(args: {
 
 async function translateWithClaude(args: {
   claude: Anthropic
+  /** false when a test injected its own client — keeps test calls out of the spend log. */
+  meter: boolean
   altEn: string
   captionEn: string
 }): Promise<ClaudeTranslations> {
@@ -196,6 +200,10 @@ async function translateWithClaude(args: {
     system: OFF_COURSE_SYSTEM_PROMPT,
     messages: [{ role: 'user', content: userPrompt }],
   })
+
+  if (args.meter) {
+    await recordAiUsage({ feature: 'image_metadata_translate', model: CLAUDE_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens })
+  }
 
   const text = message.content[0]?.type === 'text' ? message.content[0].text : ''
   const parsed = parseJsonStrict<ClaudeTranslations>(text, 'claude')

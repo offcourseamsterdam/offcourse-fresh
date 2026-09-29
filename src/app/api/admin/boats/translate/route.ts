@@ -3,6 +3,7 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { getClaude, CLAUDE_MODEL } from '@/lib/ai/clients'
 import { OFF_COURSE_SYSTEM_PROMPT } from '@/lib/ai/context'
+import { recordAiUsage } from '@/lib/ai/usage'
 
 /**
  * POST /api/admin/boats/translate
@@ -40,6 +41,8 @@ Return ONLY a JSON object with keys: nl, de, fr, es, pt, zh. No markdown, no exp
       system: OFF_COURSE_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: prompt }],
     })
+
+    await recordAiUsage({ feature: 'boat_translate', model: CLAUDE_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens })
 
     const raw = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
 

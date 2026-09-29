@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { getClaude, firstText, CLAUDE_MODEL } from '@/lib/ai/clients'
+import { recordAiUsage } from '@/lib/ai/usage'
 import { OFF_COURSE_SYSTEM_PROMPT } from '@/lib/ai/context'
 import { PLATFORM_LABEL } from './platform-labels'
 
@@ -84,6 +85,11 @@ export async function draftReviewReply(input: DraftReplyInput, options: DraftRep
     system: `${OFF_COURSE_SYSTEM_PROMPT}\n\n${REPLY_VOICE_RULES}`,
     messages: [{ role: 'user', content: userPrompt }],
   })
+
+  // Injected clients are tests — never write test calls into the real spend log.
+  if (!options.claude) {
+    await recordAiUsage({ feature: 'review_reply_draft', model: CLAUDE_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens })
+  }
 
   const reply = firstText(message)
   if (!reply) throw new Error('Claude returned an empty reply')

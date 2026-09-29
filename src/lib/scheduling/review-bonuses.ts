@@ -1,6 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getClaude, firstText, CLAUDE_DRAFTER_MODEL } from '@/lib/ai/clients'
+import { recordAiUsage } from '@/lib/ai/usage'
 import { postDm } from '@/lib/slack/bot'
 
 type AdminClient = ReturnType<typeof createAdminClient>
@@ -112,6 +113,9 @@ export async function extractMentionedNames(text: string, options: ExtractNamesO
       'Return ONLY a JSON array of strings, e.g. ["Joshua"] or ["Sophie","Tariq"]. If no person is named, return []. Return nothing except the JSON array.',
     messages: [{ role: 'user', content: text }],
   })
+  if (!options.claude) {
+    await recordAiUsage({ feature: 'review_name_extract', model: CLAUDE_DRAFTER_MODEL, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens })
+  }
 
   try {
     const parsed: unknown = JSON.parse(firstText(response))

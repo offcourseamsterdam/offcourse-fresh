@@ -1,6 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { postToChannel } from '@/lib/slack/bot'
+import { postSlackOps } from '@/lib/slack/send-notification'
 import { getClaude, CLAUDE_MODEL } from '@/lib/ai/clients'
 
 /**
@@ -35,8 +35,6 @@ const DEFAULT_PRICING = { input: 3, output: 15 }
 const USD_TO_EUR = 0.92
 
 const ALERT_STEP_EUR = 5
-// Beer's Slack DM — override via env if the target ever changes.
-const ALERT_SLACK_CHANNEL = process.env.AI_COST_ALERT_SLACK_ID ?? 'D08PRAXD13R'
 
 export interface AiUsageInput {
   feature: string // 'ghost_reply_draft' | 'ghost_schedule_day' | 'ghost_catering_order' | 'chat_translate' | …
@@ -88,8 +86,9 @@ export async function recordAiUsage({ feature, model, inputTokens, outputTokens 
       // already alerted it.
       const { error } = await supabase.from('ai_usage_alerts').insert({ threshold_eur: threshold })
       if (!error) {
-        await postToChannel(
-          ALERT_SLACK_CHANNEL,
+        // Beer's DM via SLACK_ALERT_DM_CHANNEL (a user ID). The old hardcoded D… channel
+        // id belonged to a different Slack app, so these alerts never arrived.
+        await postSlackOps(
           `🤖💶 AI spend just passed €${threshold} (total ≈ €${(totalCents / 100).toFixed(2)}). Latest: ${feature}. Check /admin/ghost for the breakdown.`,
         )
       }

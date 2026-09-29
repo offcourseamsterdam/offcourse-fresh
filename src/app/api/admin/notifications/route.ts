@@ -28,7 +28,7 @@ export async function GET() {
     SLACK_SIGNING_SECRET: !!process.env.SLACK_SIGNING_SECRET,
     SLACK_MAINTENANCE_CHANNEL_ID: !!process.env.SLACK_MAINTENANCE_CHANNEL_ID,
     SLACK_OPS_CHANNEL: process.env.SLACK_OPS_CHANNEL || '#bookings',
-    AI_COST_ALERT_SLACK_ID: process.env.AI_COST_ALERT_SLACK_ID || 'D08PRAXD13R (default)',
+    AI_COST_ALERT_SLACK_ID: process.env.SLACK_ALERT_DM_CHANNEL || 'U08PRAX8A07 (default)',
   }
 
   return NextResponse.json({

@@ -310,7 +310,7 @@ export const NOTIFICATION_CATALOG: NotificationEntry[] = [
     direction: 'outbound',
     category: 'ai',
     recipientType: 'dm',
-    channel: "Beer's Slack DM (AI_COST_ALERT_SLACK_ID)",
+    channel: "Beer's Slack DM (SLACK_ALERT_DM_CHANNEL)",
     severity: 'info',
   },
 

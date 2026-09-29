@@ -3,6 +3,7 @@ import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, Json } from '@/lib/supabase/types'
 import { getClaude, CLAUDE_MODEL, CLAUDE_OPUS_MODEL, CLAUDE_DRAFTER_MODEL, firstText } from '@/lib/ai/clients'
+import { recordAiUsage } from '@/lib/ai/usage'
 import { gatherCfoDataInputs } from './gather-data'
 import { CFO_SYSTEM_PROMPT, formatCfoPrompt } from './prompt'
 import type { CfoAnalysisResult } from './types'
@@ -288,6 +289,7 @@ export async function runCfoAnalysis(
       messages: [{ role: 'user', content: promptText }],
     })
 
+    await recordAiUsage({ feature: 'finance_cfo_analysis', model: selectedModel, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens })
     const rawJson = firstText(response)
     const cleaned = cleanJsonResponse(rawJson)
     const parsed = JSON.parse(cleaned) as CfoAnalysisResult
@@ -318,6 +320,7 @@ export async function runCfoAnalysis(
         system: CFO_SYSTEM_PROMPT,
         messages: [{ role: 'user', content: promptText }],
       })
+      await recordAiUsage({ feature: 'finance_cfo_analysis', model: CLAUDE_DRAFTER_MODEL, inputTokens: fallbackResponse.usage.input_tokens, outputTokens: fallbackResponse.usage.output_tokens })
       const rawJson = firstText(fallbackResponse)
       const cleaned = cleanJsonResponse(rawJson)
       const parsed = JSON.parse(cleaned) as CfoAnalysisResult
