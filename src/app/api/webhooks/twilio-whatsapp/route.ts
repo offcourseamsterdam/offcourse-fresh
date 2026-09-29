@@ -3,8 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyTwilioSignature } from '@/lib/twilio/verify-signature'
 import { findOrCreateContactByPhone, findOrCreateConversationByContact } from '@/lib/twilio/inbox-match'
 import { logWebhookEvent } from '@/lib/webhooks/log'
-import { draftShadowReply } from '@/lib/chat/shadow-drafter'
-import { notifyInboxItem, GHOST_KIND_HEADLINE } from '@/lib/slack/notify-inbox'
+import { draftAndNotify } from '@/lib/chat/draft-and-notify'
 
 /**
  * POST /api/webhooks/twilio-whatsapp
@@ -134,18 +133,7 @@ export async function POST(req: NextRequest) {
     // Then DM Beer (only Beer — never #bookings) for every inbound message,
     // same as email: a plain FYI with the draft, or "needs your approval"
     // when Ghost proposed an action.
-    after(async () => {
-      const result = await draftShadowReply(conversationId, inserted?.id ?? null)
-      if (!result) return
-      await notifyInboxItem({
-        conversationId,
-        from: profileName || fromPhone,
-        headline: GHOST_KIND_HEADLINE[result.kind],
-        details: ['via WhatsApp'],
-        draft: result.reply,
-        action: result.kind === 'reply_draft' ? undefined : 'Needs your approval in the admin panel.',
-      })
-    })
+    after(() => draftAndNotify({ conversationId, messageId: inserted?.id ?? null, from: profileName || fromPhone, via: 'via WhatsApp' }))
 
     await logWebhookEvent(supabase, {
       source: 'twilio_whatsapp',

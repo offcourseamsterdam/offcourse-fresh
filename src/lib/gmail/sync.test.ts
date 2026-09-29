@@ -12,13 +12,18 @@ const h = vi.hoisted(() => ({
   alertCronFailure: vi.fn().mockResolvedValue(undefined),
   detectGygReviewNotification: vi.fn().mockReturnValue(null),
   awardReviewBonuses: vi.fn().mockResolvedValue(undefined),
+  notifyInboxItem: vi.fn().mockResolvedValue(undefined),
+}))
+vi.mock('@/lib/slack/notify-inbox', async () => ({
+  ...(await vi.importActual<typeof import('@/lib/slack/notify-inbox')>('@/lib/slack/notify-inbox')),
+  notifyInboxItem: h.notifyInboxItem,
 }))
 vi.mock('./client', () => ({ listNewMessages: h.listNewMessages, getMessage: h.getMessage }))
 vi.mock('./summarize', () => ({ summarizeInboundEmail: h.summarizeInboundEmail }))
 vi.mock('@/lib/chat/shadow-drafter', () => ({ draftShadowReply: h.draftShadowReply }))
 vi.mock('@/lib/catering/detect-confirmation', () => ({ detectCateringConfirmation: h.detectCateringConfirmation }))
 vi.mock('@/lib/ops/events', () => ({ emitOpsEvent: h.emitOpsEvent }))
-vi.mock('@/lib/ota/detect', () => ({ detectOtaEmail: h.detectOtaEmail }))
+vi.mock('@/lib/ota/detect', () => ({ detectOtaEmail: h.detectOtaEmail, OTA_PLATFORM_NAME: { withlocals: 'Withlocals', getyourguide: 'GetYourGuide', viator: 'Viator', boatlocal: 'Boat Local' } }))
 vi.mock('@/lib/ota/check-availability', () => ({ checkOtaAvailability: h.checkOtaAvailability }))
 vi.mock('@/lib/cron/alert', () => ({ alertCronFailure: h.alertCronFailure }))
 vi.mock('@/lib/getyourguide/detect-review-notification', () => ({ detectGygReviewNotification: h.detectGygReviewNotification }))
@@ -281,6 +286,40 @@ describe('syncGmailInbox', () => {
     })
     expect(h.draftShadowReply).toHaveBeenCalledTimes(1)
     expect(h.draftShadowReply).toHaveBeenCalledWith(state.conversations[0].id, expect.any(String))
+  })
+
+  it('DMs Beer exactly once for a customer email — with the draft when Ghost wrote one', async () => {
+    h.draftShadowReply.mockResolvedValue({ kind: 'reply_draft', reasoning: 'r', reply: 'Hi!' })
+    h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-1' }])
+    h.getMessage.mockResolvedValue(gmailMessage())
+
+    await syncGmailInbox()
+
+    expect(h.notifyInboxItem).toHaveBeenCalledTimes(1)
+    expect(h.notifyInboxItem).toHaveBeenCalledWith(expect.objectContaining({ draft: 'Hi!' }))
+  })
+
+  it('still DMs Beer when Ghost drafted nothing — a plain "New email" nudge', async () => {
+    h.draftShadowReply.mockResolvedValue(null)
+    h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-1' }])
+    h.getMessage.mockResolvedValue(gmailMessage())
+
+    await syncGmailInbox()
+
+    expect(h.notifyInboxItem).toHaveBeenCalledTimes(1)
+    expect(h.notifyInboxItem).toHaveBeenCalledWith(expect.objectContaining({ headline: 'New email' }))
+  })
+
+  it('DMs Beer about a booking-platform notification that does not need importing', async () => {
+    h.detectOtaEmail.mockReturnValue({ platform: 'withlocals', kind: 'booking_request', guestName: null, bookingRef: null, parsed: {} })
+    h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-1' }])
+    h.getMessage.mockResolvedValue(gmailMessage())
+
+    await syncGmailInbox()
+
+    expect(h.notifyInboxItem).toHaveBeenCalledTimes(1)
+    expect(h.notifyInboxItem).toHaveBeenCalledWith(expect.objectContaining({ headline: 'New booking-platform email', from: 'Withlocals' }))
+    h.detectOtaEmail.mockReturnValue(null)
   })
 
   it('writes the AI summary onto the conversation, falling back to null context when Ghost drafted nothing', async () => {

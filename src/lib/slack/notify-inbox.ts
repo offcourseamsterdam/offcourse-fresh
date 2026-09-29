@@ -41,6 +41,11 @@ export function ghostKindVerb(kind: keyof typeof GHOST_KIND_HEADLINE): string {
   }[kind]
 }
 
+/** Headline for the catch-all "new email" ping (mail Ghost didn't draft a reply for). */
+export function inboundEmailHeadline(kind: 'finance' | 'ota' | 'other'): string {
+  return { finance: 'New finance email', ota: 'New booking-platform email', other: 'New email' }[kind]
+}
+
 export interface InboxSlackNotification {
   conversationId: string
   /** Who it's from — guest name for a customer, platform name for an OTA notification. */

@@ -65,3 +65,12 @@ describe('notifyInboxItem', () => {
     await expect(notifyInboxItem({ conversationId: 'c', from: 'X', headline: 'New message' })).resolves.toBeUndefined()
   })
 })
+
+describe('inboundEmailHeadline', () => {
+  it('names each kind of email distinctly so Beer can triage from the DM alone', async () => {
+    const { inboundEmailHeadline } = await import('./notify-inbox')
+    expect(inboundEmailHeadline('finance')).toBe('New finance email')
+    expect(inboundEmailHeadline('ota')).toBe('New booking-platform email')
+    expect(inboundEmailHeadline('other')).toBe('New email')
+  })
+})

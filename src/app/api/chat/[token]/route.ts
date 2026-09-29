@@ -2,7 +2,7 @@ import { after } from 'next/server'
 import { apiError, apiOk } from '@/lib/api/response'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isValidChatToken, parseChatMessage } from '@/lib/chat/validate'
-import { draftShadowReply } from '@/lib/chat/shadow-drafter'
+import { draftAndNotify } from '@/lib/chat/draft-and-notify'
 
 /**
  * Public widget endpoints, authenticated by the conversation's webchat_token
@@ -81,7 +81,7 @@ export async function POST(req: Request, { params }: RouteParams): Promise<Respo
 
   // The Ghost drafts what it would reply — after the response is sent,
   // shadow-only, never blocks or breaks the customer flow.
-  after(() => draftShadowReply(conversation.id, inserted?.id ?? null))
+  after(() => draftAndNotify({ conversationId: conversation.id, messageId: inserted?.id ?? null, from: 'Website chat visitor', via: 'via website chat' }))
 
   return apiOk({ sent: true })
 }

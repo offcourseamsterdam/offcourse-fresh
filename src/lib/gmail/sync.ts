@@ -8,7 +8,7 @@ import { detectCateringConfirmation } from '@/lib/catering/detect-confirmation'
 import { matchCateringReplyToBooking } from '@/lib/catering/match-reply'
 import { postSlackText } from '@/lib/slack/send-notification'
 import { detectOtaEmail, OTA_PLATFORM_NAME, type OtaDetection } from '@/lib/ota/detect'
-import { notifyInboxItem, GHOST_KIND_HEADLINE, ghostKindVerb } from '@/lib/slack/notify-inbox'
+import { notifyInboxItem, inboundEmailHeadline, GHOST_KIND_HEADLINE, ghostKindVerb } from '@/lib/slack/notify-inbox'
 import { handleOtaMessage } from '@/lib/ota/handle-message'
 import { detectGygReviewNotification } from '@/lib/getyourguide/detect-review-notification'
 import { awardReviewBonuses } from '@/lib/scheduling/review-bonuses'
@@ -553,6 +553,9 @@ export async function syncGmailInbox(queryOverride?: string): Promise<GmailSyncR
     // rule, just applied to the two branches that don't have their own
     // built-in try/catch.
     let ghostContext: string | null = null
+    // Set once a branch below has already DM'd Beer about this message, so the
+    // catch-all ping after the summary doesn't double up.
+    let notified = false
     try {
       if (finance?.category === 'finance') {
         // Never a customer message and never the Ghost/OTA pipeline — an
@@ -578,6 +581,7 @@ export async function syncGmailInbox(queryOverride?: string): Promise<GmailSyncR
             // human clicks Import — so announce it rather than letting it sit
             // (two Boat Local bookings went unnoticed for days, 2026-08-21).
             if (ota.kind === 'needs_import') {
+              notified = true
               await notifyInboxItem({
                 conversationId,
                 from: `${OTA_PLATFORM_NAME[ota.platform]}${ota.guestName ? ` · ${ota.guestName}` : ''}`,
@@ -603,6 +607,7 @@ export async function syncGmailInbox(queryOverride?: string): Promise<GmailSyncR
             // A real guest is waiting — DM the draft so Beer can act from his
             // phone instead of having to open the admin panel to notice at all.
             if (shadowResult) {
+              notified = true
               await notifyInboxItem({
                 conversationId,
                 from: message.from.name || message.from.email,
@@ -624,6 +629,19 @@ export async function syncGmailInbox(queryOverride?: string): Promise<GmailSyncR
     const summary = await summarizeInboundEmail({ subject: message.subject, bodyText: message.bodyText, context: ghostContext })
     if (summary) {
       await supabase.from('conversations').update({ ai_summary: summary }).eq('id', conversationId)
+    }
+
+    // Catch-all: finance mail, OTA notifications that don't need importing,
+    // catering replies, GYG review mails, and any customer email where Ghost
+    // produced no draft all land here — Beer hears about EVERY new inbound
+    // email, never only the ones Ghost happened to answer.
+    if (!notified) {
+      await notifyInboxItem({
+        conversationId,
+        from: ota ? OTA_PLATFORM_NAME[ota.platform] : message.from.name || message.from.email,
+        headline: inboundEmailHeadline(finance?.category === 'finance' ? 'finance' : ota ? 'ota' : 'other'),
+        details: [message.subject, summary ?? ghostContext],
+      })
     }
 
     imported++

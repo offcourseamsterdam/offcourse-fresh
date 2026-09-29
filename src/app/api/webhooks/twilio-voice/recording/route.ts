@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyTwilioSignature } from '@/lib/twilio/verify-signature'
 import { canonicalWebhookUrl } from '@/lib/twilio/canonical-url'
 import { logWebhookEvent } from '@/lib/webhooks/log'
-import { draftShadowReply } from '@/lib/chat/shadow-drafter'
+import { draftAndNotify } from '@/lib/chat/draft-and-notify'
 
 /**
  * POST /api/webhooks/twilio-voice/recording?conversationId=...[&voicemail=true]
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
 
       // Same deferred pattern as the other webhooks — Ghost's agentic loop
       // can take several seconds, this callback has its own Twilio timeout.
-      if (message) after(() => draftShadowReply(conversationId, message.id))
+      if (message) after(() => draftAndNotify({ conversationId, messageId: message.id, from: params.From || 'Unknown caller', via: 'via voicemail' }))
     } else {
       await supabase
         .from('messages')
