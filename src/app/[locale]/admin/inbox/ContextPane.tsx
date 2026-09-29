@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { CalendarDays, CalendarPlus, Check, CheckCircle2, Download, ExternalLink, Ghost, Globe, Landmark, Languages, Loader2, Mail, Phone, Plus, Receipt, Sparkles, Wrench, XCircle } from 'lucide-react'
+import { CalendarDays, CalendarPlus, Check, CheckCircle2, Download, ExternalLink, Ghost, Globe, Landmark, Languages, Loader2, Mail, Phone, Plus, Receipt, RefreshCw, Sparkles, Wrench, XCircle } from 'lucide-react'
 import { adminMutate, AdminApiError } from '@/hooks/useAdminSave'
 import { replySimilarity } from '@/lib/ghost/similarity'
 import { fmtAdminDate, fmtAdminTime } from '@/lib/admin/format'
@@ -1252,6 +1252,22 @@ function FinanceDocumentReview({
   const expense = doc.expense ?? null
   const { busy, error, createExpense, expenseAction } = useExpenseDocAction(doc.id, expense?.id ?? null, onChanged)
   const [confirmingDraft, setConfirmingDraft] = useState(false)
+  const [autoBusy, setAutoBusy] = useState(false)
+  const [autoError, setAutoError] = useState<string | null>(null)
+
+  // Remembers the sender (server-side) so later mails from them come in already flagged.
+  async function setAutoCollect(enabled: boolean) {
+    setAutoBusy(true)
+    setAutoError(null)
+    try {
+      await adminMutate('/api/admin/finance/expenses/auto-collect', 'POST', { documentId: doc.id, enabled })
+      onChanged()
+    } catch (err) {
+      setAutoError(err instanceof Error ? err.message : 'Kon dit niet onthouden.')
+    } finally {
+      setAutoBusy(false)
+    }
+  }
 
   async function handleOpenDrawer() {
     if (expense?.id) {
@@ -1260,6 +1276,24 @@ function FinanceDocumentReview({
       const id = await createExpense()
       if (id) onOpenDrawer(id)
     }
+  }
+
+  // A link the mail pointed to (e.g. "Log in op Mijn Simyo") — nothing was
+  // downloaded, so no amounts/payment here; just a clickable way to get the invoice.
+  if (doc.kind === 'invoice_link' && !doc.file_path && doc.link_url) {
+    let host = doc.link_url
+    try { host = new URL(doc.link_url).host } catch { /* show raw */ }
+    return (
+      <a
+        href={doc.link_url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-2 rounded-lg bg-white border border-amber-100 px-3 py-2.5 text-xs font-medium text-amber-900 hover:bg-amber-50 shadow-xs transition-colors"
+      >
+        <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+        <span className="truncate">Factuur online openen — {host}</span>
+      </a>
+    )
   }
 
   if (bl) {
@@ -1443,9 +1477,19 @@ function FinanceDocumentReview({
           // The mail itself says this gets auto-debited (automatische incasso) —
           // queuing a Revolut payment here would double-pay it. It stays
           // waiting_for_payment until the real debit transaction is matched.
-          <p className="text-[11px] text-zinc-500 font-medium inline-flex items-center gap-1.5">
-            <Landmark className="w-3.5 h-3.5 text-zinc-400" /> Wordt automatisch geïncasseerd — geen actie nodig
-          </p>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <p className="text-[11px] text-zinc-500 font-medium inline-flex items-center gap-1.5">
+              <Landmark className="w-3.5 h-3.5 text-zinc-400" /> Wordt automatisch geïncasseerd — geen actie nodig
+            </p>
+            <button
+              type="button"
+              onClick={() => setAutoCollect(false)}
+              disabled={autoBusy}
+              className="text-[11px] text-zinc-400 hover:text-zinc-700 underline disabled:opacity-50"
+            >
+              Toch niet automatisch
+            </button>
+          </div>
         ) : confirmingDraft ? (
           <ConfirmCreate
             onYes={() =>
@@ -1490,6 +1534,15 @@ function FinanceDocumentReview({
                 </button>
               </div>
             )}
+            <button
+              type="button"
+              onClick={() => setAutoCollect(true)}
+              disabled={autoBusy || busy != null}
+              title="Onthoudt deze afzender: toekomstige facturen worden ook als automatische incasso gemarkeerd"
+              className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white text-zinc-700 px-2.5 py-1.5 text-[11px] font-semibold hover:bg-zinc-50 disabled:opacity-50 transition-colors"
+            >
+              {autoBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Wordt automatisch afgeschreven
+            </button>
           </div>
         )}
 
@@ -1503,7 +1556,7 @@ function FinanceDocumentReview({
             {busy === 'create' ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
             Volledig uitgavenpaneel openen
           </button>
-          {error && <p className="text-[11px] text-red-600 font-medium">{error}</p>}
+          {(error || autoError) && <p className="text-[11px] text-red-600 font-medium">{error ?? autoError}</p>}
         </div>
       </div>
     </div>

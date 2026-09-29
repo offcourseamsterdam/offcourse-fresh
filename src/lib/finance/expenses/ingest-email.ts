@@ -21,6 +21,7 @@ import { classifyFinanceEmail, extractLinks, type FinanceEmailClassification, ty
 import { isCandidateAttachmentMime, MAX_DOCUMENT_BYTES, sha256Hex, sniffDocumentType } from './documents'
 import { extractDocumentFields } from './extract-document'
 import { fetchPublicPdf } from './fetch-link'
+import { isAutoCollectSender } from './auto-collect'
 
 type Admin = ReturnType<typeof createAdminClient>
 type DocumentKind = Database['public']['Tables']['finance_documents']['Row']['kind']
@@ -38,9 +39,11 @@ export function mailDocumentKind(kind: FinanceEmailKind | null): DocumentKind | 
 // klantenservice/contact/help/support pages are boilerplate footer links present
 // in nearly every transactional mail — never themselves an invoice, unlike a
 // genuinely ambiguous link (e.g. "account/orders", kept for a human to check).
-const LINK_SKIP = /unsubscribe|opt-?out|afmelden|uitschrijven|\/track|click\.|utm_|privacy|terms|voorwaarden|klantenservice|customer-?service|\bcontact\b|\bhelp\b|\bhulp\b|\bfaq\b|\bsupport\b/i
+const LINK_SKIP = /unsubscribe|opt-?out|afmelden|uitschrijven|\/track|click\.|privacy|terms|voorwaarden|klantenservice|customer-?service|\bcontact\b|\bhelp\b|\bhulp\b|\bfaq\b|\bsupport\b/i
 // A bare domain root ("https://simyo.nl/", no path) — a logo/homepage link, never a document.
 const LINK_IS_ROOT = /^https?:\/\/[^/]+\/?(\?.*)?$/i
+// A login page holds no PDF (Simyo's "Log in op Mijn Simyo"): shown to Beer to click, never fetched.
+const LINK_IS_LOGIN = /inloggen|\/log-?in\b|\/signin|\/sign-in/i
 const LINK_HINT = /invoice|factuur|receipt|bon\b|download|\.pdf(\?|$)|document|nota/i
 /** Two link fetches per mail, sequential, ≤10 s each — inside the 2-minute Gmail poll's 60 s budget with room for Claude + Gemini. */
 const MAX_LINKS_TO_FETCH = 2
@@ -48,6 +51,16 @@ const MAX_LINKS_TO_FETCH = 2
 const MAX_LINKS_TO_RECORD = 5
 /** Below this the classifier is guessing; a guessed "invoice notification" must not make the server GET anything. */
 const MIN_CONFIDENCE_FOR_LINK_FETCH = 0.7
+
+function stripTrackingParams(url: string): string {
+  try {
+    const u = new URL(url)
+    for (const key of [...u.searchParams.keys()]) if (key.toLowerCase().startsWith('utm_')) u.searchParams.delete(key)
+    return u.toString()
+  } catch {
+    return url
+  }
+}
 
 /**
  * Only links that look like a document get fetched; tracking, unsubscribe and
@@ -63,8 +76,10 @@ export function pickLinksToFetch(links: string[]): { fetch: string[]; keep: stri
   // link each spawned their own empty "Leverancier" card alongside the real
   // invoice notification, because neither is tracking/unsubscribe (the only
   // things filtered before this fix).
-  const usable = links.filter(l => !LINK_SKIP.test(l) && !LINK_IS_ROOT.test(l))
-  const hinted = usable.filter(l => LINK_HINT.test(l))
+  // utm_* tracking params are stripped rather than causing a skip: a real
+  // Simyo invoice link carries utm_source=factuur and was being thrown away.
+  const usable = [...new Set(links.map(stripTrackingParams))].filter(l => !LINK_SKIP.test(l) && !LINK_IS_ROOT.test(l))
+  const hinted = usable.filter(l => LINK_HINT.test(l) && !LINK_IS_LOGIN.test(l))
   const fetch = hinted.slice(0, MAX_LINKS_TO_FETCH)
   return { fetch, keep: usable.filter(l => !fetch.includes(l)) }
 }
@@ -76,8 +91,9 @@ export interface IngestEmailResult {
   summary: string
 }
 
-function classificationToExtracted(c: FinanceEmailClassification): Json {
+function classificationToExtracted(c: FinanceEmailClassification, senderEmail: string): Json {
   return {
+    senderEmail,
     supplierName: c.supplierName,
     orderNumber: c.orderNumber,
     invoiceNumber: c.invoiceNumber,
@@ -116,6 +132,11 @@ export async function ingestFinanceEmailDocuments(supabase: Admin, message: Gmai
   } catch (err) {
     console.error('[finance/expenses/ingest-email] classification failed:', err instanceof Error ? err.message : err)
   }
+  // Beer flagged this sender as auto-debited earlier — that outranks the classifier's guess.
+  // Looked up even when classification failed or the mail carries a PDF (no mail row): the flag must also reach the attachment's own document.
+  const senderEmail = message.from.email
+  const autoCollect = await isAutoCollectSender(supabase, senderEmail)
+  if (classification && autoCollect) classification = { ...classification, willBeAutoCollected: true }
   const kind = classification?.kind ?? null
 
   // Nothing financial and nothing attached: leave the thread as a plain mail, no document row.
@@ -137,7 +158,7 @@ export async function ingestFinanceEmailDocuments(supabase: Admin, message: Gmai
   // 1. The mail itself, when it states facts the matcher can use.
   const mailKind = mailDocumentKind(kind)
   if (mailKind && classification) {
-    await insertPlainDocument({ kind: mailKind, source: 'email', source_message_id: sourceMessageRowId, extracted: classificationToExtracted(classification) }, 'mail')
+    await insertPlainDocument({ kind: mailKind, source: 'email', source_message_id: sourceMessageRowId, extracted: classificationToExtracted(classification, senderEmail) }, 'mail')
   }
 
   // 2. Attachments: PDFs are invoices, images are receipts — the bytes decide, not the name.
@@ -157,6 +178,8 @@ export async function ingestFinanceEmailDocuments(supabase: Admin, message: Gmai
         pathPrefix: `email/${message.id}`,
         originalFilename: displayFilename(att.filename),
         sourceMessageId: sourceMessageRowId,
+        senderEmail,
+        autoCollect,
       })
       if (id) documentIds.push(id)
     } catch (err) {
@@ -186,6 +209,8 @@ export async function ingestFinanceEmailDocuments(supabase: Admin, message: Gmai
           sourceMessageId: sourceMessageRowId,
           linkUrl: url,
           linkFetchStatus: 'fetched',
+          senderEmail,
+          autoCollect,
         })
         if (id) documentIds.push(id)
       } else {
@@ -220,6 +245,10 @@ interface StoreInput {
   sourceMessageId: string
   linkUrl?: string
   linkFetchStatus?: 'fetched'
+  /** Gmail From address — lets the auto-debit button remember the real sender, not the thread's first contact. */
+  senderEmail: string
+  /** Sender was flagged as auto-debited: stamp the document, whatever extraction says. */
+  autoCollect: boolean
 }
 
 /** Hash → dedupe → upload (unless a duplicate) → row → Gemini extraction. Shared by attachments and fetched links. */
@@ -255,12 +284,16 @@ async function storeDocument(supabase: Admin, input: StoreInput): Promise<string
   }
 
   if (!dup && doc) {
+    // Provenance fields go on even when extraction fails, so the card still knows the sender and the auto-debit flag.
+    const stamp = { senderEmail: input.senderEmail, ...(input.autoCollect ? { willBeAutoCollected: true } : {}) }
+    let fields: Record<string, unknown> = {}
     try {
       const extraction = await extractDocumentFields(input.bytes.toString('base64'), input.mimeType)
-      await supabase.from('finance_documents').update({ extracted: { ...extraction.fields, confidence: extraction.confidence } as unknown as Json }).eq('id', doc.id)
+      fields = { ...extraction.fields, confidence: extraction.confidence }
     } catch (err) {
       console.error(`[finance/expenses/ingest-email] extraction failed for ${input.originalFilename}:`, err instanceof Error ? err.message : err)
     }
+    await supabase.from('finance_documents').update({ extracted: { ...fields, ...stamp } as unknown as Json }).eq('id', doc.id)
   }
   return doc?.id ?? null
 }

@@ -199,7 +199,7 @@ describe('admin route auth contract', () => {
     // 216 = 215 + /api/admin/finance/cockpit/cfo-analysis
     // 217 = 216 + /api/admin/search (Cmd+K command palette)
     // Update this when adding/removing admin routes.
-    expect(adminFiles.length).toMatchInlineSnapshot(`217`)
+    expect(adminFiles.length).toMatchInlineSnapshot(`218`)
   })
 
   it('every admin handler is guarded with requireAdmin() unless explicitly public', () => {

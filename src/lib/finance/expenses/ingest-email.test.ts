@@ -114,6 +114,31 @@ describe('ingestFinanceEmailDocuments', () => {
     expect(opArg(mock.queries, 'finance_documents', 'update')).toMatchObject({ extracted: expect.objectContaining({ invoiceNumber: 'INV-2026-12345' }) })
   })
 
+  // Review fix (2026-09-29): a remembered auto-debit sender who later mails a PDF has no mail row,
+  // so the flag (and the real From address) must be stamped on the PDF document itself.
+  it('stamps senderEmail on a PDF and the auto-debit flag when the sender is remembered', async () => {
+    h.classifyFinanceEmail.mockResolvedValue(classification({ kind: 'invoice_attached' }))
+    const mock = createSupabaseChainMock((q: RecordedQuery) => {
+      if (q.table === 'finance_auto_collect_senders') return { data: { email: 'noreply@bol.com' } }
+      if (q.table === 'finance_documents' && has(q, 'insert')) return { data: { id: 'doc-1' } }
+      return { data: null }
+    })
+    await ingestFinanceEmailDocuments(mock.client as never, message({ attachments: [{ filename: 'f.pdf', mimeType: 'application/pdf', attachmentId: 'a1', size: 1000 }] }), 'msgrow-1')
+    expect(opArg(mock.queries, 'finance_documents', 'update')).toMatchObject({ extracted: expect.objectContaining({ senderEmail: 'noreply@bol.com', willBeAutoCollected: true }) })
+  })
+
+  it('stamps the auto-debit flag even when extraction fails', async () => {
+    h.classifyFinanceEmail.mockResolvedValue(classification({ kind: 'invoice_attached' }))
+    h.extractDocumentFields.mockRejectedValue(new Error('gemini down'))
+    const mock = createSupabaseChainMock((q: RecordedQuery) => {
+      if (q.table === 'finance_auto_collect_senders') return { data: { email: 'noreply@bol.com' } }
+      if (q.table === 'finance_documents' && has(q, 'insert')) return { data: { id: 'doc-1' } }
+      return { data: null }
+    })
+    await ingestFinanceEmailDocuments(mock.client as never, message({ attachments: [{ filename: 'f.pdf', mimeType: 'application/pdf', attachmentId: 'a1', size: 1000 }] }), 'msgrow-1')
+    expect(opArg(mock.queries, 'finance_documents', 'update')).toMatchObject({ extracted: { senderEmail: 'noreply@bol.com', willBeAutoCollected: true } })
+  })
+
   it('an image attachment is a receipt_image; a PDF-named image is still an image (bytes decide)', async () => {
     h.getAttachmentData.mockResolvedValue(JPG)
     const mock = db()

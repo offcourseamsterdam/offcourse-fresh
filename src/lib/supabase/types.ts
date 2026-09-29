@@ -2341,6 +2341,21 @@ export type Database = {
         }
         Relationships: []
       }
+      finance_auto_collect_senders: {
+        Row: {
+          created_at: string
+          email: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+        }
+        Relationships: []
+      }
       finance_classification_rules: {
         Row: {
           boat_id: string | null
@@ -2940,6 +2955,8 @@ export type Database = {
           paid_transaction_id: string | null
           principal_cents: number
           total_cents: number
+          revolut_draft_id: string | null
+          drafted_at: string | null
         }
         Insert: {
           created_at?: string
@@ -2952,6 +2969,8 @@ export type Database = {
           paid_transaction_id?: string | null
           principal_cents?: number
           total_cents?: number
+          revolut_draft_id?: string | null
+          drafted_at?: string | null
         }
         Update: {
           created_at?: string
@@ -2964,6 +2983,8 @@ export type Database = {
           paid_transaction_id?: string | null
           principal_cents?: number
           total_cents?: number
+          revolut_draft_id?: string | null
+          drafted_at?: string | null
         }
         Relationships: [
           {
@@ -2991,6 +3012,7 @@ export type Database = {
           status: string
           tranches: Json
           updated_at: string
+          supplier_id: string | null
         }
         Insert: {
           created_at?: string
@@ -3007,6 +3029,7 @@ export type Database = {
           status?: string
           tranches?: Json
           updated_at?: string
+          supplier_id?: string | null
         }
         Update: {
           created_at?: string
@@ -3023,8 +3046,17 @@ export type Database = {
           status?: string
           tranches?: Json
           updated_at?: string
+          supplier_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "finance_loans_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "finance_suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       finance_obligations: {
         Row: {
