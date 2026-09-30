@@ -14,6 +14,8 @@ export const AvailabilityFiltersSchema = z.object({
   max_guests_override: z.number().optional(),   // 2 for romantic cruise
   min_guests_override: z.number().optional(),   // 1 to allow solo booking on an empty shared slot
   months: z.array(z.number()).optional(),        // [6,7,8] for summer only
+  date_from: z.string().optional(),              // "2026-11-26" — first bookable date (inclusive)
+  date_to: z.string().optional(),                // "2027-01-17" — last bookable date (inclusive)
   days_of_week: z.array(z.number()).optional(),  // [5,6] for weekends (0=Sun)
 }).passthrough()
 
@@ -166,6 +168,14 @@ async function applyTimeAndDateRules(
   date: Date
 ): Promise<FHMinimalAvailability[]> {
   if (!filters || Object.keys(filters).length === 0) return availabilities
+
+  // Date window (inclusive) — for one-off events like a festival
+  if (filters.date_from || filters.date_to) {
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const iso = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+    if (filters.date_from && iso < filters.date_from) return []
+    if (filters.date_to && iso > filters.date_to) return []
+  }
 
   // Month filter
   if (filters.months && filters.months.length > 0) {

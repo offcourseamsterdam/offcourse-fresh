@@ -320,6 +320,19 @@ describe('applyAllFilters', () => {
     expect(result).toHaveLength(0)
   })
 
+  it('applies date_from / date_to window (inclusive)', async () => {
+    const config = {
+      allowed_resource_pks: null,
+      allowed_customer_type_pks: null,
+      availability_filters: { date_from: '2026-11-26', date_to: '2026-12-01' },
+    }
+    const run = (d: string) => applyAllFilters(availabilities, config, 4, new Date(d + 'T12:00:00'), typeMap)
+    expect(await run('2026-11-25')).toHaveLength(0)
+    expect((await run('2026-11-26')).length).toBeGreaterThan(0)
+    expect((await run('2026-12-01')).length).toBeGreaterThan(0)
+    expect(await run('2026-12-02')).toHaveLength(0)
+  })
+
   it('applies day_of_week filter', async () => {
     const config = {
       allowed_resource_pks: null,
