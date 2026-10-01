@@ -101,7 +101,9 @@ export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed,
 
   async function send(e: React.FormEvent) {
     e.preventDefault()
-    if (!draft.trim() || busy) return
+    if (busy) return
+    // A forward's note is optional; replies and notes need text.
+    if (mode !== 'forward' && !draft.trim()) return
     if (mode === 'forward' && !forwardTo.trim()) {
       setError('Vul een e-mailadres in om naar door te sturen')
       return
@@ -111,7 +113,7 @@ export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed,
     try {
       await adminMutate(`/api/admin/inbox/conversations/${conversation.id}/messages`, 'POST', {
         body: draft.trim(),
-        direction: mode === 'forward' ? 'out' : mode,
+        direction: mode === 'forward' ? 'note' : mode,
         ...(mode === 'forward' ? { forwardTo: forwardTo.trim() } : {}),
       })
       setDraft('')

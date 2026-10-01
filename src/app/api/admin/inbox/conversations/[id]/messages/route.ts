@@ -4,16 +4,21 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 import { getUserProfile } from '@/lib/auth/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { parseChatMessage } from '@/lib/chat/validate'
-import { sendReply as sendGmailReply } from '@/lib/gmail/client'
+import { getAttachmentData, getMessage, sendNewEmail, sendReply as sendGmailReply } from '@/lib/gmail/client'
+import { buildForwardBody, forwardSubject, parseForwardTo } from '@/lib/inbox/forward'
 import { sendWhatsappMessage, WhatsappWindowClosedError } from '@/lib/whatsapp/client'
 
 /**
  * POST /api/admin/inbox/conversations/{id}/messages
- * Body: { body, direction: 'out' | 'note' }
+ * Body: { body, direction: 'out' | 'note', forwardTo? }
  *
  * 'out'  → a reply the customer sees in the widget; thread flips to
  *          'pending' (waiting on the customer — §8b of the inbox plan).
  * 'note' → internal margin-scribble, never delivered anywhere.
+ * forwardTo (email threads only) → forwards the latest inbound email, with
+ *          its attachments, to that address as a NEW email. `body` is an
+ *          optional note on top. Logged in the thread as an internal note —
+ *          the customer's thread, status and Ghost learning stay untouched.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const denied = await requireAdmin()
@@ -26,7 +31,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (direction !== 'out' && direction !== 'note') {
       return apiError("direction must be 'out' or 'note'", 400)
     }
-    const parsed = parseChatMessage(json?.body)
+    const isForward = json?.forwardTo !== undefined && json?.forwardTo !== null
+    const forwardTo = isForward ? parseForwardTo(json.forwardTo) : null
+    if (isForward && !forwardTo) return apiError('Enter a valid email address to forward to', 400)
+    // A forward's note is optional — the forwarded email itself is the content.
+    const hasNote = typeof json?.body === 'string' && json.body.trim().length > 0
+    const parsed = forwardTo && !hasNote ? { message: '' } : parseChatMessage(json?.body)
     if ('error' in parsed) return apiError(parsed.error, 400)
 
     const supabase = createAdminClient()
@@ -40,6 +50,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const profile = await getUserProfile()
     const authorName = profile?.display_name || 'Off Course'
 
+    if (forwardTo) {
+      if (conversation.channel !== 'email') return apiError('Only email threads can be forwarded', 400)
+      return forwardEmail({ supabase, conversation, forwardTo, note: parsed.message || null, authorName })
+    }
+
     // Email/WhatsApp replies must actually go out through the provider —
     // unlike webchat, where "stored" IS "delivered" because the widget polls
     // the row. A reply that silently doesn't send would look identical to one
@@ -52,8 +67,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         .select('email')
         .eq('id', conversation.contact_id)
         .maybeSingle()
-      const forwardTo = typeof json?.forwardTo === 'string' && json.forwardTo.trim() ? json.forwardTo.trim() : null
-      const targetEmail = forwardTo ?? contact?.email
+      const targetEmail = contact?.email
       const { data: lastInbound } = await supabase
         .from('messages')
         .select('provider_message_id')
@@ -68,13 +82,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         gmailSendError = 'Missing recipient email or Gmail thread id'
       } else {
         try {
-          const subject = forwardTo
-            ? (conversation.subject?.startsWith('Fwd:') ? conversation.subject : `Fwd: ${conversation.subject ?? ''}`)
-            : (conversation.subject ?? '')
           gmailSend = await sendGmailReply({
             threadId: conversation.provider_thread_id,
             to: targetEmail,
-            subject,
+            subject: conversation.subject ?? '',
             body: parsed.message,
             inReplyToMessageId: lastInbound?.provider_message_id ?? null,
           })
@@ -163,4 +174,79 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   } catch (err) {
     return apiError(err instanceof Error ? err.message : 'Failed to send message')
   }
+}
+
+type AdminClient = ReturnType<typeof createAdminClient>
+
+/**
+ * Forwards the latest inbound email (text + attachments) as a fresh email.
+ * Fails closed: if the original or any attachment can't be fetched, nothing
+ * is sent — a forward to finance@ that silently drops the invoice PDF would
+ * look like it worked while losing the one thing that mattered.
+ */
+async function forwardEmail({ supabase, conversation, forwardTo, note, authorName }: {
+  supabase: AdminClient
+  conversation: { id: string; subject: string | null; contact_id: string | null }
+  forwardTo: string
+  note: string | null
+  authorName: string
+}) {
+  const { data: lastInbound } = await supabase
+    .from('messages')
+    .select('provider_message_id, body, created_at')
+    .eq('conversation_id', conversation.id)
+    .eq('direction', 'in')
+    .not('provider_message_id', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (!lastInbound?.provider_message_id) return apiError('No received email in this thread to forward', 400)
+
+  const { data: contact } = conversation.contact_id
+    ? await supabase.from('contacts').select('name, email').eq('id', conversation.contact_id).maybeSingle()
+    : { data: null }
+
+  let sent: { id: string }
+  try {
+    const original = await getMessage(lastInbound.provider_message_id)
+    const attachments = await Promise.all(
+      original.attachments.map(async a => ({
+        filename: a.filename,
+        mimeType: a.mimeType,
+        content: await getAttachmentData(original.id, a.attachmentId),
+      })),
+    )
+    sent = await sendNewEmail({
+      to: forwardTo,
+      subject: forwardSubject(original.subject || conversation.subject),
+      body: buildForwardBody({
+        note,
+        fromName: contact?.name ?? null,
+        fromEmail: contact?.email ?? null,
+        sentAt: lastInbound.created_at,
+        subject: original.subject || conversation.subject,
+        originalBody: original.bodyText || lastInbound.body,
+      }),
+      attachments,
+    })
+  } catch (err) {
+    return apiError(`Could not forward the email: ${err instanceof Error ? err.message : 'Gmail send failed'}`, 502)
+  }
+
+  // Logged as an internal note so the team sees it happened — not as an
+  // 'out' reply, which would show as sent to the customer and flip the
+  // thread to "waiting on customer".
+  const { data: message, error } = await supabase
+    .from('messages')
+    .insert({
+      conversation_id: conversation.id,
+      direction: 'note',
+      body: `↪ Doorgestuurd naar ${forwardTo}${note ? `\n\n${note}` : ''}`,
+      author_name: authorName,
+      status: 'received',
+    })
+    .select('id, direction, body, author_name, status, error, created_at')
+    .single()
+  if (error || !message) return apiError(error?.message ?? 'Forwarded, but could not log it in the thread', 500)
+  return apiOk({ message, forwardedMessageId: sent.id })
 }

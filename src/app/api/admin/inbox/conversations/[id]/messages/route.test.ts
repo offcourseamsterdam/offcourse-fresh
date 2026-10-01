@@ -5,6 +5,9 @@ const h = vi.hoisted(() => ({
   requireAdmin: vi.fn().mockResolvedValue(null),
   getUserProfile: vi.fn().mockResolvedValue({ display_name: 'Beer' }),
   sendGmailReply: vi.fn(),
+  getMessage: vi.fn(),
+  getAttachmentData: vi.fn(),
+  sendNewEmail: vi.fn(),
   sendWhatsappMessage: vi.fn(),
   conversation: null as Record<string, unknown> | null,
   contact: null as Record<string, unknown> | null,
@@ -18,7 +21,12 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@/lib/auth/require-admin', () => ({ requireAdmin: h.requireAdmin }))
 vi.mock('@/lib/auth/server', () => ({ getUserProfile: h.getUserProfile }))
-vi.mock('@/lib/gmail/client', () => ({ sendReply: h.sendGmailReply }))
+vi.mock('@/lib/gmail/client', () => ({
+  sendReply: h.sendGmailReply,
+  getMessage: h.getMessage,
+  getAttachmentData: h.getAttachmentData,
+  sendNewEmail: h.sendNewEmail,
+}))
 vi.mock('@/lib/whatsapp/client', async importOriginal => {
   const actual = await importOriginal<typeof import('@/lib/whatsapp/client')>()
   return { ...actual, sendWhatsappMessage: h.sendWhatsappMessage }
@@ -135,23 +143,6 @@ describe('POST inbox messages — email channel', () => {
     expect(h.conversationUpdatePayload).toMatchObject({ status: 'pending' })
   })
 
-  it('sends to forwardTo address when provided with Fwd: prefix', async () => {
-    h.sendGmailReply.mockResolvedValue({ id: 'sent-fwd-1' })
-
-    const res = await POST(mockReq({ direction: 'out', body: 'Doorsturen naar partner', forwardTo: 'collega@boatlocal.nl' }), { params: Promise.resolve({ id: 'c1' }) })
-    const json = await res.json()
-
-    expect(h.sendGmailReply).toHaveBeenCalledWith({
-      threadId: 'thread-1',
-      to: 'collega@boatlocal.nl',
-      subject: 'Fwd: Booking question',
-      body: 'Doorsturen naar partner',
-      inReplyToMessageId: 'gmail-in-1',
-    })
-    expect(res.status).toBe(200)
-    expect(json.data.message).toBeDefined()
-  })
-
   it('marks the message failed and returns an error (not a silent 200) when the Gmail send throws', async () => {
     h.sendGmailReply.mockRejectedValue(new Error('Gmail API 500'))
     h.insertedMessage = { id: 'm1', direction: 'out', body: 'x', author_name: 'Beer', status: 'failed', error: 'Gmail API 500', created_at: 'now' }
@@ -230,5 +221,64 @@ describe('POST inbox messages — whatsapp channel', () => {
 
     expect(h.sendWhatsappMessage).not.toHaveBeenCalled()
     expect(res.status).toBe(200)
+  })
+})
+
+describe('POST inbox messages — forward', () => {
+  beforeEach(() => {
+    h.conversation = { id: 'c1', status: 'open', channel: 'email', provider_thread_id: 'thread-1', subject: 'Invoice 42', contact_id: 'contact-1' }
+    h.contact = { name: 'Jane', email: 'jane@example.com' }
+    h.lastInbound = { provider_message_id: 'gmail-in-1', body: 'stored body', created_at: '2026-09-30T10:00:00Z' }
+    h.getMessage.mockResolvedValue({
+      id: 'gmail-in-1',
+      subject: 'Invoice 42',
+      bodyText: 'Invoice attached.',
+      attachments: [{ filename: 'invoice.pdf', mimeType: 'application/pdf', attachmentId: 'att-1', size: 10 }],
+    })
+    h.getAttachmentData.mockResolvedValue(Buffer.from('pdf'))
+    h.sendNewEmail.mockResolvedValue({ id: 'fwd-1', threadId: 'new-thread' })
+    h.insertedMessage = { id: 'm2', direction: 'note', body: 'x', author_name: 'Beer', status: 'received', error: null, created_at: 'now' }
+  })
+
+  it('works WITHOUT a note — the original email and attachments go out as a new email', async () => {
+    const res = await POST(mockReq({ direction: 'note', body: '', forwardTo: 'finance@offcourseamsterdam.com' }), { params: Promise.resolve({ id: 'c1' }) })
+
+    expect(res.status).toBe(200)
+    expect(h.sendGmailReply).not.toHaveBeenCalled()
+    const sent = h.sendNewEmail.mock.calls[0][0]
+    expect(sent.to).toBe('finance@offcourseamsterdam.com')
+    expect(sent.subject).toBe('Fwd: Invoice 42')
+    expect(sent).not.toHaveProperty('threadId')
+    expect(sent.body).toContain('Invoice attached.')
+    expect(sent.body).toContain('From: Jane <jane@example.com>')
+    expect(sent.attachments).toEqual([{ filename: 'invoice.pdf', mimeType: 'application/pdf', content: Buffer.from('pdf') }])
+  })
+
+  it('puts the optional note on top', async () => {
+    await POST(mockReq({ direction: 'note', body: 'Voor de boekhouding', forwardTo: 'finance@offcourseamsterdam.com' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(h.sendNewEmail.mock.calls[0][0].body.startsWith('Voor de boekhouding')).toBe(true)
+  })
+
+  it('logs an internal note and leaves the customer thread status alone', async () => {
+    await POST(mockReq({ direction: 'note', body: '', forwardTo: 'finance@offcourseamsterdam.com' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(h.insertedPayload).toMatchObject({ direction: 'note', body: '↪ Doorgestuurd naar finance@offcourseamsterdam.com' })
+    expect(h.conversationUpdatePayload).toBeNull()
+  })
+
+  it('fails closed (sends nothing) when an attachment cannot be fetched', async () => {
+    h.getAttachmentData.mockRejectedValue(new Error('Gmail API 500'))
+    const res = await POST(mockReq({ direction: 'note', body: '', forwardTo: 'finance@offcourseamsterdam.com' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(res.status).toBe(502)
+    expect(h.sendNewEmail).not.toHaveBeenCalled()
+    expect(h.insertedPayload).toBeNull()
+  })
+
+  it('rejects an invalid address and non-email threads', async () => {
+    const bad = await POST(mockReq({ direction: 'note', body: '', forwardTo: 'finance' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(bad.status).toBe(400)
+    h.conversation = { ...h.conversation!, channel: 'whatsapp' }
+    const wa = await POST(mockReq({ direction: 'note', body: '', forwardTo: 'finance@offcourseamsterdam.com' }), { params: Promise.resolve({ id: 'c1' }) })
+    expect(wa.status).toBe(400)
+    expect(h.sendNewEmail).not.toHaveBeenCalled()
   })
 })
