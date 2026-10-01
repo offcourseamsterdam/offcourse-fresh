@@ -3,14 +3,14 @@ import { computeInvoiceDueDate, formatTourDateDutch } from './invoicing'
 
 describe('computeInvoiceDueDate', () => {
   it('computes due date as exactly 14 days after the tour date', () => {
-    const { dueDateFormatted, dueDateTimestamp } = computeInvoiceDueDate('2026-09-15', 14)
-    expect(dueDateFormatted).toBe('2026-09-29')
+    const { dueDateFormatted, dueDateTimestamp } = computeInvoiceDueDate('2099-09-15', 14)
+    expect(dueDateFormatted).toBe('2099-09-29')
     expect(dueDateTimestamp).toBeGreaterThan(0)
   })
 
   it('handles custom days after tour (e.g. 30 days)', () => {
-    const { dueDateFormatted } = computeInvoiceDueDate('2026-09-01', 30)
-    expect(dueDateFormatted).toBe('2026-10-01')
+    const { dueDateFormatted } = computeInvoiceDueDate('2099-09-01', 30)
+    expect(dueDateFormatted).toBe('2099-10-01')
   })
 
   it('guarantees dueDateTimestamp is in the future for Stripe requirement', () => {
