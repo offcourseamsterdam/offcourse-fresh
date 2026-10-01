@@ -73,6 +73,23 @@ const nextConfig: NextConfig = {
       './node_modules/@napi-rs/canvas-linux-x64-gnu/**',
     ],
   },
+  // The cruise pages live at /cruises/{slug}, but /cruise/{slug} (singular) is the
+  // natural way people write and share the link (ads, Instagram, QR codes). Send it
+  // to the real page instead of a 404. Locale-prefixed and bare forms both covered.
+  async redirects() {
+    return [
+      {
+        source: '/:locale(en|nl|de|fr|es|pt|zh)/cruise/:slug',
+        destination: '/:locale/cruises/:slug',
+        permanent: true,
+      },
+      {
+        source: '/cruise/:slug',
+        destination: '/cruises/:slug',
+        permanent: true,
+      },
+    ]
+  },
   async headers() {
     return [
       {
