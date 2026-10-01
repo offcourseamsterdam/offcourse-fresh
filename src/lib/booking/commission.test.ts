@@ -2,24 +2,24 @@ import { describe, it, expect } from 'vitest'
 import { commissionForCampaign } from './commission'
 
 describe('commissionForCampaign', () => {
-  it('rounds (base × percentage_value / 100) for percentage campaigns', () => {
+  it('rounds (base ÷ 1.09 × percentage_value / 100) for percentage campaigns — VAT is not commissionable', () => {
     expect(commissionForCampaign(
       { percentage_value: 15, investment_type: 'percentage' },
       10000,
-    )).toBe(1500)
+    )).toBe(1376) // 15% of 9174 (10000 excl. 9% VAT)
   })
 
   it('uses Math.round (not floor) on percentage commissions', () => {
-    // 10001 * 15 / 100 = 1500.15 → 1500 (rounds down)
+    // 10001 * 15 / 100 / 1.09 = 1376.30 → 1376 (rounds down)
     expect(commissionForCampaign(
       { percentage_value: 15, investment_type: 'percentage' },
       10001,
-    )).toBe(1500)
-    // 10004 * 15 / 100 = 1500.6 → 1501 (rounds up)
+    )).toBe(1376)
+    // 10004 * 15 / 100 / 1.09 = 1376.7 → 1377 (rounds up)
     expect(commissionForCampaign(
       { percentage_value: 15, investment_type: 'percentage' },
       10004,
-    )).toBe(1501)
+    )).toBe(1377)
   })
 
   it('returns rounded percentage_value as cents for fixed_amount campaigns', () => {

@@ -317,7 +317,7 @@ describe('stripe webhook — payment_intent.succeeded (single finalizer)', () =>
     expect(h.insert.mock.calls[0][0]).toMatchObject({
       campaign_id: 'camp-1',
       partner_id: 'partner-1',
-      commission_amount_cents: 1500, // 15000 * 10 / 100
+      commission_amount_cents: 1376, // 15000 * 10 / 100
     })
   })
 
