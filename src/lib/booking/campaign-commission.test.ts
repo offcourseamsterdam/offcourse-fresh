@@ -26,7 +26,7 @@ describe('resolveCampaignCommission', () => {
     expect(result).toEqual({
       campaignId: 'camp-1',
       partnerId: 'partner-fresh',
-      commissionAmountCents: 1000,
+      commissionAmountCents: 917, // 10% of 10000 excl. 9% VAT
     })
   })
 
@@ -133,16 +133,16 @@ describe('resolveCampaignCommission with a booked listing', () => {
 
   it('charges the private rate for a private booking via the shared link, keeping attribution on the link', async () => {
     const result = await resolveCampaignCommission(tableSupabase(), 'c-shared', 40000, 'l-diana')
-    expect(result).toEqual({ campaignId: 'c-shared', partnerId: 'p-ttd', commissionAmountCents: 8000 })
+    expect(result).toEqual({ campaignId: 'c-shared', partnerId: 'p-ttd', commissionAmountCents: 7339 }) // 20% of 40000 excl. 9% VAT
   })
 
   it('charges the shared rate for a shared booking via the private link', async () => {
     const result = await resolveCampaignCommission(tableSupabase(), 'c-diana', 7000, 'l-shared')
-    expect(result?.commissionAmountCents).toBe(1750)
+    expect(result?.commissionAmountCents).toBe(1606) // 25% of 7000 excl. 9% VAT
   })
 
   it('uses the clicked campaign rate when no booked listing is passed', async () => {
     const result = await resolveCampaignCommission(tableSupabase(), 'c-shared', 40000)
-    expect(result?.commissionAmountCents).toBe(10000)
+    expect(result?.commissionAmountCents).toBe(9174) // 25% of 40000 excl. 9% VAT
   })
 })

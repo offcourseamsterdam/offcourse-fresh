@@ -234,3 +234,13 @@ Run with `npm test`.
 4. Internationalise the partner-code field labels and error messages
    (they're English-only in v1, matching the rest of checkout UX for
    partner flows which are only used at Amsterdam desks).
+
+## Commission is calculated excl. 9% VAT (from 2026-10-01)
+
+`commissionForCampaign()` in `src/lib/booking/commission.ts` now divides the customer-facing base price
+by 1.09 before applying a campaign's percentage. We remit that VAT to the tax office, so partners never
+earn commission on it. This is the single choke point: the Stripe webhook, the admin `/book` route
+(cookie, promo and partner-invoice layers) and `resolveCampaignCommission()` all go through it.
+Fixed-amount campaigns are unchanged. Bookings created before 2026-10-01 keep the (gross-based)
+commission stored on their row; nothing is recalculated retroactively.
+The "Invoice later" wizard already worked this way (`commissionOnNetBaseOnly`), so the two paths now agree.

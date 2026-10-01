@@ -42,7 +42,7 @@ describe('resolveAttribution', () => {
       expect(result).toEqual({
         campaignId: 'camp-1',
         partnerId: 'partner-fresh', // NOT 'partner-STALE'
-        commissionAmountCents: 1000,
+        commissionAmountCents: 917,
       })
     })
   })
@@ -84,7 +84,7 @@ describe('resolveAttribution', () => {
     expect(result).toEqual({
       campaignId: 'camp-promo',
       partnerId: 'partner-promo',
-      commissionAmountCents: 2000,
+      commissionAmountCents: 1835,
     })
   })
 
@@ -106,7 +106,7 @@ describe('resolveAttribution', () => {
     expect(result).toEqual({
       campaignId: 'camp-invoice',
       partnerId: 'partner-invoice',
-      commissionAmountCents: 1500,
+      commissionAmountCents: 1376,
     })
   })
 
