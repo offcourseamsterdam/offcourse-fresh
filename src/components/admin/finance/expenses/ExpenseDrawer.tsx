@@ -9,7 +9,7 @@ import { adminInputClass } from '@/components/admin/ui/fields'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
 import { adminMutate } from '@/hooks/useAdminSave'
 import { dateNL, dateTimeNL, eurCents, eurosToCents } from '@/components/admin/finance/cockpit/money'
-import { EXPENSE_STATUS_LABELS } from '@/lib/finance/expenses/status'
+import { EXPENSE_STATUS_LABELS, MANUAL_FORWARD_STATUSES } from '@/lib/finance/expenses/status'
 import type { VatResolution, VatSource } from '@/lib/finance/expenses/vat'
 import { ExpenseStatusBadge } from './ExpenseStatusBadge'
 import { SupplierPicker } from '@/components/admin/finance/cockpit/SupplierPicker'
@@ -180,8 +180,8 @@ export function ExpenseDrawer({ expenseId, onClose, onChanged }: Props) {
   // resolveVat() stores the losing candidates as { source: cents }.
   const vatConflict = (x?.vat_conflict ?? null) as VatResolution['conflict']
   const editable = !!x && !x.booked_at
-  // Same rule as forwardExpenseToSnelstart for a manual actor: matched or ready, no conflict, not yet sent.
-  const canForward = !!x && !x.snelstart_sent_at && !!x.primary_document_id && (x.status === 'matched' || x.status === 'ready_for_snelstart') && x.vat_conflict == null
+  // Same rule as forwardExpenseToSnelstart for a manual actor (MANUAL_FORWARD_STATUSES), no conflict, not yet sent.
+  const canForward = !!x && !x.snelstart_sent_at && !!x.primary_document_id && MANUAL_FORWARD_STATUSES.has(x.status) && x.vat_conflict == null
   const needsConfirm = !!x && x.status === 'matched' && data?.provenanceTrusted === false
 
   return (
@@ -341,7 +341,11 @@ export function ExpenseDrawer({ expenseId, onClose, onChanged }: Props) {
                   </>
                 ) : (
                   <p className="text-zinc-500">
-                    {x.status === 'ready_for_snelstart' ? 'Klaar — gaat bij de volgende uurlijkse ronde automatisch, of nu handmatig.' : `Status is "${EXPENSE_STATUS_LABELS[x.status as keyof typeof EXPENSE_STATUS_LABELS] ?? x.status}"; automatisch doorsturen gebeurt alleen bij "Klaar voor SnelStart".`}
+                    {x.status === 'ready_for_snelstart'
+                      ? 'Klaar — gaat bij de volgende uurlijkse ronde automatisch, of nu handmatig.'
+                      : canForward
+                        ? 'Gekoppeld maar nog niet doorgestuurd. Stuur hem nu zelf door.'
+                        : `Status is "${EXPENSE_STATUS_LABELS[x.status as keyof typeof EXPENSE_STATUS_LABELS] ?? x.status}"; nog niet door te sturen.`}
                   </p>
                 )}
               </section>
@@ -365,7 +369,7 @@ export function ExpenseDrawer({ expenseId, onClose, onChanged }: Props) {
             )}
             {canForward && (
               <Button size="sm" variant={x.status === 'ready_for_snelstart' ? 'default' : 'outline'} onClick={() => void act({ action: 'forward' })} disabled={busy != null} className="min-h-[44px] sm:min-h-0">
-                {busy === 'forward' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} Naar SnelStart
+                {busy === 'forward' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} Naar boekhouding
               </Button>
             )}
             {x.snelstart_sent_at && !x.booked_at && (

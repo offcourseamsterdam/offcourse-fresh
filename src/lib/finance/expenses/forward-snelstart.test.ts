@@ -60,6 +60,11 @@ describe('buildForwardEmail', () => {
     expect(mail.body).toContain('Bijlage: factuur (PDF) (factuur bol.pdf)')
     expect(mail.attachmentFilename).toBe('FIN-000042_factuur bol.pdf')
   })
+  it('states the payment honestly: paid date, a Revolut draft, or not paid yet', () => {
+    expect(buildForwardEmail(EXPENSE() as never, DOC() as never, 'b@x.test').body).toContain('Betaald op: 2026-09-05 (Revolut)')
+    expect(buildForwardEmail(EXPENSE({ paid_at: null, revolut_draft_id: 'd1' }) as never, DOC() as never, 'b@x.test').body).toContain('Betaling: klaargezet in Revolut, nog niet uitgevoerd')
+    expect(buildForwardEmail(EXPENSE({ paid_at: null, revolut_draft_id: null }) as never, DOC() as never, 'b@x.test').body).toContain('Betaling: nog niet betaald')
+  })
   it('falls back to the invoice date (or payment date) when there is no invoice number', () => {
     expect(buildForwardEmail(EXPENSE({ invoice_number: null }) as never, DOC() as never, 'b@x.test').subject).toBe('[FIN-000042] bol.com b.v. - 2026-09-08')
     expect(buildForwardEmail(EXPENSE({ invoice_number: null, invoice_date: null }) as never, DOC() as never, 'b@x.test').subject).toBe('[FIN-000042] bol.com b.v. - 2026-09-05')
@@ -103,6 +108,11 @@ describe('forwardExpenseToSnelstart', () => {
     expect(await forwardExpenseToSnelstart(db({ expense: EXPENSE({ status: 'partially_matched' }) }).client as never, 'exp-1', { actor: 'manual' })).toEqual({ ok: false, reason: 'not_confirmed' })
     expect(await forwardExpenseToSnelstart(db({ expense: EXPENSE({ status: 'needs_review' }) }).client as never, 'exp-1', { actor: 'manual' })).toEqual({ ok: false, reason: 'not_confirmed' })
     expect(await forwardExpenseToSnelstart(db({ expense: EXPENSE({ status: 'waiting_for_invoice' }) }).client as never, 'exp-1', { actor: 'manual' })).toEqual({ ok: false, reason: 'not_confirmed' })
+  })
+
+  it('an unpaid invoice (waiting_for_payment) never goes out, not even by hand', async () => {
+    const unpaid = EXPENSE({ status: 'waiting_for_payment', paid_at: null, revolut_draft_id: 'draft-1' })
+    expect(await forwardExpenseToSnelstart(db({ expense: unpaid }).client as never, 'exp-1', { actor: 'manual' })).toEqual({ ok: false, reason: 'not_confirmed' })
   })
 
   it('a VAT conflict blocks every actor — the body would state a disputed figure as fact', async () => {

@@ -9,7 +9,11 @@ const h = vi.hoisted(() => ({
   uploadFinanceAttachment: vi.fn().mockResolvedValue({ ok: true }),
   extractDocumentFields: vi.fn(),
   recomputeExpense: vi.fn().mockResolvedValue(null),
+  forward: vi.fn().mockResolvedValue({ ok: true, messageId: 'gm-1', recipient: 'books@example.test' }),
+  postSlackOps: vi.fn().mockResolvedValue(undefined),
 }))
+vi.mock('./forward-snelstart', () => ({ forwardExpenseToSnelstart: h.forward }))
+vi.mock('@/lib/slack/send-notification', () => ({ postSlackOps: h.postSlackOps }))
 vi.mock('@/lib/finance/cockpit/classify/rules', () => ({ classifyStructural: h.classifyStructural }))
 vi.mock('@/lib/finance/cockpit/classify/apply', () => ({ loadRuleContext: h.loadRuleContext, toClassifiable: h.toClassifiable }))
 vi.mock('@/lib/finance/attachment-storage', () => ({ uploadFinanceAttachment: h.uploadFinanceAttachment }))
@@ -123,6 +127,41 @@ describe('ensureExpensesForTransactions', () => {
     expect(opArg(mock.queries, 'finance_expenses', 'insert')).toBeUndefined()
     expect(opArg(mock.queries, 'bank_transactions', 'update')).toEqual({ expense_id: 'exp-fin3' })
     expect(h.recomputeExpense).toHaveBeenCalledWith(expect.anything(), 'exp-fin3')
+  })
+
+  it('a paid draft is linked as a human match, forwarded to the bookkeeper, and Beer gets a Slack DM', async () => {
+    const tx = { ...TX, reference: 'FIN-000003 Bram Bots #2026-10' }
+    const mock = db([tx], undefined, { pending: [{ id: 'exp-fin3', ref: 'FIN-000003' }] })
+    await ensureExpensesForTransactions(mock.client as never, { accountId: 'acct-1', since: '2026-08-01T00:00:00Z' })
+    const link = mock.queries.find(q => q.table === 'finance_expenses' && has(q, 'update'))!
+    expect(op(link, 'update')?.args[0]).toMatchObject({ bank_transaction_id: 'bt-1', match_confidence: 1 })
+    expect(h.forward).toHaveBeenCalledWith(expect.anything(), 'exp-fin3', { actor: 'manual' })
+    expect(h.postSlackOps).toHaveBeenCalledWith(expect.stringContaining('doorgestuurd naar de boekhouding'))
+  })
+
+  it('a refused forward still tells Beer it is linked but NOT sent, with the reason', async () => {
+    h.forward.mockResolvedValueOnce({ ok: false, reason: 'vat_conflict' })
+    const tx = { ...TX, reference: 'FIN-000003 Bram Bots #2026-10' }
+    const mock = db([tx], undefined, { pending: [{ id: 'exp-fin3', ref: 'FIN-000003' }] })
+    const r = await ensureExpensesForTransactions(mock.client as never, { accountId: 'acct-1', since: '2026-08-01T00:00:00Z' })
+    expect(r.linkedToDraft).toBe(1)
+    expect(h.postSlackOps).toHaveBeenCalledWith(expect.stringContaining('Nog NIET naar de boekhouding: de BTW-bronnen spreken elkaar tegen'))
+  })
+
+  it('a forward that throws never breaks the sync', async () => {
+    h.forward.mockRejectedValueOnce(new Error('gmail down'))
+    const tx = { ...TX, reference: 'FIN-000003 Bram Bots #2026-10' }
+    const mock = db([tx], undefined, { pending: [{ id: 'exp-fin3', ref: 'FIN-000003' }] })
+    const r = await ensureExpensesForTransactions(mock.client as never, { accountId: 'acct-1', since: '2026-08-01T00:00:00Z' })
+    expect(r.linkedToDraft).toBe(1)
+    expect(h.postSlackOps).toHaveBeenCalledWith(expect.stringContaining('faalde'))
+  })
+
+  it('an ordinary card payment (no draft) is never forwarded or announced here', async () => {
+    const mock = db([TX])
+    await ensureExpensesForTransactions(mock.client as never, { accountId: 'acct-1', since: '2026-08-01T00:00:00Z' })
+    expect(h.forward).not.toHaveBeenCalled()
+    expect(h.postSlackOps).not.toHaveBeenCalled()
   })
 
   it('losing the race to link a pending draft (another poll got there first) falls through to the normal create/ignore path, not a skip', async () => {

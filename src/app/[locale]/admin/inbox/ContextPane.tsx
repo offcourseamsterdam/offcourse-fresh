@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { CalendarDays, CalendarPlus, Check, CheckCircle2, Download, ExternalLink, Ghost, Globe, Landmark, Languages, Loader2, Mail, Phone, Plus, Receipt, RefreshCw, Sparkles, Wrench, XCircle } from 'lucide-react'
+import { CalendarDays, CalendarPlus, Check, CheckCircle2, Download, ExternalLink, Ghost, Globe, Landmark, Languages, Loader2, Mail, Phone, Plus, Receipt, RefreshCw, Send, Sparkles, Wrench, XCircle } from 'lucide-react'
 import { adminMutate, AdminApiError } from '@/hooks/useAdminSave'
 import { replySimilarity } from '@/lib/ghost/similarity'
 import { fmtAdminDate, fmtAdminTime } from '@/lib/admin/format'
@@ -10,6 +10,7 @@ import { eurCents, dateNL, eurosToCents, centsToEuros } from '@/components/admin
 import { OTA_PLATFORM_NAME } from '@/lib/ota/detect'
 import { pickCheapestPrivateOption } from '@/lib/ota/availability-shape'
 import { draftNeedsEnglish } from '@/lib/i18n/needs-translation'
+import { MANUAL_FORWARD_STATUSES } from '@/lib/finance/expenses/status'
 import { SupplierPicker } from '@/components/admin/finance/cockpit/SupplierPicker'
 import { ExpenseDrawer } from '@/components/admin/finance/expenses/ExpenseDrawer'
 import { hasGhostCoPilotContent, type InboxConversationDetail, type InboxFinanceInvoice, type InboxFinanceDocument, type InboxGhostProposal } from './types'
@@ -1494,9 +1495,21 @@ function FinanceDocumentReview({
       )}
 
       <div className="pt-2 border-t border-amber-50 space-y-2">
+        {expense && !expense.snelstart_sent_at && MANUAL_FORWARD_STATUSES.has(expense.status) && (
+          <button
+            type="button"
+            onClick={() => expenseAction('forward', {}, 'Kon niet doorsturen naar de boekhouding.')}
+            disabled={busy != null}
+            className="w-full min-h-[44px] sm:min-h-[36px] rounded-lg border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60 inline-flex items-center justify-center gap-1.5"
+          >
+            {busy === 'forward' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+            Naar boekhouding sturen
+          </button>
+        )}
         {expense?.snelstart_sent_at ? (
           <p className="text-[11px] text-emerald-700 font-medium inline-flex items-center gap-1.5">
-            <CheckCircle2 className="w-3.5 h-3.5" /> Doorgestuurd naar SnelStart ({fmtAdminDate(expense.snelstart_sent_at)})
+            <CheckCircle2 className="w-3.5 h-3.5" /> Doorgestuurd naar de boekhouding ({fmtAdminDate(expense.snelstart_sent_at)})
+            {!expense.bank_transaction_id && expense.revolut_draft_id && ' · betaling staat klaar in Revolut'}
           </p>
         ) : expense?.bank_transaction_id ? (
           <p className="text-[11px] text-emerald-700 font-medium inline-flex items-center gap-1.5">
@@ -1537,7 +1550,7 @@ function FinanceDocumentReview({
                 Dit maakt een <span className="font-semibold">betaalopdracht klaar in Revolut</span> voor{' '}
                 <span className="font-semibold">{eurCents(grossCents)}</span> aan{' '}
                 {payeeName}. Er wordt nog niets overgemaakt — jij keurt hem daarna goed in de Revolut
-                app. Zodra de betaling terugkomt gaat de factuur vanzelf naar SnelStart. Doorgaan?
+                app. Zodra de betaling is uitgevoerd wordt hij gekoppeld en gaat de factuur vanzelf naar de boekhouding (SnelStart). Doorgaan?
               </>
             }
             confirmLabel="Ja, klaarzetten in Revolut"

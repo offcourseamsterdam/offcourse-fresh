@@ -86,3 +86,11 @@ export const OPEN_STATUSES: ExpenseStatus[] = ['waiting_for_invoice', 'waiting_f
 
 /** Statuses where a document may go out to SnelStart automatically. Deliberately only one. */
 export const AUTO_FORWARD_STATUSES: ExpenseStatus[] = ['ready_for_snelstart']
+
+/**
+ * Statuses a human may forward to the bookkeeper from: the document is accepted
+ * (matched) or fully ready — i.e. paid. Never unpaid (Beer, 2026-10-02: only once
+ * the payment happened), never a partial match, never a record under review.
+ * Pure + client-safe so the drawer and inbox show the button under the same rule.
+ */
+export const MANUAL_FORWARD_STATUSES: ReadonlySet<string> = new Set<ExpenseStatus>(['matched', 'ready_for_snelstart'])

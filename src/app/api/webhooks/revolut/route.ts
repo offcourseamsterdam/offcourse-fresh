@@ -5,6 +5,7 @@ import { parseRevolutWebhook, verifyRevolutWebhook, webhookDedupeKey, type Trans
 import { createRevolutClient, loadConnection, isConnected } from '@/lib/revolut/token-store'
 import { mapTransaction } from '@/lib/revolut/sync'
 import { toCents } from '@/lib/revolut/client'
+import { ensureExpensesForTransactions } from '@/lib/finance/expenses/sync-revolut'
 
 export const dynamic = 'force-dynamic'
 
@@ -65,6 +66,17 @@ export async function POST(request: NextRequest) {
       // A completed transaction carries the account balance after it: cheap, fresh snapshot.
       if (mapped.state === 'completed' && typeof mapped.balance_after_cents === 'number') {
         await supabase.from('revolut_balance_snapshots').insert({ taken_at: now, account_id: row.account_id, balance_cents: mapped.balance_after_cents, currency: mapped.currency, source: 'webhook' })
+      }
+    }
+    // A completed outgoing payment gets its Expense Record right here — and a
+    // paid Revolut draft is linked to its invoice and forwarded (with a Slack DM).
+    // Until 2026-10-02 this only ran in the 15-min cron, which never runs while
+    // Production = main, so drafted invoices were paid but never linked.
+    if (mapped && mapped.state === 'completed' && mapped.amount_cents < 0) {
+      try {
+        await ensureExpensesForTransactions(supabase, { accountId: row.account_id, since: mapped.created_at, limit: 20 })
+      } catch (err) {
+        console.error('[webhooks/revolut] expense step failed (cron is the safety net):', err instanceof Error ? err.message : err)
       }
     }
     await supabase.from('revolut_webhook_events').update({ processed_at: now }).eq('dedupe_key', dedupeKey)

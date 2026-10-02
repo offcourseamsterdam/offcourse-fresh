@@ -10,7 +10,9 @@ const h = vi.hoisted(() => ({
   loadConnection: vi.fn(),
   createRevolutClient: vi.fn(),
   getTransaction: vi.fn(),
+  ensureExpenses: vi.fn(),
 }))
+vi.mock('@/lib/finance/expenses/sync-revolut', () => ({ ensureExpensesForTransactions: h.ensureExpenses }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: h.createAdminClient }))
 vi.mock('@/lib/revolut/token-store', () => ({
   loadConnection: h.loadConnection,
@@ -59,6 +61,7 @@ describe('POST /api/webhooks/revolut', () => {
     h.loadConnection.mockResolvedValue(connection())
     h.getTransaction.mockResolvedValue(TX)
     h.createRevolutClient.mockResolvedValue({ getTransaction: h.getTransaction })
+    h.ensureExpenses.mockResolvedValue({ scanned: 1, created: 0, ignored: 0, linkedToDraft: 1 })
   })
   afterEach(() => { vi.useRealTimers() })
 
@@ -99,6 +102,26 @@ describe('POST /api/webhooks/revolut', () => {
 
     const processed = db.queries.find(q => q.table === 'revolut_webhook_events' && has(q, 'update'))!
     expect(op(processed, 'update')!.args[0]).toHaveProperty('processed_at')
+  })
+
+  it('a completed outgoing payment is linked to its expense right away (paid drafts no longer wait for a cron)', async () => {
+    await POST(request())
+    expect(h.ensureExpenses).toHaveBeenCalledWith(db.client, { accountId: 'acc-main', since: TX.created_at, limit: 20 })
+  })
+
+  it('a pending or incoming transaction never runs the expense step', async () => {
+    h.getTransaction.mockResolvedValue({ ...TX, state: 'pending' })
+    await POST(request())
+    h.getTransaction.mockResolvedValue({ ...TX, legs: [{ ...TX.legs[0], amount: 450 }] })
+    await POST(request())
+    expect(h.ensureExpenses).not.toHaveBeenCalled()
+  })
+
+  it('a failing expense step never fails the webhook — the transaction is still stored and marked processed', async () => {
+    h.ensureExpenses.mockRejectedValue(new Error('db hiccup'))
+    const res = await POST(request())
+    expect(await res.json()).toMatchObject({ ok: true, processed: true })
+    expect(db.queries.some(q => q.table === 'revolut_webhook_events' && has(q, 'update'))).toBe(true)
   })
 
   it('treats a duplicate delivery as already handled (unique violation → 200, no fetch)', async () => {

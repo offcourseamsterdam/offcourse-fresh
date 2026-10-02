@@ -8,6 +8,7 @@ const h = vi.hoisted(() => ({
   detail: vi.fn(),
   confirm: vi.fn(),
   link: vi.fn(),
+  draft: vi.fn(),
 }))
 vi.mock('@/lib/auth/require-admin', () => ({ requireAdmin: h.requireAdmin }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: h.createAdminClient }))
@@ -17,6 +18,7 @@ vi.mock('@/lib/finance/expenses/actions', async importOriginal => ({
   loadExpenseDetail: h.detail,
   confirmMatch: h.confirm,
   linkDocument: h.link,
+  draftExpensePayment: h.draft,
 }))
 
 import { POST } from './route'
@@ -72,6 +74,13 @@ describe('POST /api/admin/finance/expenses/[id]/actions', () => {
     expect((await post({ action: 'forward' })).status).toBe(404)
     h.forward.mockResolvedValue({ ok: false, reason: 'not_confirmed' })
     expect((await (await post({ action: 'forward' })).json()).error).toContain('bevestigen')
+  })
+
+  it('drafting a payment does NOT forward anything yet (that waits for the real payment)', async () => {
+    h.draft.mockResolvedValue(null)
+    expect((await post({ action: 'draft_payment' })).status).toBe(200)
+    expect(h.draft).toHaveBeenCalledWith(expect.anything(), 'e1')
+    expect(h.forward).not.toHaveBeenCalled()
   })
 
   it('an unexpected error is a 500, not a crash', async () => {

@@ -16,7 +16,7 @@ import { downloadFinanceAttachment } from '@/lib/finance/attachment-storage'
 import { sendNewEmail } from '@/lib/gmail/client'
 import { postSlackOps } from '@/lib/slack/send-notification'
 import { recomputeExpense, type DocumentRow, type ExpenseRow } from './recompute'
-import { AUTO_FORWARD_STATUSES } from './status'
+import { AUTO_FORWARD_STATUSES, MANUAL_FORWARD_STATUSES } from './status'
 
 type Admin = ReturnType<typeof createAdminClient>
 
@@ -76,7 +76,11 @@ export function buildForwardEmail(expense: ExpenseRow, doc: DocumentRow, recipie
     expense.invoice_number ? `Factuurnummer: ${expense.invoice_number}` : null,
     expense.order_number ? `Ordernummer: ${expense.order_number}` : null,
     `Factuurdatum: ${fmtDate(expense.invoice_date)}`,
-    `Betaald op: ${fmtDate(expense.paid_at)} (Revolut)`,
+    expense.paid_at
+      ? `Betaald op: ${fmtDate(expense.paid_at)} (Revolut)`
+      : expense.revolut_draft_id
+        ? 'Betaling: klaargezet in Revolut, nog niet uitgevoerd'
+        : 'Betaling: nog niet betaald',
     '',
     `Bruto: ${expense.gross_cents != null ? formatCurrency(expense.gross_cents / 100) : '-'}`,
     `BTW: ${expense.vat_cents != null ? formatCurrency(expense.vat_cents / 100) : '-'}${expense.vat_rate_pct != null ? ` (${Number(expense.vat_rate_pct)}%)` : ''}${expense.vat_source ? ` - bron: ${expense.vat_source}` : ''}`,
@@ -100,7 +104,7 @@ export type ForwardOutcome =
 export type ForwardRefusal = 'not_found' | 'already_sent' | 'no_document' | 'not_ready' | 'not_confirmed' | 'vat_conflict' | 'ignored_or_booked' | 'not_configured' | 'download_failed' | 'send_failed'
 
 /** Statuses a human may forward from: the document is accepted (matched) or fully ready. Never a partial match, never a record under review. */
-const MANUAL_FORWARD_STATUSES = new Set<string>(['matched', 'ready_for_snelstart'])
+
 
 export interface ForwardOptions {
   /** 'manual' may also send a `matched` record (Beer decided the VAT is fine without a second source); 'cron' only sends ready_for_snelstart. */

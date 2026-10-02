@@ -27,6 +27,8 @@ import { decideExpenseForTransaction, type ExpenseSourceTransaction } from './fr
 import { MAX_DOCUMENT_BYTES, sha256Hex, sniffDocumentType } from './documents'
 import { extractDocumentFields } from './extract-document'
 import { recomputeExpense } from './recompute'
+import { forwardExpenseToSnelstart, type ForwardRefusal } from './forward-snelstart'
+import { postSlackOps } from '@/lib/slack/send-notification'
 import { vatFromGrossAndRate } from './vat'
 
 type Admin = ReturnType<typeof createAdminClient>
@@ -88,6 +90,42 @@ async function findPendingDraftExpenseId(supabase: Admin, tx: BankTxRow): Promis
   return (data ?? []).find(e => tx.reference!.includes(e.ref))?.id ?? null
 }
 
+const FORWARD_REFUSAL_NL: Partial<Record<ForwardRefusal, string>> = {
+  no_document: 'er is geen factuurbestand om door te sturen',
+  vat_conflict: 'de BTW-bronnen spreken elkaar tegen',
+  not_confirmed: 'de koppeling moet nog bevestigd worden',
+  not_configured: 'SNELSTART_INBOX_EMAIL is niet ingesteld',
+  download_failed: 'het bestand kon niet uit de opslag worden gelezen',
+  send_failed: 'versturen via Gmail mislukte',
+}
+
+function euro(cents: number): string {
+  return `€${(Math.abs(cents) / 100).toFixed(2).replace('.', ',')}`
+}
+
+/**
+ * A drafted payment just came back from Revolut and is linked to its invoice:
+ * send the invoice to the bookkeeper and tell Beer either way (Beer, 2026-10-02:
+ * "dat ie gekoppeld is en verzonden"). Never throws — the link already stands,
+ * and the hourly SnelStart cron / the manual button can still forward later.
+ */
+async function forwardPaidDraft(supabase: Admin, expenseId: string, amountCents: number): Promise<void> {
+  let label = expenseId
+  try {
+    const { data: exp } = await supabase.from('finance_expenses').select('ref, supplier_name').eq('id', expenseId).maybeSingle()
+    if (exp) label = `${exp.ref} ${exp.supplier_name ?? ''}`.trim()
+    const outcome = await forwardExpenseToSnelstart(supabase, expenseId, { actor: 'manual' })
+    const head = `Betaling ${label} (${euro(amountCents)}) is uitgevoerd en gekoppeld aan de factuur.`
+    if (outcome.ok) await postSlackOps(`✅ ${head} Factuur doorgestuurd naar de boekhouding (${outcome.recipient}).`)
+    else if (outcome.reason !== 'already_sent') {
+      await postSlackOps(`⚠️ ${head} Nog NIET naar de boekhouding: ${FORWARD_REFUSAL_NL[outcome.reason] ?? outcome.reason}. Stuur hem door via Finance → Uitgaven.`)
+    }
+  } catch (err) {
+    console.error('[finance/expenses/sync-revolut] forward after draft link failed:', err instanceof Error ? err.message : err)
+    await postSlackOps(`⚠️ Betaling ${label} is gekoppeld, maar doorsturen naar de boekhouding faalde. Stuur hem door via Finance → Uitgaven.`).catch(() => {})
+  }
+}
+
 export async function ensureExpensesForTransactions(
   supabase: Admin,
   opts: { accountId: string; since: string; limit?: number },
@@ -114,7 +152,10 @@ export async function ensureExpensesForTransactions(
     if (pendingId) {
       const { data: linked, error: linkErr } = await supabase
         .from('finance_expenses')
-        .update({ bank_transaction_id: row.id, paid_at: row.completed_at ?? row.created_at })
+        // match_confidence 1: Beer drafted this payment from this very invoice — a
+        // human link, so the record can reach matched/ready instead of parking at
+        // partially_matched (which is why drafted invoices never went out, 2026-10-02).
+        .update({ bank_transaction_id: row.id, paid_at: row.completed_at ?? row.created_at, match_confidence: 1 })
         .eq('id', pendingId)
         .is('bank_transaction_id', null) // still-open race guard: another poll may have linked it first
         .select('id')
@@ -124,6 +165,7 @@ export async function ensureExpensesForTransactions(
         if (txLinkErr) throw new Error(txLinkErr.message)
         await recomputeExpense(supabase, pendingId)
         result.linkedToDraft++
+        await forwardPaidDraft(supabase, pendingId, row.amount_cents)
         continue
       }
       // Lost the race — another poll already linked this expense to a transaction; fall through to the normal decision below so this transaction still gets handled instead of silently skipped.
