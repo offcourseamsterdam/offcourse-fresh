@@ -177,12 +177,16 @@ export interface BookingPanelProps {
    * event-date card's border, and the mobile sticky CTA's fill.
    */
   rainbowBoatCard?: boolean
+  /** Light Festival: boat cards get an animated rainbow ring, the chosen boat also glows. */
+  festivalBoatCard?: boolean
   /**
    * Special events only have real availability on one scheduled day (YYYY-MM-DD).
    * When set, the date picker shows just that single day instead of a 14-day
    * scroller + calendar — there's nothing else to pick.
    */
   fixedDate?: string
+  /** First bookable day (YYYY-MM-DD) for a seasonal listing — the date scroller starts here instead of today. */
+  minDate?: string
   /**
    * Overrides the default floor of 2 guests we enforce on an empty shared
    * slot (see `minParty` in BookingPanelDesktop/BookingPanelSlider). From

@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react'
 import { notFound } from 'next/navigation'
 import { getTranslations } from 'next-intl/server'
-import { Clock, Users, Umbrella } from 'lucide-react'
+import { Clock, Users, Umbrella, Sparkles } from 'lucide-react'
 import { BookingPanel } from '@/components/booking/BookingPanel'
 import { PrideEventWhatsAppCard } from '@/components/booking/PrideEventWhatsAppCard'
 import { ImageGallery } from '@/components/cruise/ImageGallery'
@@ -10,6 +10,11 @@ import { MobileBookingCTA } from '@/components/cruise/MobileBookingCTA'
 import { RainbowCursorTrail } from '@/components/cruise/RainbowCursorTrail'
 import { RastaCursorTrail } from '@/components/cruise/RastaCursorTrail'
 import { CruiseContentSections } from '@/components/cruise/CruiseContentSections'
+import { RouteMap } from '@/components/cruise/light-festival/RouteMap'
+import { SnowPhotoHero } from '@/components/cruise/light-festival/SnowPhotoHero'
+import { ArtworksSection } from '@/components/cruise/light-festival/ArtworksSection'
+import { LightStreakCursor } from '@/components/cruise/light-festival/LightStreakCursor'
+import { isLightFestivalListing, LIGHT_FESTIVAL_START_DATE, LIGHT_FESTIVAL_SHOW_ROUTE_MAP, LIGHT_FESTIVAL_TOTAL_ARTWORKS } from '@/lib/cruise/light-festival'
 import { getListingBySlug, getCruisePageData } from '@/lib/cruise/get-cruise-page-data'
 import { getCruiseAvailabilitySnapshot } from '@/lib/fareharbor/get-availability-snapshot'
 import { AvailabilityFiltersSchema } from '@/lib/fareharbor/filters'
@@ -169,6 +174,9 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
   }
   const specialEvent = SPECIAL_EVENTS[listing.slug]
   const isSpecialEvent = Boolean(specialEvent)
+  // Amsterdam Light Festival skin: route map hero → snowy photo → dark indigo
+  // content with an artworks section. Booking flow itself is unchanged.
+  const lightFestival = isLightFestivalListing(listing.slug)
   const specialEventDate = specialEvent?.date
   // Whole-boat total only applies to a PRIVATE special event (a single
   // fixed-price charter) — the headline number is the boat price (per-person
@@ -279,7 +287,7 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
     listingTitle: data.title,
     listingHeroImageUrl: data.heroUrl,
     category: listing.category as 'private' | 'shared',
-    initialDate: date ?? specialEventDate ?? amsterdamToday,
+    initialDate: date ?? specialEventDate ?? (lightFestival && amsterdamToday < LIGHT_FESTIVAL_START_DATE ? LIGHT_FESTIVAL_START_DATE : amsterdamToday),
     initialGuests: guests ? Number(guests) : undefined,
     initialTime: time,
     // Pride's real policy (full refund up to 3 weeks out, then none) is shown
@@ -292,7 +300,9 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
     minPartyOverride,
     offeredBoatIds,
     rainbowBoatCard: isSpecialEvent,
+    festivalBoatCard: lightFestival,
     fixedDate: specialEventDate,
+    minDate: lightFestival ? LIGHT_FESTIVAL_START_DATE : undefined,
     infoPills: [
       ...(listing.duration_display ? [{ icon: 'duration' as const, label: listing.duration_display }] : []),
       ...(listing.max_guests ? [{ icon: 'guests' as const, label: `Up to ${listing.max_guests} guests` }] : []),
@@ -341,15 +351,61 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
       )}
 
       <StickyBookingHeader title={data.title} priceDisplay={listing.price_display} />
-      <MobileBookingCTA rainbowTheme={isSpecialEvent} />
+      <MobileBookingCTA rainbowTheme={isSpecialEvent} festivalTheme={lightFestival} />
       {/* Pride-only easter egg: a rainbow ribbon trails the cursor on this one listing. */}
       {slug === 'pride-amsterdam-2026' && <RainbowCursorTrail />}
       {/* Jamaican Buffet Cruise easter egg: a green/gold/red banner trails the cursor,
           with a firework-style burst in the same colors on click/tap. */}
       {slug === 'curacao-jamaican-buffet-cruise' && <RastaCursorTrail />}
+      {/* Light Festival: a glowing neon streak trails the cursor. */}
+      {lightFestival && <LightStreakCursor />}
 
       <div className="min-h-screen bg-texture-sand pb-32 lg:pb-0" style={themeStyle}>
 
+        {lightFestival ? (
+          <>
+            {/* ── Light Festival hero: full-bleed snowy photo with the headline + route map on top ── */}
+            <SnowPhotoHero images={data.images} heroUrl={data.heroUrl} heroAsset={data.heroAsset} title={data.title}>
+              <div className={`grid grid-cols-1 gap-8 lg:gap-12 items-end ${LIGHT_FESTIVAL_SHOW_ROUTE_MAP ? 'lg:grid-cols-[1.2fr_1fr]' : ''}`}>
+                <div>
+                  <h1 className="text-xs sm:text-sm font-bold uppercase tracking-[0.16em] text-[#fec201] flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-[#fec201] shadow-[0_0_12px_#fec201]" aria-hidden="true" />
+                    {data.title}
+                  </h1>
+                  <p className="font-briston text-white text-[42px] sm:text-6xl lg:text-[54px] xl:text-[60px] leading-[0.98] mt-3 [text-shadow:0_2px_30px_rgba(0,0,0,0.5)]">
+                    The city lights up.<br />You just float through it.
+                  </p>
+                  {data.tagline && <p className="text-[#e3e3f7] mt-4 text-base sm:text-lg max-w-xl">{data.tagline}</p>}
+                  <div className="flex flex-wrap items-center gap-3 mt-6">
+                    {data.avgRating && data.totalReviews > 0 && (
+                      <a href="#reviews" className="flex items-center gap-2 min-h-[44px] text-sm text-[#e3e3f7] bg-white/10 hover:bg-white/15 pl-2 pr-4 rounded-full border border-white/15 backdrop-blur-md transition-colors">
+                        <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white text-[#333399] font-bold text-xs">{data.avgRating}</span>
+                        <span>{data.totalReviews} reviews</span>
+                      </a>
+                    )}
+                    <a
+                      href="#artworks"
+                      className="btn-festival-glow [--lf-fill:#14143e] inline-flex items-center gap-2 min-h-[44px] px-4 rounded-full text-sm font-bold text-white"
+                    >
+                      <Sparkles className="w-4 h-4 text-[#fec201]" />
+                      <span>{`${LIGHT_FESTIVAL_TOTAL_ARTWORKS} artworks on the route`}</span>
+                      <span aria-hidden="true" className="text-[#fec201]">&rarr;</span>
+                    </a>
+                    <span className="inline-flex items-center gap-1.5 min-h-[44px] px-4 rounded-full text-sm font-medium bg-white/10 text-white/90 backdrop-blur-md border border-white/15">
+                      🔥 Heated saloon &amp; warm blankets
+                    </span>
+                  </div>
+                </div>
+                {LIGHT_FESTIVAL_SHOW_ROUTE_MAP && (
+                  <div className="rounded-[20px] p-2 bg-white/10 border border-white/20 backdrop-blur-md">
+                    <RouteMap />
+                  </div>
+                )}
+              </div>
+            </SnowPhotoHero>
+          </>
+        ) : (
+        <>
         {/* ── Hero ── */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 sm:pt-20 pb-4">
           <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">{listing.category}</span>
@@ -383,6 +439,8 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
           */}
           <ImageGallery images={data.images} heroUrl={data.heroUrl} heroAsset={data.heroAsset} videoUrl={data.videoUrl} title={data.title} reviews={data.serializedReviews} reviewCount={data.totalReviews ?? undefined} avgRating={data.avgRating != null ? Number(data.avgRating) : undefined} />
         </div>
+        </>
+        )}
 
         {/* ── Inline booking (mobile/tablet) ── */}
         <div id="booking" className="lg:hidden max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-8">
@@ -410,12 +468,16 @@ export default async function CruiseListingPage({ params, searchParams }: Props)
               faqLabel={t('faq')}
               isSpecialEvent={isSpecialEvent}
               mapCoords={specialEvent?.mapCoords}
+              lightFestival={lightFestival ? {
+                artworks: <ArtworksSection headingClassName="font-briston text-[28px] sm:text-[36px] uppercase mb-6 text-[var(--color-accent)]" />,
+                listingImages: data.images,
+              } : undefined}
             />
 
             {/* Desktop sidebar — date/guests card scrolls with the page;
                 the time/booking card (+ the "Start Cruising" heading) sticks
                 together as one unified block once the top card scrolls off. */}
-            <div className="hidden lg:block lg:col-span-1">
+            <div id="booking-sidebar" className="hidden lg:block lg:col-span-1 scroll-mt-24">
               <BookingPanel
                 {...bookingPanelProps}
                 layout="sidebar"

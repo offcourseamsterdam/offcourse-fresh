@@ -268,6 +268,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                 selectedDate={state.date}
                 onSelectDate={handleInlineDateSelect}
                 fixedDate={props.fixedDate}
+                minDate={props.minDate}
                 rainbowTheme={props.rainbowBoatCard}
               />
 
@@ -343,6 +344,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
                   onSelectSlot={(slot) => dispatch({ type: 'SELECT_SLOT', slot, category: 'private' })}
                   offeredBoatIds={props.offeredBoatIds}
                   rainbowBoatCard={props.rainbowBoatCard}
+                  festivalBoatCard={props.festivalBoatCard}
                 />
               )}
 
@@ -377,6 +379,7 @@ export function BookingPanelSlider(props: BookingPanelProps) {
               selectedDate={state.date}
               onSelectDate={handleInlineDateSelect}
               fixedDate={props.fixedDate}
+              minDate={props.minDate}
               rainbowTheme={props.rainbowBoatCard}
             />
 

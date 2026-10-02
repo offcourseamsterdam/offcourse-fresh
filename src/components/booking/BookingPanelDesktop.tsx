@@ -168,6 +168,7 @@ export function BookingPanelDesktop(props: BookingPanelProps) {
           selectedDate={state.date}
           onSelectDate={handleInlineDateSelect}
           fixedDate={props.fixedDate}
+          minDate={props.minDate}
           rainbowTheme={props.rainbowBoatCard}
         />
 
@@ -234,6 +235,7 @@ export function BookingPanelDesktop(props: BookingPanelProps) {
                     onSelectSlot={(slot) => dispatch({ type: 'SELECT_SLOT', slot, category: 'private' })}
                     offeredBoatIds={props.offeredBoatIds}
                     rainbowBoatCard={props.rainbowBoatCard}
+                    festivalBoatCard={props.festivalBoatCard}
                   />
                   {props.rainbowBoatCard && (
                     <div className="mt-4">

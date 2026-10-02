@@ -241,7 +241,7 @@ function OptionalExtraCard({
   )
 }
 
-function ExtraDetailModal({
+export function ExtraDetailModal({
   extra,
   onClose,
 }: {

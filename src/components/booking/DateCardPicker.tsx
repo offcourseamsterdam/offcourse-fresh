@@ -18,20 +18,33 @@ interface DateCardPickerProps {
   fixedDate?: string
   /** Pride-only styling: the fixed event-date card gets a rainbow gradient border. */
   rainbowTheme?: boolean
+  /**
+   * First bookable day (YYYY-MM-DD) for a seasonal listing, e.g. the Light
+   * Festival. Until then the scroller and calendar start here instead of today,
+   * so visitors don't land on two weeks of "fully booked".
+   */
+  minDate?: string
 }
 
-function buildUpcomingDates(count: number): { dateStr: string; day: number; dayName: string; month: string; isToday: boolean }[] {
-  const today = getToday()
+/** The day the date scroller starts on: today, or `minDate` if that's later. */
+export function scrollerStartDate(today: Date, minDate?: string): Date {
+  if (!minDate || minDate <= toDateStr(today)) return today
+  return new Date(`${minDate}T00:00:00`)
+}
+
+export function buildUpcomingDates(count: number, start: Date, today: Date): { dateStr: string; day: number; dayName: string; month: string; isToday: boolean }[] {
+  const todayStr = toDateStr(today)
   const dates = []
   for (let i = 0; i < count; i++) {
-    const d = new Date(today)
-    d.setDate(today.getDate() + i)
+    const d = new Date(start)
+    d.setDate(start.getDate() + i)
+    const dateStr = toDateStr(d)
     dates.push({
-      dateStr: toDateStr(d),
+      dateStr,
       day: d.getDate(),
       dayName: SHORT_DAYS[d.getDay()],
       month: SHORT_MONTHS[d.getMonth()],
-      isToday: i === 0,
+      isToday: dateStr === todayStr,
     })
   }
   return dates
@@ -42,14 +55,15 @@ function describeDate(dateStr: string): { dateStr: string; day: number; dayName:
   return { dateStr, day: d.getDate(), dayName: SHORT_DAYS[d.getDay()], month: SHORT_MONTHS[d.getMonth()] }
 }
 
-export function DateCardPicker({ selectedDate, onSelectDate, fixedDate, rainbowTheme }: DateCardPickerProps) {
+export function DateCardPicker({ selectedDate, onSelectDate, fixedDate, rainbowTheme, minDate }: DateCardPickerProps) {
   const [showCalendar, setShowCalendar] = useState(false)
 
   // Calendar state for the expanded view — declared unconditionally (rules of
   // hooks) even though the fixedDate path below never uses it.
   const today = getToday()
-  const [calYear, setCalYear] = useState(today.getFullYear())
-  const [calMonth, setCalMonth] = useState(today.getMonth())
+  const start = scrollerStartDate(today, minDate)
+  const [calYear, setCalYear] = useState(start.getFullYear())
+  const [calMonth, setCalMonth] = useState(start.getMonth())
 
   if (fixedDate) {
     const d = describeDate(fixedDate)
@@ -69,14 +83,14 @@ export function DateCardPicker({ selectedDate, onSelectDate, fixedDate, rainbowT
     )
   }
 
-  const dates = buildUpcomingDates(14)
+  const dates = buildUpcomingDates(14, start, today)
 
   const todayStr = toDateStr(today)
   const tomorrow = new Date(today)
   tomorrow.setDate(today.getDate() + 1)
   const tomorrowStr = toDateStr(tomorrow)
 
-  const isPrevDisabled = calYear === today.getFullYear() && calMonth <= today.getMonth()
+  const isPrevDisabled = calYear === start.getFullYear() && calMonth <= start.getMonth()
 
   function prevMonth() {
     if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1) }
@@ -163,7 +177,8 @@ export function DateCardPicker({ selectedDate, onSelectDate, fixedDate, rainbowT
             onPickDate={handleCalendarPick}
             onPrevMonth={prevMonth}
             onNextMonth={nextMonth}
-            today={today}
+            // Days before `start` render as past (disabled) in the calendar.
+            today={start}
             variant="inline"
           />
         </div>

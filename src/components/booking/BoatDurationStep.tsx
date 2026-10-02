@@ -19,6 +19,8 @@ interface BoatDurationStepProps {
   offeredBoatIds?: string[]
   /** Pride-only styling: boat card gets a smooth drifting rainbow gradient instead of its usual texture. */
   rainbowBoatCard?: boolean
+  /** Light Festival: animated rainbow ring on each boat card; the chosen boat also glows. */
+  festivalBoatCard?: boolean
 }
 
 interface BoatOption {
@@ -53,6 +55,7 @@ export function BoatDurationStep({
   onSelectSlot,
   offeredBoatIds,
   rainbowBoatCard,
+  festivalBoatCard,
 }: BoatDurationStepProps) {
   const boats = useMemo<BoatOption[]>(() => {
     const boatMap = new Map<string, AvailabilityCustomerType[]>()
@@ -115,9 +118,11 @@ export function BoatDurationStep({
           <div
             key={boat.id}
             className={`rounded-xl overflow-hidden transition-all duration-200 ${
-              hasSelection
-                ? 'ring-2 ring-[var(--color-primary)] ring-offset-2'
-                : ''
+              festivalBoatCard
+                ? `lf-ring-card ${hasSelection ? 'lf-ring-card-selected' : ''}`
+                : hasSelection
+                  ? 'ring-2 ring-[var(--color-primary)] ring-offset-2'
+                  : ''
             }`}
           >
             <div className={`${bgClass} p-5`}>

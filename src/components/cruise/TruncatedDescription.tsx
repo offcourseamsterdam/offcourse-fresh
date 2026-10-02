@@ -20,7 +20,7 @@ export function TruncatedDescription({ html, maxLength = 500 }: TruncatedDescrip
   return (
     <div>
       <div
-        className={`text-[var(--color-ink)] leading-relaxed text-base prose prose-sm max-w-none [&_p]:mb-4 [&_br]:block ${
+        className={`text-[var(--color-ink)] leading-relaxed text-base prose prose-sm max-w-none [&_p]:mb-4 [&_br]:block [&_h3]:font-briston [&_h3]:text-xl [&_h3]:sm:text-2xl [&_h3]:text-[var(--color-primary)] [&_h3]:mt-6 [&_h3]:mb-2 [&_h3:first-child]:mt-0 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-4 [&_li]:mb-1.5 ${
           !expanded && needsTruncation ? 'max-h-[180px] overflow-hidden relative' : ''
         }`}
         style={!expanded && needsTruncation ? { WebkitMaskImage: 'linear-gradient(to bottom, black 60%, transparent 100%)', maskImage: 'linear-gradient(to bottom, black 60%, transparent 100%)' } : undefined}

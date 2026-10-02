@@ -432,3 +432,70 @@
     animation: modal-in 220ms cubic-bezier(0.25, 0.1, 0.25, 1) both;
   }
 }
+
+/* ── Amsterdam Light Festival theme ─────────────────────────────────────
+   Per-listing skin (src/lib/cruise/light-festival.ts). Lives outside
+   @layer so @property (needed to animate the conic ring) is top-level. */
+
+/* Rainbow "light festival" button: animated conic ring + colour-cycling glow.
+   Set --lf-fill / color on the element; don't add a bg-* utility (it would
+   fight the double background below). */
+@property --lf-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+.btn-festival-glow {
+  border: 2px solid transparent;
+  background:
+    linear-gradient(var(--lf-fill, #ffffff), var(--lf-fill, #ffffff)) padding-box,
+    conic-gradient(from var(--lf-angle), var(--rainbow-vivid-stops)) border-box;
+  animation: lf-ring 3.5s linear infinite, lf-halo 6s linear infinite;
+  transition: transform 0.2s ease;
+}
+.btn-festival-glow:hover { transform: translateY(-1px) scale(1.02); }
+@keyframes lf-ring { to { --lf-angle: 360deg; } }
+@keyframes lf-halo {
+  0%, 100% { box-shadow: 0 0 18px -2px rgba(155, 183, 253, 0.75), 0 0 40px -8px rgba(179, 136, 255, 0.6); }
+  33%      { box-shadow: 0 0 18px -2px rgba(244, 130, 154, 0.75), 0 0 40px -8px rgba(254, 194, 1, 0.5); }
+  66%      { box-shadow: 0 0 18px -2px rgba(168, 214, 90, 0.7), 0 0 40px -8px rgba(76, 201, 240, 0.55); }
+}
+
+/* Section headings: a slow light-art gradient (violet, magenta, rose, amber, teal),
+   deep enough to stay readable on the sand background, with a soft glow. */
+.lf-headings h2.font-briston {
+  background-image: linear-gradient(100deg, #6d28d9, #c026d3, #e11d48, #ea580c, #0891b2, #6d28d9);
+  background-size: 160% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 14px rgba(190, 24, 93, 0.22));
+  animation: lf-heading-flow 14s ease-in-out infinite alternate;
+}
+@keyframes lf-heading-flow { from { background-position: 0% 50%; } to { background-position: 100% 50%; } }
+
+/* Boat cards in the booking widget: same moving rainbow ring as the buttons.
+   The card's own background covers the padding box, so only the 2px ring shows;
+   the chosen boat also gets the colour-cycling glow. */
+.lf-ring-card {
+  border: 2px solid transparent;
+  background:
+    linear-gradient(#ffffff, #ffffff) padding-box,
+    conic-gradient(from var(--lf-angle), var(--rainbow-vivid-stops)) border-box;
+  animation: lf-ring 3.5s linear infinite;
+}
+.lf-ring-card-selected { animation: lf-ring 2s linear infinite, lf-halo 6s linear infinite; }
+
+/* Route map + hero photo motion */
+.lf-map-route { animation: lf-dash 30s linear infinite; filter: drop-shadow(0 0 6px rgba(254, 194, 1, 0.8)); }
+@keyframes lf-dash { to { stroke-dashoffset: -540; } }
+.lf-map-halo { transform-box: fill-box; transform-origin: center; animation: lf-pulse 2.4s ease-in-out infinite; }
+@keyframes lf-pulse { 0%, 100% { opacity: 0.25; transform: scale(1); } 50% { opacity: 0.6; transform: scale(1.5); } }
+.lf-map-boat { animation: lf-sail 18s ease-in-out infinite alternate; }
+@keyframes lf-sail { from { offset-distance: 0%; } to { offset-distance: 100%; } }
+.lf-hero-drift { animation: lf-drift 30s ease-in-out infinite alternate; }
+@keyframes lf-drift { from { transform: scale(1.03); } to { transform: scale(1.1) translateX(-1.5%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-festival-glow, .lf-headings h2.font-briston, .lf-ring-card, .lf-ring-card-selected, .lf-map-route, .lf-map-halo, .lf-map-boat, .lf-hero-drift { animation: none; }
+}
