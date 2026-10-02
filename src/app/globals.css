@@ -474,6 +474,16 @@
 }
 @keyframes lf-heading-flow { from { background-position: 0% 50%; } to { background-position: 100% 50%; } }
 
+/* Header pill title: bright light-art gradient, readable on the dark pill fill. */
+.lf-pill-title {
+  background-image: linear-gradient(90deg, #ff9ecb, #ffd23f, #7cf2ff, #c4a3ff, #ff9ecb);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: lf-heading-flow 6s ease-in-out infinite alternate;
+}
+
 /* Boat cards in the booking widget: same moving rainbow ring as the buttons.
    The card's own background covers the padding box, so only the 2px ring shows;
    the chosen boat also gets the colour-cycling glow. */
@@ -497,5 +507,5 @@
 @keyframes lf-drift { from { transform: scale(1.03); } to { transform: scale(1.1) translateX(-1.5%); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .btn-festival-glow, .lf-headings h2.font-briston, .lf-ring-card, .lf-ring-card-selected, .lf-map-route, .lf-map-halo, .lf-map-boat, .lf-hero-drift { animation: none; }
+  .btn-festival-glow, .lf-pill-title, .lf-headings h2.font-briston, .lf-ring-card, .lf-ring-card-selected, .lf-map-route, .lf-map-halo, .lf-map-boat, .lf-hero-drift { animation: none; }
 }

@@ -29,7 +29,7 @@ export function Logo({ className, variant = 'horizontal' }: LogoProps) {
         width={193}
         height={44}
         priority
-        className="h-11 w-auto"
+        className="h-9 sm:h-11 w-auto"
       />
     </div>
   )

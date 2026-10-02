@@ -12,6 +12,7 @@ import type { UserRole } from '@/lib/auth/types'
 import { Logo } from '@/components/ui/Logo'
 import { SearchBar } from '@/components/search/SearchBar'
 import { useSearch } from '@/lib/search/SearchContext'
+import { LightFestivalNavPill } from './LightFestivalNavPill'
 
 /** Dashboard paths without locale prefix — next-intl Link auto-prepends locale */
 function getDashboardPathNoLocale(role: UserRole): string {
@@ -148,7 +149,7 @@ export function Navbar({ navListings = [] }: NavbarProps) {
 
   return (
     <header className="fixed top-0 left-0 right-0 z-[9999] bg-white/95 backdrop-blur-sm transition-all duration-300">
-      <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center h-16 gap-4">
+      <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center h-16 gap-2 sm:gap-4">
 
         {/* Logo — left */}
         <Link href="/" className="flex-shrink-0">
@@ -179,6 +180,8 @@ export function Navbar({ navListings = [] }: NavbarProps) {
 
         {/* Right side: auth + language + hamburger */}
         <div className="flex items-center gap-2">
+          {/* Seasonal: Light Festival pill (hides itself after the festival) */}
+          <LightFestivalNavPill />
           {/* Auth indicator — desktop only */}
           {!isLoading && (
             <div className="hidden sm:flex items-center gap-1.5">

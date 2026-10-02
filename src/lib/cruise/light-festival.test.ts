@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isLightFestivalListing, pinnedArtworks, pickBoatPhotos, foodTabFor, boatExtrasFor, CURACAO_PHOTOS, LIGHT_FESTIVAL_ARTWORKS } from './light-festival'
+import { showLightFestivalPill, isLightFestivalListing, pinnedArtworks, pickBoatPhotos, foodTabFor, boatExtrasFor, CURACAO_PHOTOS, LIGHT_FESTIVAL_ARTWORKS } from './light-festival'
 
 describe('isLightFestivalListing', () => {
   it('matches the private Light Festival listing', () => {
@@ -83,5 +83,16 @@ describe('boatExtrasFor', () => {
   })
   it('returns null for an unknown boat', () => {
     expect(boatExtrasFor('Titanic', imgs)).toBeNull()
+  })
+})
+
+describe('showLightFestivalPill', () => {
+  it('shows before and during the festival, including the last night', () => {
+    expect(showLightFestivalPill('2026-10-02')).toBe(true)
+    expect(showLightFestivalPill('2026-12-12')).toBe(true)
+    expect(showLightFestivalPill('2027-01-17')).toBe(true)
+  })
+  it('hides once the festival is over', () => {
+    expect(showLightFestivalPill('2027-01-18')).toBe(false)
   })
 })

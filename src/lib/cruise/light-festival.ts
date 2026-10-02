@@ -16,6 +16,17 @@ export const LIGHT_FESTIVAL_SHOW_ROUTE_MAP = false
 /** First festival night — the booking date scroller starts here until then. */
 export const LIGHT_FESTIVAL_START_DATE = '2026-11-26'
 
+/** Last festival night — the header pill disappears after this day. */
+export const LIGHT_FESTIVAL_END_DATE = '2027-01-17'
+
+/** Page the header pill links to (locale prefix is added by the i18n Link). */
+export const LIGHT_FESTIVAL_PAGE_PATH = '/cruises/amsterdam-light-festival-private-cruise'
+
+/** Header pill shows from now until the last festival night (Amsterdam dates). */
+export function showLightFestivalPill(todayAmsterdam: string): boolean {
+  return todayAmsterdam <= LIGHT_FESTIVAL_END_DATE
+}
+
 export function isLightFestivalListing(slug: string | null | undefined): boolean {
   return !!slug && LIGHT_FESTIVAL_SLUGS.has(slug)
 }
