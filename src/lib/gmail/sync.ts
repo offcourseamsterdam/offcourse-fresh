@@ -1,14 +1,14 @@
 // Gmail → inbox ingestion. Turns new inbox messages into contacts/conversations/
 // messages rows (mirroring the webchat ingestion pattern in
-// app/api/chat/start/route.ts) and hands each one to the existing, unmodified
-// Ghost pipeline (draftShadowReply) — no channel-specific AI logic here.
+// app/api/chat/start/route.ts). NO automatic Ghost drafting for plain email:
+// that is on demand via the inbox "Genereer antwoord" button (api/admin/inbox/
+// conversations/[id]/draft), because most inbound mail is notifications.
 import { createAdminClient } from '@/lib/supabase/admin'
-import { draftShadowReply } from '@/lib/chat/shadow-drafter'
 import { detectCateringConfirmation } from '@/lib/catering/detect-confirmation'
 import { matchCateringReplyToBooking } from '@/lib/catering/match-reply'
 import { postSlackText } from '@/lib/slack/send-notification'
 import { detectOtaEmail, OTA_PLATFORM_NAME, type OtaDetection } from '@/lib/ota/detect'
-import { notifyInboxItem, inboundEmailHeadline, GHOST_KIND_HEADLINE, ghostKindVerb } from '@/lib/slack/notify-inbox'
+import { notifyInboxItem, inboundEmailHeadline } from '@/lib/slack/notify-inbox'
 import { handleOtaMessage } from '@/lib/ota/handle-message'
 import { detectGygReviewNotification } from '@/lib/getyourguide/detect-review-notification'
 import { awardReviewBonuses } from '@/lib/scheduling/review-bonuses'
@@ -595,29 +595,12 @@ export async function syncGmailInbox(queryOverride?: string): Promise<GmailSyncR
                 action: 'One click on the Import card adds it to Bookings, Planning and Finance.',
               })
             }
-          } else {
-            // Ghost drafts a reply/booking proposal — same pipeline webchat already
-            // uses, unmodified. Awaited directly (this runs inside a cron, not a
-            // request handler, so there's no after() to defer to).
-            const shadowResult = await draftShadowReply(conversationId, inserted?.id ?? null)
-            ghostContext = shadowResult
-              ? `Ghost ${ghostKindVerb(shadowResult.kind)}: ${shadowResult.reasoning}`
-              : null
-
-            // A real guest is waiting — DM the draft so Beer can act from his
-            // phone instead of having to open the admin panel to notice at all.
-            if (shadowResult) {
-              notified = true
-              await notifyInboxItem({
-                conversationId,
-                from: message.from.name || message.from.email,
-                headline: GHOST_KIND_HEADLINE[shadowResult.kind],
-                details: [message.subject],
-                draft: shadowResult.reply,
-                action: shadowResult.kind === 'reply_draft' ? undefined : 'Needs your approval in the admin panel.',
-              })
-            }
           }
+          // Plain customer/supplier email: NO automatic Ghost draft. Every
+          // inbound mail used to trigger a paid agent run, and most of them
+          // are notifications nobody replies to (Beer, 2026-10-02: the bill
+          // jumped). Drafts are now on demand — the "Genereer antwoord"
+          // button in the inbox calls POST .../conversations/[id]/draft.
         }
       }
     } catch (err) {

@@ -284,23 +284,21 @@ describe('syncGmailInbox', () => {
       status: 'open',
       unread_count: 1,
     })
-    expect(h.draftShadowReply).toHaveBeenCalledTimes(1)
-    expect(h.draftShadowReply).toHaveBeenCalledWith(state.conversations[0].id, expect.any(String))
+    // Cost guard (Beer, 2026-10-02): plain email never triggers a paid Ghost run.
+    expect(h.draftShadowReply).not.toHaveBeenCalled()
   })
 
-  it('DMs Beer exactly once for a customer email — with the draft when Ghost wrote one', async () => {
-    h.draftShadowReply.mockResolvedValue({ kind: 'reply_draft', reasoning: 'r', reply: 'Hi!' })
+  it('DMs Beer exactly once for a customer email, without a draft', async () => {
     h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-1' }])
     h.getMessage.mockResolvedValue(gmailMessage())
 
     await syncGmailInbox()
 
     expect(h.notifyInboxItem).toHaveBeenCalledTimes(1)
-    expect(h.notifyInboxItem).toHaveBeenCalledWith(expect.objectContaining({ draft: 'Hi!' }))
+    expect(h.notifyInboxItem).toHaveBeenCalledWith(expect.not.objectContaining({ draft: expect.anything() }))
   })
 
-  it('still DMs Beer when Ghost drafted nothing — a plain "New email" nudge', async () => {
-    h.draftShadowReply.mockResolvedValue(null)
+  it('DMs Beer a plain "New email" nudge for customer mail', async () => {
     h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-1' }])
     h.getMessage.mockResolvedValue(gmailMessage())
 
@@ -336,18 +334,6 @@ describe('syncGmailInbox', () => {
       context: null,
     })
     expect(state.conversations[0].ai_summary).toBe('Guest asks about Saturday availability.')
-  })
-
-  it('folds Ghost’s reasoning into the summary context when it drafted a reply', async () => {
-    h.draftShadowReply.mockResolvedValue({ kind: 'reply_draft', reasoning: 'Answered their availability question.' })
-    h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-1' }])
-    h.getMessage.mockResolvedValue(gmailMessage())
-
-    await syncGmailInbox()
-
-    expect(h.summarizeInboundEmail).toHaveBeenCalledWith(
-      expect.objectContaining({ context: 'Ghost drafted a reply: Answered their availability question.' }),
-    )
   })
 
   it('does not fail ingestion when the summarizer returns null — leaves ai_summary unset', async () => {
@@ -414,7 +400,7 @@ describe('syncGmailInbox', () => {
 
     expect(result).toEqual({ imported: 1, skipped: 0 })
     expect(state.conversations).toHaveLength(1)
-    expect(h.draftShadowReply).toHaveBeenCalledWith(state.conversations[0].id, expect.any(String))
+    expect(h.draftShadowReply).not.toHaveBeenCalled()
   })
 
   it('does NOT merge two different Gmail threads from the same contact into one conversation', async () => {
@@ -475,7 +461,7 @@ describe('syncGmailInbox', () => {
 
     const result = await syncGmailInbox()
     expect(result).toEqual({ imported: 2, skipped: 0 })
-    expect(h.draftShadowReply).toHaveBeenCalledTimes(2)
+    expect(h.draftShadowReply).not.toHaveBeenCalled()
   })
 
   it('never breaks the poll batch when fetching/matching one message throws — later messages still get imported and the failure is alerted', async () => {
@@ -494,7 +480,7 @@ describe('syncGmailInbox', () => {
     // and it's never marked ingested (no provider_message_id row), so it'll be
     // retried on the next poll instead of permanently wedging the sync.
     expect(result).toEqual({ imported: 1, skipped: 1 })
-    expect(h.draftShadowReply).toHaveBeenCalledTimes(1)
+    expect(h.draftShadowReply).not.toHaveBeenCalled()
     expect(h.alertCronFailure).toHaveBeenCalledWith(
       'gmail-inbox-sync',
       expect.any(Error),
@@ -581,7 +567,7 @@ describe('syncGmailInbox — supplier replies to a pending catering order', () =
     expect(h.draftShadowReply).not.toHaveBeenCalled()
   })
 
-  it('a message in a thread with no matching pending catering order is unaffected — draftShadowReply still runs (regression)', async () => {
+  it('a message in a thread with no matching pending catering order is unaffected — still no automatic Ghost draft (cost guard)', async () => {
     // No bookings at all match this thread — ordinary customer conversation.
     h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-1' }])
     h.getMessage.mockResolvedValue(gmailMessage())
@@ -591,7 +577,7 @@ describe('syncGmailInbox — supplier replies to a pending catering order', () =
     expect(result).toEqual({ imported: 1, skipped: 0 })
     expect(h.detectCateringConfirmation).not.toHaveBeenCalled()
     expect(h.emitOpsEvent).not.toHaveBeenCalled()
-    expect(h.draftShadowReply).toHaveBeenCalledTimes(1)
+    expect(h.draftShadowReply).not.toHaveBeenCalled()
   })
 
   it('does not re-classify a thread whose booking is already catering_confirmed', async () => {
@@ -608,7 +594,7 @@ describe('syncGmailInbox — supplier replies to a pending catering order', () =
 
     expect(result).toEqual({ imported: 1, skipped: 0 })
     expect(h.detectCateringConfirmation).not.toHaveBeenCalled()
-    expect(h.draftShadowReply).toHaveBeenCalledTimes(1)
+    expect(h.draftShadowReply).not.toHaveBeenCalled()
   })
 })
 
@@ -703,7 +689,7 @@ describe('syncGmailInbox — GetYourGuide review notification emails (Phase 3.2,
     expect(state.conversations[0]!.status).toBe('resolved')
   })
 
-  it('an ordinary email that is not a GYG review notification is unaffected — draftShadowReply still runs (regression)', async () => {
+  it('an ordinary email that is not a GYG review notification is unaffected — still no automatic Ghost draft (cost guard)', async () => {
     h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-1' }])
     h.getMessage.mockResolvedValue(gmailMessage())
 
@@ -711,7 +697,7 @@ describe('syncGmailInbox — GetYourGuide review notification emails (Phase 3.2,
 
     expect(result).toEqual({ imported: 1, skipped: 0 })
     expect(h.awardReviewBonuses).not.toHaveBeenCalled()
-    expect(h.draftShadowReply).toHaveBeenCalledTimes(1)
+    expect(h.draftShadowReply).not.toHaveBeenCalled()
   })
 })
 

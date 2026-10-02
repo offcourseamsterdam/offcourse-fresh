@@ -63,8 +63,41 @@ export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
     }
   }
 
+  const [drafting, setDrafting] = useState(false)
+  const [draftError, setDraftError] = useState<string | null>(null)
+  // Gmail threads no longer get an automatic (paid) Ghost draft — Beer asks for it.
+  const canRequestDraft = conversation.channel === 'email' && !ghost?.replyDraft && !ghost?.bookingProposal
+
+  async function requestDraft() {
+    if (drafting) return
+    setDrafting(true)
+    setDraftError(null)
+    try {
+      await adminMutate(`/api/admin/inbox/conversations/${conversation.id}/draft`, 'POST', {})
+      onChanged()
+    } catch (err) {
+      setDraftError(err instanceof AdminApiError ? err.message : 'Genereren mislukt')
+    } finally {
+      setDrafting(false)
+    }
+  }
+
   return (
     <div className="h-full overflow-y-auto p-4 space-y-5">
+      {canRequestDraft && (
+        <div>
+          <button
+            type="button"
+            onClick={requestDraft}
+            disabled={drafting}
+            className="w-full min-h-[44px] rounded-xl border border-violet-200 bg-violet-50/50 px-3 text-sm font-medium text-violet-700 hover:bg-violet-50 disabled:opacity-60 inline-flex items-center justify-center gap-2"
+          >
+            {drafting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            {drafting ? 'Ghost schrijft…' : 'Genereer antwoord'}
+          </button>
+          {draftError && <p className="mt-1 text-xs text-rose-600">{draftError}</p>}
+        </div>
+      )}
       {/* Ghost co-pilot — act on what the agent suggests, where the work happens */}
       {hasGhostCoPilotContent(ghost) && (
         <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-3">
