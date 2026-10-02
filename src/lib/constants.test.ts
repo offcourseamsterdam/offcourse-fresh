@@ -41,6 +41,10 @@ describe('formatExtraPrice', () => {
   it('formats informational', () => {
     expect(formatExtraPrice({ price_type: 'informational', price_value: 0 })).toBe('Info only')
   })
+
+  it('shows a €0 fixed option as "Pay on board"', () => {
+    expect(formatExtraPrice({ price_type: 'fixed_cents', price_value: 0 })).toBe('Pay on board')
+  })
 })
 
 describe('VAT_RATES', () => {

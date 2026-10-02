@@ -46,7 +46,8 @@ export function formatPriceLabel(
   // price so the headline matches what calculateExtras actually charges.
   const headcount = extra.adults_only ? (adultCount ?? guestCount) : guestCount
   if (extra.price_type === 'fixed_cents') {
-    return fmtEuros(extra.price_value)
+    // A €0 option (e.g. "Pay per drink on board") is settled on the boat, not here.
+    return extra.price_value === 0 ? 'Pay on board' : fmtEuros(extra.price_value)
   }
   if (extra.price_type === 'per_person_cents') {
     // Per-person-pick item: show the per-person rate (customer picks people count)

@@ -31,6 +31,7 @@ export const VAT_RATES = [0, 9, 21] as const
 /** Format an extra's price for display in admin UI */
 export function formatExtraPrice(extra: { price_type: string; price_value: number }): string {
   if (extra.price_type === 'informational') return 'Info only'
+  if (extra.price_type === 'fixed_cents' && extra.price_value === 0) return 'Pay on board'
   if (extra.price_type === 'percentage') return `${extra.price_value}%`
   if (extra.price_type === 'per_person_cents') return `€${(extra.price_value / 100).toFixed(2)}/person`
   if (extra.price_type === 'per_person_per_hour_cents') return `€${(extra.price_value / 100).toFixed(2)}/person/hour`

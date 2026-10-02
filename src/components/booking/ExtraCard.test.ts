@@ -61,3 +61,10 @@ describe('formatPriceLabel — adults_only', () => {
     expect(formatPriceLabel(fixed, 4, 5500, 90, 1)).toBe('€25.00')
   })
 })
+
+describe('formatPriceLabel — free (pay on board) option', () => {
+  it('shows "Pay on board" instead of €0.00 for a €0 fixed extra', () => {
+    const payOnBoard = { id: 'p', name: 'Pay per drink on board', price_type: 'fixed_cents', price_value: 0 } as ApiExtra
+    expect(formatPriceLabel(payOnBoard, 4, 5500, 90)).toBe('Pay on board')
+  })
+})
