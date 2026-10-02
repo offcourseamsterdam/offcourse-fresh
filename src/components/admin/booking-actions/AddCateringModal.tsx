@@ -9,6 +9,7 @@ import { fmtEuros } from '@/lib/utils'
 import { extractVat } from '@/lib/extras/calculate'
 import type { AdminExtraLineItem } from '@/lib/admin/types'
 import { useAdminFetch } from '@/hooks/useAdminFetch'
+import { mutate } from 'swr'
 
 interface CatalogExtra {
   id: string
@@ -173,6 +174,7 @@ export function AddCateringModal({
           ? undefined
           : { description: `${selectedCount} item${selectedCount !== 1 ? 's' : ''} · ${fmtEuros(selectedTotal)}` },
       )
+      mutate('/api/admin/catering')
       onSuccess()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')

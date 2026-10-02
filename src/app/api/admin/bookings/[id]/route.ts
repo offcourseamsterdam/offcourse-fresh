@@ -3,6 +3,11 @@ import { apiOk, apiError } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getFareHarborClient } from '@/lib/fareharbor/client'
+import { hasFood } from '@/lib/catering/filter'
+import { isWithinCateringAutoSendWindow } from '@/lib/catering/auto-send-cutoff'
+import { sendCateringOrderEmailForBooking } from '@/lib/catering/send-catering-email'
+import { notifyCateringOrder } from '@/lib/catering/notify'
+import { buildFHBookingNote } from '@/lib/catering/build-fh-note'
 
 export async function PATCH(
   request: NextRequest,
@@ -19,7 +24,7 @@ export async function PATCH(
 
     const { data: booking } = await supabase
       .from('bookings')
-      .select('id, booking_uuid, guest_note')
+      .select('id, booking_uuid, guest_note, booking_date, start_time, guest_count, listing_id, listing_title, tour_item_name, extras_selected, catering_email_sent_at')
       .eq('id', id)
       .single()
 
@@ -58,16 +63,53 @@ export async function PATCH(
     const { error } = await supabase.from('bookings').update(updates).eq('id', id)
     if (error) return apiError(error.message)
 
-    // If note changed and booking is in FareHarbor, sync the note there too
-    const noteChanged =
-      typeof guest_note === 'string' &&
-      guest_note.trim() !== (booking.guest_note ?? '')
-    if (noteChanged && booking.booking_uuid) {
-      try {
-        const fh = getFareHarborClient()
-        await fh.updateBookingNote(booking.booking_uuid, guest_note.trim())
-      } catch {
-        // FH note update is best-effort — don't fail the whole request
+    // Handle catering & FareHarbor note syncing
+    if (Array.isArray(extras_selected)) {
+      const hasFoodItems = hasFood(extras_selected as never)
+      const withinWindow = isWithinCateringAutoSendWindow(booking.booking_date)
+
+      if (hasFoodItems && withinWindow) {
+        // Within 7-day auto-send window: immediately send (or update) order to supplier
+        await sendCateringOrderEmailForBooking(id)
+      } else {
+        // Cruise is > 7 days away or no food:
+        // 1. Sync note to FareHarbor if FH booking exists
+        if (booking.booking_uuid) {
+          try {
+            const effectiveNote = typeof updates.guest_note === 'string' ? (updates.guest_note as string) : booking.guest_note
+            const note = buildFHBookingNote(effectiveNote, extras_selected as never)
+            if (note) {
+              const fh = getFareHarborClient()
+              await fh.updateBookingNote(booking.booking_uuid, note)
+            }
+          } catch {
+            // Best-effort
+          }
+        }
+        // 2. If new food was added > 7 days out, post a Slack review notification
+        if (hasFoodItems && !hasFood(booking.extras_selected as never)) {
+          notifyCateringOrder({
+            dateStr: booking.booking_date,
+            cruiseName: booking.listing_title ?? booking.tour_item_name ?? 'Cruise',
+            startTimeStr: booking.start_time,
+            guestCount: booking.guest_count,
+            extrasSelected: extras_selected as never,
+            listingId: booking.listing_id,
+          }).catch(err => console.error('[admin/bookings] Catering notify failed:', err))
+        }
+      }
+    } else if (typeof guest_note === 'string' && guest_note.trim() !== (booking.guest_note ?? '')) {
+      // If note changed and extras were not updated in this request
+      if (booking.booking_uuid) {
+        try {
+          const note = buildFHBookingNote(guest_note.trim(), (booking.extras_selected ?? []) as never)
+          if (note) {
+            const fh = getFareHarborClient()
+            await fh.updateBookingNote(booking.booking_uuid, note)
+          }
+        } catch {
+          // FH note update is best-effort — don't fail the whole request
+        }
       }
     }
 
