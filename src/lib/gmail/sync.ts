@@ -17,7 +17,7 @@ import { summarizeInboundEmail } from './summarize'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { alertCronFailure } from '@/lib/cron/alert'
 import { findOrCreateContactByField } from '@/lib/contacts/find-or-create'
-import { detectFinanceInvoice, type FinanceInvoiceDetection } from '@/lib/finance/inbox/detect'
+import { detectFinanceInvoice, detectInvoiceEmail, type FinanceInvoiceDetection } from '@/lib/finance/inbox/detect'
 import { ingestFinanceMessage } from '@/lib/finance/inbox/ingest'
 import { listNewMessages, getMessage, type GmailMessage } from './client'
 
@@ -502,6 +502,19 @@ export async function syncGmailInbox(queryOverride?: string): Promise<GmailSyncR
         knownSuppliers,
         ownerEmails,
       })
+      // An invoice PDF that skipped the finance alias (supplier replying on an
+      // info@ thread) still has to be filed — but never an OTA notification.
+      if (!finance && !ota && financeAddress) {
+        finance = detectInvoiceEmail({
+          fromEmail: message.from.email,
+          subject: message.subject,
+          bodyText: message.bodyText,
+          attachmentMimeTypes: (message.attachments ?? []).map(a => a.mimeType),
+          knownStaff,
+          knownSuppliers,
+          ownerEmails,
+        })
+      }
       const contactId = await findOrCreateContactByField(supabase, 'email', message.from.email, message.from.name)
       const conv = await findOrCreateConversation(supabase, contactId, message.threadId, message.subject, ota, finance?.category ?? null)
       conversationId = conv.id

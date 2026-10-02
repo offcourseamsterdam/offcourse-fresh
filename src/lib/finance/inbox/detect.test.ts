@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { detectFinanceInvoice, type DetectFinanceInvoiceInput } from './detect'
+import { detectFinanceInvoice, detectInvoiceEmail, type DetectFinanceInvoiceInput } from './detect'
 
 const FINANCE_ADDRESS = 'facturen@offcourseamsterdam.com'
 
@@ -65,5 +65,43 @@ describe('detectFinanceInvoice — trust only known senders', () => {
       knownStaff: [{ id: 's1', email: null }],
     }))
     expect(d?.trusted).toBe(false)
+  })
+})
+
+describe('detectInvoiceEmail — invoice PDF that skipped the finance alias', () => {
+  const base = {
+    fromEmail: 'dani@thingstodoinamsterdam.com',
+    subject: 'Re: Commissie Q3 2026',
+    bodyText: 'Bijgevoegd vind je factuur tbv Q3 in de bijlage.',
+    attachmentMimeTypes: ['application/pdf'],
+    knownStaff: [{ id: 's1', email: 'mare@offcourseamsterdam.com' }],
+    knownSuppliers: [{ id: 'sup1', email: 'facturen@jachthavenwesterdok.nl' }],
+    ownerEmails: ['beer@offcourseamsterdam.com'],
+  }
+
+  it('flags an unknown sender as untrusted finance when a PDF + invoice word is present', () => {
+    expect(detectInvoiceEmail(base)).toEqual({ category: 'finance', senderKind: 'unknown', staffId: null, supplierId: null, trusted: false })
+  })
+
+  it('trusts a known supplier', () => {
+    expect(detectInvoiceEmail({ ...base, fromEmail: 'Facturen@Jachthavenwesterdok.nl' })).toMatchObject({ senderKind: 'supplier', supplierId: 'sup1', trusted: true })
+  })
+
+  it('matches the invoice word in the subject alone', () => {
+    expect(detectInvoiceEmail({ ...base, subject: 'Invoice 123', bodyText: 'see attached' })).not.toBeNull()
+  })
+
+  it('ignores mail without a PDF', () => {
+    expect(detectInvoiceEmail({ ...base, attachmentMimeTypes: ['image/png'] })).toBeNull()
+    expect(detectInvoiceEmail({ ...base, attachmentMimeTypes: [] })).toBeNull()
+  })
+
+  it('ignores a PDF with no invoice word (e.g. a brochure)', () => {
+    expect(detectInvoiceEmail({ ...base, subject: 'Folder 2027', bodyText: 'Zie bijlage' })).toBeNull()
+  })
+
+  it('leaves staff and owner mail on its current routing', () => {
+    expect(detectInvoiceEmail({ ...base, fromEmail: 'mare@offcourseamsterdam.com' })).toBeNull()
+    expect(detectInvoiceEmail({ ...base, fromEmail: 'Beer@offcourseamsterdam.com' })).toBeNull()
   })
 })

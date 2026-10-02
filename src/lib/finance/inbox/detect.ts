@@ -83,3 +83,39 @@ export function detectFinanceInvoice(input: DetectFinanceInvoiceInput): FinanceI
   }
   return { category: 'finance', senderKind: 'unknown', staffId: null, supplierId: null, trusted: false }
 }
+
+const INVOICE_WORDS = /\b(factuur|factuurnummer|invoice|rechnung|facture|creditnota|credit note)\b/i
+
+export interface DetectInvoiceEmailInput {
+  fromEmail: string
+  subject: string
+  bodyText: string
+  /** MIME types of the message's attachments. */
+  attachmentMimeTypes: string[]
+  knownStaff: Array<{ id: string; email: string | null }>
+  knownSuppliers: Array<{ id: string; email: string | null }>
+  ownerEmails: string[]
+}
+
+/**
+ * Fallback for an invoice that did NOT arrive at the finance alias — a
+ * supplier replying on an info@ thread (thingstodoinamsterdam, 2026-10-02:
+ * "factuur tbv Q3 in de bijlage" went to the operations inbox and the PDF was
+ * never read). Fires only for a PDF attachment plus an invoice word in the
+ * subject or the start of the body, so newsletters and plain chatter are left
+ * alone. Deliberately conservative: staff and owners return null (their mail
+ * keeps its current routing — a staff match feeds the payable pipeline, which
+ * must stay tied to the finance alias), a known supplier is trusted, anyone
+ * else is flagged untrusted exactly like an unknown sender at the alias.
+ */
+export function detectInvoiceEmail(input: DetectInvoiceEmailInput): FinanceInvoiceDetection | null {
+  if (!input.attachmentMimeTypes.some(t => t === 'application/pdf')) return null
+  if (!INVOICE_WORDS.test(`${input.subject}\n${input.bodyText.slice(0, 2000)}`)) return null
+
+  const from = norm(input.fromEmail)
+  if (input.ownerEmails.some(o => norm(o) === from)) return null
+  if (input.knownStaff.some(s => s.email && norm(s.email) === from)) return null
+  const supplier = input.knownSuppliers.find(s => s.email && norm(s.email) === from)
+  if (supplier) return { category: 'finance', senderKind: 'supplier', staffId: null, supplierId: supplier.id, trusted: true }
+  return { category: 'finance', senderKind: 'unknown', staffId: null, supplierId: null, trusted: false }
+}
