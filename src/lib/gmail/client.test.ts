@@ -146,6 +146,37 @@ describe('getMessage', () => {
       bodyText: 'Hi, can we book Saturday?',
       bodyHtml: null,
       attachments: [],
+      labelIds: [],
+      triageHeaders: {},
+    })
+  })
+
+  it("passes through Gmail's labels and only the automation headers the reply doorman reads", async () => {
+    mockFetchOnce({
+      id: 'm6',
+      threadId: 't6',
+      labelIds: ['INBOX', 'CATEGORY_UPDATES'],
+      payload: {
+        headers: [
+          { name: 'From', value: 'Shop <noreply@shop.com>' },
+          { name: 'Subject', value: 'Your receipt' },
+          { name: 'List-Unsubscribe', value: '<mailto:u@shop.com>' },
+          { name: 'AUTO-SUBMITTED', value: 'auto-generated' },
+          { name: 'X-Autoreply', value: '' },
+          { name: 'Received', value: 'from mx.example.com' },
+          { name: 'list-unsubscribe', value: '<https://second.example>' },
+        ],
+        mimeType: 'text/plain',
+        body: { data: b64url('Thanks for your order') },
+      },
+    })
+    const msg = await getMessage('m6')
+    expect(msg.labelIds).toEqual(['INBOX', 'CATEGORY_UPDATES'])
+    // Lowercased keys, first occurrence wins, unrelated headers (Received) never copied.
+    expect(msg.triageHeaders).toEqual({
+      'list-unsubscribe': '<mailto:u@shop.com>',
+      'auto-submitted': 'auto-generated',
+      'x-autoreply': '',
     })
   })
 

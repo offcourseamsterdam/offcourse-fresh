@@ -8,7 +8,7 @@ const h = vi.hoisted(() => ({
   emitOpsEvent: vi.fn().mockResolvedValue(undefined),
   detectOtaEmail: vi.fn().mockReturnValue(null),
   checkOtaAvailability: vi.fn().mockResolvedValue({ checked: true, dateISO: '2026-09-24', guests: 2, availability: { available: true } }),
-  summarizeInboundEmail: vi.fn().mockResolvedValue('mock summary'),
+  summarizeInboundEmail: vi.fn().mockResolvedValue({ summary: 'mock summary', needsReply: 'yes', needsReplyReason: 'Guest asks a question' }),
   alertCronFailure: vi.fn().mockResolvedValue(undefined),
   detectGygReviewNotification: vi.fn().mockReturnValue(null),
   awardReviewBonuses: vi.fn().mockResolvedValue(undefined),
@@ -35,6 +35,8 @@ const state = vi.hoisted(() => ({
   bookings: [] as { id: string; catering_thread_id: string | null; catering_confirmed_at: string | null; booking_date: string | null }[],
   agentProposals: [] as Record<string, unknown>[],
   insertedMessageIds: new Set<string>(),
+  messageUpdates: [] as { id: string; patch: Record<string, unknown> }[],
+  failMessageUpdate: false,
   nextId: 1,
   simulateConversationInsertRace: false,
   socialProofReviews: [] as { id: string; source: string; external_review_id: string; conversation_id: string | null }[],
@@ -154,6 +156,14 @@ vi.mock('@/lib/supabase/admin', () => ({
               select: () => ({ single: async () => result }),
             }
           },
+          // Only the reply doorman updates a message (messages.reply_triage).
+          update: (patch: Record<string, unknown>) => ({
+            eq: async (_col: string, id: string) => {
+              if (state.failMessageUpdate) return { data: null, error: { message: 'column "reply_triage" does not exist' } }
+              state.messageUpdates.push({ id, patch })
+              return { data: null, error: null }
+            },
+          }),
         }
       }
       if (table === 'agent_proposals') {
@@ -207,6 +217,8 @@ function gmailMessage(overrides: Partial<{
   messageIdHeader: string | null
   bodyText: string
   bodyHtml: string | null
+  labelIds: string[]
+  triageHeaders: Record<string, string>
 }> = {}) {
   return {
     id: 'gmail-msg-1',
@@ -227,6 +239,8 @@ beforeEach(() => {
   state.bookings.length = 0
   state.agentProposals.length = 0
   state.insertedMessageIds.clear()
+  state.messageUpdates.length = 0
+  state.failMessageUpdate = false
   state.nextId = 1
   state.simulateConversationInsertRace = false
   state.socialProofReviews.length = 0
@@ -236,7 +250,7 @@ beforeEach(() => {
   h.emitOpsEvent.mockResolvedValue(undefined)
   h.detectOtaEmail.mockReturnValue(null)
   h.checkOtaAvailability.mockResolvedValue({ checked: true, dateISO: '2026-09-24', guests: 2, availability: { available: true } })
-  h.summarizeInboundEmail.mockResolvedValue('mock summary')
+  h.summarizeInboundEmail.mockResolvedValue({ summary: 'mock summary', needsReply: 'yes', needsReplyReason: 'Guest asks a question' })
   h.alertCronFailure.mockResolvedValue(undefined)
   h.detectGygReviewNotification.mockReturnValue(null)
   h.awardReviewBonuses.mockResolvedValue(undefined)
@@ -322,7 +336,7 @@ describe('syncGmailInbox', () => {
 
   it('writes the AI summary onto the conversation, falling back to null context when Ghost drafted nothing', async () => {
     h.draftShadowReply.mockResolvedValue(null)
-    h.summarizeInboundEmail.mockResolvedValue('Guest asks about Saturday availability.')
+    h.summarizeInboundEmail.mockResolvedValue({ summary: 'Guest asks about Saturday availability.', needsReply: 'yes', needsReplyReason: null })
     h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-1' }])
     h.getMessage.mockResolvedValue(gmailMessage())
 
@@ -331,6 +345,7 @@ describe('syncGmailInbox', () => {
     expect(h.summarizeInboundEmail).toHaveBeenCalledWith({
       subject: 'Booking question',
       bodyText: 'Can we book Saturday?',
+      fromEmail: 'jane@example.com',
       context: null,
     })
     expect(state.conversations[0].ai_summary).toBe('Guest asks about Saturday availability.')
@@ -859,6 +874,102 @@ describe('syncGmailInbox — OTA notification emails', () => {
     expect(result).toEqual({ imported: 2, skipped: 0 })
     expect(state.agentProposals).toHaveLength(0)
     expect(h.summarizeInboundEmail).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('syncGmailInbox — reply doorman (messages.reply_triage)', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  it('stores a verdict on a plain customer email, combining the AI opinion with the rules', async () => {
+    h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-1' }])
+    h.getMessage.mockResolvedValue(gmailMessage())
+
+    await syncGmailInbox()
+
+    expect(state.messageUpdates).toHaveLength(1)
+    expect(state.messageUpdates[0].patch.reply_triage).toMatchObject({
+      v: 1,
+      verdict: 'yes',
+      source: 'ai',
+      signals: [],
+      ai_verdict: 'yes',
+      ai_reason: 'Guest asks a question',
+    })
+  })
+
+  it("reads Gmail's labels and automation headers into the rules layer", async () => {
+    h.summarizeInboundEmail.mockResolvedValue({ summary: 'Receipt', needsReply: 'no', needsReplyReason: 'Automated receipt' })
+    h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-1' }])
+    h.getMessage.mockResolvedValue(
+      gmailMessage({
+        from: { email: 'noreply@shop.com', name: 'Shop' },
+        labelIds: ['INBOX', 'CATEGORY_UPDATES'],
+        triageHeaders: { 'list-unsubscribe': '<mailto:u@shop.com>' },
+      }),
+    )
+
+    await syncGmailInbox()
+
+    expect(state.messageUpdates[0].patch.reply_triage).toMatchObject({
+      verdict: 'no',
+      source: 'rules+ai',
+      signals: ['list-unsubscribe', 'gmail:updates', 'no-reply-sender'],
+    })
+  })
+
+  it('still judges on rules alone when the AI call failed', async () => {
+    h.summarizeInboundEmail.mockResolvedValue(null)
+    h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-1' }])
+    h.getMessage.mockResolvedValue(gmailMessage({ from: { email: 'no-reply@accounts.google.com', name: 'Google' } }))
+
+    await syncGmailInbox()
+
+    expect(state.messageUpdates[0].patch.reply_triage).toMatchObject({ verdict: 'no', source: 'rules', ai_verdict: null })
+  })
+
+  it('never judges a booking-platform notification — it has its own label and card', async () => {
+    h.detectOtaEmail.mockReturnValue({ platform: 'withlocals', kind: 'booking_request', guestName: null, bookingRef: null, parsed: {} })
+    h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-1' }])
+    h.getMessage.mockResolvedValue(gmailMessage())
+
+    await syncGmailInbox()
+
+    expect(state.messageUpdates).toHaveLength(0)
+  })
+
+  it('never judges a GetYourGuide review notification', async () => {
+    h.detectGygReviewNotification.mockReturnValue({ externalReviewId: 'r1', rating: 5, reviewText: 'Great', productName: 'Cruise' })
+    h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-1' }])
+    h.getMessage.mockResolvedValue(gmailMessage())
+
+    await syncGmailInbox()
+
+    expect(state.messageUpdates).toHaveLength(0)
+  })
+
+  it('a failure to store the verdict never blocks or skips the email (missing column, DB hiccup)', async () => {
+    state.failMessageUpdate = true
+    h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-1' }])
+    h.getMessage.mockResolvedValue(gmailMessage())
+
+    const result = await syncGmailInbox()
+
+    expect(result).toEqual({ imported: 1, skipped: 0 })
+    expect(state.conversations[0]).toMatchObject({ status: 'open', unread_count: 1, ai_summary: 'mock summary' })
+    expect(h.notifyInboxItem).toHaveBeenCalledTimes(1)
+    expect(h.alertCronFailure).not.toHaveBeenCalled()
+  })
+
+  it('a re-polled duplicate is not judged twice', async () => {
+    h.listNewMessages.mockResolvedValue([{ id: 'gmail-msg-1', threadId: 'thread-1' }])
+    h.getMessage.mockResolvedValue(gmailMessage())
+
+    await syncGmailInbox()
+    await syncGmailInbox()
+
+    expect(state.messageUpdates).toHaveLength(1)
   })
 })
 

@@ -13,7 +13,9 @@ import { handleOtaMessage } from '@/lib/ota/handle-message'
 import { detectGygReviewNotification } from '@/lib/getyourguide/detect-review-notification'
 import { awardReviewBonuses } from '@/lib/scheduling/review-bonuses'
 import { resolveConversation } from '@/lib/conversations/resolve'
-import { summarizeInboundEmail } from './summarize'
+import { summarizeInboundEmail, type InboundEmailSummary } from './summarize'
+import { combineTriage, detectAutomatedSignals } from './reply-triage'
+import type { Json } from '@/lib/supabase/types'
 import { emitOpsEvent } from '@/lib/ops/events'
 import { alertCronFailure } from '@/lib/cron/alert'
 import { findOrCreateContactByField } from '@/lib/contacts/find-or-create'
@@ -414,6 +416,31 @@ async function handleOutboundGmailMessage(
   return 'inserted'
 }
 
+/**
+ * The reply doorman's verdict for one plain inbound email (reply-triage.ts),
+ * stored on the message itself so it can later be compared with whether we
+ * actually replied. A LABEL only — the email is already saved and visible no
+ * matter what happens here, and any failure (the column missing because the
+ * migration hasn't run yet, a DB hiccup) is logged and swallowed: the doorman
+ * must never be the reason an email doesn't arrive.
+ */
+async function recordReplyTriage(
+  supabase: SupabaseAdmin,
+  messageRowId: string,
+  message: GmailMessage,
+  summarized: InboundEmailSummary | null,
+): Promise<void> {
+  try {
+    const signals = detectAutomatedSignals({ fromEmail: message.from.email, headers: message.triageHeaders, labelIds: message.labelIds })
+    const ai = summarized?.needsReply ? { verdict: summarized.needsReply, reason: summarized.needsReplyReason } : null
+    const triage = combineTriage(signals, ai)
+    const { error } = await supabase.from('messages').update({ reply_triage: triage as unknown as Json }).eq('id', messageRowId)
+    if (error) console.error(`[gmail/sync] could not store reply triage for message ${messageRowId}:`, error.message)
+  } catch (err) {
+    console.error(`[gmail/sync] reply triage failed for message ${messageRowId}:`, err instanceof Error ? err.message : err)
+  }
+}
+
 export interface GmailSyncResult {
   imported: number
   skipped: number
@@ -569,6 +596,11 @@ export async function syncGmailInbox(queryOverride?: string): Promise<GmailSyncR
     // Set once a branch below has already DM'd Beer about this message, so the
     // catch-all ping after the summary doesn't double up.
     let notified = false
+    // Which dedicated path took this message, if any. Only a plain email
+    // (none of them) gets a reply-doorman verdict: OTA/catering/review rows
+    // already carry their own label and action card, and finance mail lives
+    // on its own desk.
+    let handledBy: 'finance' | 'ota' | 'catering' | 'gyg_review' | null = ota ? 'ota' : finance?.category === 'finance' ? 'finance' : null
     try {
       if (finance?.category === 'finance') {
         // Never a customer message and never the Ghost/OTA pipeline — an
@@ -579,8 +611,10 @@ export async function syncGmailInbox(queryOverride?: string): Promise<GmailSyncR
       } else {
         const cateringContext = await handlePendingCateringReply(supabase, message, conversationId)
         ghostContext = cateringContext
+        if (cateringContext) handledBy = 'catering'
         if (!cateringContext) {
           ghostContext = await handleGygReviewNotification(supabase, message, conversationId)
+          if (ghostContext) handledBy = 'gyg_review'
         }
         if (!cateringContext && !ghostContext) {
           if (ota) {
@@ -621,10 +655,21 @@ export async function syncGmailInbox(queryOverride?: string): Promise<GmailSyncR
     }
 
     // One-line AI summary for the inbox list — cheap, best-effort, never
-    // blocks ingestion. Falls back to the raw body snippet if it fails.
-    const summary = await summarizeInboundEmail({ subject: message.subject, bodyText: message.bodyText, context: ghostContext })
+    // blocks ingestion. Falls back to the raw body snippet if it fails. The
+    // same call also gives the AI half of the reply doorman's verdict.
+    const summarized = await summarizeInboundEmail({
+      subject: message.subject,
+      bodyText: message.bodyText,
+      fromEmail: message.from.email,
+      context: ghostContext,
+    })
+    const summary = summarized?.summary ?? null
     if (summary) {
       await supabase.from('conversations').update({ ai_summary: summary }).eq('id', conversationId)
+    }
+
+    if (!handledBy && inserted) {
+      await recordReplyTriage(supabase, inserted.id, message, summarized)
     }
 
     // Catch-all: finance mail, OTA notifications that don't need importing,

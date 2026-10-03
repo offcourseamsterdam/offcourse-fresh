@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Ghost, Loader2, X } from 'lucide-react'
 import { AdminErrorBanner } from '@/components/admin/AdminErrorBanner'
@@ -10,6 +10,7 @@ import { ThreadPane } from './ThreadPane'
 import { ContextPane } from './ContextPane'
 import { CallButton } from './CallButton'
 import { UploadInvoiceModal } from './UploadInvoiceModal'
+import { useInboxRowActions } from './useInboxRowActions'
 import { hasGhostCoPilotContent, type InboxConversationDetail, type InboxListItem } from './types'
 import { AdminEyebrow } from '@/components/admin/ui/AdminEyebrow'
 
@@ -70,9 +71,48 @@ export function InboxShell({ scope, title, subtitle, showUpload = false }: Inbox
     list.refresh()
   }
 
+  // Status changes and read/unread, shown the instant they're clicked — see useInboxRowActions.
+  const actions = useInboxRowActions({ conversations, onSaved: refreshAll })
+  const { setUnread } = actions
+
+  // Opening a thread = reading it. Done explicitly here (the thread GET is
+  // read-only, see its route) so "Mark unread" can't be undone by a poll.
+  // One request per thread at a time, however often this fires.
+  const markingRead = useRef(new Set<string>())
+  function markRead(id: string) {
+    if (markingRead.current.has(id)) return
+    markingRead.current.add(id)
+    void setUnread(id, false).finally(() => markingRead.current.delete(id))
+  }
+
+  // A new message landing while the thread is already open on screen counts as read too.
+  const openId = detail.data?.conversation.id
+  const openUnreadCount = detail.data?.conversation.unread_count ?? 0
+  useEffect(() => {
+    if (!selectedId || openId !== selectedId || openUnreadCount === 0) return
+    if (markingRead.current.has(selectedId)) return
+    const id = selectedId
+    markingRead.current.add(id)
+    void setUnread(id, false).finally(() => markingRead.current.delete(id))
+  }, [selectedId, openId, openUnreadCount, setUnread])
+
   function selectConversation(id: string | null) {
     setSelectedId(id)
     setMobileContextOpen(false)
+    if (id && (conversations.find(c => c.id === id)?.unread_count ?? 0) > 0) markRead(id)
+  }
+
+  // Like Gmail: marking the open thread unread closes it, otherwise you'd be
+  // "reading" it again the moment you looked. The write is queued behind any
+  // mark-read still in flight for the same thread, so unread always wins.
+  function markUnread(id: string) {
+    if (selectedId === id) selectConversation(null)
+    void setUnread(id, true)
+  }
+
+  /** The Status chips in the context pane — same optimistic path (and exit animation) as the list's quick actions. */
+  function changeOpenStatus(status: 'open' | 'pending' | 'resolved'): Promise<boolean> {
+    return openId ? actions.changeStatus(openId, status) : Promise.resolve(false)
   }
 
   return (
@@ -99,7 +139,7 @@ export function InboxShell({ scope, title, subtitle, showUpload = false }: Inbox
         </div>
       </div>
 
-      <AdminErrorBanner error={list.error ?? detail.error} />
+      <AdminErrorBanner error={actions.error ?? list.error ?? detail.error} />
 
       {list.isLoading && !list.data && (
         <div className="flex items-center gap-2 text-sm text-zinc-400 py-8">
@@ -122,7 +162,10 @@ export function InboxShell({ scope, title, subtitle, showUpload = false }: Inbox
                 setStatusFilter(f)
                 selectConversation(null)
               }}
-              onStatusChanged={refreshAll}
+              pendingStatus={actions.pendingStatus}
+              pendingUnread={actions.pendingUnread}
+              onChangeStatus={(id, status) => void actions.changeStatus(id, status)}
+              onSetUnread={(id, unread) => (unread ? markUnread(id) : markRead(id))}
             />
           </div>
 
@@ -143,6 +186,7 @@ export function InboxShell({ scope, title, subtitle, showUpload = false }: Inbox
                 onPrefillConsumed={() => setComposerPrefill(null)}
                 onOpenContext={() => setMobileContextOpen(true)}
                 contextHasAction={hasGhostAction}
+                onMarkUnread={() => openId && markUnread(openId)}
               />
             )}
           </div>
@@ -150,7 +194,12 @@ export function InboxShell({ scope, title, subtitle, showUpload = false }: Inbox
           {/* Right — customer context, docked from xl up */}
           {selectedId && detail.data && (
             <div className="hidden xl:block w-72 border-l border-zinc-100 shrink-0">
-              <ContextPane detail={detail.data} onChanged={refreshAll} onUseDraft={setComposerPrefill} />
+              <ContextPane
+                detail={detail.data}
+                onChanged={refreshAll}
+                onUseDraft={setComposerPrefill}
+                onStatusChange={changeOpenStatus}
+              />
             </div>
           )}
         </div>
@@ -181,6 +230,7 @@ export function InboxShell({ scope, title, subtitle, showUpload = false }: Inbox
                   setComposerPrefill(text)
                   setMobileContextOpen(false)
                 }}
+                onStatusChange={changeOpenStatus}
               />
             </div>
           </div>

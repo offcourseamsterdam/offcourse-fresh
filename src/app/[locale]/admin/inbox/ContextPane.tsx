@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { CalendarDays, CalendarPlus, Check, CheckCircle2, Download, ExternalLink, Ghost, Globe, Landmark, Languages, Loader2, Mail, Phone, Plus, Receipt, RefreshCw, Send, Sparkles, Wrench, XCircle } from 'lucide-react'
+import { CalendarDays, CalendarPlus, Check, CheckCircle2, Download, ExternalLink, Ghost, Globe, Info, Landmark, Languages, Loader2, Mail, Phone, Plus, Receipt, RefreshCw, Send, Sparkles, Wrench, XCircle } from 'lucide-react'
 import { adminMutate, AdminApiError } from '@/hooks/useAdminSave'
 import { replySimilarity } from '@/lib/ghost/similarity'
 import { fmtAdminDate, fmtAdminTime } from '@/lib/admin/format'
@@ -36,10 +36,12 @@ interface Props {
   onChanged: () => void
   /** Drop a suggested reply into the composer. */
   onUseDraft: (text: string) => void
+  /** Status chips go through the inbox's optimistic path (instant, animated in the list) when given. */
+  onStatusChange?: (status: (typeof STATUS_OPTIONS)[number]) => Promise<boolean>
 }
 
 /** Right pane — who you're talking to: Ghost co-pilot, contact card, bookings, workflow. */
-export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
+export function ContextPane({ detail, onChanged, onUseDraft, onStatusChange }: Props) {
   const { conversation, bookings, ghost, financeInvoices, financeDocuments = [] } = detail
   const contact = conversation.contact
   const [saving, setSaving] = useState(false)
@@ -57,8 +59,13 @@ export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
     if (status === conversation.status || saving) return
     setSaving(true)
     try {
-      await adminMutate(`/api/admin/inbox/conversations/${conversation.id}`, 'PATCH', { status })
-      onChanged()
+      if (onStatusChange) {
+        // Saves, refreshes and reports its own errors (the inbox's error banner).
+        await onStatusChange(status)
+      } else {
+        await adminMutate(`/api/admin/inbox/conversations/${conversation.id}`, 'PATCH', { status })
+        onChanged()
+      }
     } finally {
       setSaving(false)
     }
@@ -68,6 +75,11 @@ export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
   const [draftError, setDraftError] = useState<string | null>(null)
   // Gmail threads no longer get an automatic (paid) Ghost draft — Beer asks for it.
   const canRequestDraft = conversation.channel === 'email' && !ghost?.replyDraft && !ghost?.bookingProposal
+  // The reply doorman's verdict on the guest's latest message (internal notes
+  // skipped) — only while the guest has the last word. A hint, not a gate:
+  // the button stays, Beer decides.
+  const lastExchanged = [...detail.messages].reverse().find(m => m.direction !== 'note')
+  const replyTriage = lastExchanged?.direction === 'in' ? lastExchanged.reply_triage ?? null : null
 
   async function requestDraft() {
     if (drafting) return
@@ -87,6 +99,14 @@ export function ContextPane({ detail, onChanged, onUseDraft }: Props) {
     <div className="h-full overflow-y-auto p-4 space-y-5">
       {canRequestDraft && (
         <div>
+          {replyTriage?.verdict === 'no' && (
+            <p className="mb-2 flex items-start gap-1.5 text-xs text-zinc-500">
+              <Info className="w-3.5 h-3.5 mt-px shrink-0 text-zinc-400" />
+              <span>
+                <span className="font-medium text-zinc-700">Probably no reply needed</span> — {replyTriage.reason}
+              </span>
+            </p>
+          )}
           <button
             type="button"
             onClick={requestDraft}

@@ -2,17 +2,28 @@
 
 import { useMemo, useState, type ComponentType } from 'react'
 import { preload } from 'swr'
-import { CheckCircle2, Clock, Download, Globe, Mail, MailOpen, MessageSquare, Phone, XCircle } from 'lucide-react'
+import { AnimatePresence, LazyMotion, m, useReducedMotion } from 'framer-motion'
+import { CheckCircle2, Clock, Download, Globe, Mail, MailCheck, MailOpen, MessageSquare, Phone, XCircle } from 'lucide-react'
 import { timeAgoShort } from '@/lib/utils'
 import { fmtAdminDate, fmtAdminTime } from '@/lib/admin/format'
 import { formatWindowRemaining } from '@/lib/whatsapp/window'
 import { WhatsAppIcon } from '@/components/chat/WhatsAppIcon'
 import { adminFetcher } from '@/hooks/useAdminFetch'
-import { adminMutate } from '@/hooks/useAdminSave'
 import { useTickingClock } from '@/hooks/useTickingClock'
 import { OTA_PLATFORM_NAME } from '@/lib/ota/detect'
 import { GYG_REVIEW_NOTIFICATION_SENDER } from '@/lib/getyourguide/detect-review-notification'
+import { effectiveStatus, effectiveUnread, isOptimisticallyHidden, type PendingStatus, type PendingUnread } from './row-state'
 import type { InboxListItem } from './types'
+
+// Loaded on first render of the list, not shipped in the admin's initial bundle — same pattern as PriceSummary.tsx.
+const loadMotionFeatures = () => import('framer-motion').then(res => res.domAnimation)
+
+/** Easing for the row leaving — fast start, soft landing ("ease-out-quint"). */
+const EASE_OUT: [number, number, number, number] = [0.22, 1, 0.36, 1]
+
+/** The tint a row gets for a beat after a status change, matching the Status chips in ContextPane. */
+const STATUS_TINT: Record<WorkflowStatus, string> = { resolved: 'bg-emerald-50', pending: 'bg-blue-50', open: 'bg-amber-50' }
+const STATUS_ICON_COLOR: Record<WorkflowStatus, string> = { resolved: 'text-emerald-500', pending: 'text-blue-500', open: 'text-amber-500' }
 
 /** Same idiom as DashboardSidebar's nav hover-prefetch — warm SWR's cache the
  * moment the mouse arrives on a row, so by the time a click actually lands,
@@ -121,44 +132,31 @@ interface Props {
   statusFilter: StatusFilter
   onSelect: (id: string) => void
   onFilterChange: (f: StatusFilter) => void
-  /** Called after a row's quick-action status change saves, so the parent can refetch. */
-  onStatusChanged?: () => void
+  /** Optimistic state from useInboxRowActions — what Beer just clicked, until the server catches up. */
+  pendingStatus: Record<string, PendingStatus>
+  pendingUnread: Record<string, PendingUnread>
+  onChangeStatus: (id: string, status: WorkflowStatus) => void
+  onSetUnread: (id: string, unread: boolean) => void
 }
 
 /** Left pane — every conversation across all channels, newest activity first. */
-export function ConversationList({ conversations, selectedId, statusFilter, onSelect, onFilterChange, onStatusChanged }: Props) {
+export function ConversationList({
+  conversations,
+  selectedId,
+  statusFilter,
+  onSelect,
+  onFilterChange,
+  pendingStatus,
+  pendingUnread,
+  onChangeStatus,
+  onSetUnread,
+}: Props) {
   // Ticks the WhatsApp window badges below — the list itself re-polls every
   // 10s anyway (page.tsx), but a visible countdown should move even between
   // polls rather than sitting frozen for up to 10s at a time.
   const now = useTickingClock(true)
 
-  // Quick status-change buttons on each row (Open/Waiting/Resolved) — disabled
-  // while its own request is in flight so a slow save can't be double-fired.
-  const [changingId, setChangingId] = useState<string | null>(null)
-  // Drives the row's fade/slide-out below. Separate from changingId (which
-  // gates re-entrancy) so the animation has a guaranteed minimum duration
-  // instead of just however long the network happens to take — a save that
-  // resolves in 80ms would otherwise look like a jump-cut, not a transition.
-  const [animatingId, setAnimatingId] = useState<string | null>(null)
-  const [animatingStatus, setAnimatingStatus] = useState<WorkflowStatus | null>(null)
-  const ROW_ANIMATION_MS = 320
-  async function changeStatus(id: string, status: WorkflowStatus) {
-    if (changingId) return
-    setChangingId(id)
-    setAnimatingId(id)
-    setAnimatingStatus(status)
-    try {
-      await Promise.all([
-        adminMutate(`/api/admin/inbox/conversations/${id}`, 'PATCH', { status }),
-        new Promise(resolve => setTimeout(resolve, ROW_ANIMATION_MS)),
-      ])
-      onStatusChanged?.()
-    } finally {
-      setChangingId(null)
-      setAnimatingId(null)
-      setAnimatingStatus(null)
-    }
-  }
+  const reduceMotion = useReducedMotion()
 
   // All on by default — toggling one off hides that category, doesn't isolate it.
   const [sourceFilter, setSourceFilter] = useState<Record<SourceFilter, boolean>>({
@@ -173,16 +171,23 @@ export function ConversationList({ conversations, selectedId, statusFilter, onSe
   // of on every re-render — this component re-renders every 30s just to
   // tick the WhatsApp countdown badges, which shouldn't force a full
   // recount/refilter of a list that hasn't actually changed.
+  //
+  // A row Beer just moved out of this filter is left out here straight away;
+  // AnimatePresence below keeps it on screen for its exit animation, so the
+  // row glides out whether or not the server has caught up yet.
   const { sourceCounts, visibleConversations } = useMemo(() => {
     const counts: Record<SourceFilter, number> = { chat: 0, email: 0, whatsapp: 0, voice: 0, ota: 0 }
     const visible: typeof conversations = []
     for (const c of conversations) {
+      if (isOptimisticallyHidden(pendingStatus[c.id], statusFilter)) continue
       const source = sourceOf(c)
       counts[source]++
       if (sourceFilter[source]) visible.push(c)
     }
     return { sourceCounts: counts, visibleConversations: visible }
-  }, [conversations, sourceFilter])
+  }, [conversations, sourceFilter, pendingStatus, statusFilter])
+
+  const rowTransition = reduceMotion ? { duration: 0 } : { duration: 0.28, ease: EASE_OUT }
 
   return (
     <div className="flex flex-col h-full">
@@ -224,121 +229,171 @@ export function ConversationList({ conversations, selectedId, statusFilter, onSe
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
-        {visibleConversations.length === 0 && (
-          <p className="text-xs text-zinc-400 text-center py-8 px-4">
-            No conversations here. The water is calm.
-          </p>
-        )}
-        {visibleConversations.map(c => {
-          const ChannelIcon = CHANNEL_ICON[c.channel] ?? MessageSquare
-          // Globe/checkmark/download for OTA rows — deliberately NOT Clock,
-          // which already means "WhatsApp window countdown" elsewhere in this
-          // list. Download = it's already a real FareHarbor booking, just
-          // needs pulling into our own database (see ota/detect.ts).
-          const Icon = c.ota_source
-            ? c.ota_status === 'confirmed' || c.ota_status === 'imported'
-              ? CheckCircle2
-              : c.ota_status === 'needs_import'
-                ? Download
-                : c.ota_status === 'sync_mismatch'
-                  ? XCircle
-                  : Globe
-            : ChannelIcon
-          const unread = c.unread_count > 0
-          const windowStatus = c.channel === 'whatsapp' ? formatWindowRemaining(c.wa_window_expires_at, now) : null
-          const otherStatuses = WORKFLOW_STATUSES.filter(s => s !== c.status)
-          const requestType = requestTypeLabel(c)
-          const displayName = c.ota_guest_name ?? c.contact?.name ?? 'Unknown'
-          const isAnimatingOut = animatingId === c.id
-          const animatingColor = animatingStatus === 'resolved' ? 'bg-emerald-50' : animatingStatus === 'pending' ? 'bg-amber-50' : ''
-          return (
-            <div
-              key={c.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => onSelect(c.id)}
-              onMouseEnter={() => prefetchConversation(c.id)}
-              onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && onSelect(c.id)}
-              className={`group w-full text-left px-3 py-3 border-b border-zinc-50 cursor-pointer transition-all duration-300 ease-out ${
-                isAnimatingOut
-                  ? `opacity-0 scale-[0.97] -translate-x-1.5 ${animatingColor}`
-                  : `opacity-100 scale-100 translate-x-0 ${selectedId === c.id ? 'bg-zinc-100' : 'hover:bg-zinc-50'}`
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                {isAnimatingOut && animatingStatus ? (
-                  (() => {
-                    const AnimatingIcon = WORKFLOW_ICON[animatingStatus]
-                    return (
-                      <AnimatingIcon
-                        className={`w-3.5 h-3.5 shrink-0 ${animatingStatus === 'resolved' ? 'text-emerald-500' : 'text-amber-500'}`}
-                      />
-                    )
-                  })()
-                ) : (
-                  <Icon className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                )}
-                <span className={`flex-1 min-w-0 flex items-baseline text-sm ${unread ? 'font-semibold text-zinc-900' : 'text-zinc-700'}`}>
-                  {/* requestType is fixed-width (shrink-0) so a long label can never push the
-                      actual guest name off the end of the shared truncate — before this, a
-                      long label like "Website booking — no DB row · Boat Local —" ate the whole
-                      row's width and the real name never rendered at all. */}
-                  {requestType && <span className="font-normal text-zinc-400 shrink-0 whitespace-nowrap">{requestType} — </span>}
-                  <span className="truncate">{displayName}</span>
-                  {!requestType && <span className="font-normal text-zinc-400 shrink-0 whitespace-nowrap"> — {bookingInfoLabel(c)}</span>}
-                </span>
-                {/* Quick status change — icon-only, hidden until hover, only the OTHER two states shown */}
-                <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-                  {otherStatuses.map(s => {
-                    const ActionIcon = WORKFLOW_ICON[s]
-                    return (
-                      <button
-                        key={s}
-                        title={`Mark ${STATUS_LABELS[s]}`}
-                        disabled={changingId === c.id}
-                        onClick={e => {
-                          e.stopPropagation()
-                          changeStatus(c.id, s)
-                        }}
-                        className="p-1 rounded-full text-zinc-400 hover:bg-zinc-900 hover:text-white transition-colors disabled:opacity-50"
-                      >
-                        <ActionIcon className="w-3 h-3" />
-                      </button>
-                    )
-                  })}
-                </div>
-                {/* WhatsApp 24h reply window — green (not amber) to read as WhatsApp's own color, not a warning */}
-                {windowStatus && (
-                  <span
-                    className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap shrink-0 ${
-                      windowStatus.closed ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'
+      <LazyMotion features={loadMotionFeatures} strict>
+        {/* Keyed by the filters: switching filter swaps the whole list instantly
+            instead of animating 100 rows out and in. Animation is for single
+            rows changing in place — a status change, a new email arriving. */}
+        <div key={`${statusFilter}|${SOURCE_FILTERS.filter(k => sourceFilter[k]).join(',')}`} className="flex-1 overflow-y-auto">
+          <AnimatePresence initial={false}>
+            {visibleConversations.length === 0 && (
+              <m.p
+                key="calm"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1, transition: { delay: reduceMotion ? 0 : 0.25 } }}
+                exit={{ opacity: 0 }}
+                className="text-xs text-zinc-400 text-center py-8 px-4"
+              >
+                No conversations here. The water is calm.
+              </m.p>
+            )}
+            {visibleConversations.map(c => {
+              const ChannelIcon = CHANNEL_ICON[c.channel] ?? MessageSquare
+              // Globe/checkmark/download for OTA rows — deliberately NOT Clock,
+              // which already means "WhatsApp window countdown" elsewhere in this
+              // list. Download = it's already a real FareHarbor booking, just
+              // needs pulling into our own database (see ota/detect.ts).
+              const Icon = c.ota_source
+                ? c.ota_status === 'confirmed' || c.ota_status === 'imported'
+                  ? CheckCircle2
+                  : c.ota_status === 'needs_import'
+                    ? Download
+                    : c.ota_status === 'sync_mismatch'
+                      ? XCircle
+                      : Globe
+                : ChannelIcon
+              const pending = pendingStatus[c.id]
+              // The "done ✓" beat: tinted, new status icon, still in place. If the
+              // new status leaves this filter, the row is dropped from the list
+              // right after and AnimatePresence plays the exit from this frame.
+              const flashing = pending?.phase === 'flash'
+              const FlashIcon = pending ? WORKFLOW_ICON[pending.status] : null
+              const unread = effectiveUnread(c, pendingUnread[c.id])
+              const windowStatus = c.channel === 'whatsapp' ? formatWindowRemaining(c.wa_window_expires_at, now) : null
+              const otherStatuses = WORKFLOW_STATUSES.filter(s => s !== effectiveStatus(c, pending))
+              const requestType = requestTypeLabel(c)
+              const displayName = c.ota_guest_name ?? c.contact?.name ?? 'Unknown'
+              return (
+                <m.div
+                  key={c.id}
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0, x: reduceMotion ? 0 : -12 }}
+                  transition={rowTransition}
+                  className="overflow-hidden"
+                >
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => onSelect(c.id)}
+                    onMouseEnter={() => prefetchConversation(c.id)}
+                    onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && onSelect(c.id)}
+                    className={`group w-full text-left px-3 py-3 border-b border-zinc-50 cursor-pointer transition-colors duration-200 ${
+                      flashing && pending ? STATUS_TINT[pending.status] : selectedId === c.id ? 'bg-zinc-100' : 'hover:bg-zinc-50'
                     }`}
                   >
-                    {windowStatus.label}
-                  </span>
-                )}
-                <span className="text-[10px] text-zinc-400 shrink-0">{timeAgoShort(c.last_message_at)}</span>
-                {unread && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
-              </div>
-              <p className={`mt-0.5 text-xs truncate pl-5.5 flex items-center gap-1 ${unread ? 'text-zinc-700' : 'text-zinc-400'}`}>
-                {/* Real tool result, not AI prose — the checker actually ran and found/didn't find a private slot. */}
-                {c.ota_available === true && <CheckCircle2 className="w-3 h-3 text-green-600 shrink-0" />}
-                {c.ota_available === false && <XCircle className="w-3 h-3 text-red-500 shrink-0" />}
-                <span className="truncate">
-                  {c.snippet_direction === 'out' && '↩ '}
-                  {c.ai_summary ?? c.snippet}
-                </span>
-              </p>
-              {statusFilter === 'pending' && (
-                <p className="mt-1 ml-5.5 text-[10px] text-zinc-400">
-                  {c.last_outbound_at ? `Last reply from us: ${timeAgoShort(c.last_outbound_at)}` : 'We have not replied yet'}
-                </p>
-              )}
-            </div>
-          )
-        })}
-      </div>
+                    <div className="flex items-center gap-2">
+                      {flashing && FlashIcon && pending ? (
+                        <m.span
+                          initial={{ scale: 0.3, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          transition={reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 520, damping: 24 }}
+                          className="inline-flex shrink-0"
+                        >
+                          <FlashIcon className={`w-3.5 h-3.5 ${STATUS_ICON_COLOR[pending.status]}`} />
+                        </m.span>
+                      ) : (
+                        <Icon className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                      )}
+                      <span className={`flex-1 min-w-0 flex items-baseline text-sm ${unread ? 'font-semibold text-zinc-900' : 'text-zinc-700'}`}>
+                        {/* requestType is fixed-width (shrink-0) so a long label can never push the
+                            actual guest name off the end of the shared truncate — before this, a
+                            long label like "Website booking — no DB row · Boat Local —" ate the whole
+                            row's width and the real name never rendered at all. */}
+                        {requestType && <span className="font-normal text-zinc-400 shrink-0 whitespace-nowrap">{requestType} — </span>}
+                        <span className="truncate">{displayName}</span>
+                        {!requestType && <span className="font-normal text-zinc-400 shrink-0 whitespace-nowrap"> — {bookingInfoLabel(c)}</span>}
+                      </span>
+                      {/* Quick actions — icon-only, hidden until hover: read/unread, then only the OTHER two states */}
+                      <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                        <button
+                          title={unread ? 'Mark read' : 'Mark unread'}
+                          aria-label={unread ? 'Mark read' : 'Mark unread'}
+                          onClick={e => {
+                            e.stopPropagation()
+                            onSetUnread(c.id, !unread)
+                          }}
+                          className="p-1 rounded-full text-zinc-400 hover:bg-zinc-900 hover:text-white transition-colors"
+                        >
+                          {unread ? <MailCheck className="w-3 h-3" /> : <Mail className="w-3 h-3" />}
+                        </button>
+                        {otherStatuses.map(s => {
+                          const ActionIcon = WORKFLOW_ICON[s]
+                          return (
+                            <button
+                              key={s}
+                              title={`Mark ${STATUS_LABELS[s]}`}
+                              aria-label={`Mark ${STATUS_LABELS[s]}`}
+                              disabled={!!pending && !pending.confirmed}
+                              onClick={e => {
+                                e.stopPropagation()
+                                onChangeStatus(c.id, s)
+                              }}
+                              className="p-1 rounded-full text-zinc-400 hover:bg-zinc-900 hover:text-white transition-colors disabled:opacity-50"
+                            >
+                              <ActionIcon className="w-3 h-3" />
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {/* WhatsApp 24h reply window — green (not amber) to read as WhatsApp's own color, not a warning */}
+                      {windowStatus && (
+                        <span
+                          className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap shrink-0 ${
+                            windowStatus.closed ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'
+                          }`}
+                        >
+                          {windowStatus.label}
+                        </span>
+                      )}
+                      {/* Reply doorman: a quiet hint, never a filter — the row stays and Beer decides. */}
+                      {c.reply_triage?.verdict === 'no' && (
+                        <span
+                          title={`Probably no reply needed — ${c.reply_triage.reason}`}
+                          className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-zinc-100 text-zinc-500 whitespace-nowrap shrink-0"
+                        >
+                          FYI
+                        </span>
+                      )}
+                      <span className="text-[10px] text-zinc-400 shrink-0">{timeAgoShort(c.last_message_at)}</span>
+                      {/* Always rendered so read/unread fades instead of popping, and the time never shifts. */}
+                      <span
+                        aria-label={unread ? 'Unread' : undefined}
+                        className={`w-2 h-2 rounded-full bg-red-500 shrink-0 transition-[opacity,transform] duration-200 motion-reduce:transition-none ${
+                          unread ? 'opacity-100 scale-100' : 'opacity-0 scale-50'
+                        }`}
+                      />
+                    </div>
+                    <p className={`mt-0.5 text-xs truncate pl-5.5 flex items-center gap-1 ${unread ? 'text-zinc-700' : 'text-zinc-400'}`}>
+                      {/* Real tool result, not AI prose — the checker actually ran and found/didn't find a private slot. */}
+                      {c.ota_available === true && <CheckCircle2 className="w-3 h-3 text-green-600 shrink-0" />}
+                      {c.ota_available === false && <XCircle className="w-3 h-3 text-red-500 shrink-0" />}
+                      <span className="truncate">
+                        {c.snippet_direction === 'out' && '↩ '}
+                        {c.ai_summary ?? c.snippet}
+                      </span>
+                    </p>
+                    {statusFilter === 'pending' && (
+                      <p className="mt-1 ml-5.5 text-[10px] text-zinc-400">
+                        {c.last_outbound_at ? `Last reply from us: ${timeAgoShort(c.last_outbound_at)}` : 'We have not replied yet'}
+                      </p>
+                    )}
+                  </div>
+                </m.div>
+              )
+            })}
+          </AnimatePresence>
+        </div>
+      </LazyMotion>
     </div>
   )
 }

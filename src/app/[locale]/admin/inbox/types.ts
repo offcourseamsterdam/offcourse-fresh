@@ -1,4 +1,5 @@
 import type { ExtractedInvoiceFields, InvoiceCheck } from '@/lib/finance/invoices/match'
+import type { ReplyTriageView } from '@/lib/gmail/reply-triage'
 
 /** Shapes shared by the three inbox panes (mirror the admin inbox API). */
 
@@ -51,6 +52,8 @@ export interface InboxListItem {
   /** The contact's soonest upcoming booking, or their most recent past one if none is upcoming. Null if they have no booking at all. */
   next_booking: { date: string; time: string | null } | null
   contact: Pick<InboxContact, 'id' | 'name' | 'email'> | null
+  /** The reply doorman's verdict on the latest message, while it's the guest's (lib/gmail/reply-triage.ts). A label only — never hides the row. Null = not judged. */
+  reply_triage: ReplyTriageView | null
   snippet: string
   snippet_direction: 'in' | 'out' | 'note' | null
 }
@@ -67,6 +70,8 @@ export interface InboxMessage {
   created_at: string
   /** Voice calls only: the call/voicemail recording, if one was made. */
   recording_url: string | null
+  /** Plain inbound email only: the reply doorman's verdict (lib/gmail/reply-triage.ts). Null = not judged. */
+  reply_triage?: ReplyTriageView | null
 }
 
 export interface InboxBooking {

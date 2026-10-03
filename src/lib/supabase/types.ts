@@ -4265,6 +4265,7 @@ export type Database = {
           provider: string
           provider_message_id: string | null
           recording_url: string | null
+          reply_triage: Json | null
           status: string
         }
         Insert: {
@@ -4279,6 +4280,7 @@ export type Database = {
           provider?: string
           provider_message_id?: string | null
           recording_url?: string | null
+          reply_triage?: Json | null
           status?: string
         }
         Update: {
@@ -4293,6 +4295,7 @@ export type Database = {
           provider?: string
           provider_message_id?: string | null
           recording_url?: string | null
+          reply_triage?: Json | null
           status?: string
         }
         Relationships: [

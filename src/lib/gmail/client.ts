@@ -4,6 +4,7 @@
 // extract its plain-text body from arbitrarily nested MIME parts, and send a
 // threaded reply.
 import { getGmailAccessToken } from './auth'
+import { TRIAGE_HEADER_NAMES } from './reply-triage'
 
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users'
 
@@ -78,6 +79,14 @@ export interface GmailMessage {
    * a PDF on a message routed to the Finance Inbox (source_category='finance').
    */
   attachments: GmailAttachmentRef[]
+  /**
+   * Gmail's own labels (CATEGORY_UPDATES, CATEGORY_SOCIAL, …) — already in the
+   * same `format=full` response, so reading them costs nothing. Optional so
+   * hand-built messages (tests, manual scripts) don't have to supply them.
+   */
+  labelIds?: string[]
+  /** Only the automation headers the reply doorman reads (lowercased name → value). See reply-triage.ts. */
+  triageHeaders?: Record<string, string>
 }
 
 export interface GmailAttachmentRef {
@@ -97,6 +106,7 @@ interface GmailApiPart {
 interface GmailApiMessage {
   id: string
   threadId: string
+  labelIds?: string[]
   payload?: GmailApiPart & { headers?: { name: string; value: string }[] }
 }
 
@@ -222,7 +232,20 @@ export async function getMessage(id: string): Promise<GmailMessage> {
     bodyText,
     bodyHtml: html,
     attachments: json.payload ? findAttachmentParts(json.payload) : [],
+    labelIds: json.labelIds ?? [],
+    triageHeaders: pickTriageHeaders(headers),
   }
+}
+
+/** Keeps only the automation headers reply-triage.ts reads, keyed by lowercase name. An absent header stays absent (an empty-valued one is kept — `X-Autoreply:` alone is still a signal). */
+export function pickTriageHeaders(headers: { name: string; value: string }[]): Record<string, string> {
+  const wanted = new Set<string>(TRIAGE_HEADER_NAMES)
+  const picked: Record<string, string> = {}
+  for (const h of headers) {
+    const name = h.name.toLowerCase()
+    if (wanted.has(name) && !(name in picked)) picked[name] = h.value ?? ''
+  }
+  return picked
 }
 
 /** Fetches one attachment's raw bytes by id (from a GmailMessage's `attachments` list). */

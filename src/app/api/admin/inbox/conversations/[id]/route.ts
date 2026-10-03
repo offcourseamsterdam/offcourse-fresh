@@ -2,13 +2,22 @@ import { NextRequest } from 'next/server'
 import { apiError, apiOk } from '@/lib/api/response'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { toReplyTriageView } from '@/lib/gmail/reply-triage'
 
 /**
  * One conversation, fully loaded — the middle and right panes.
  *
  *   GET   — contact + all messages (incl. internal notes) + the contact's
- *           bookings (matched by email). Opening a thread marks it read.
- *   PATCH — { status } workflow changes (open|pending|resolved).
+ *           bookings (matched by email). Read-only: it does NOT mark the
+ *           thread read.
+ *   PATCH — { status } workflow changes (open|pending|resolved) and/or
+ *           { unread: true|false }.
+ *
+ * Why GET no longer marks read (2026-10-03): the open thread re-fetches every
+ * 5 seconds, and the list prefetches a thread on mouse hover. With read-on-GET,
+ * merely hovering a row marked it read, and "Mark unread" would be undone by
+ * the very next poll. The inbox now marks read explicitly (PATCH unread:false)
+ * when a thread is actually open — see InboxShell.tsx.
  */
 
 interface RouteParams {
@@ -37,7 +46,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     const [{ data: messages, error: msgError }, bookings, ghost, financeInvoices, financeDocuments] = await Promise.all([
       supabase
         .from('messages')
-        .select('id, direction, body, body_html, author_name, status, error, created_at, recording_url')
+        .select('id, direction, body, body_html, author_name, status, error, created_at, recording_url, reply_triage')
         .eq('conversation_id', id)
         .order('created_at', { ascending: true })
         .limit(500),
@@ -48,12 +57,9 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     ])
     if (msgError) return apiError(msgError.message)
 
-    // Opening the thread = reading it.
-    if (conversation.unread_count > 0) {
-      await supabase.from('conversations').update({ unread_count: 0 }).eq('id', id)
-    }
+    const viewMessages = (messages ?? []).map(({ reply_triage, ...m }) => ({ ...m, reply_triage: toReplyTriageView(reply_triage) }))
 
-    return apiOk({ conversation, messages: messages ?? [], bookings, ghost, financeInvoices, financeDocuments })
+    return apiOk({ conversation, messages: viewMessages, bookings, ghost, financeInvoices, financeDocuments })
   } catch (err) {
     return apiError(err instanceof Error ? err.message : 'Failed to load conversation')
   }
@@ -332,14 +338,33 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
     const body = await req.json().catch(() => null)
-    const status = body?.status
-    if (!['open', 'pending', 'resolved'].includes(status)) {
+    const hasStatus = !!body && typeof body === 'object' && 'status' in body
+    const hasUnread = !!body && typeof body === 'object' && 'unread' in body
+    if (!hasStatus && !hasUnread) {
+      return apiError('Provide status (open|pending|resolved) and/or unread (true|false)', 400)
+    }
+    if (hasStatus && !['open', 'pending', 'resolved'].includes(body.status)) {
       return apiError('status must be open, pending or resolved', 400)
+    }
+    if (hasUnread && typeof body.unread !== 'boolean') {
+      return apiError('unread must be true or false', 400)
     }
 
     const supabase = createAdminClient()
-    const { error } = await supabase.from('conversations').update({ status }).eq('id', id)
-    if (error) return apiError(error.message)
+    if (hasStatus) {
+      const { error } = await supabase.from('conversations').update({ status: body.status }).eq('id', id)
+      if (error) return apiError(error.message)
+    }
+    if (hasUnread) {
+      // Mark unread = "1 new", but only when it's currently read: a thread
+      // that already has 3 genuinely new messages keeps its real count. The
+      // condition is part of the UPDATE itself, so it can't race a new
+      // message landing between a read and a write.
+      const { error } = body.unread
+        ? await supabase.from('conversations').update({ unread_count: 1 }).eq('id', id).eq('unread_count', 0)
+        : await supabase.from('conversations').update({ unread_count: 0 }).eq('id', id)
+      if (error) return apiError(error.message)
+    }
 
     return apiOk({ updated: true })
   } catch (err) {

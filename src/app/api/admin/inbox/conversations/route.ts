@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { amsterdamToday } from '@/lib/utils'
 import { applyInboxScope, type InboxScope } from '@/lib/inbox/scope'
+import { toReplyTriageView } from '@/lib/gmail/reply-triage'
 
 /**
  * GET /api/admin/inbox/conversations?status=open|pending|resolved|all&scope=operations|finance
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
         `id, channel, status, subject, unread_count, last_message_at, created_at, wa_window_expires_at,
          provider_thread_id, ota_source, ota_status, ota_guest_name, ota_available, ai_summary, source_category,
          contact:contacts(id, name, email, phone_e164),
-         messages(body, direction, created_at),
+         messages(body, direction, created_at, reply_triage),
          last_outbound:messages(created_at)`,
       )
       .order('last_message_at', { ascending: false })
@@ -146,6 +147,10 @@ export async function GET(req: NextRequest) {
       contact: c.contact,
       snippet: c.messages[0]?.body ?? '',
       snippet_direction: c.messages[0]?.direction ?? null,
+      // The reply doorman's verdict on the latest message — only while that
+      // message is the guest's (once we've replied, "does this need a reply"
+      // is moot). A label only; it never filters the list.
+      reply_triage: c.messages[0]?.direction === 'in' ? toReplyTriageView(c.messages[0]?.reply_triage) : null,
     }))
 
     return apiOk({ conversations })

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, CalendarSearch, CheckCircle2, Clock, Forward, Languages, Loader2, PanelRightOpen, Send, StickyNote } from 'lucide-react'
+import { ArrowLeft, CalendarSearch, CheckCircle2, Clock, Forward, Languages, Loader2, Mail, PanelRightOpen, Send, StickyNote } from 'lucide-react'
 import { adminMutate } from '@/hooks/useAdminSave'
 import { formatAmsterdamTime } from '@/lib/utils'
 import { formatWindowRemaining } from '@/lib/whatsapp/window'
@@ -27,6 +27,8 @@ interface Props {
   onOpenContext?: () => void
   /** Show a dot on the context trigger when Ghost has something to act on. */
   contextHasAction?: boolean
+  /** "Mark unread" — the shell closes the thread and flags it unread in the list. */
+  onMarkUnread?: () => void
 }
 
 interface Translation {
@@ -35,7 +37,7 @@ interface Translation {
 }
 
 /** Middle pane — the thread, chronological, plus the Reply/Note composer. */
-export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed, onOpenContext, contextHasAction }: Props) {
+export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed, onOpenContext, contextHasAction, onMarkUnread }: Props) {
   const { conversation, messages } = detail
   const [mode, setMode] = useState<'out' | 'note' | 'forward'>('out')
   const [forwardTo, setForwardTo] = useState('')
@@ -165,16 +167,29 @@ export function ThreadPane({ detail, onSent, onBack, prefill, onPrefillConsumed,
             <Clock className="w-3 h-3" /> {windowStatus.label}
           </span>
         )}
-        {onOpenContext && (
-          <button
-            onClick={onOpenContext}
-            aria-label="Customer details"
-            className="xl:hidden ml-auto relative p-2 rounded-lg hover:bg-zinc-100 text-zinc-500"
-          >
-            <PanelRightOpen className="w-4 h-4" />
-            {contextHasAction && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-violet-500" />}
-          </button>
-        )}
+        <div className="ml-auto flex items-center gap-1 shrink-0">
+          {onMarkUnread && (
+            <button
+              onClick={onMarkUnread}
+              title="Mark unread — closes the thread and keeps it bold in the list"
+              aria-label="Mark unread"
+              className="inline-flex items-center justify-center gap-1.5 min-w-11 min-h-11 lg:min-w-0 lg:min-h-0 px-2 lg:py-1.5 rounded-lg text-xs font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 transition-colors"
+            >
+              <Mail className="w-4 h-4" />
+              <span className="hidden sm:inline">Mark unread</span>
+            </button>
+          )}
+          {onOpenContext && (
+            <button
+              onClick={onOpenContext}
+              aria-label="Customer details"
+              className="xl:hidden relative p-2 rounded-lg hover:bg-zinc-100 text-zinc-500"
+            >
+              <PanelRightOpen className="w-4 h-4" />
+              {contextHasAction && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-violet-500" />}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Messages */}
